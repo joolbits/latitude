@@ -11,7 +11,6 @@ import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.GlobeWarningOverlay;
 import com.example.globe.client.LatitudeClientState;
 import com.example.globe.client.LatitudeHudStudioScreen;
-import com.example.globe.client.SpawnZoneScreen;
 import com.example.globe.client.EwSandstormOverlayRenderer;
 import com.example.globe.client.EwStormWallRenderer;
 import com.example.globe.client.EwPresentationPolicy;
@@ -37,7 +36,6 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 
 public class GlobeModClient implements ClientModInitializer {
-    private static boolean pendingSpawnPickerOpen;
     private static final int PROMENADE_PALM_LEAVES_OPAQUE_TINT = 0xFF7DB22E;
     private static final String[] PROMENADE_PALM_TINT_BLOCKS = {
             "promenade:palm_leaves",
@@ -60,7 +58,6 @@ public class GlobeModClient implements ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             GlobeWarningOverlay.resetForDisconnect();
             GlobeClientState.resetForDisconnect();
-            pendingSpawnPickerOpen = false;
         });
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.GlobeStatePayload.ID, (payload, context) -> {
@@ -83,7 +80,6 @@ public class GlobeModClient implements ClientModInitializer {
             }
 
             context.client().execute(() -> {
-                pendingSpawnPickerOpen = false;
                 GlobeMod.LOGGER.info("Ignoring legacy open spawn picker payload");
             });
         });
@@ -159,12 +155,6 @@ public class GlobeModClient implements ClientModInitializer {
     }
 
     private static void polarCapClientTick(Minecraft client) {
-        if (pendingSpawnPickerOpen && client.player != null && client.level != null && client.gui.screen() == null) {
-            pendingSpawnPickerOpen = false;
-            client.gui.setScreen(new SpawnZoneScreen());
-            GlobeMod.LOGGER.info("Opened SpawnZoneScreen");
-        }
-
         if (client.player == null || client.level == null) {
             return;
         }
