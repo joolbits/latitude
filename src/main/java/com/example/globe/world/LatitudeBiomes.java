@@ -621,6 +621,7 @@ public final class LatitudeBiomes {
     public static void setWorldSeed(long seed) {
         WORLD_SEED = seed;
         OCEAN_DISTANCE_FIELD = new OceanDistanceField(seed);
+        PALE_GARDEN_ANCHOR_CACHE = null;
         rebuildProvinceAuthority();
     }
 
@@ -634,6 +635,7 @@ public final class LatitudeBiomes {
         ACTIVE_RADIUS_BLOCKS = Math.max(0, radiusBlocks);
         WORLD_SEED = seed;
         OCEAN_DISTANCE_FIELD = new OceanDistanceField(seed);
+        PALE_GARDEN_ANCHOR_CACHE = null;
         PROVINCE_AUTHORITY = null;
         rebuildProvinceAuthority();
         ACTIVE_WORLDGEN_AUTHORITY = ACTIVE_RADIUS_BLOCKS > 0;
@@ -649,6 +651,7 @@ public final class LatitudeBiomes {
         ACTIVE_RADIUS_BLOCKS = 0;
         WORLD_SEED = 0L;
         OCEAN_DISTANCE_FIELD = null;
+        PALE_GARDEN_ANCHOR_CACHE = null;
         PROVINCE_AUTHORITY = null;
         ACTIVE_WORLDGEN_POLICY = WorldgenPolicyVersion.MODERN_1_3;
     }
@@ -659,11 +662,13 @@ public final class LatitudeBiomes {
 
     public static void setRadius(int radius) {
         ACTIVE_RADIUS_BLOCKS = radius;
+        PALE_GARDEN_ANCHOR_CACHE = null;
         rebuildProvinceAuthority();
     }
 
     public static void setActiveRadiusBlocks(int radiusBlocks) {
         ACTIVE_RADIUS_BLOCKS = Math.max(0, radiusBlocks);
+        PALE_GARDEN_ANCHOR_CACHE = null;
         rebuildProvinceAuthority();
     }
 
@@ -2257,6 +2262,8 @@ public final class LatitudeBiomes {
     private static final long PALE_GARDEN_REGION_ANCHOR_Z_SALT = 0x7061_6C65_5F61_7A7AL; // "pale_azz"
     private static final long PALE_GARDEN_REGION_HEMI_SALT = 0x7061_6C65_5F68_656DL; // "pale_hem"
     private static final long PALE_GARDEN_REGION_SHAPE_SALT = 0x7061_6C65_5F73_6861L; // "pale_sha"
+    private static final long PALE_GARDEN_ANCHOR_CANDIDATE_SALT = 0x7061_6C65_5F63_616EL; // "pale_can"
+    private static final int PALE_GARDEN_ANCHOR_CANDIDATE_COUNT = 64;
     private static final double PALE_GARDEN_REGION_RADIUS_FRAC = 0.18;
     private static final int PALE_GARDEN_REGION_MIN_RADIUS_BLOCKS = 720;
     private static final double PALE_GARDEN_REGION_WOBBLE_FRAC = 0.18;
@@ -2271,6 +2278,9 @@ public final class LatitudeBiomes {
     // Minimum ocean distance for a core cell to survive as pale_garden.
     // Core cells closer than this to ocean revert to dark_forest (landlocked veto).
     private static final int PALE_GARDEN_MIN_OCEAN_DISTANCE_BLOCKS = 384;
+    private record PaleGardenAnchor(long worldSeed, int radius, Climate.Sampler sampler, int x, int z, boolean landlocked) {
+    }
+    private static volatile PaleGardenAnchor PALE_GARDEN_ANCHOR_CACHE = null;
 
     // dark_forest restoration density cap: outside the Pale Garden container,
     // restrict guard restorations to a noise-defined fraction of shoulder cells
@@ -2866,7 +2876,7 @@ public final class LatitudeBiomes {
                 && !isBiomeId(chosen, "minecraft:dark_forest")
                 && !isBiomeId(chosen, "minecraft:pale_garden") // pale_garden is a valid dark_forest replacement
                 && isTemperateForestFamily(chosen)
-                && (paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius)
+                && (paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius, sampler)
                     || ValueNoise2D.sampleBlocks(WORLD_SEED ^ DARK_FOREST_RESTORE_DENSITY_SALT, blockX, blockZ, DARK_FOREST_RESTORE_DENSITY_SCALE) < DARK_FOREST_RESTORE_DENSITY_THRESHOLD)) {
             chosen = base;
         }
@@ -3109,7 +3119,7 @@ public final class LatitudeBiomes {
                 }
             }
         }
-        out = enforcePaleGardenRegion(biomeRegistry, out, base, blockX, blockZ, landBandIndex, effectiveRadius, oceanDistance);
+        out = enforcePaleGardenRegion(biomeRegistry, out, base, blockX, blockZ, landBandIndex, effectiveRadius, oceanDistance, sampler);
         out = softenTemperateWarmEdgeTaigaJump(biomeRegistry, base, out, blockX, blockZ, effectiveRadius, bandIndex, landBandIndex, mountainLike);
         Holder<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
@@ -3495,7 +3505,7 @@ public final class LatitudeBiomes {
                 && !isBiomeId(chosen, "minecraft:dark_forest")
                 && !isBiomeId(chosen, "minecraft:pale_garden") // pale_garden is a valid dark_forest replacement
                 && isTemperateForestFamily(chosen)
-                && (paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius)
+                && (paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius, sampler)
                     || ValueNoise2D.sampleBlocks(WORLD_SEED ^ DARK_FOREST_RESTORE_DENSITY_SALT, blockX, blockZ, DARK_FOREST_RESTORE_DENSITY_SCALE) < DARK_FOREST_RESTORE_DENSITY_THRESHOLD)) {
             chosen = base;
         }
@@ -3738,7 +3748,7 @@ public final class LatitudeBiomes {
                 }
             }
         }
-        out = enforcePaleGardenRegion(biomePool, out, base, blockX, blockZ, landBandIndex, effectiveRadius, oceanDistance);
+        out = enforcePaleGardenRegion(biomePool, out, base, blockX, blockZ, landBandIndex, effectiveRadius, oceanDistance, sampler);
         out = softenTemperateWarmEdgeTaigaJump(biomePool, base, out, blockX, blockZ, effectiveRadius, bandIndex, landBandIndex, mountainLike);
         Holder<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
@@ -5726,11 +5736,12 @@ public final class LatitudeBiomes {
                                                                 int blockZ,
                                                                 int bandIndex,
                                                                 int effectiveRadius,
-                                                                int oceanDistance) {
+                                                                int oceanDistance,
+                                                                Climate.Sampler sampler) {
         if (bandIndex != BAND_TEMPERATE) {
             return candidate;
         }
-        boolean inOuter = paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius);
+        boolean inOuter = paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius, sampler);
         if (!inOuter) {
             // Outside dark-forest container: suppress any stray pale_garden.
             if (isBiomeId(candidate, "minecraft:pale_garden")) {
@@ -5750,7 +5761,7 @@ public final class LatitudeBiomes {
             return candidate;
         }
         // Inside dark-forest container: inner core => pale_garden (if landlocked), ring => dark_forest.
-        boolean inCore = paleGardenCoreHit(WORLD_SEED, blockX, blockZ, effectiveRadius);
+        boolean inCore = paleGardenCoreHit(WORLD_SEED, blockX, blockZ, effectiveRadius, sampler);
         if (inCore) {
             // Landlocked veto: beach cells or cells too close to ocean become dark_forest instead.
             boolean tooWet = isBeachLike(base)
@@ -5777,11 +5788,12 @@ public final class LatitudeBiomes {
                                                                 int blockZ,
                                                                 int bandIndex,
                                                                 int effectiveRadius,
-                                                                int oceanDistance) {
+                                                                int oceanDistance,
+                                                                Climate.Sampler sampler) {
         if (bandIndex != BAND_TEMPERATE) {
             return candidate;
         }
-        boolean inOuter = paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius);
+        boolean inOuter = paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius, sampler);
         if (!inOuter) {
             // Outside dark-forest container: suppress any stray pale_garden.
             if (isBiomeId(candidate, "minecraft:pale_garden")) {
@@ -5801,7 +5813,7 @@ public final class LatitudeBiomes {
             return candidate;
         }
         // Inside dark-forest container: inner core => pale_garden (if landlocked), ring => dark_forest.
-        boolean inCore = paleGardenCoreHit(WORLD_SEED, blockX, blockZ, effectiveRadius);
+        boolean inCore = paleGardenCoreHit(WORLD_SEED, blockX, blockZ, effectiveRadius, sampler);
         if (inCore) {
             // Landlocked veto: beach cells or cells too close to ocean become dark_forest instead.
             boolean tooWet = isBeachLike(base)
@@ -9006,28 +9018,45 @@ public final class LatitudeBiomes {
         return ValueNoise2D.sampleBlocks(worldSeed ^ WETLAND_SALT, blockX, z, WETLAND_SCALE_BLOCKS);
     }
 
-    private static boolean paleGardenRegionHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
+    private static PaleGardenAnchor paleGardenAnchor(long worldSeed, int effectiveRadiusHint, Climate.Sampler sampler) {
         int radius = effectiveRadiusHint > 0 ? effectiveRadiusHint : ACTIVE_RADIUS_BLOCKS;
         if (radius <= 0) {
             radius = REFERENCE_DIAMETER_BLOCKS / 2;
         }
         radius = Math.max(1, radius);
 
+        PaleGardenAnchor cached = PALE_GARDEN_ANCHOR_CACHE;
+        if (cached != null
+                && cached.worldSeed() == worldSeed
+                && cached.radius() == radius
+                && cached.sampler() == sampler) {
+            return cached;
+        }
+        return selectPaleGardenAnchor(worldSeed, radius, sampler);
+    }
+
+    private static synchronized PaleGardenAnchor selectPaleGardenAnchor(long worldSeed, int radius, Climate.Sampler sampler) {
+        PaleGardenAnchor cached = PALE_GARDEN_ANCHOR_CACHE;
+        if (cached != null
+                && cached.worldSeed() == worldSeed
+                && cached.radius() == radius
+                && cached.sampler() == sampler) {
+            return cached;
+        }
+
         int temperateMinAbsZ = bandBoundaryBlocks(1, radius);
         int temperateMaxAbsZ = bandBoundaryBlocks(2, radius);
         if (temperateMaxAbsZ <= temperateMinAbsZ) {
-            return false;
+            PaleGardenAnchor fallback = new PaleGardenAnchor(worldSeed, radius, sampler, 0, 0, false);
+            PALE_GARDEN_ANCHOR_CACHE = fallback;
+            return fallback;
         }
 
         int temperateSpan = temperateMaxAbsZ - temperateMinAbsZ;
         int temperateInset = Math.max(64, (int) Math.round(temperateSpan * PALE_GARDEN_REGION_TEMPERATE_INSET_FRAC));
         int minAnchorAbsZ = Math.min(temperateMaxAbsZ - 1, temperateMinAbsZ + temperateInset);
         int maxAnchorAbsZ = Math.max(minAnchorAbsZ, temperateMaxAbsZ - temperateInset);
-        int anchorAbsZ = minAnchorAbsZ
-                + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ PALE_GARDEN_REGION_ANCHOR_Z_SALT))
-                * (double) (maxAnchorAbsZ - minAnchorAbsZ + 1));
         int hemisphereSign = (mix64(worldSeed ^ PALE_GARDEN_REGION_HEMI_SALT) & 1L) == 0L ? 1 : -1;
-        int anchorZ = anchorAbsZ * hemisphereSign;
 
         int xInset = Math.max(512, (int) Math.round(radius * PALE_GARDEN_REGION_X_INSET_FRAC));
         int minAnchorX = -radius + xInset;
@@ -9036,9 +9065,68 @@ public final class LatitudeBiomes {
             minAnchorX = -radius / 3;
             maxAnchorX = radius / 3;
         }
-        int anchorX = minAnchorX
-                + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ PALE_GARDEN_REGION_ANCHOR_X_SALT))
-                * (double) (Math.max(1, maxAnchorX - minAnchorX + 1)));
+        int xSpan = Math.max(1, maxAnchorX - minAnchorX + 1);
+        int zSpan = Math.max(1, maxAnchorAbsZ - minAnchorAbsZ + 1);
+        int fallbackX = minAnchorX
+                + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ PALE_GARDEN_REGION_ANCHOR_X_SALT)) * (double) xSpan);
+        int fallbackAbsZ = minAnchorAbsZ
+                + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ PALE_GARDEN_REGION_ANCHOR_Z_SALT)) * (double) zSpan);
+        int fallbackZ = fallbackAbsZ * hemisphereSign;
+        int bestX = fallbackX;
+        int bestZ = fallbackZ;
+        int bestDistance = Integer.MIN_VALUE;
+
+        if (sampler != null) {
+            for (int candidateIndex = 0; candidateIndex < PALE_GARDEN_ANCHOR_CANDIDATE_COUNT; candidateIndex++) {
+                long sequence = 0x9E37_79B9_7F4A_7C15L * (long) candidateIndex;
+                int candidateX = candidateIndex == 0
+                        ? fallbackX
+                        : minAnchorX + (int) Math.floor(toUnitDouble(mix64(
+                        worldSeed ^ PALE_GARDEN_ANCHOR_CANDIDATE_SALT ^ sequence ^ PALE_GARDEN_REGION_ANCHOR_X_SALT)) * (double) xSpan);
+                int candidateAbsZ = candidateIndex == 0
+                        ? fallbackAbsZ
+                        : minAnchorAbsZ + (int) Math.floor(toUnitDouble(mix64(
+                        worldSeed ^ PALE_GARDEN_ANCHOR_CANDIDATE_SALT ^ Long.rotateLeft(sequence, 23) ^ PALE_GARDEN_REGION_ANCHOR_Z_SALT)) * (double) zSpan);
+                int candidateZ = candidateAbsZ * hemisphereSign;
+                int candidateOceanDistance = paleGardenAnchorClearance(candidateX, candidateZ, radius, sampler);
+                if (candidateOceanDistance > bestDistance) {
+                    bestDistance = candidateOceanDistance;
+                    bestX = candidateX;
+                    bestZ = candidateZ;
+                }
+                if (candidateOceanDistance >= PALE_GARDEN_MIN_OCEAN_DISTANCE_BLOCKS) {
+                    PaleGardenAnchor selected = new PaleGardenAnchor(worldSeed, radius, sampler, candidateX, candidateZ, true);
+                    PALE_GARDEN_ANCHOR_CACHE = selected;
+                    return selected;
+                }
+            }
+        }
+
+        PaleGardenAnchor fallback = new PaleGardenAnchor(worldSeed, radius, sampler, bestX, bestZ, false);
+        PALE_GARDEN_ANCHOR_CACHE = fallback;
+        return fallback;
+    }
+
+    private static int paleGardenAnchorClearance(int candidateX, int candidateZ, int radius, Climate.Sampler sampler) {
+        if (authoritativeLandBandIndex(candidateX, candidateZ, radius) != BAND_TEMPERATE) {
+            return -1;
+        }
+        double outerBaseRadius = Math.max(PALE_GARDEN_REGION_MIN_RADIUS_BLOCKS, radius * PALE_GARDEN_REGION_RADIUS_FRAC);
+        int probeOffset = Math.max(64, Math.min(256, (int) Math.round(
+                outerBaseRadius * PALE_GARDEN_CORE_RADIUS_FRAC * 0.50)));
+        int clearance = oceanDistanceBlocks(candidateX, candidateZ, sampler);
+        clearance = Math.min(clearance, oceanDistanceBlocks(candidateX + probeOffset, candidateZ, sampler));
+        clearance = Math.min(clearance, oceanDistanceBlocks(candidateX - probeOffset, candidateZ, sampler));
+        clearance = Math.min(clearance, oceanDistanceBlocks(candidateX, candidateZ + probeOffset, sampler));
+        clearance = Math.min(clearance, oceanDistanceBlocks(candidateX, candidateZ - probeOffset, sampler));
+        return clearance;
+    }
+
+    private static boolean paleGardenRegionHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint, Climate.Sampler sampler) {
+        PaleGardenAnchor anchor = paleGardenAnchor(worldSeed, effectiveRadiusHint, sampler);
+        int radius = anchor.radius();
+        int anchorX = anchor.x();
+        int anchorZ = anchor.z();
 
         double dx = (double) blockX - (double) anchorX;
         double dz = (double) blockZ - (double) anchorZ;
@@ -9061,39 +9149,11 @@ public final class LatitudeBiomes {
     // Tests whether the given block is inside the pale_garden INNER CORE, which is
     // nested at the same anchor center as the outer dark-forest container but uses
     // a proportionally smaller radius and lighter wobble amplitude.
-    private static boolean paleGardenCoreHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
-        int radius = effectiveRadiusHint > 0 ? effectiveRadiusHint : ACTIVE_RADIUS_BLOCKS;
-        if (radius <= 0) {
-            radius = REFERENCE_DIAMETER_BLOCKS / 2;
-        }
-        radius = Math.max(1, radius);
-
-        int temperateMinAbsZ = bandBoundaryBlocks(1, radius);
-        int temperateMaxAbsZ = bandBoundaryBlocks(2, radius);
-        if (temperateMaxAbsZ <= temperateMinAbsZ) {
-            return false;
-        }
-
-        int temperateSpan = temperateMaxAbsZ - temperateMinAbsZ;
-        int temperateInset = Math.max(64, (int) Math.round(temperateSpan * PALE_GARDEN_REGION_TEMPERATE_INSET_FRAC));
-        int minAnchorAbsZ = Math.min(temperateMaxAbsZ - 1, temperateMinAbsZ + temperateInset);
-        int maxAnchorAbsZ = Math.max(minAnchorAbsZ, temperateMaxAbsZ - temperateInset);
-        int anchorAbsZ = minAnchorAbsZ
-                + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ PALE_GARDEN_REGION_ANCHOR_Z_SALT))
-                * (double) (maxAnchorAbsZ - minAnchorAbsZ + 1));
-        int hemisphereSign = (mix64(worldSeed ^ PALE_GARDEN_REGION_HEMI_SALT) & 1L) == 0L ? 1 : -1;
-        int anchorZ = anchorAbsZ * hemisphereSign;
-
-        int xInset = Math.max(512, (int) Math.round(radius * PALE_GARDEN_REGION_X_INSET_FRAC));
-        int minAnchorX = -radius + xInset;
-        int maxAnchorX = radius - xInset;
-        if (maxAnchorX <= minAnchorX) {
-            minAnchorX = -radius / 3;
-            maxAnchorX = radius / 3;
-        }
-        int anchorX = minAnchorX
-                + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ PALE_GARDEN_REGION_ANCHOR_X_SALT))
-                * (double) (Math.max(1, maxAnchorX - minAnchorX + 1)));
+    private static boolean paleGardenCoreHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint, Climate.Sampler sampler) {
+        PaleGardenAnchor anchor = paleGardenAnchor(worldSeed, effectiveRadiusHint, sampler);
+        int radius = anchor.radius();
+        int anchorX = anchor.x();
+        int anchorZ = anchor.z();
 
         double dx = (double) blockX - (double) anchorX;
         double dz = (double) blockZ - (double) anchorZ;
