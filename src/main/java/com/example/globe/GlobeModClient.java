@@ -11,8 +11,6 @@ import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.GlobeWarningOverlay;
 import com.example.globe.client.LatitudeClientState;
 import com.example.globe.client.LatitudeHudStudioScreen;
-import com.example.globe.client.EwSandstormOverlayRenderer;
-import com.example.globe.client.EwStormWallRenderer;
 import com.example.globe.client.EwPresentationPolicy;
 import com.example.globe.dev.DevCaptureKeybind;
 import com.example.globe.dev.client.SeamAuditClientBridge;
@@ -22,7 +20,6 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.color.block.BlockTintSources;
@@ -98,11 +95,6 @@ public class GlobeModClient implements ClientModInitializer {
             com.example.globe.dev.AutoCreateWorldProbe.maybeRegister();
         }
 
-        LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(ctx -> {
-            if (!GlobeClientState.DEBUG_EW_WALL) return;
-            // Wall/overlay rendering happens in the HUD pass now to avoid POV seams.
-            return;
-        });
     }
 
     private static void registerPromenadePalmTintCompat(Minecraft client) {
