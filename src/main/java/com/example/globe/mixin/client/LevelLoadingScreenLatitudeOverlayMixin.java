@@ -40,7 +40,9 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique private static final int MUTED = 0xFF8C8078;
     @Unique private static final int GRID_COLOR = 0x14504840;
     @Unique private static final int GRID_STEP = 16;
-    @Unique private static final float globe$VERSION_LABEL_SCALE = 0.9f;
+    @Unique private static final float globe$VERSION_LABEL_SCALE = 0.67f;
+    @Unique private static final int globe$VERSION_LABEL_GAP = 2;
+    @Unique private static final int globe$VERSION_LABEL_SCREEN_MARGIN = 2;
     @Unique private static final String globe$VERSION_LABEL = FabricLoader.getInstance()
             .getModContainer(GlobeMod.MOD_ID)
             .map(container -> "v" + container.getMetadata().getVersion().getFriendlyString())
@@ -219,7 +221,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             context.fill(barX, barY, barX + fillW, barY + 3, GOLD);
         }
 
-        // Small, quiet build identity in the pane's bottom-right corner.
+        // Small, quiet build identity just below the pane's right edge.
         globe$drawVersionLabel(context, paneX, paneY, paneW, paneH);
     }
 
@@ -268,11 +270,16 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         if (globe$VERSION_LABEL.isEmpty()) {
             return;
         }
-        int margin = 4;
         float scaledWidth = this.font.width(globe$VERSION_LABEL) * globe$VERSION_LABEL_SCALE;
         float scaledHeight = this.font.lineHeight * globe$VERSION_LABEL_SCALE;
-        float x = paneX + paneW - scaledWidth - margin;
-        float y = paneY + paneH - scaledHeight - margin;
+        float paneRight = paneX + paneW;
+        float paneBottom = paneY + paneH;
+        float x = paneRight - scaledWidth;
+        float preferredY = paneBottom + globe$VERSION_LABEL_GAP;
+        float maxY = context.guiHeight() - scaledHeight - globe$VERSION_LABEL_SCREEN_MARGIN;
+        // Current pane geometry always reserves at least 20 px below the pane. The
+        // clamp keeps the label attached to the lower-right edge at compact heights.
+        float y = Math.min(preferredY, maxY);
         float drawX = x / globe$VERSION_LABEL_SCALE;
         float drawY = y / globe$VERSION_LABEL_SCALE;
         var matrices = context.pose();
