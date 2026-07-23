@@ -12,8 +12,13 @@ from pathlib import Path
 SOURCE_REL = Path("src/main/java/com/example/globe/world/LatitudeBiomes.java")
 CONSTANT_ID_NAMES = {"SWAMP_ID", "MANGROVE_ID"}
 # Structural tripwire for the current production callsite inventory. The lowland-Meadow
-# correction removed one constant predicate call; future changes require source provenance.
-EXPECTED_ACTIVE_CONSTANT_ID_CALLS = 205
+# correction left 205 calls; the accepted temperate-windswept ownership helper adds exactly
+# the two literal calls frozen below. Future changes require fresh source provenance.
+EXPECTED_ACTIVE_CONSTANT_ID_CALLS = 207
+EXPECTED_TEMPERATE_WINDSWEPT_IDS = [
+    '"minecraft:windswept_forest"',
+    '"minecraft:windswept_gravelly_hills"',
+]
 
 
 def extract_method(source: str, signature: str) -> str:
@@ -125,6 +130,21 @@ def main() -> int:
         not public_ids and source.count("isBiomeIdPublic(") == 1,
         f"public_wrapper_args={public_ids} definitions_or_calls={source.count('isBiomeIdPublic(')}",
     )
+    try:
+        windswept_helper = extract_method(
+            source,
+            "private static boolean isTemperateWindsweptVariant(Holder<Biome> biome)",
+        )
+        windswept_ids, windswept_public_ids = private_id_call_arguments(windswept_helper)
+        check(
+            "temperate_windswept_inventory_provenance",
+            windswept_ids == EXPECTED_TEMPERATE_WINDSWEPT_IDS
+            and not windswept_public_ids
+            and all(is_constant_id(argument) for argument in windswept_ids),
+            f"helper_calls={windswept_ids} helper_public={windswept_public_ids}",
+        )
+    except ValueError as error:
+        check("temperate_windswept_inventory_provenance", False, str(error))
     check(
         "no_beach_identifier_cache_calls",
         not re.search(r'isBiomeId\([^\n]*(?:beach|shore)', source),
