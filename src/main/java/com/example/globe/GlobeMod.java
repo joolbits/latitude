@@ -85,11 +85,6 @@ public class GlobeMod implements ModInitializer {
         HOPELESS
     }
 
-    private static PolarCapScrubber POLAR_SCRUBBER;
-
-    private static final boolean ENABLE_POLAR_SCRUBBER = false;
-
-
     private static final Identifier GLOBE_SETTINGS_ID = Identifier.fromNamespaceAndPath(MOD_ID, "overworld");
     private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.fromNamespaceAndPath(MOD_ID, "overworld_xsmall");
     private static final Identifier GLOBE_SETTINGS_SMALL_ID = Identifier.fromNamespaceAndPath(MOD_ID, "overworld_small");
@@ -125,7 +120,6 @@ public class GlobeMod implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(GlobeMod::applyWorldBorder);
         registerDevOnlyHeadlessRunner();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
-            POLAR_SCRUBBER = null;
             LatitudeBiomes.clearWorldgenContext();
         });
 
@@ -295,7 +289,6 @@ public class GlobeMod implements ModInitializer {
                 activeRadiusForCheck, LatitudeBiomes.getActiveRadiusBlocks());
 
         activePoleBandStartAbsZ = (int) Math.round(activeRadius * com.example.globe.util.LatitudeMath.POLAR_START_FRAC);
-        POLAR_SCRUBBER = ENABLE_POLAR_SCRUBBER ? new PolarCapScrubber(activeRadius, activePoleBandStartAbsZ) : null;
 
         GlobeMod.LOGGER.info("[Latitude] WorldBorder set: radius={} diameter={} center=0,0 polarStart={}",
                 borderRadiusBlocks, diameter, activePoleBandStartAbsZ);
