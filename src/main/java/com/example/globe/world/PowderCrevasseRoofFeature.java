@@ -2,100 +2,79 @@ package com.example.globe.world;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.core.LatitudeV2Flags;
-import com.example.globe.core.PowderRoofTrap;
+import com.example.globe.core.SubterraneanTrapLayout;
+import com.example.globe.core.SubterraneanTrapPlan;
 import com.mojang.serialization.Codec;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.tags.BlockTags;
-import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.WorldGenLevel;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FallingBlock;
+import net.minecraft.world.level.block.SnowLayerBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.feature.Feature;
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
 import net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConfiguration;
 
-import java.util.ArrayList;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.BiFunction;
+import java.util.function.BiPredicate;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
- * Phase 5 S36 HIDDEN-BRIDGE CREVASSE TRAP ({@code globe:powder_crevasse_roof}). Owner-corrected from the
- * S35 small-patch form after video proof showed that a trap must read as ordinary, nearly level snowfield
- * spanning a deep crevasse, not as a few powder blocks down inside an already-visible opening. Runs at the
- * TOP_LAYER_MODIFICATION decoration stage of {@code globe:polar_barrens}, i.e. AFTER carving (crevasses are
- * already cut), AFTER the glacier surface pass, and AFTER {@code minecraft:freeze_top_layer} (this feature is
- * appended LAST in that step's list) so the snowfield reference is final and nothing overwrites the roof.
- *
- * <p><b>Per chunk (bounded, no recursion):</b>
- * <ol>
- *   <li>Read WORLD_SURFACE_WG for the 16x16 columns of the decorating chunk (heightmap reads: fluids count,
- *       so a water-ponded slot reads its water top and is naturally excluded from the deep-shaft test).</li>
- *   <li>Per column, derive the snowfield REFERENCE = the maximum surface over a {@link
- *       PowderRoofTrap#REFERENCE_WINDOW_RADIUS}-radius window (a cut slot column's low floor never raises the
- *       max; the surrounding snowfield does), then mark it a candidate via {@link
- *       PowderRoofTrap#isTrapCandidate(int, int)} (window max at least {@link
- *       PowderRoofTrap#MIN_CANDIDATE_DEPTH_BLOCKS} above the column's own surface).</li>
- *   <li>S36 BRIDGE PASS (owner spec + independent level-designer review, 2026-07-21): flood-fill candidates,
- *       then select a contiguous, hole-free 12..48-column segment that is 3..7 columns across and remains
- *       wholly inside this chunk. Tiny lids, one-wide strips, and chunk-border fragments are invalid.</li>
- *   <li>WALK-ON PLANE: the cover is flat at the footprint's surrounding snowfield reference, never at a low
- *       shelf inside the opening, and at least one opposing bank pair must meet it within one normal terrain
- *       step. Every covered column must pass the 18-block final-depth gate or nothing is written.</li>
- *   <li>COVER + CUSHION (owner verbatim: "snow blocks are solid. You must cover traps with POWDER snow,
- *       and there must be a powder snow block directly vertically down at the base"): the cover is exactly ONE
- *       layer of {@code powder_snow} -- vanilla sink-through IS the trigger, no scripted event -- and EVERY
- *       covered column gets one powder cushion on solid non-fluid support. A vanilla surface snow layer at
- *       that exact landing cell is safely replaced; any other occupied cell rejects the whole plan.</li>
- *   <li>DEEP CAVE OPTION: a contained 3x3 throat may connect the bridge to an existing traversable cave, but
- *       only after every landing cell, support block, void block, and cushion is preflighted atomically.</li>
- * </ol>
- *
- * <p><b>Vanilla-first / flag honesty.</b> The feature is REGISTERED unconditionally at mod-init (registries
- * must be consistent across sessions; see {@link #register()}), but its BEHAVIOUR is gated on {@link
- * LatitudeV2Flags#POLAR_BARRENS_ENABLED} and {@link LatitudeV2Flags#GLACIAL_CAVES_V1_ENABLED}. Flag-off the
- * barrens biome never generates, and flag-off crevasses must never acquire synthetic trap shafts; the early
- * return keeps both contracts explicit. No custom carver/noise: it reads existing heightmaps.
+ * Bounded Polar Barrens powder-snow trap feature. Geometry and surface acceptance live in the pure
+ * {@link SubterraneanTrapLayout}/{@link SubterraneanTrapPlan} layers; this adapter performs only world reads,
+ * the complete preflight, and the already-ordered writes. No exposed-opening planner remains here.
  */
 public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfiguration> {
 
-    /** The registered singleton (populated by {@link #register()}), mirroring {@code PolarOutfitting}. */
     public static Feature<NoneFeatureConfiguration> INSTANCE;
 
     private static final BlockState POWDER_SNOW = Blocks.POWDER_SNOW.defaultBlockState();
-    /** Used to carve the deep-drop connecting shaft (open a roofed patch's floor down to a pre-carved cave). */
+    private static final BlockState SNOW_BLOCK = Blocks.SNOW_BLOCK.defaultBlockState();
+    private static final BlockState BLUE_ICE = Blocks.BLUE_ICE.defaultBlockState();
     private static final BlockState AIR = Blocks.AIR.defaultBlockState();
     private static final Identifier POLAR_BARRENS_ID =
             Identifier.fromNamespaceAndPath(GlobeMod.MOD_ID, "polar_barrens");
-    /** A 3x3 shaft alone is nine cells; sixteen standable cells proves the landing opens beyond its throat. */
-    private static final int MIN_TRAVERSABLE_LANDING_CELLS = 16;
-    /** Lava spreads four horizontal cells in the Overworld; a deep landing must sit outside that reach. */
-    private static final int LANDING_FLUID_CLEARANCE = 4;
-    /** A water source can advance seven horizontal cells; optional cave throats must stay outside that reach. */
-    private static final int SHAFT_WATER_CLEARANCE = 7;
-
-    /** S31 flight recorder ({@code -Dlatitude.debugCollapse=true}): the TEST 121 flight reported "0 matches /
-     *  never encountered a trap", so the feature now can NAME what it did per chunk — candidates seen, spans
-     *  rolled, sandwiches placed, deep drops punched — the same instrument-before-reclaiming law as debugFreeze. */
+    /** Maintained through CARVERS/FEATURES; WORLD_SURFACE_WG freezes before top-layer feature writes. */
+    static final Heightmap.Types FEATURE_STAGE_SURFACE_HEIGHTMAP = Heightmap.Types.WORLD_SURFACE;
     private static final boolean DEBUG = Boolean.getBoolean("latitude.debugCollapse");
-    /** S31: with DEBUG on, prove the feature RUNS at all (a candidates=0 chunk logs nothing, which is
-     *  indistinguishable from "never invoked" — this heartbeat names the difference every 64th call). */
     private static final java.util.concurrent.atomic.AtomicLong DEBUG_CALLS =
             new java.util.concurrent.atomic.AtomicLong();
+
+    private record WorldWrite(BlockPos position, BlockState state, SubterraneanTrapPlan.Phase phase) {
+    }
+
+    private record RuntimeCandidate(SubterraneanTrapPlan.Plan plan, List<WorldWrite> writes) {
+    }
+
+    record PlanSelection<T>(T candidate, int placementOrdinal, int depth, int routeOrdinal) {
+    }
+
+    private record ApplyResult(boolean succeeded, int completedSurfaceCovers, int completedRevealRemovals) {
+    }
+
+    private record SurfaceSnapshotCounts(int thinOverFull, int thinOther, int fullSnow, int powder, int other) {
+    }
 
     public PowderCrevasseRoofFeature(Codec<NoneFeatureConfiguration> codec) {
         super(codec);
     }
 
-    /**
-     * Register {@code globe:powder_crevasse_roof} into {@link BuiltInRegistries#FEATURE}. Called
-     * UNCONDITIONALLY from {@code GlobeMod.onInitialize} during the mod-init window, before registry freeze
-     * (the FEATURE registry is a bootstrap registry frozen early -- a datapack {@code configured_feature}
-     * referencing an unregistered type would hard-fail at load). Idempotent per JVM by registry contract.
-     */
+    /** Registers {@code globe:powder_crevasse_roof} unconditionally during mod initialization. */
     public static void register() {
         INSTANCE = Registry.register(
                 BuiltInRegistries.FEATURE,
@@ -105,585 +84,1109 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
 
     @Override
     public boolean place(FeaturePlaceContext<NoneFeatureConfiguration> ctx) {
-        if (!LatitudeV2Flags.POLAR_BARRENS_ENABLED || !LatitudeV2Flags.GLACIAL_CAVES_V1_ENABLED) {
-            return false; // no barrens or no crevasse carver: no trap behavior.
-        }
-        if (DEBUG) {
-            long n = DEBUG_CALLS.incrementAndGet();
-            if (n == 1L || n % 64L == 0L) {
-                GlobeMod.LOGGER.info("[LAT][COLLAPSE] alive calls={} at chunk=({},{})",
-                        n, ctx.origin().getX() >> 4, ctx.origin().getZ() >> 4);
-            }
-        }
         WorldGenLevel level = ctx.level();
-        BlockPos origin = ctx.origin();
-        // Snap to the decorating chunk's min corner so the 16x16 scan never straddles two chunks (in_square
-        // offsets the single origin randomly within the chunk).
-        int baseX = (origin.getX() >> 4) << 4;
-        int baseZ = (origin.getZ() >> 4) << 4;
+        int baseX = (ctx.origin().getX() >> 4) << 4;
+        int baseZ = (ctx.origin().getZ() >> 4) << 4;
+        int chunkX = baseX >> 4;
+        int chunkZ = baseZ >> 4;
+        if (!LatitudeV2Flags.POLAR_BARRENS_ENABLED || !LatitudeV2Flags.GLACIAL_CAVES_V1_ENABLED) {
+            PowderTrapWorldSafetyTelemetry telemetry = new PowderTrapWorldSafetyTelemetry();
+            debugRow(chunkX, chunkZ, SubterraneanTrapLayout.chunkGate(level.getSeed(), chunkX, chunkZ),
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "none",
+                    telemetry, PowderTrapWorldSafetyResult.notChecked(),
+                    new SurfaceSnapshotCounts(0, 0, 0, 0, 0));
+            return false;
+        }
 
-        // WORLD_SURFACE_WG per column (this is LevelReader.getHeight = firstAir = topSolid + 1). We keep the
-        // "first air" convention throughout: reference/own surfaces subtract identically so the depth is
-        // unaffected, and the powder roof lands at referenceFirstAir - 1 = the snowfield's own top-block Y.
         int[][] surfaceFirstAir = new int[16][16];
-        for (int lx = 0; lx < 16; lx++) {
-            for (int lz = 0; lz < 16; lz++) {
-                surfaceFirstAir[lx][lz] =
-                        level.getHeight(Heightmap.Types.WORLD_SURFACE_WG, baseX + lx, baseZ + lz);
+        int[][] surfaceKind = new int[16][16];
+        BlockState[][] surfaceSupportSnapshot = new BlockState[16][16];
+        BlockState[][] surfaceLayerSnapshot = new BlockState[16][16];
+        int thinOverFull = 0;
+        int thinOther = 0;
+        int fullSnow = 0;
+        int powder = 0;
+        int other = 0;
+        for (int localX = 0; localX < 16; localX++) {
+            for (int localZ = 0; localZ < 16; localZ++) {
+                int firstAir = level.getHeight(FEATURE_STAGE_SURFACE_HEIGHTMAP, baseX + localX, baseZ + localZ);
+                BlockPos topPos = new BlockPos(baseX + localX, firstAir - 1, baseZ + localZ);
+                BlockState top = level.getBlockState(topPos);
+                BlockPos supportPos = topPos.below();
+                BlockState support = level.getBlockState(supportPos);
+                if (top.is(Blocks.SNOW) && certifiedThinSupport(level, supportPos, support)) {
+                    // The visible layer is cosmetic relief. Plan against its exact certified support and remove
+                    // only the layer over powder-replaced cells, after every powder replacement has succeeded.
+                    surfaceFirstAir[localX][localZ] = firstAir - 1;
+                    surfaceKind[localX][localZ] = support.is(Blocks.SNOW_BLOCK)
+                            ? SubterraneanTrapPlan.THIN_OVER_FULL_SNOW
+                            : SubterraneanTrapPlan.THIN_SNOW;
+                    surfaceSupportSnapshot[localX][localZ] = support;
+                    surfaceLayerSnapshot[localX][localZ] = top;
+                    if (support.is(Blocks.SNOW_BLOCK)) {
+                        thinOverFull++;
+                    } else {
+                        thinOther++;
+                    }
+                } else {
+                    surfaceFirstAir[localX][localZ] = firstAir;
+                    surfaceKind[localX][localZ] = surfaceKind(top);
+                    surfaceSupportSnapshot[localX][localZ] = top;
+                    if (surfaceKind[localX][localZ] == SubterraneanTrapPlan.FULL_SNOW) {
+                        fullSnow++;
+                    } else if (surfaceKind[localX][localZ] == SubterraneanTrapPlan.POWDER) {
+                        powder++;
+                    } else {
+                        other++;
+                    }
+                }
+            }
+        }
+        SurfaceSnapshotCounts surfaceCounts =
+                new SurfaceSnapshotCounts(thinOverFull, thinOther, fullSnow, powder, other);
+
+        int rejectFirstAir = 0;
+        int rejectRing = 0;
+        int rejectSurface = 0;
+        int rejectDepth = 0;
+        int eligiblePlacements = 0;
+        List<SubterraneanTrapPlan.Plan> acceptedPlans = new ArrayList<>();
+        List<SubterraneanTrapLayout.Placement> placements =
+                SubterraneanTrapLayout.placements(level.getSeed(), chunkX, chunkZ);
+        for (SubterraneanTrapLayout.Placement placement : placements) {
+            SubterraneanTrapPlan.Result result = SubterraneanTrapPlan.plan(placement, surfaceFirstAir, surfaceKind);
+            if (result.isAccepted()) {
+                eligiblePlacements++;
+                acceptedPlans.add(result.accepted());
+            } else {
+                switch (result.rejection()) {
+                    case POWDER_RELIEF_EXCEEDS_ONE -> rejectFirstAir++;
+                    case APPROACH_RING_UNSTABLE -> rejectRing++;
+                    case UNSUPPORTED_SURFACE -> rejectSurface++;
+                    case DEPTH_OUTSIDE_HARD_LIMIT, DEPTH_OUTSIDE_LEGAL_RANGE,
+                            ESCAPE_ELEVATION_CAPACITY, ESCAPE_OWNER_BOUNDS -> rejectDepth++;
+                    case INVALID_INPUT -> rejectSurface++;
+                }
             }
         }
 
-        // Per-column snowfield reference (windowed local max) + candidate mask (unchanged since V1).
-        int[][] reference = new int[16][16];
-        boolean[][] candidate = new boolean[16][16];
-        int r = PowderRoofTrap.REFERENCE_WINDOW_RADIUS;
-        for (int lx = 0; lx < 16; lx++) {
-            for (int lz = 0; lz < 16; lz++) {
-                int max = surfaceFirstAir[lx][lz];
-                for (int wx = Math.max(0, lx - r); wx <= Math.min(15, lx + r); wx++) {
-                    for (int wz = Math.max(0, lz - r); wz <= Math.min(15, lz + r); wz++) {
-                        if (surfaceFirstAir[wx][wz] > max) {
-                            max = surfaceFirstAir[wx][wz];
-                        }
+        // The final occurrence gate is intentionally delayed until every pure template has been calibrated for DEBUG.
+        boolean gate = SubterraneanTrapLayout.chunkGate(level.getSeed(), chunkX, chunkZ);
+        int writeFailure = 0;
+        int encounters = 0;
+        int powderCovers = 0;
+        int cushions = 0;
+        int clearWrites = 0;
+        int partialSurfaceCovers = 0;
+        int partialRevealRemovals = 0;
+        int drop = acceptedPlans.isEmpty() ? 0
+                : acceptedPlans.getFirst().roofY() - acceptedPlans.getFirst().landingY();
+        String firstPowder = "none";
+        PowderTrapWorldSafetyTelemetry telemetry = new PowderTrapWorldSafetyTelemetry();
+        PowderTrapWorldSafetyResult[] firstWorldSafety = {PowderTrapWorldSafetyResult.notChecked()};
+        int[] worldSafetyRejections = {0};
+
+        PlanSelection<RuntimeCandidate> selection = selectFirstSafePlan(
+                gate ? placements.size() : 0,
+                (placementIndex, depth) -> cushionBaseAnchorEligible(
+                        level, placements.get(placementIndex), surfaceFirstAir, depth, baseX, baseZ),
+                (placementIndex, depth) -> SubterraneanTrapPlan.planAlternatives(
+                                placements.get(placementIndex), surfaceFirstAir, surfaceKind, depth).stream()
+                        .map(plan -> new RuntimeCandidate(plan, translate(plan, baseX, baseZ)))
+                        .toList(),
+                candidate -> {
+                    PowderTrapWorldSafetyResult attempt = worldSafe(
+                            level, candidate.plan().escapeRoute(), candidate.writes(),
+                            surfaceFirstAir, surfaceKind, surfaceSupportSnapshot, surfaceLayerSnapshot, baseX, baseZ);
+                    telemetry.record(attempt);
+                    if (firstWorldSafety[0].reason() == PowderTrapWorldSafetyFailure.NOT_CHECKED) {
+                        firstWorldSafety[0] = attempt;
                     }
-                }
-                reference[lx][lz] = max;
-                candidate[lx][lz] = PowderRoofTrap.isTrapCandidate(surfaceFirstAir[lx][lz], max);
+                    if (!attempt.isSafe()) {
+                        worldSafetyRejections[0]++;
+                    }
+                    return attempt.isSafe();
+                });
+
+        int selectedPlacementOrdinal = selection == null ? 0 : selection.placementOrdinal();
+        int selectedDepth = selection == null ? 0 : selection.depth();
+        int selectedRouteOrdinal = selection == null ? 0 : selection.routeOrdinal();
+        if (selection != null) {
+            RuntimeCandidate selected = selection.candidate();
+            SubterraneanTrapPlan.Plan candidate = selected.plan();
+            List<WorldWrite> writes = selected.writes();
+            drop = candidate.roofY() - candidate.landingY();
+            // Selection and every complete safety preflight are finished before this sole mutation boundary.
+            // Whether apply succeeds or reports a partial batch, no alternative is inspected afterward.
+            ApplyResult applied = apply(level, writes);
+            if (!applied.succeeded()) {
+                writeFailure++;
+                partialSurfaceCovers = applied.completedSurfaceCovers();
+                partialRevealRemovals = applied.completedRevealRemovals();
+            } else {
+                encounters = 1;
+                powderCovers = count(writes, SubterraneanTrapPlan.Phase.SURFACE_POWDER);
+                cushions = count(writes, SubterraneanTrapPlan.Phase.CUSHION);
+                clearWrites = count(writes, SubterraneanTrapPlan.Phase.CLEAR);
+                WorldWrite firstSurface = writes.stream()
+                        .filter(write -> write.phase() == SubterraneanTrapPlan.Phase.SURFACE_POWDER)
+                        .findFirst().orElseThrow();
+                firstPowder = firstSurface.position().getX() + "," + firstSurface.position().getY()
+                        + "," + firstSurface.position().getZ();
             }
         }
 
-        // S36 HIDDEN-BRIDGE PASS (Peetsa correction + independent level-design review, 2026-07-21).
-        // Each accepted footprint is one atomic local bridge: meaningful area/width, no holes, aligned
-        // opposing banks, all columns deep and safe, and every write preflighted before the first mutation.
-        boolean placedAny = false;
-        int patchesRoofed = 0;
-        int placedCovers = 0;
-        int shaftsPunched = 0;
-        int componentsSeen = 0;
-        int footprintRejects = 0;
-        int approachRejects = 0;
-        int depthRejects = 0;
-        int safetyRejects = 0;
-        int bankAccessRejects = 0;
-        int biomeRejects = 0;
-        int floorRejects = 0;
-        int cushionRejects = 0;
-        int roofBlockRejects = 0;
-        int firstCoverX = Integer.MIN_VALUE;
-        int firstCoverY = 0;
-        int firstCoverZ = 0;
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-        for (List<int[]> component : PowderRoofTrap.floodFillPatches(candidate)) {
-            componentsSeen++;
-
-            // A local encounter never writes the chunk border. A through-running crevasse may continue past
-            // the bridge's long ends, but may not be cut across its narrow axis: that would be a partial lid,
-            // not an authored crossing. The one-block border also makes adjacent chunk passes non-overlapping.
-            List<List<int[]>> footprintCandidates = PowderRoofTrap.bridgeFootprintCandidates(component);
-            if (footprintCandidates.isEmpty()) {
-                footprintRejects++;
-                continue;
-            }
-            for (List<int[]> clipped : footprintCandidates) {
-                List<Integer> snowfieldReferences = new ArrayList<>();
-                for (int[] c : clipped) {
-                    snowfieldReferences.add(reference[c[0]][c[1]]);
-                }
-
-                // Record every cardinal bank separately, then select the locally referenced snowfield plane with
-                // the strongest cardinal OR diagonal opposing pair. A low shelf is never a candidate plane.
-                List<Integer> northBank = new ArrayList<>();
-                List<Integer> southBank = new ArrayList<>();
-                List<Integer> westBank = new ArrayList<>();
-                List<Integer> eastBank = new ArrayList<>();
-                for (int[] c : clipped) {
-                    if (!candidate[c[0]][c[1] - 1]) {
-                        northBank.add(surfaceFirstAir[c[0]][c[1] - 1]);
-                    }
-                    if (!candidate[c[0]][c[1] + 1]) {
-                        southBank.add(surfaceFirstAir[c[0]][c[1] + 1]);
-                    }
-                    if (!candidate[c[0] - 1][c[1]]) {
-                        westBank.add(surfaceFirstAir[c[0] - 1][c[1]]);
-                    }
-                    if (!candidate[c[0] + 1][c[1]]) {
-                        eastBank.add(surfaceFirstAir[c[0] + 1][c[1]]);
-                    }
-                }
-                int roofY = PowderRoofTrap.selectSnowfieldRoofY(
-                        snowfieldReferences, northBank, southBank, westBank, eastBank);
-                if (roofY == Integer.MIN_VALUE) {
-                    approachRejects++;
-                    bankAccessRejects++;
-                    continue;
-                }
-
-                // Plan every landing against the FINAL snowfield plane. Existing deep floors stay untouched;
-                // shallow terraced shoulders may deepen by at most eight replaceable blocks. This widens a real
-                // crevasse mouth without inventing a shaft in intact ground. One impossible column rejects all.
-                int[][] landingFirstAir = new int[16][16];
-                boolean landingPlanValid = true;
-                for (int[] c : clipped) {
-                    int planned = PowderRoofTrap.plannedLandingFirstAir(
-                            surfaceFirstAir[c[0]][c[1]], roofY);
-                    if (planned == Integer.MIN_VALUE) {
-                        landingPlanValid = false;
-                        break;
-                    }
-                    landingFirstAir[c[0]][c[1]] = planned;
-                }
-                if (!landingPlanValid) {
-                    depthRejects++;
-                    continue;
-                }
-
-                // Optional deep cave connection. Every accepted bridge may look; actual placement still requires
-                // a contained 3x3 throat, a traversable void, solid non-fluid support beneath every final cushion,
-                // and a final landing at least as deep as the bridge contract.
-                int shaftSide = PowderRoofTrap.shaftSide(PowderRoofTrap.patchMinorDimension(clipped));
-                int shaftMinX = Integer.MIN_VALUE;
-                int shaftMinZ = Integer.MIN_VALUE;
-                int voidBottom = Integer.MIN_VALUE;
-                int bestFinalDepth = -1;
-                for (int[] c : clipped) {
-                    int proposedMinX = c[0] - shaftSide / 2;
-                    int proposedMinZ = c[1] - shaftSide / 2;
-                    if (!PowderRoofTrap.containsSquare(clipped, proposedMinX, proposedMinZ, shaftSide)) {
-                        continue;
-                    }
-                    int siteFloorY = surfaceFirstAir[c[0]][c[1]] - 1;
-                    int localBottom = Integer.MIN_VALUE;
-                    int run = 0;
-                    for (int y = siteFloorY - 1; y >= siteFloorY - PowderRoofTrap.DEEP_DROP_PROBE_DEPTH; y--) {
-                        cursor.set(baseX + c[0], y, baseZ + c[1]);
-                        if (level.getBlockState(cursor).isAir()) {
-                            run++;
-                            localBottom = y;
-                        } else if (PowderRoofTrap.qualifiesDeepDrop(run)) {
-                            break;
-                        } else {
-                            run = 0;
-                            localBottom = Integer.MIN_VALUE;
-                        }
-                    }
-                    int finalDepth = localBottom == Integer.MIN_VALUE ? -1 : (roofY + 1) - localBottom;
-                    if (!PowderRoofTrap.qualifiesDeepDrop(run)
-                            || !PowderRoofTrap.deepDropDepthEligible(finalDepth)
-                            || finalDepth <= bestFinalDepth
-                            || !globe$voidTraversable(level, cursor, baseX + c[0], baseZ + c[1], localBottom)
-                            || !globe$landingFluidSafe(level, cursor, baseX, baseZ,
-                                    proposedMinX, proposedMinZ, shaftSide, localBottom)
-                            || !globe$shaftPathSafe(level, cursor, baseX, baseZ,
-                                    proposedMinX, proposedMinZ, shaftSide, surfaceFirstAir,
-                                    localBottom, roofY)) {
-                        continue;
-                    }
-                    bestFinalDepth = finalDepth;
-                    shaftMinX = proposedMinX;
-                    shaftMinZ = proposedMinZ;
-                    voidBottom = localBottom;
-                }
-                boolean shaftQualified = shaftMinX != Integer.MIN_VALUE;
-
-                // Atomic preflight: biome membership, final landing support, every deepened block, cover air,
-                // throat air, and cushion target must all be valid before the first change. A single failure
-                // rejects the encounter; there are no late windows, partial pits, or orphan cushions.
-                boolean safe = true;
-                for (int[] c : clipped) {
-                    int lx = c[0];
-                    int lz = c[1];
-                    int own = surfaceFirstAir[lx][lz];
-                    int worldX = baseX + lx;
-                    int worldZ = baseZ + lz;
-                    if (!globe$isPolarBarrens(level, cursor, worldX, roofY + 1, worldZ)) {
-                        biomeRejects++;
-                        safe = false;
-                        break;
-                    }
-                    // Validate the ordinary landing for every column even when a cave throat is tentatively
-                    // selected. If the optional extension proves wet below, the complete bridge must still be
-                    // able to fall back atomically to these ordinary landings.
-                    int landing = landingFirstAir[lx][lz];
-                    if (!globe$landingLavaSafe(level, cursor, worldX, worldZ, landing)) {
-                        cushionRejects++;
-                        safe = false;
-                        break;
-                    }
-                    cursor.set(worldX, landing - 1, worldZ);
-                    BlockState support = level.getBlockState(cursor);
-                    if (support.isAir() || !support.getFluidState().isEmpty()) {
-                        floorRejects++;
-                        safe = false;
-                        break;
-                    }
-                    for (int y = landing; y < roofY; y++) {
-                        cursor.set(worldX, y, worldZ);
-                        BlockState path = level.getBlockState(cursor);
-                        if (!path.getFluidState().isEmpty()
-                                || (!path.isAir() && !path.is(Blocks.SNOW)
-                                        && (y >= own || !path.is(BlockTags.OVERWORLD_CARVER_REPLACEABLES)))) {
-                            cushionRejects++;
-                            safe = false;
-                            break;
-                        }
-                    }
-                    if (!safe) {
-                        break;
-                    }
-                    cursor.set(worldX, roofY, worldZ);
-                    boolean roofAir = level.getBlockState(cursor).isAir();
-                    cursor.set(worldX, roofY - 1, worldZ);
-                    boolean underAir = level.getBlockState(cursor).isAir();
-                    if (!roofAir || !underAir) {
-                        roofBlockRejects++;
-                        safe = false;
-                        break;
-                    }
-                }
-                if (!safe) {
-                    safetyRejects++;
-                    continue;
-                }
-
-                // A locally dry path can still be invaded after chunk promotion by side water and then freeze
-                // into a shallow ice shelf. Follow actual passable space backwards from the complete planned
-                // fall volume; solid walls remain barriers. A wet ordinary volume rejects this footprint so the
-                // planner can try the next segment. Wetness confined to the deeper cave extension discards only
-                // that optional extension and retains the independently verified ordinary bridge.
-                if (!globe$fallVolumeFluidIsolated(level, cursor, baseX, baseZ, clipped,
-                        landingFirstAir, roofY, Integer.MIN_VALUE, Integer.MIN_VALUE, 0, Integer.MIN_VALUE)) {
-                    cushionRejects++;
-                    safetyRejects++;
-                    continue;
-                }
-                if (shaftQualified && !globe$fallVolumeFluidIsolated(level, cursor, baseX, baseZ, clipped,
-                        landingFirstAir, roofY, shaftMinX, shaftMinZ, shaftSide, voidBottom)) {
-                    shaftQualified = false;
-                    shaftMinX = Integer.MIN_VALUE;
-                    shaftMinZ = Integer.MIN_VALUE;
-                    voidBottom = Integer.MIN_VALUE;
-                }
-
-                // All guards are green: write the complete plan. Non-shaft columns receive a landing cushion after
-                // any bounded shoulder deepening; shaft columns share a fully preflighted cave landing.
-                for (int[] c : clipped) {
-                    int lx = c[0];
-                    int lz = c[1];
-                    boolean inShaft = shaftQualified
-                            && lx >= shaftMinX && lx < shaftMinX + shaftSide
-                            && lz >= shaftMinZ && lz < shaftMinZ + shaftSide;
-                    if (!inShaft) {
-                        int landing = landingFirstAir[lx][lz];
-                        for (int y = roofY - 1; y > landing; y--) {
-                            cursor.set(baseX + lx, y, baseZ + lz);
-                            if (!level.getBlockState(cursor).isAir()) {
-                                setBlock(level, cursor, AIR);
-                            }
-                        }
-                        cursor.set(baseX + lx, landing, baseZ + lz);
-                        setBlock(level, cursor, POWDER_SNOW);
-                    }
-                }
-                if (shaftQualified) {
-                    for (int cx = shaftMinX; cx < shaftMinX + shaftSide; cx++) {
-                        for (int cz = shaftMinZ; cz < shaftMinZ + shaftSide; cz++) {
-                            int wx2 = baseX + cx;
-                            int wz2 = baseZ + cz;
-                            for (int y = roofY - 1; y > voidBottom; y--) {
-                                cursor.set(wx2, y, wz2);
-                                if (!level.getBlockState(cursor).isAir()) {
-                                    setBlock(level, cursor, AIR);
-                                }
-                            }
-                            cursor.set(wx2, voidBottom, wz2);
-                            setBlock(level, cursor, POWDER_SNOW);
-                        }
-                    }
-                    shaftsPunched++;
-                }
-                for (int[] c : clipped) {
-                    int worldX = baseX + c[0];
-                    int worldZ = baseZ + c[1];
-                    cursor.set(worldX, roofY, worldZ);
-                    setBlock(level, cursor, POWDER_SNOW);
-                    if (firstCoverX == Integer.MIN_VALUE) {
-                        firstCoverX = worldX;
-                        firstCoverY = roofY;
-                        firstCoverZ = worldZ;
-                    }
-                }
-                placedAny = true;
-                patchesRoofed++;
-                placedCovers += clipped.size();
-                break; // at most one authored encounter per natural component in this chunk.
-            }
-        }
-
-        if (DEBUG) {
-            int candidates = 0;
-            for (int lx = 0; lx < 16; lx++) {
-                for (int lz = 0; lz < 16; lz++) {
-                    if (candidate[lx][lz]) {
-                        candidates++;
-                    }
-                }
-            }
-            if (candidates > 0 || placedAny) {
-                GlobeMod.LOGGER.info("[LAT][COLLAPSE] chunk=({},{}) candidates={} components={} encounters={} covers={} shafts={} rejectFootprint={} rejectApproach={} rejectBankAccess={} rejectDepth={} rejectSafety={} rejectBiome={} rejectFloor={} rejectCushion={} rejectRoofBlock={} firstCover={},{},{}",
-                        baseX >> 4, baseZ >> 4, candidates, componentsSeen, patchesRoofed, placedCovers,
-                        shaftsPunched, footprintRejects, approachRejects, bankAccessRejects, depthRejects,
-                        safetyRejects, biomeRejects, floorRejects,
-                        cushionRejects, roofBlockRejects,
-                        firstCoverX, firstCoverY, firstCoverZ);
-            }
-        }
-        return placedAny;
+        int rejectWorldSafety = worldSafetyRejections[0];
+        PowderTrapWorldSafetyResult worldSafety = firstWorldSafety[0];
+        debugRow(chunkX, chunkZ, gate, eligiblePlacements, rejectFirstAir, rejectRing, rejectSurface, rejectDepth,
+                rejectWorldSafety, writeFailure, encounters, powderCovers, cushions, clearWrites,
+                partialSurfaceCovers, partialRevealRemovals, drop,
+                selectedPlacementOrdinal, selectedDepth, selectedRouteOrdinal, firstPowder,
+                telemetry, worldSafety, surfaceCounts);
+        return encounters == 1;
     }
 
-    private static boolean globe$isPolarBarrens(WorldGenLevel level, BlockPos.MutableBlockPos cursor,
-            int worldX, int y, int worldZ) {
-        cursor.set(worldX, y, worldZ);
-        return level.getBiome(cursor).unwrapKey()
+    static <T> PlanSelection<T> selectFirstSafePlan(
+            int placementCount, BiPredicate<Integer, Integer> anchorEligible,
+            BiFunction<Integer, Integer, List<T>> planFactory, Predicate<T> worldSafe) {
+        if (placementCount <= 0 || anchorEligible == null || planFactory == null || worldSafe == null) {
+            return null;
+        }
+        for (int placementIndex = 0; placementIndex < placementCount; placementIndex++) {
+            for (int depth : SubterraneanTrapPlan.preferredDepthOrder()) {
+                if (!anchorEligible.test(placementIndex, depth)) {
+                    continue;
+                }
+                List<T> alternatives = planFactory.apply(placementIndex, depth);
+                if (alternatives == null || alternatives.isEmpty()) {
+                    continue;
+                }
+                int attemptLimit = Math.min(34, alternatives.size());
+                for (int routeIndex = 0; routeIndex < attemptLimit; routeIndex++) {
+                    T candidate = alternatives.get(routeIndex);
+                    if (candidate != null && worldSafe.test(candidate)) {
+                        return new PlanSelection<>(
+                                candidate, placementIndex + 1, depth, routeIndex + 1);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static void debugRow(int chunkX, int chunkZ, boolean gate, int eligiblePlacements, int rejectFirstAir,
+                                 int rejectRing, int rejectSurface, int rejectDepth, int rejectWorldSafety,
+                                 int writeFailure, int encounters, int powderCovers, int cushions, int clearWrites,
+                                 int partialSurfaceCovers, int partialRevealRemovals, int drop,
+                                 int selectedPlacementOrdinal, int selectedDepth, int selectedRouteOrdinal,
+                                 String firstPowder,
+                                 PowderTrapWorldSafetyTelemetry telemetry, PowderTrapWorldSafetyResult worldSafety,
+                                 SurfaceSnapshotCounts surfaceCounts) {
+        if (!DEBUG) {
+            return;
+        }
+        long call = DEBUG_CALLS.incrementAndGet();
+        GlobeMod.LOGGER.info("[LAT][SUBTERRANEAN] call={} chunk=({},{}) gate={} preferredDepthCensus={} "
+                        + "preferredDepthEligiblePlacements={} preferredDepthRejectFirstAir={} "
+                        + "preferredDepthRejectRing={} preferredDepthRejectSurface={} preferredDepthRejectDepth={} "
+                        + "rejectWorldSafety={} "
+                        + "writeFailure={} encounters={} powderCovers={} cushions={} clearWrites={} "
+                        + "partialSurfaceCovers={} partialRevealRemovals={} drop={} firstPowder={} "
+                        + "selectedPlacementOrdinal={} selectedDepth={} selectedRouteOrdinal={} "
+                        + "worldSafetyAttempts={} worldSafetyAcceptedAttempt={} worldSafetyReasonCounts={} "
+                        + "worldSafetyReasonSemantics=first_failure worldSafetyReason={} "
+                        + "worldSafetyPos={} worldSafetyState={} "
+                        + "thinOverFull={} thinOther={} fullSnow={} powder={} other={}",
+                call, chunkX, chunkZ, gate, SubterraneanTrapPlan.PREFERRED_DEPTH,
+                eligiblePlacements, rejectFirstAir, rejectRing, rejectSurface,
+                rejectDepth, rejectWorldSafety, writeFailure, encounters, powderCovers, cushions, clearWrites,
+                partialSurfaceCovers, partialRevealRemovals, drop, firstPowder,
+                selectedPlacementOrdinal, selectedDepth, selectedRouteOrdinal, telemetry.attempts(),
+                telemetry.acceptedAttempt(), telemetry.encodedReasonCounts(), worldSafety.reason(),
+                worldSafety.position(), worldSafety.state(), surfaceCounts.thinOverFull(), surfaceCounts.thinOther(),
+                surfaceCounts.fullSnow(), surfaceCounts.powder(), surfaceCounts.other());
+    }
+
+    private static int surfaceKind(BlockState state) {
+        if (state.is(Blocks.SNOW_BLOCK)) {
+            return SubterraneanTrapPlan.FULL_SNOW;
+        }
+        if (state.is(Blocks.POWDER_SNOW)) {
+            return SubterraneanTrapPlan.POWDER;
+        }
+        // A visible snow layer is accepted only by the caller-certified branch in place(), never by block id
+        // alone: its hidden support must be dry, stable, entity-free, replaceable, and snapshotted exactly.
+        return SubterraneanTrapPlan.OTHER;
+    }
+
+    private static List<WorldWrite> translate(SubterraneanTrapPlan.Plan plan, int baseX, int baseZ) {
+        List<WorldWrite> writes = new ArrayList<>(plan.writes().size());
+        for (SubterraneanTrapPlan.Write write : plan.writes()) {
+            BlockState desired = switch (write.phase()) {
+                case CUSHION, SURFACE_POWDER -> POWDER_SNOW;
+                case CUSHION_BASE -> BLUE_ICE;
+                case ESCAPE_FLOOR, ESCAPE_MINE_TAIL -> SNOW_BLOCK;
+                case CLEAR, ESCAPE_CLEAR, REMOVE_SURFACE_LAYER -> AIR;
+            };
+            writes.add(new WorldWrite(new BlockPos(baseX + write.x(), write.y(), baseZ + write.z()), desired,
+                    write.phase()));
+        }
+        return writes;
+    }
+
+    private static boolean cushionBaseAnchorEligible(
+            WorldGenLevel level, SubterraneanTrapLayout.Placement placement,
+            int[][] firstAir, int depth, int baseX, int baseZ) {
+        List<SubterraneanTrapLayout.Cell> powder = placement.powder().stream()
+                .sorted(java.util.Comparator.comparingInt(SubterraneanTrapLayout.Cell::x)
+                        .thenComparingInt(SubterraneanTrapLayout.Cell::z))
+                .toList();
+        if (powder.isEmpty()) {
+            return false;
+        }
+        int roofY = powder.stream()
+                .mapToInt(cell -> firstAir[cell.x()][cell.z()] - 1)
+                .min().orElseThrow();
+        int landingY = roofY - depth;
+        Map<BlockPos, WorldWrite> bases = new HashMap<>();
+        for (SubterraneanTrapLayout.Cell cell : powder) {
+            BlockPos pos = new BlockPos(baseX + cell.x(), landingY - 1, baseZ + cell.z());
+            BlockState current = level.getBlockState(pos);
+            PowderTrapWorldSafetyLaw.CushionBaseAction action =
+                    PowderTrapWorldSafetyLaw.cushionBaseAction(
+                            current.isAir(), current.blocksMotion(), !current.getFluidState().isEmpty(),
+                            level.getBlockEntity(pos) != null, isGravity(current), level.ensureCanWrite(pos));
+            if (action == PowderTrapWorldSafetyLaw.CushionBaseAction.REJECT) {
+                return false;
+            }
+            BlockState finalState = action == PowderTrapWorldSafetyLaw.CushionBaseAction.PRESERVE_EXISTING
+                    ? current
+                    : BLUE_ICE;
+            if (bases.put(pos, new WorldWrite(
+                    pos, finalState, SubterraneanTrapPlan.Phase.CUSHION_BASE)) != null) {
+                return false;
+            }
+        }
+        return cushionBaseAnchorSafety(level, bases).isSafe();
+    }
+
+    private static PowderTrapWorldSafetyResult worldSafe(WorldGenLevel level,
+                                                         SubterraneanTrapPlan.EscapeRoute escapeRoute,
+                                                         List<WorldWrite> writes,
+                                                         int[][] firstAir, int[][] kinds,
+                                                         BlockState[][] supportSnapshots,
+                                                         BlockState[][] layerSnapshots, int baseX, int baseZ) {
+        Map<BlockPos, WorldWrite> planned = new HashMap<>();
+        for (int index = 0; index < writes.size(); index++) {
+            WorldWrite write = writes.get(index);
+            BlockPos pos = write.position();
+            if (pos.getX() < baseX + 1 || pos.getX() > baseX + 14
+                    || pos.getZ() < baseZ + 1 || pos.getZ() > baseZ + 14) {
+                return PowderTrapWorldSafetyResult.failure(
+                        PowderTrapWorldSafetyFailure.OUTSIDE_OWNER_CHUNK, pos, "unread");
+            }
+            if (planned.containsKey(pos)) {
+                return PowderTrapWorldSafetyResult.failure(
+                        PowderTrapWorldSafetyFailure.DUPLICATE_PLANNED_POSITION, pos, "unread");
+            }
+            BlockState current = level.getBlockState(pos);
+            boolean writable = level.ensureCanWrite(pos);
+            boolean hasFluid = !current.getFluidState().isEmpty();
+            boolean hasBlockEntity = level.getBlockEntity(pos) != null;
+            if (write.phase() == SubterraneanTrapPlan.Phase.CUSHION_BASE) {
+                PowderTrapWorldSafetyLaw.CushionBaseAction action =
+                        PowderTrapWorldSafetyLaw.cushionBaseAction(
+                                current.isAir(), current.blocksMotion(), hasFluid, hasBlockEntity,
+                                isGravity(current), writable);
+                if (action == PowderTrapWorldSafetyLaw.CushionBaseAction.REJECT) {
+                    return PowderTrapWorldSafetyResult.failure(
+                            PowderTrapWorldSafetyFailure.CUSHION_BASE_UNSAFE, pos, current.toString());
+                }
+                if (action == PowderTrapWorldSafetyLaw.CushionBaseAction.PRESERVE_EXISTING) {
+                    write = new WorldWrite(pos, current, write.phase());
+                    writes.set(index, write);
+                }
+            } else {
+                if (!writable) {
+                    return PowderTrapWorldSafetyResult.failure(
+                            PowderTrapWorldSafetyFailure.WRITE_NOT_ALLOWED, pos, "unread");
+                }
+                if (hasFluid) {
+                    return PowderTrapWorldSafetyResult.failure(
+                            PowderTrapWorldSafetyFailure.PLANNED_FLUID, pos, current.toString());
+                }
+                if (hasBlockEntity) {
+                    return PowderTrapWorldSafetyResult.failure(
+                            PowderTrapWorldSafetyFailure.PLANNED_BLOCK_ENTITY, pos, current.toString());
+                }
+            }
+            planned.put(pos, write);
+        }
+        PowderTrapWorldSafetyResult anchorSafety = cushionBaseAnchorSafety(level, planned);
+        if (!anchorSafety.isSafe()) {
+            return anchorSafety;
+        }
+        for (WorldWrite write : writes) {
+            BlockPos pos = write.position();
+            BlockState current = level.getBlockState(pos);
+            switch (write.phase()) {
+                case SURFACE_POWDER -> {
+                    int localX = pos.getX() - baseX;
+                    int localZ = pos.getZ() - baseZ;
+                    if (!PowderTrapWorldSafetyLaw.exactSnapshotMatches(
+                            supportSnapshots[localX][localZ], current)) {
+                        return PowderTrapWorldSafetyResult.failure(
+                                PowderTrapWorldSafetyFailure.SURFACE_SNAPSHOT_MISMATCH, pos, current.toString());
+                    }
+                    if (firstAir[localX][localZ] - 1 != pos.getY()) {
+                        return PowderTrapWorldSafetyResult.failure(
+                                PowderTrapWorldSafetyFailure.SURFACE_HEIGHT_MISMATCH, pos, current.toString());
+                    }
+                    if (!surfaceAboveIsSafe(level, pos, kinds[localX][localZ],
+                            layerSnapshots[localX][localZ])) {
+                        return PowderTrapWorldSafetyResult.failure(
+                                PowderTrapWorldSafetyFailure.SURFACE_ABOVE_UNSAFE, pos.above(),
+                                level.getBlockState(pos.above()).toString());
+                    }
+                    if (!isPolarBarrens(level, pos.above())) {
+                        return PowderTrapWorldSafetyResult.failure(
+                                PowderTrapWorldSafetyFailure.WRONG_BIOME, pos.above(),
+                                level.getBlockState(pos.above()).toString());
+                    }
+                }
+                case REMOVE_SURFACE_LAYER -> {
+                    int localX = pos.getX() - baseX;
+                    int localZ = pos.getZ() - baseZ;
+                    BlockPos supportPos = pos.below();
+                    BlockState support = level.getBlockState(supportPos);
+                    if (!PowderTrapWorldSafetyLaw.exactSnapshotMatches(
+                                    layerSnapshots[localX][localZ], current)
+                            || !PowderTrapWorldSafetyLaw.exactSnapshotMatches(
+                                    supportSnapshots[localX][localZ], support)
+                            || !certifiedThinSupport(level, supportPos, support)
+                            || !level.getBlockState(pos.above()).isAir()) {
+                        return PowderTrapWorldSafetyResult.failure(
+                                PowderTrapWorldSafetyFailure.REVEAL_LAYER_MISMATCH, pos, current.toString());
+                    }
+                }
+                case CUSHION_BASE -> {
+                    WorldWrite cushion = planned.get(pos.above());
+                    if (!finalDryStableSolid(write.state())
+                            || cushion == null
+                            || cushion.phase() != SubterraneanTrapPlan.Phase.CUSHION) {
+                        return PowderTrapWorldSafetyResult.failure(
+                                PowderTrapWorldSafetyFailure.CUSHION_BASE_UNSAFE, pos, current.toString());
+                    }
+                }
+                case CUSHION -> {
+                    if ((!current.isAir() && !isCarverReplaceableOrSnow(current)) || isGravity(current)) {
+                        return PowderTrapWorldSafetyResult.failure(
+                                PowderTrapWorldSafetyFailure.CUSHION_TARGET_UNSAFE, pos, current.toString());
+                    }
+                    WorldWrite base = planned.get(pos.below());
+                    if (base == null
+                            || base.phase() != SubterraneanTrapPlan.Phase.CUSHION_BASE
+                            || !finalDryStableSolid(base.state())) {
+                        return PowderTrapWorldSafetyResult.failure(
+                                PowderTrapWorldSafetyFailure.CUSHION_SUPPORT_UNSAFE, pos.below(),
+                                level.getBlockState(pos.below()).toString());
+                    }
+                }
+                case ESCAPE_FLOOR -> {
+                    BlockState substrate = level.getBlockState(pos.below());
+                    boolean targetReplaceable = current.isAir() || isCarverReplaceableOrSnow(current);
+                    boolean targetHasFluid = !current.getFluidState().isEmpty();
+                    boolean targetHasBlockEntity = level.getBlockEntity(pos) != null;
+                    boolean targetHasGravity = isGravity(current);
+                    boolean writable = level.ensureCanWrite(pos);
+                    boolean substrateDryStableHard =
+                            dryStableHardSubstrate(level, pos.below(), substrate);
+                    if (!PowderTrapWorldSafetyLaw.escapeFloorFinalStateSafe(
+                            targetReplaceable, substrateDryStableHard, targetHasFluid,
+                            targetHasBlockEntity, targetHasGravity, writable)) {
+                        boolean targetSafe = PowderTrapWorldSafetyLaw.escapeFloorFinalStateSafe(
+                                targetReplaceable, true, targetHasFluid,
+                                targetHasBlockEntity, targetHasGravity, writable);
+                        return PowderTrapWorldSafetyResult.failure(
+                                targetSafe
+                                        ? PowderTrapWorldSafetyFailure.ESCAPE_FLOOR_SUPPORT_UNSAFE
+                                        : PowderTrapWorldSafetyFailure.ESCAPE_FLOOR_TARGET_UNSAFE,
+                                targetSafe ? pos.below() : pos,
+                                targetSafe ? substrate.toString() : current.toString());
+                    }
+                }
+                case ESCAPE_MINE_TAIL -> {
+                    if (!safeEscapeTailTarget(level, pos, current, firstAir, kinds,
+                            supportSnapshots, layerSnapshots, baseX, baseZ)) {
+                        return PowderTrapWorldSafetyResult.failure(
+                                PowderTrapWorldSafetyFailure.ESCAPE_TAIL_TARGET_UNSAFE, pos, current.toString());
+                    }
+                }
+                case CLEAR, ESCAPE_CLEAR -> {
+                    if (!safeClearTarget(current)) {
+                        return PowderTrapWorldSafetyResult.failure(
+                                write.phase() == SubterraneanTrapPlan.Phase.CLEAR
+                                        ? PowderTrapWorldSafetyFailure.CLEAR_TARGET_UNSAFE
+                                        : PowderTrapWorldSafetyFailure.ESCAPE_CLEAR_TARGET_UNSAFE,
+                                pos, current.toString());
+                    }
+                }
+            }
+        }
+
+        PowderTrapWorldSafetyResult plugSafety = escapeSurfacePlugSafe(level, escapeRoute, planned,
+                firstAir, kinds, supportSnapshots, layerSnapshots, baseX, baseZ);
+        if (!plugSafety.isSafe()) {
+            return plugSafety;
+        }
+        PowderTrapWorldSafetyResult routeShell =
+                dryStableEscapeShell(level, escapeRoute, planned, firstAir, kinds,
+                        supportSnapshots, layerSnapshots, baseX, baseZ);
+        if (!routeShell.isSafe()) {
+            return routeShell;
+        }
+        PowderTrapWorldSafetyResult fallShell = dryHazardFreeShell(level, writes, planned.keySet());
+        if (!fallShell.isSafe()) {
+            return fallShell;
+        }
+        return reachableFluidSourceSafety(level, writes, escapeRoute, baseX, baseZ);
+    }
+
+    private static boolean surfaceAboveIsSafe(WorldGenLevel level, BlockPos surface, int kind,
+                                              BlockState layerSnapshot) {
+        return (kind == SubterraneanTrapPlan.THIN_SNOW || kind == SubterraneanTrapPlan.THIN_OVER_FULL_SNOW)
+                ? PowderTrapWorldSafetyLaw.exactSnapshotMatches(
+                        layerSnapshot, level.getBlockState(surface.above()))
+                        && level.getBlockState(surface.above(2)).isAir()
+                : level.getBlockState(surface.above()).isAir();
+    }
+
+    private static boolean certifiedThinSupport(WorldGenLevel level, BlockPos pos, BlockState support) {
+        return PowderTrapWorldSafetyLaw.certifiedThinSupport(
+                support.getFluidState().isEmpty(), support.blocksMotion(), level.getBlockEntity(pos) != null,
+                isGravity(support), isCarverReplaceableOrSnow(support));
+    }
+
+    private static boolean isCarverReplaceableOrSnow(BlockState state) {
+        return state.is(BlockTags.OVERWORLD_CARVER_REPLACEABLES) || state.is(Blocks.SNOW)
+                || state.is(Blocks.SNOW_BLOCK) || state.is(Blocks.POWDER_SNOW) || state.is(Blocks.BLUE_ICE)
+                || state.is(Blocks.PACKED_ICE);
+    }
+
+    private static boolean safeClearTarget(BlockState state) {
+        return (state.isAir() || isCarverReplaceableOrSnow(state)) && !isGravity(state);
+    }
+
+    private static boolean safeEscapeTailTarget(
+            WorldGenLevel level, BlockPos pos, BlockState state, int[][] firstAir, int[][] kinds,
+            BlockState[][] supportSnapshots, BlockState[][] layerSnapshots, int baseX, int baseZ) {
+        int localX = pos.getX() - baseX;
+        int localZ = pos.getZ() - baseZ;
+        int surfaceSupportY = firstAir[localX][localZ] - 1;
+        if (pos.getY() > surfaceSupportY) {
+            return false;
+        }
+        if (pos.getY() == surfaceSupportY) {
+            int kind = kinds[localX][localZ];
+            return (kind == SubterraneanTrapPlan.FULL_SNOW
+                    || kind == SubterraneanTrapPlan.THIN_OVER_FULL_SNOW)
+                    && state.is(Blocks.SNOW_BLOCK)
+                    && PowderTrapWorldSafetyLaw.exactSnapshotMatches(
+                            supportSnapshots[localX][localZ], state)
+                    && surfaceAboveIsSafe(level, pos, kind, layerSnapshots[localX][localZ])
+                    && isPolarBarrens(level, pos.above());
+        }
+        return !state.isAir() && state.blocksMotion()
+                && isCarverReplaceableOrSnow(state) && !isGravity(state);
+    }
+
+    private static boolean isGravity(BlockState state) {
+        return state.getBlock() instanceof FallingBlock;
+    }
+
+    private static PowderTrapWorldSafetyResult cushionBaseAnchorSafety(
+            WorldGenLevel level, Map<BlockPos, WorldWrite> planned) {
+        List<WorldWrite> bases = planned.values().stream()
+                .filter(write -> write.phase() == SubterraneanTrapPlan.Phase.CUSHION_BASE)
+                .sorted(java.util.Comparator.comparingInt((WorldWrite write) -> write.position().getX())
+                        .thenComparingInt(write -> write.position().getZ()))
+                .toList();
+        if (bases.isEmpty()) {
+            return PowderTrapWorldSafetyResult.failure(
+                    PowderTrapWorldSafetyFailure.CUSHION_BASE_UNSAFE, BlockPos.ZERO, "missing-base-footprint");
+        }
+        Set<BlockPos> footprint = bases.stream().map(WorldWrite::position).collect(java.util.stream.Collectors.toSet());
+        Set<PowderTrapWorldSafetyLaw.NaturalAnchorCandidate> candidates = new HashSet<>();
+        for (WorldWrite base : bases) {
+            BlockPos basePos = base.position();
+            BlockState currentBase = level.getBlockState(basePos);
+            candidates.add(naturalAnchorCandidate(level, basePos, planned));
+            if (currentBase.isAir()) {
+                candidates.add(naturalAnchorCandidate(level, basePos.below(), planned));
+            }
+            for (Direction direction : List.of(
+                    Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST)) {
+                BlockPos neighbour = basePos.relative(direction);
+                if (!footprint.contains(neighbour)) {
+                    candidates.add(naturalAnchorCandidate(level, neighbour, planned));
+                }
+            }
+        }
+        if (!PowderTrapWorldSafetyLaw.hasSeparatedNaturalAnchors(candidates)) {
+            return PowderTrapWorldSafetyResult.failure(
+                    PowderTrapWorldSafetyFailure.CUSHION_BASE_UNANCHORED,
+                    bases.getFirst().position(), "natural-anchors<2-separated-by-3");
+        }
+        return PowderTrapWorldSafetyResult.passed();
+    }
+
+    private static PowderTrapWorldSafetyLaw.NaturalAnchorCandidate naturalAnchorCandidate(
+            WorldGenLevel level, BlockPos pos, Map<BlockPos, WorldWrite> planned) {
+        BlockState current = level.getBlockState(pos);
+        WorldWrite authored = planned.get(pos);
+        boolean untouched = authored == null || authored.state().equals(current);
+        boolean dryStable = !current.isAir() && current.blocksMotion()
+                && current.getFluidState().isEmpty() && level.getBlockEntity(pos) == null
+                && !isGravity(current);
+        return new PowderTrapWorldSafetyLaw.NaturalAnchorCandidate(
+                pos.getX(), pos.getZ(), untouched, dryStable);
+    }
+
+    private static boolean finalDryStableSolid(BlockState state) {
+        return !state.isAir() && state.blocksMotion()
+                && state.getFluidState().isEmpty() && !isGravity(state);
+    }
+
+    private static boolean dryStableHardSubstrate(WorldGenLevel level, BlockPos pos, BlockState state) {
+        return finalDryStableSolid(state) && level.getBlockEntity(pos) == null;
+    }
+
+    private static PowderTrapWorldSafetyResult escapeSurfacePlugSafe(
+            WorldGenLevel level, SubterraneanTrapPlan.EscapeRoute route, Map<BlockPos, WorldWrite> planned,
+            int[][] firstAir, int[][] kinds, BlockState[][] supportSnapshots,
+            BlockState[][] layerSnapshots, int baseX, int baseZ) {
+        SubterraneanTrapPlan.EscapeStep plug = route.surfacePlug();
+        if (plug.x() < 1 || plug.x() > 14 || plug.z() < 1 || plug.z() > 14) {
+            return PowderTrapWorldSafetyResult.failure(PowderTrapWorldSafetyFailure.ESCAPE_SURFACE_PLUG_UNSAFE,
+                    worldPosition(plug, baseX, baseZ), "outside-owner");
+        }
+        int kind = kinds[plug.x()][plug.z()];
+        BlockPos virtualFloor = worldPosition(plug, baseX, baseZ);
+        BlockPos supportPos = virtualFloor.above();
+        BlockState support = level.getBlockState(supportPos);
+        WorldWrite virtualWrite = planned.get(virtualFloor);
+        WorldWrite supportWrite = planned.get(supportPos);
+        if (!isMineTailSnowWrite(virtualWrite) || !isMineTailSnowWrite(supportWrite)
+                || firstAir[plug.x()][plug.z()] - 2 != plug.y()
+                || (kind != SubterraneanTrapPlan.FULL_SNOW
+                        && kind != SubterraneanTrapPlan.THIN_OVER_FULL_SNOW)
+                || !support.is(Blocks.SNOW_BLOCK)
+                || !PowderTrapWorldSafetyLaw.exactSnapshotMatches(
+                        supportSnapshots[plug.x()][plug.z()], support)
+                || !support.blocksMotion() || !support.getFluidState().isEmpty()
+                || level.getBlockEntity(supportPos) != null || isGravity(support)
+                || !surfaceAboveIsSafe(level, supportPos, kind, layerSnapshots[plug.x()][plug.z()])
+                || !isPolarBarrens(level, supportPos.above())) {
+            return PowderTrapWorldSafetyResult.failure(PowderTrapWorldSafetyFailure.ESCAPE_SURFACE_PLUG_UNSAFE,
+                    supportPos, support.toString());
+        }
+        return PowderTrapWorldSafetyResult.passed();
+    }
+
+    private static boolean isMineTailSnowWrite(WorldWrite write) {
+        return write != null && write.phase() == SubterraneanTrapPlan.Phase.ESCAPE_MINE_TAIL
+                && write.state().equals(SNOW_BLOCK);
+    }
+
+    private static PowderTrapWorldSafetyResult dryStableEscapeShell(
+            WorldGenLevel level, SubterraneanTrapPlan.EscapeRoute route, Map<BlockPos, WorldWrite> planned,
+            int[][] firstAir, int[][] kinds, BlockState[][] supportSnapshots,
+            BlockState[][] layerSnapshots, int baseX, int baseZ) {
+        SubterraneanTrapPlan.EscapeStep closure = route.closureCell();
+        BlockPos closurePos = worldPosition(closure, baseX, baseZ);
+        boolean closureShellSafe = isDryStableShellCell(level, closurePos)
+                || certifiedSurfaceCapShellCell(level, closurePos, planned, firstAir, kinds,
+                supportSnapshots, layerSnapshots, baseX, baseZ);
+        if (closure.x() < 0 || closure.x() > 15 || closure.z() < 0 || closure.z() > 15
+                || planned.containsKey(closurePos) || !closureShellSafe) {
+            return PowderTrapWorldSafetyResult.failure(
+                    PowderTrapWorldSafetyFailure.ESCAPE_SHELL_UNSAFE, closurePos,
+                    level.getBlockState(closurePos).toString());
+        }
+        SubterraneanTrapPlan.EscapeStep plug = route.surfacePlug();
+        BlockPos plugSupport = worldPosition(plug, baseX, baseZ).above();
+        BlockPos intendedOpening = plugSupport.above();
+        for (SubterraneanTrapPlan.EscapeStep local : route.shellProbes()) {
+            BlockPos probe = worldPosition(local, baseX, baseZ);
+            if (local.x() < 0 || local.x() > 15 || local.z() < 0 || local.z() > 15) {
+                return PowderTrapWorldSafetyResult.failure(
+                        PowderTrapWorldSafetyFailure.ESCAPE_SHELL_UNSAFE, probe, "outside-owner-shell");
+            }
+            if (planned.containsKey(probe)) {
+                continue;
+            }
+            if (probe.equals(intendedOpening)) {
+                if (surfaceAboveIsSafe(level, plugSupport, kinds[plug.x()][plug.z()],
+                        layerSnapshots[plug.x()][plug.z()])) {
+                    continue;
+                }
+                return PowderTrapWorldSafetyResult.failure(
+                        PowderTrapWorldSafetyFailure.ESCAPE_SHELL_UNSAFE, probe,
+                        level.getBlockState(probe).toString());
+            }
+            if (certifiedSurfaceCapShellCell(level, probe, planned, firstAir, kinds,
+                    supportSnapshots, layerSnapshots, baseX, baseZ)) {
+                continue;
+            }
+            if (!isDryStableShellCell(level, probe)) {
+                return PowderTrapWorldSafetyResult.failure(
+                        PowderTrapWorldSafetyFailure.ESCAPE_SHELL_UNSAFE, probe,
+                        level.getBlockState(probe).toString());
+            }
+        }
+        return PowderTrapWorldSafetyResult.passed();
+    }
+
+    private static boolean certifiedSurfaceCapShellCell(
+            WorldGenLevel level, BlockPos layerPos, Map<BlockPos, WorldWrite> planned,
+            int[][] firstAir, int[][] kinds, BlockState[][] supportSnapshots,
+            BlockState[][] layerSnapshots, int baseX, int baseZ) {
+        int localX = layerPos.getX() - baseX;
+        int localZ = layerPos.getZ() - baseZ;
+        if (localX < 0 || localX >= 16 || localZ < 0 || localZ >= 16) {
+            return false;
+        }
+        BlockState layer = level.getBlockState(layerPos);
+        BlockPos supportPos = layerPos.below();
+        BlockState support = level.getBlockState(supportPos);
+        boolean exactlyOneLayer =
+                layer.is(Blocks.SNOW) && layer.getValue(SnowLayerBlock.LAYERS) == 1;
+        return PowderTrapWorldSafetyLaw.certifiedSurfaceCapShellSafe(
+                kinds[localX][localZ], firstAir[localX][localZ], layerPos.getY(),
+                PowderTrapWorldSafetyLaw.exactSnapshotMatches(
+                        layerSnapshots[localX][localZ], layer),
+                exactlyOneLayer,
+                PowderTrapWorldSafetyLaw.exactSnapshotMatches(
+                        supportSnapshots[localX][localZ], support),
+                support.is(Blocks.SNOW_BLOCK),
+                level.getBlockState(layerPos.above()).isAir(),
+                isPolarBarrens(level, layerPos),
+                planned.containsKey(supportPos),
+                !layer.getFluidState().isEmpty() || !support.getFluidState().isEmpty(),
+                level.getBlockEntity(layerPos) != null || level.getBlockEntity(supportPos) != null,
+                isGravity(layer) || isGravity(support));
+    }
+
+    private static boolean isDryStableShellCell(WorldGenLevel level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        return !state.isAir() && state.blocksMotion() && state.getFluidState().isEmpty()
+                && level.getBlockEntity(pos) == null && !isGravity(state);
+    }
+
+    private static BlockPos worldPosition(SubterraneanTrapPlan.EscapeStep local, int baseX, int baseZ) {
+        return new BlockPos(baseX + local.x(), local.y(), baseZ + local.z());
+    }
+
+    private static PowderTrapWorldSafetyResult dryHazardFreeShell(WorldGenLevel level, List<WorldWrite> writes,
+                                                                  Set<BlockPos> planned) {
+        for (WorldWrite write : writes) {
+            if (write.phase() != SubterraneanTrapPlan.Phase.CLEAR
+                    && write.phase() != SubterraneanTrapPlan.Phase.CUSHION) {
+                continue;
+            }
+            for (Direction direction : Direction.values()) {
+                BlockPos neighbour = write.position().relative(direction);
+                if (planned.contains(neighbour)) {
+                    continue;
+                }
+                BlockState state = level.getBlockState(neighbour);
+                PowderTrapWorldSafetyLaw.ShellRejection rejection = PowderTrapWorldSafetyLaw.shellRejection(
+                        state.isAir(), state.blocksMotion(), !state.getFluidState().isEmpty(),
+                        level.getBlockEntity(neighbour) != null, isGravity(state));
+                if (rejection == PowderTrapWorldSafetyLaw.ShellRejection.FLUID) {
+                    return PowderTrapWorldSafetyResult.failure(
+                            PowderTrapWorldSafetyFailure.SHELL_FLUID, neighbour, state.toString());
+                }
+                if (rejection == PowderTrapWorldSafetyLaw.ShellRejection.BLOCK_ENTITY) {
+                    return PowderTrapWorldSafetyResult.failure(
+                            PowderTrapWorldSafetyFailure.SHELL_BLOCK_ENTITY, neighbour, state.toString());
+                }
+                if (rejection == PowderTrapWorldSafetyLaw.ShellRejection.GRAVITY) {
+                    return PowderTrapWorldSafetyResult.failure(
+                            PowderTrapWorldSafetyFailure.SHELL_GRAVITY, neighbour, state.toString());
+                }
+            }
+        }
+        return PowderTrapWorldSafetyResult.passed();
+    }
+
+    /**
+     * Reverse-flow search from every authored fall/route air cell. Water can reach those cells only through
+     * horizontal or upward passable space; a solid interruption blocks the search, and sources beyond seven
+     * steps are deliberately outside this bounded safety veto.
+     */
+    private static PowderTrapWorldSafetyResult reachableFluidSourceSafety(
+            WorldGenLevel level, List<WorldWrite> writes, SubterraneanTrapPlan.EscapeRoute route,
+            int baseX, int baseZ) {
+        Set<BlockPos> retainedTailFloors = new HashSet<>();
+        for (SubterraneanTrapPlan.EscapeStep floor : route.tailSteps()) {
+            retainedTailFloors.add(worldPosition(floor, baseX, baseZ));
+        }
+        Set<BlockPos> plannedFinalSolid = new HashSet<>(retainedTailFloors);
+        Set<BlockPos> plannedFuturePassable = new HashSet<>();
+        for (WorldWrite write : writes) {
+            if (write.phase() == SubterraneanTrapPlan.Phase.ESCAPE_FLOOR
+                    || write.phase() == SubterraneanTrapPlan.Phase.CUSHION_BASE) {
+                plannedFinalSolid.add(write.position());
+            }
+            boolean retainedTailFloor = write.phase() == SubterraneanTrapPlan.Phase.ESCAPE_MINE_TAIL
+                    && retainedTailFloors.contains(write.position());
+            if (PowderTrapWorldSafetyLaw.plannedWriteSeedsFluidReachability(
+                    write.phase(), retainedTailFloor)) {
+                plannedFuturePassable.add(write.position());
+            }
+        }
+        Set<PowderTrapWorldSafetyLaw.FluidSearchCell> seeds = new HashSet<>();
+        for (BlockPos seed : plannedFuturePassable) {
+            seeds.add(new PowderTrapWorldSafetyLaw.FluidSearchCell(
+                    seed.getX(), seed.getY(), seed.getZ()));
+        }
+        Function<PowderTrapWorldSafetyLaw.FluidSearchCell,
+                PowderTrapWorldSafetyLaw.FluidTraversalCell> lookup = cell -> {
+            BlockPos pos = new BlockPos(cell.x(), cell.y(), cell.z());
+            BlockState state = level.getBlockState(pos);
+            return PowderTrapWorldSafetyLaw.fluidTraversalCell(
+                    plannedFinalSolid.contains(pos),
+                    plannedFuturePassable.contains(pos),
+                    !state.getFluidState().isEmpty(),
+                    fluidPassable(level, pos, state));
+        };
+        PowderTrapWorldSafetyLaw.FluidSearchCell fluid =
+                PowderTrapWorldSafetyLaw.firstReachableFluidWithinSeven(seeds, lookup);
+        if (fluid == null) {
+            return PowderTrapWorldSafetyResult.passed();
+        }
+        BlockPos source = new BlockPos(fluid.x(), fluid.y(), fluid.z());
+        return PowderTrapWorldSafetyResult.failure(
+                PowderTrapWorldSafetyFailure.REACHABLE_FLUID_SOURCE, source,
+                level.getBlockState(source).toString());
+    }
+
+    private static boolean fluidPassable(WorldGenLevel level, BlockPos pos, BlockState state) {
+        return state.getFluidState().isEmpty() && level.getBlockEntity(pos) == null
+                && (state.isAir() || !state.blocksMotion()) && !isGravity(state);
+    }
+
+    private static ApplyResult apply(WorldGenLevel level, List<WorldWrite> writes) {
+        int completedSurfaceCovers = 0;
+        int completedRevealRemovals = 0;
+        for (WorldWrite write : writes) {
+            BlockState before = level.getBlockState(write.position());
+            if (before.equals(write.state())) {
+                if (write.phase() == SubterraneanTrapPlan.Phase.SURFACE_POWDER) {
+                    completedSurfaceCovers++;
+                } else if (write.phase() == SubterraneanTrapPlan.Phase.REMOVE_SURFACE_LAYER) {
+                    completedRevealRemovals++;
+                }
+                continue;
+            }
+            if (!level.setBlock(write.position(), write.state(), Block.UPDATE_ALL)
+                    || !level.getBlockState(write.position()).equals(write.state())) {
+                return new ApplyResult(false, completedSurfaceCovers, completedRevealRemovals);
+            }
+            if (write.phase() == SubterraneanTrapPlan.Phase.SURFACE_POWDER) {
+                completedSurfaceCovers++;
+            } else if (write.phase() == SubterraneanTrapPlan.Phase.REMOVE_SURFACE_LAYER) {
+                completedRevealRemovals++;
+            }
+        }
+        for (WorldWrite write : writes) {
+            if (!level.getBlockState(write.position()).equals(write.state())) {
+                return residualApplyResult(level, writes);
+            }
+        }
+        return new ApplyResult(true, completedSurfaceCovers, completedRevealRemovals);
+    }
+
+    private static ApplyResult residualApplyResult(WorldGenLevel level, List<WorldWrite> writes) {
+        int surfaces = 0;
+        int removals = 0;
+        for (WorldWrite write : writes) {
+            if (!level.getBlockState(write.position()).equals(write.state())) {
+                continue;
+            }
+            if (write.phase() == SubterraneanTrapPlan.Phase.SURFACE_POWDER) {
+                surfaces++;
+            } else if (write.phase() == SubterraneanTrapPlan.Phase.REMOVE_SURFACE_LAYER) {
+                removals++;
+            }
+        }
+        return new ApplyResult(false, surfaces, removals);
+    }
+
+    private static boolean isPolarBarrens(WorldGenLevel level, BlockPos pos) {
+        return level.getBiome(pos).unwrapKey()
                 .map(key -> key.identifier().equals(POLAR_BARRENS_ID))
                 .orElse(false);
     }
 
-    /**
-     * Atomic deep-shaft preflight. Every block the later 3x3 writer would remove must already be air or
-     * ordinary carver-replaceable terrain, never fluid or protected/non-carvable material. The complete fall
-     * path is checked down to the shared powder cushion, whose support must be solid and dry in every column.
-     */
-    private static boolean globe$shaftPathSafe(WorldGenLevel level, BlockPos.MutableBlockPos cursor,
-            int baseX, int baseZ, int shaftMinX, int shaftMinZ, int shaftSide,
-            int[][] surfaceFirstAir, int voidBottom, int roofY) {
-        for (int lx = shaftMinX; lx < shaftMinX + shaftSide; lx++) {
-            for (int lz = shaftMinZ; lz < shaftMinZ + shaftSide; lz++) {
-                int worldX = baseX + lx;
-                int worldZ = baseZ + lz;
-                int own = surfaceFirstAir[lx][lz];
-                for (int y = roofY - 1; y > voidBottom; y--) {
-                    cursor.set(worldX, y, worldZ);
-                    BlockState carve = level.getBlockState(cursor);
-                    if (!carve.getFluidState().isEmpty()
-                            || (!carve.isAir() && !carve.is(Blocks.SNOW)
-                                    && (y >= own || !carve.is(BlockTags.OVERWORLD_CARVER_REPLACEABLES)))) {
-                        return false;
-                    }
-                }
-                cursor.set(worldX, voidBottom, worldZ);
-                if (!level.getBlockState(cursor).isAir()) {
-                    return false;
-                }
-                cursor.set(worldX, voidBottom - 1, worldZ);
-                BlockState support = level.getBlockState(cursor);
-                if (support.isAir() || !support.getFluidState().isEmpty()) {
-                    return false;
-                }
-            }
+    private static int count(List<WorldWrite> writes, SubterraneanTrapPlan.Phase phase) {
+        return (int) writes.stream().filter(write -> write.phase() == phase).count();
+    }
+}
+
+enum PowderTrapWorldSafetyFailure {
+    NONE,
+    NOT_CHECKED,
+    OUTSIDE_OWNER_CHUNK,
+    DUPLICATE_PLANNED_POSITION,
+    WRITE_NOT_ALLOWED,
+    PLANNED_FLUID,
+    PLANNED_BLOCK_ENTITY,
+    SURFACE_SNAPSHOT_MISMATCH,
+    SURFACE_HEIGHT_MISMATCH,
+    SURFACE_ABOVE_UNSAFE,
+    WRONG_BIOME,
+    REVEAL_LAYER_MISMATCH,
+    CUSHION_BASE_UNSAFE,
+    CUSHION_BASE_UNANCHORED,
+    CUSHION_TARGET_UNSAFE,
+    CUSHION_SUPPORT_UNSAFE,
+    CLEAR_TARGET_UNSAFE,
+    ESCAPE_FLOOR_TARGET_UNSAFE,
+    ESCAPE_FLOOR_SUPPORT_UNSAFE,
+    ESCAPE_CLEAR_TARGET_UNSAFE,
+    ESCAPE_TAIL_TARGET_UNSAFE,
+    ESCAPE_SURFACE_PLUG_UNSAFE,
+    ESCAPE_SHELL_UNSAFE,
+    REACHABLE_FLUID_SOURCE,
+    SHELL_FLUID,
+    SHELL_BLOCK_ENTITY,
+    SHELL_GRAVITY
+}
+
+record PowderTrapWorldSafetyResult(boolean isSafe, PowderTrapWorldSafetyFailure reason,
+                                   String position, String state) {
+
+    static PowderTrapWorldSafetyResult passed() {
+        return new PowderTrapWorldSafetyResult(true, PowderTrapWorldSafetyFailure.NONE, "none", "none");
+    }
+
+    static PowderTrapWorldSafetyResult notChecked() {
+        return new PowderTrapWorldSafetyResult(false, PowderTrapWorldSafetyFailure.NOT_CHECKED, "none", "none");
+    }
+
+    static PowderTrapWorldSafetyResult failure(PowderTrapWorldSafetyFailure reason, BlockPos position,
+                                               String state) {
+        if (reason == PowderTrapWorldSafetyFailure.NONE || reason == PowderTrapWorldSafetyFailure.NOT_CHECKED) {
+            throw new IllegalArgumentException("A failure result requires a concrete failure reason");
         }
-        return true;
+        return new PowderTrapWorldSafetyResult(false, reason,
+                position.getX() + "," + position.getY() + "," + position.getZ(), state);
+    }
+}
+
+final class PowderTrapWorldSafetyLaw {
+
+    enum CushionBaseAction {
+        PRESERVE_EXISTING,
+        AUTHOR_BLUE_ICE,
+        REJECT
+    }
+
+    enum ShellRejection {
+        NONE,
+        FLUID,
+        BLOCK_ENTITY,
+        GRAVITY
+    }
+
+    record FluidSearchCell(int x, int y, int z) {
+    }
+
+    enum FluidTraversalCell {
+        BLOCKED,
+        PASSABLE,
+        FLUID
+    }
+
+    record NaturalAnchorCandidate(int x, int z, boolean untouched, boolean dryStable) {
+    }
+
+    private PowderTrapWorldSafetyLaw() {
     }
 
     /**
-     * A cave can be spacious yet still be a lethal landing if lava or water can immediately spread onto the
-     * powder cushion. Require the complete 3x3 throat plus a four-block horizontal halo to be fluid-free at
-     * the landing and player-height planes. Four blocks is the Overworld lava-spread reach; water is excluded
-     * by the same stronger safety boundary. Read-only and bounded (11x11x3 at the widest throat).
+     * Wet, block-entity, or falling-block neighbours make an immediately adjacent authored volume unsafe.
+     * Existing dry air and ordinary dry terrain remain valid cave geometry; this law is applied only to the
+     * bounded one-cell shell, so remote gravel does not become a false veto.
      */
-    private static boolean globe$landingFluidSafe(WorldGenLevel level, BlockPos.MutableBlockPos cursor,
-            int baseX, int baseZ, int shaftMinX, int shaftMinZ, int shaftSide, int voidBottom) {
-        int minX = baseX + shaftMinX - LANDING_FLUID_CLEARANCE;
-        int maxX = baseX + shaftMinX + shaftSide - 1 + LANDING_FLUID_CLEARANCE;
-        int minZ = baseZ + shaftMinZ - LANDING_FLUID_CLEARANCE;
-        int maxZ = baseZ + shaftMinZ + shaftSide - 1 + LANDING_FLUID_CLEARANCE;
-        for (int x = minX; x <= maxX; x++) {
-            for (int z = minZ; z <= maxZ; z++) {
-                for (int y = voidBottom; y <= voidBottom + 2; y++) {
-                    cursor.set(x, y, z);
-                    if (!level.getBlockState(cursor).getFluidState().isEmpty()) {
-                        return false;
-                    }
-                }
-            }
-        }
-        return true;
+    static ShellRejection shellRejection(boolean isAir, boolean blocksMotion, boolean hasFluid,
+                                         boolean hasBlockEntity) {
+        return shellRejection(isAir, blocksMotion, hasFluid, hasBlockEntity, false);
     }
 
-    /**
-     * Runtime-stable, path-aware fluid gate for one complete bridge plan. The flood starts from every block
-     * that the plan will turn into powder or fall-through space and walks horizontally or upward (the reverse
-     * of water's horizontal/downward motion) through cells that do not block motion. Planned-to-clear terrain
-     * is explicitly passable; unrelated solid walls remain barriers. The search is bounded to water's
-     * seven-block horizontal reach around the footprint and seven blocks above the roof.
-     *
-     * <p>The optional override lowers only the selected throat's landing. Passing no override validates the
-     * ordinary bridge; passing one validates the combined ordinary bridge plus cave extension.
-     */
-    private static boolean globe$fallVolumeFluidIsolated(WorldGenLevel level, BlockPos.MutableBlockPos cursor,
-            int baseX, int baseZ, List<int[]> footprint, int[][] ordinaryLandingFirstAir, int roofY,
-            int overrideMinX, int overrideMinZ, int overrideSide, int overrideLandingY) {
-        int minLocalX = footprint.stream().mapToInt(c -> c[0]).min().orElseThrow();
-        int maxLocalX = footprint.stream().mapToInt(c -> c[0]).max().orElseThrow();
-        int minLocalZ = footprint.stream().mapToInt(c -> c[1]).min().orElseThrow();
-        int maxLocalZ = footprint.stream().mapToInt(c -> c[1]).max().orElseThrow();
-        int minLandingY = Integer.MAX_VALUE;
-        for (int[] c : footprint) {
-            boolean overridden = overrideSide > 0
-                    && c[0] >= overrideMinX && c[0] < overrideMinX + overrideSide
-                    && c[1] >= overrideMinZ && c[1] < overrideMinZ + overrideSide;
-            minLandingY = Math.min(minLandingY,
-                    overridden ? overrideLandingY : ordinaryLandingFirstAir[c[0]][c[1]]);
+    static ShellRejection shellRejection(boolean isAir, boolean blocksMotion, boolean hasFluid,
+                                         boolean hasBlockEntity, boolean hasGravity) {
+        if (hasFluid) {
+            return ShellRejection.FLUID;
         }
-
-        int minX = baseX + minLocalX - SHAFT_WATER_CLEARANCE;
-        int maxX = baseX + maxLocalX + SHAFT_WATER_CLEARANCE;
-        int minZ = baseZ + minLocalZ - SHAFT_WATER_CLEARANCE;
-        int maxZ = baseZ + maxLocalZ + SHAFT_WATER_CLEARANCE;
-        int minY = minLandingY + 1;
-        int maxY = Math.min(level.getMaxY() - 1, roofY + SHAFT_WATER_CLEARANCE);
-        int sizeX = maxX - minX + 1;
-        int sizeZ = maxZ - minZ + 1;
-        int sizeY = maxY - minY + 1;
-        int capacity = sizeX * sizeZ * sizeY;
-        boolean[] planned = new boolean[capacity];
-        boolean[] visited = new boolean[capacity];
-        ArrayDeque<Integer> queue = new ArrayDeque<>();
-
-        for (int[] c : footprint) {
-            boolean overridden = overrideSide > 0
-                    && c[0] >= overrideMinX && c[0] < overrideMinX + overrideSide
-                    && c[1] >= overrideMinZ && c[1] < overrideMinZ + overrideSide;
-            int landingY = overridden ? overrideLandingY : ordinaryLandingFirstAir[c[0]][c[1]];
-            int xOffset = baseX + c[0] - minX;
-            int zOffset = baseZ + c[1] - minZ;
-            for (int y = landingY + 1; y <= roofY; y++) {
-                int index = globe$volumeIndex(xOffset, zOffset, y - minY, sizeZ, sizeY);
-                planned[index] = true;
-                if (!visited[index]) {
-                    visited[index] = true;
-                    queue.addLast(index);
-                }
-            }
+        if (hasBlockEntity) {
+            return ShellRejection.BLOCK_ENTITY;
         }
-
-        int[][] horizontal = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
-        while (!queue.isEmpty()) {
-            int index = queue.removeFirst();
-            int yOffset = index % sizeY;
-            int plane = index / sizeY;
-            int zOffset = plane % sizeZ;
-            int xOffset = plane / sizeZ;
-            cursor.set(minX + xOffset, minY + yOffset, minZ + zOffset);
-            BlockState state = level.getBlockState(cursor);
-            if (!state.getFluidState().isEmpty()) {
-                return false;
-            }
-            for (int[] direction : horizontal) {
-                int nextX = xOffset + direction[0];
-                int nextZ = zOffset + direction[1];
-                if (nextX >= 0 && nextX < sizeX && nextZ >= 0 && nextZ < sizeZ) {
-                    int next = globe$volumeIndex(nextX, nextZ, yOffset, sizeZ, sizeY);
-                    if (!visited[next] && globe$waterReachableCell(level, cursor, planned[next],
-                            minX + nextX, minY + yOffset, minZ + nextZ)) {
-                        visited[next] = true;
-                        queue.addLast(next);
-                    }
-                }
-            }
-            if (yOffset + 1 < sizeY) {
-                int above = globe$volumeIndex(xOffset, zOffset, yOffset + 1, sizeZ, sizeY);
-                if (!visited[above] && globe$waterReachableCell(level, cursor, planned[above],
-                        minX + xOffset, minY + yOffset + 1, minZ + zOffset)) {
-                    visited[above] = true;
-                    queue.addLast(above);
-                }
-            }
+        if (hasGravity) {
+            return ShellRejection.GRAVITY;
         }
-        return true;
+        return ShellRejection.NONE;
     }
 
-    private static int globe$volumeIndex(int xOffset, int zOffset, int yOffset, int sizeZ, int sizeY) {
-        return (xOffset * sizeZ + zOffset) * sizeY + yOffset;
-    }
-
-    private static boolean globe$waterReachableCell(WorldGenLevel level, BlockPos.MutableBlockPos cursor,
-            boolean planned, int x, int y, int z) {
-        if (planned) {
-            return true;
+    static CushionBaseAction cushionBaseAction(boolean isAir, boolean blocksMotion, boolean hasFluid,
+                                               boolean hasBlockEntity, boolean hasGravity, boolean writable) {
+        if (!writable || hasFluid || hasBlockEntity || hasGravity) {
+            return CushionBaseAction.REJECT;
         }
-        cursor.set(x, y, z);
-        BlockState state = level.getBlockState(cursor);
-        return !state.getFluidState().isEmpty() || !state.blocksMotion();
-    }
-
-    /**
-     * Ordinary crevasse landings do not punch a new cave room, but their powder cushion still must not sit
-     * inside lava's four-block Overworld spread reach. Water has a narrow runtime cushion guard; lava remains
-     * vanilla, so a nearby lava cell rejects the encounter before any write. Manhattan distance mirrors the
-     * actual horizontal step budget and avoids excluding harmless diagonal fluids outside that reach.
-     */
-    private static boolean globe$landingLavaSafe(WorldGenLevel level, BlockPos.MutableBlockPos cursor,
-            int worldX, int worldZ, int landingY) {
-        for (int dx = -LANDING_FLUID_CLEARANCE; dx <= LANDING_FLUID_CLEARANCE; dx++) {
-            for (int dz = -LANDING_FLUID_CLEARANCE; dz <= LANDING_FLUID_CLEARANCE; dz++) {
-                if (Math.abs(dx) + Math.abs(dz) > LANDING_FLUID_CLEARANCE) {
-                    continue;
-                }
-                for (int y = landingY; y <= landingY + 2; y++) {
-                    cursor.set(worldX + dx, y, worldZ + dz);
-                    if (level.getFluidState(cursor).is(FluidTags.LAVA)) {
-                        return false;
-                    }
-                }
-            }
+        if (!isAir && blocksMotion) {
+            return CushionBaseAction.PRESERVE_EXISTING;
         }
-        return true;
+        if (isAir && !blocksMotion) {
+            return CushionBaseAction.AUTHOR_BLUE_ICE;
+        }
+        return CushionBaseAction.REJECT;
     }
 
-    /**
-     * Is the probed void a real landing room rather than a shaft-sized closet? Flood at the landing's two-air
-     * walking plane within a bounded 9x9 box. Sixteen reachable columns necessarily extend beyond the 3x3
-     * throat and leave the player somewhere to orient, move, and climb from.
-     */
-    private static boolean globe$voidTraversable(WorldGenLevel level, BlockPos.MutableBlockPos cursor,
-            int siteWorldX, int siteWorldZ, int voidBottom) {
-        final int radius = 4;
-        final int side = radius * 2 + 1;
-        boolean[][] seen = new boolean[side][side];
-        int[] queue = new int[side * side];
-        int head = 0;
-        int tail = 0;
-        queue[tail++] = (radius << 8) | radius;
-        seen[radius][radius] = true;
-        int reachable = 0;
-        int[][] directions = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
-        while (head < tail) {
-            int packed = queue[head++];
-            int gx = packed >> 8;
-            int gz = packed & 0xff;
-            int worldX = siteWorldX + gx - radius;
-            int worldZ = siteWorldZ + gz - radius;
-            cursor.set(worldX, voidBottom, worldZ);
-            if (!level.getBlockState(cursor).isAir()) {
-                continue;
-            }
-            cursor.set(worldX, voidBottom + 1, worldZ);
-            if (!level.getBlockState(cursor).isAir()) {
-                continue;
-            }
-            reachable++;
-            if (reachable >= MIN_TRAVERSABLE_LANDING_CELLS) {
-                return true;
-            }
-            for (int[] direction : directions) {
-                int nx = gx + direction[0];
-                int nz = gz + direction[1];
-                if (nx >= 0 && nx < side && nz >= 0 && nz < side && !seen[nx][nz]) {
-                    seen[nx][nz] = true;
-                    queue[tail++] = (nx << 8) | nz;
+    static boolean hasSeparatedNaturalAnchors(Set<NaturalAnchorCandidate> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return false;
+        }
+        List<NaturalAnchorCandidate> valid = candidates.stream()
+                .filter(candidate -> candidate != null && candidate.untouched() && candidate.dryStable())
+                .toList();
+        for (int first = 0; first < valid.size(); first++) {
+            for (int second = first + 1; second < valid.size(); second++) {
+                NaturalAnchorCandidate a = valid.get(first);
+                NaturalAnchorCandidate b = valid.get(second);
+                if (Math.abs(a.x() - b.x()) + Math.abs(a.z() - b.z()) >= 3) {
+                    return true;
                 }
             }
         }
         return false;
+    }
+
+    static boolean escapeFloorFinalStateSafe(boolean targetReplaceable, boolean substrateDryStableHard,
+                                             boolean targetHasFluid, boolean targetHasBlockEntity,
+                                             boolean targetHasGravity, boolean writable) {
+        return targetReplaceable && substrateDryStableHard
+                && !targetHasFluid && !targetHasBlockEntity
+                && !targetHasGravity && writable;
+    }
+
+    static boolean certifiedSurfaceCapShellSafe(
+            int surfaceKind, int capturedFirstAirY, int actualLayerY,
+            boolean exactLayerSnapshot, boolean exactlyOneLayer,
+            boolean exactSupportSnapshot, boolean supportIsSnowBlock,
+            boolean airAbove, boolean polarBiome, boolean supportPlanned,
+            boolean hasFluid, boolean hasBlockEntity, boolean hasGravity) {
+        return surfaceKind == SubterraneanTrapPlan.THIN_OVER_FULL_SNOW
+                && capturedFirstAirY == actualLayerY
+                && exactLayerSnapshot && exactlyOneLayer
+                && exactSupportSnapshot && supportIsSnowBlock
+                && airAbove && polarBiome && !supportPlanned
+                && !hasFluid && !hasBlockEntity && !hasGravity;
+    }
+
+    static boolean plannedWriteSeedsFluidReachability(
+            SubterraneanTrapPlan.Phase phase, boolean retainedTailFloor) {
+        return phase == SubterraneanTrapPlan.Phase.CLEAR
+                || phase == SubterraneanTrapPlan.Phase.ESCAPE_CLEAR
+                || phase == SubterraneanTrapPlan.Phase.CUSHION
+                || (phase == SubterraneanTrapPlan.Phase.ESCAPE_MINE_TAIL && !retainedTailFloor);
+    }
+
+    static FluidTraversalCell fluidTraversalCell(boolean plannedFinalSolid, boolean plannedFuturePassable,
+                                                 boolean currentFluid, boolean currentPassable) {
+        if (plannedFinalSolid) {
+            return FluidTraversalCell.BLOCKED;
+        }
+        if (currentFluid) {
+            return FluidTraversalCell.FLUID;
+        }
+        if (plannedFuturePassable || currentPassable) {
+            return FluidTraversalCell.PASSABLE;
+        }
+        return FluidTraversalCell.BLOCKED;
+    }
+
+    /**
+     * The real bounded traversal shared by runtime and tests. Seeds are authored cells that are passable now or
+     * become passable when the player falls/mines; authored floors are deliberately absent. Only horizontal and
+     * upward reverse-flow edges are followed, because a source below the route cannot flow upward into it.
+     */
+    static FluidSearchCell firstReachableFluidWithinSeven(
+            Set<FluidSearchCell> seeds, Function<FluidSearchCell, FluidTraversalCell> lookup) {
+        if (seeds == null || seeds.isEmpty() || lookup == null) {
+            return null;
+        }
+        ArrayDeque<FluidSearchCell> queue = new ArrayDeque<>();
+        Map<FluidSearchCell, Integer> distanceByCell = new HashMap<>();
+        for (FluidSearchCell seed : seeds) {
+            if (seed != null && distanceByCell.putIfAbsent(seed, 0) == null) {
+                queue.addLast(seed);
+            }
+        }
+        int[][] upstreamOffsets = {
+                {-1, 0, 0}, {1, 0, 0}, {0, 0, -1}, {0, 0, 1}, {0, 1, 0}
+        };
+        while (!queue.isEmpty()) {
+            FluidSearchCell current = queue.removeFirst();
+            int currentDistance = distanceByCell.get(current);
+            if (currentDistance >= 7) {
+                continue;
+            }
+            for (int[] offset : upstreamOffsets) {
+                FluidSearchCell neighbour = new FluidSearchCell(
+                        current.x() + offset[0], current.y() + offset[1], current.z() + offset[2]);
+                int distance = currentDistance + 1;
+                Integer known = distanceByCell.get(neighbour);
+                if (known != null && known <= distance) {
+                    continue;
+                }
+                FluidTraversalCell cell = lookup.apply(neighbour);
+                if (cell == FluidTraversalCell.FLUID) {
+                    return neighbour;
+                }
+                if (cell == FluidTraversalCell.PASSABLE && distance < 7) {
+                    distanceByCell.put(neighbour, distance);
+                    queue.addLast(neighbour);
+                }
+            }
+        }
+        return null;
+    }
+
+    static boolean certifiedThinSupport(boolean isDry, boolean blocksMotion, boolean hasBlockEntity,
+                                        boolean hasGravity, boolean safelyReplaceable) {
+        return isDry && blocksMotion && !hasBlockEntity && !hasGravity && safelyReplaceable;
+    }
+
+    static boolean exactSnapshotMatches(Object expected, Object current) {
+        return expected != null && expected.equals(current);
+    }
+
+    /**
+     * Pure seam for the runtime breadth-first search: each array element is one consecutive passable step from
+     * planned air toward a source. A source can flow into the route only when the whole path is open and no more
+     * than seven horizontal/upstream steps away.
+     */
+    static boolean fluidSourceWithinSevenPassableAirStepsRejects(boolean[] passableSteps) {
+        if (passableSteps == null || passableSteps.length == 0 || passableSteps.length > 7) {
+            return false;
+        }
+        for (boolean passable : passableSteps) {
+            if (!passable) {
+                return false;
+            }
+        }
+        return true;
     }
 }
