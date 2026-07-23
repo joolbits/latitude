@@ -1408,6 +1408,11 @@ public final class LatitudeBiomes {
                 || isBiomeId(biome, "minecraft:windswept_gravelly_hills");
     }
 
+    private static boolean isTemperateWindsweptVariant(Holder<Biome> biome) {
+        return isBiomeId(biome, "minecraft:windswept_forest")
+                || isBiomeId(biome, "minecraft:windswept_gravelly_hills");
+    }
+
     private static String warmWindsweptTraceBiomeId(Holder<Biome> biome) {
         return biome == null ? "null" : biomeId(biome);
     }
@@ -3245,6 +3250,7 @@ public final class LatitudeBiomes {
             }
         }
         out = quarantineUnknownCustomLandBiome(biomeRegistry, out, base, blockX, blockZ, landBandIndex, mountainLike);
+        out = clampTemperateWindsweptMountainOwnership(biomeRegistry, out, landBandIndex, mountainLike);
         logWetlandAudit("pick-registry-late",
                 callerContext,
                 base,
@@ -3841,6 +3847,7 @@ public final class LatitudeBiomes {
             }
         }
         out = quarantineUnknownCustomLandBiome(biomePool, out, base, blockX, blockZ, landBandIndex, mountainLike);
+        out = clampTemperateWindsweptMountainOwnership(biomePool, out, landBandIndex, mountainLike);
         logWetlandAudit("pick-collection-late",
                 callerContext,
                 base,
@@ -6923,6 +6930,30 @@ public final class LatitudeBiomes {
             setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "first_vanilla_fallback", entry);
         }
         return entry;
+    }
+
+    private static Holder<Biome> clampTemperateWindsweptMountainOwnership(Registry<Biome> biomes,
+                                                                           Holder<Biome> candidate,
+                                                                           int bandIndex,
+                                                                           boolean mountainLike) {
+        if (!isTemperateWindsweptVariant(candidate)
+                || (bandIndex == BAND_TEMPERATE && mountainLike)) {
+            return candidate;
+        }
+        Holder<Biome> fallback = safeVanillaFallbackForBand(biomes, bandIndex);
+        return fallback != null ? fallback : candidate;
+    }
+
+    private static Holder<Biome> clampTemperateWindsweptMountainOwnership(Collection<Holder<Biome>> biomes,
+                                                                           Holder<Biome> candidate,
+                                                                           int bandIndex,
+                                                                           boolean mountainLike) {
+        if (!isTemperateWindsweptVariant(candidate)
+                || (bandIndex == BAND_TEMPERATE && mountainLike)) {
+            return candidate;
+        }
+        Holder<Biome> fallback = safeVanillaFallbackForBand(biomes, bandIndex);
+        return fallback != null ? fallback : candidate;
     }
 
     private static Holder<Biome> firstVanillaBiome(Collection<Holder<Biome>> biomes) {
