@@ -20,7 +20,6 @@ This index was assembled from current repo paths using grep/file existence, not 
 ## Biome Authority
 
 - `src/main/java/com/example/globe/dev/BiomeBandPolicy.java` - band policy logic is sensitive to terrain and band-order assumptions.
-- `src/main/java/com/example/globe/client/ZoneEntryNotifier.java` - runtime zone reporting can hide whether the right biome authority actually won.
 - `src/main/java/com/example/globe/world/LatitudeBiomes.java` - shared biome source truth for bands, variants, and fallback behavior.
 
 ## /latdev Tooling
@@ -40,10 +39,7 @@ This index was assembled from current repo paths using grep/file existence, not 
 - `src/main/java/com/example/globe/client/create/LatitudePlanisphereRenderer.java` - create-world rendering depends on client UI APIs that drift often.
 - `src/main/java/com/example/globe/client/create/LatitudeWorldLauncher.java` - launch logic can bridge UI, runtime setup, and proof flow.
 - `src/main/java/com/example/globe/mixin/client/CreateWorldScreenMixin.java` - create-world hook points can shift with UI refactors.
-- `src/main/java/com/example/globe/mixin/client/CreateWorldScreenShowMixin.java` - show/open flow for the world screen can break on constructor or init changes.
 - `src/main/java/com/example/globe/mixin/client/CreateWorldScreenInitRedirectMixin.java` - init redirection is fragile when the target method signature changes.
-- `src/main/java/com/example/globe/mixin/client/CreateWorldScreenLatitudeToggleMixin.java` - latitude toggle behavior belongs to the bespoke UI path and should be watched closely.
-- `src/main/java/com/example/globe/mixin/client/CreateWorldScreenSpawnZoneMixin.java` - spawn-zone selection can silently drift from the intended band choice.
 
 ## Loading Overlay / First-Load UX
 
@@ -54,9 +50,7 @@ This index was assembled from current repo paths using grep/file existence, not 
 
 ## Fog / EW Visuals
 
-- `src/main/java/com/example/globe/mixin/client/FogRendererMixin.java` - fog hooks are mapping-sensitive and frequently move between versions.
 - `src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java` - east/west visual adjustments can regress when render plumbing changes.
-- `src/main/java/com/example/globe/mixin/client/BackgroundRendererFogMixin.java` - background renderer hooks are another common render API drift point.
 
 ## Release Artifact Purity / Dev Tooling
 
