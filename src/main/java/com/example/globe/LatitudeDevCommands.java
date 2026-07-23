@@ -22,13 +22,14 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.EnumSet;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -52,6 +53,8 @@ import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FallingBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -693,39 +696,28 @@ public final class LatitudeDevCommands {
     private static final int MARK_MARKER_CAP = 200;
     /** Cap on per-column coordinate chat lines PER SIGNAL (the summary always carries the real totals). */
     private static final int MARK_CHAT_CAP = 10;
-    /** How far (blocks) below a shallow column's top to probe for a flush powder-snow roof block. */
-    private static final int MARK_ROOF_PROBE_DEPTH = 3;
-    /** Tallest open-slot beacon (blocks) -- a deep canyon's green plume is clipped here to bound particles. */
+    /** TEST128 escape route/tail geometry requires this much measured horizontal context around a cover. */
+    private static final int MARK_PHYSICAL_HALO = 3;
+    /** Honest safety cap for pathological player-built powder fields; skipped candidates remain reported. */
+    private static final int MARK_PHYSICAL_CANDIDATE_SCAN_CAP = 128;
+    /** Authored traps carry 27 or 36 covers; this generous cap prevents an unbounded local volume allocation. */
+    private static final int MARK_PHYSICAL_COMPONENT_COLUMN_CAP = 128;
+    /** Same allocation guard for a sparse but extremely long connected powder component. */
+    private static final int MARK_PHYSICAL_COMPONENT_SPAN_CAP = 16;
+    /** Tallest open-slot beacon (blocks) -- a deep canyon's blue plume is clipped here to bound particles. */
     private static final int MARK_BEACON_MAX_HEIGHT = 24;
 
     /**
-     * S29 GROUND-TRUTH glow-mark: scans REAL generated blocks in a chunk radius and spawns bright-green {@code
-     * HAPPY_VILLAGER} beacons at what is ACTUALLY there -- zero seed math, zero prediction. This is the tool
-     * to answer "do crevasses/traps exist here at all", after {@link #locateGlacialCarver} (which predicts a
-     * carver's seeded START chunk, and so can teleport the tester to a column the carved arc -- reaching up to
-     * {@link CrevasseLocator#CARVER_ARC_REACH_CHUNKS} chunks away -- never breached). Two INDEPENDENT
-     * ground-truth signals, partitioned by each column's WORLD_SURFACE depth so a column is counted at most
-     * once:
-     * <ol>
-     *   <li><b>Trap roofs</b> -- a SHALLOW column (surface at/near the local snowfield) carrying the S30 collapse
-     *       SANDWICH: a {@code minecraft:snow_block} top (flush with the snowfield, indistinguishable) directly
-     *       over a hidden {@code minecraft:powder_snow} marker, over air -- exactly what {@code
-     *       world.PowderCrevasseRoofFeature} now lays (the pre-S30 exposed powder lid is superseded). A green
-     *       beacon rises from the hidden roof, plus a chat line with its coordinates.</li>
-     *   <li><b>Open slots</b> -- a DEEP column: its WORLD_SURFACE sits {@link
-     *       PowderRoofTrap#MIN_SHAFT_DEPTH_BLOCKS}+ below the local snowfield reference ({@link
-     *       GlacialMarkScan#windowedMax} over the feature's own {@link PowderRoofTrap#REFERENCE_WINDOW_RADIUS}
-     *       window). Because WORLD_SURFACE is the highest NON-AIR block, a deep read PROVES air continues up to
-     *       the sky -- a genuine unroofed opening (a ponded slot reads its water top, so it is shallow and
-     *       excluded, matching the feature). A green plume pours up out of the shaft, plus a chat line with
-     *       coordinates and depth.</li>
-     * </ol>
-     * Reads ONLY already-loaded chunks ({@code ServerChunkCache.getChunkNow} -- never force-generates, which
-     * would change the very world the tester is checking); unloaded chunks are skipped and counted, so "found
-     * nothing" is distinguishable from "nothing was loaded". Uses the runtime WORLD_SURFACE heightmap (the
-     * runtime twin of the feature's worldgen WORLD_SURFACE_WG) and the already-tested {@link
-     * PowderRoofTrap#isTrapCandidate} depth gate; the only new pure math (the sentinel-aware windowed max) is
-     * {@link GlacialMarkScan}.
+     * TEST128 ground-truth scan over real, already-loaded blocks. GREEN means a complete physical trap:
+     * irregular low-relief powder cover, a deep clear fall and matching cushions under every cover column,
+     * safe support, and one block-proven command-free escape route with an intact mining tail and surface plug.
+     * No generator plan, legacy bridge shape, or debug counter participates. BLUE remains the independent
+     * heightmap signal for a genuinely open crevasse.
+     *
+     * <p>The broad scan discovers surface-powder components once. Each candidate is then verified in its own
+     * bounded full-height block volume with a three-cell halo, so adjacent components are not double-counted
+     * and the command does not allocate the entire 256-chunk vertical world at once. Unloaded chunks and scan
+     * edges reject conservatively; the command never force-generates proof terrain.
      */
     private static int markGlacial(CommandContext<CommandSourceStack> ctx, int radiusChunks) {
         CommandSourceStack src = ctx.getSource();
@@ -808,15 +800,11 @@ public final class LatitudeDevCommands {
                 }
             }
 
-            // Pass 2: partition each loaded column by depth and mark the ground truth.
-            int refRadius = PowderRoofTrap.REFERENCE_WINDOW_RADIUS;
+            // Pass 2: discover surface powder once and keep the independent open-crevasse signal.
             int openSlotCount = 0;
-            int roofMarkers = 0;
             int slotMarkers = 0;
-            int roofLines = 0;
             int slotLines = 0;
-            boolean[][] roofMask = new boolean[span][span];
-            int[][] roofYByColumn = new int[span][span];
+            boolean[][] powderSurface = new boolean[span][span];
             BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
             for (int gx = 0; gx < span; gx++) {
                 for (int gz = 0; gz < span; gz++) {
@@ -824,49 +812,26 @@ public final class LatitudeDevCommands {
                     if (own == GlacialMarkScan.UNLOADED) {
                         continue;
                     }
-                    final int wx = originBlockX + gx;
-                    final int wz = originBlockZ + gz;
-                    int reference = GlacialMarkScan.windowedMax(surface, gx, gz, refRadius);
-                    // Actual blocks outrank the inferred heightmap class. The command's reference crosses chunk
-                    // borders (intentionally broader than the feature's local 16x16 window), so classifying
-                    // "deep" first could call a low-but-real powder cap an open slot and shred it into an
-                    // invalid partial component. Probe the physical roof first; infer OPEN only when no roof is
-                    // present at all.
-                    int topBlockY = own - 1;
-                    int foundRoofY = Integer.MIN_VALUE;
-                    for (int y = topBlockY; y >= topBlockY - MARK_ROOF_PROBE_DEPTH; y--) {
-                        cursor.set(wx, y, wz);
-                        if (world.getBlockState(cursor).getBlock() != Blocks.POWDER_SNOW) {
-                            continue;
-                        }
-                        cursor.set(wx, y - 1, wz);
-                        boolean airBelow = world.getBlockState(cursor).isAir();
-                        cursor.set(wx, y - 2, wz);
-                        boolean airBelow2 = world.getBlockState(cursor).isAir();
-                        if (airBelow && airBelow2) {
-                            foundRoofY = y;
-                            break;
-                        }
-                    }
-                    if (foundRoofY != Integer.MIN_VALUE) {
-                        roofMask[gx][gz] = true;
-                        roofYByColumn[gx][gz] = foundRoofY;
-                    } else if (PowderRoofTrap.isTrapCandidate(own, reference)) {
-                        // DEEP: WORLD_SURFACE far below the snowfield => air to the sky => open shaft. Signal 2.
+                    int wx = originBlockX + gx;
+                    int wz = originBlockZ + gz;
+                    cursor.set(wx, own - 1, wz);
+                    powderSurface[gx][gz] =
+                            world.getBlockState(cursor).is(Blocks.POWDER_SNOW);
+                    int reference = GlacialMarkScan.windowedMax(
+                            surface, gx, gz, PowderRoofTrap.REFERENCE_WINDOW_RADIUS);
+                    if (!powderSurface[gx][gz]
+                            && PowderRoofTrap.isTrapCandidate(own, reference)) {
                         openSlotCount++;
-                        final int depth = reference - own;
-                        final int floorY = own - 1; // the crevasse floor's top solid block (firstAir - 1)
-                        // S33 (Peetsa 2026-07-21: "there is no roof in the trap -- it's just an empty space"):
-                        // open slots outnumber trap roofs ~1000:1 and USED to draw the same green as traps, so
-                        // every marker the owner walked to was an open crevasse behaving exactly as designed.
-                        // Slots now draw BLUE and sparsely (SLOT_MARKER_CAP); green means trap, always.
+                        int depth = reference - own;
+                        int floorY = own - 1;
                         if (slotMarkers < SLOT_MARKER_CAP) {
                             blueSlotMark(world, wx, own, wz);
                             slotMarkers++;
                         }
                         if (slotLines < MARK_CHAT_CAP) {
                             src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                                    "[latdev]   BLUE open crevasse (no roof, by design): x=%d y=%d z=%d (%d deep)",
+                                    "[latdev]   BLUE open crevasse (no roof): "
+                                            + "x=%d y=%d z=%d (%d deep)",
                                     wx, floorY, wz, depth)), false);
                             slotLines++;
                         }
@@ -874,52 +839,52 @@ public final class LatitudeDevCommands {
                 }
             }
 
-            // One connected, single-plane powder cap is one encounter. Neighbouring caps at different Y are
-            // separate crossings, while the old per-column count made a broad 32-block cap report 32 traps.
-            List<List<int[]>> trapComponents = new ArrayList<>();
-            List<String> rejectedRoofDetails = new ArrayList<>();
-            int rejectedRoofComponents = 0;
-            int[] roofRejectReasons = new int[9];
-            for (List<int[]> component : GlacialMarkScan.connectedComponentsByValue(roofMask, roofYByColumn)) {
-                int rejection = s36TrapRejection(world, component, roofYByColumn, originBlockX, originBlockZ);
-                if (rejection == S36_TRAP_VALID) {
-                    trapComponents.add(component);
-                } else {
-                    rejectedRoofComponents++;
-                    roofRejectReasons[rejection]++;
-                    if (rejectedRoofDetails.size() < MARK_CHAT_CAP) {
-                        int[] representative = GlacialMarkScan.centreRepresentative(component);
-                        int minRoofY = component.stream()
-                                .mapToInt(c -> roofYByColumn[c[0]][c[1]]).min().orElse(Integer.MIN_VALUE);
-                        int maxRoofY = component.stream()
-                                .mapToInt(c -> roofYByColumn[c[0]][c[1]]).max().orElse(Integer.MIN_VALUE);
-                        rejectedRoofDetails.add(String.format(Locale.ROOT,
-                                "%s size=%d roofY=%d..%d x=%d z=%d",
-                                s36TrapRejectionLabel(rejection), component.size(), minRoofY, maxRoofY,
-                                originBlockX + representative[0], originBlockZ + representative[1]));
-                    }
+            // Pass 3: one global connected component -> one bounded, anchored physical proof.
+            List<List<int[]>> powderComponents =
+                    markPhysicalPowderComponents(powderSurface, surface);
+            PhysicalMarkCensus physical = new PhysicalMarkCensus();
+            List<PhysicalMarkedTrap> traps = new ArrayList<>();
+            int scannedCandidates = 0;
+            for (List<int[]> component : powderComponents) {
+                if (scannedCandidates >= MARK_PHYSICAL_CANDIDATE_SCAN_CAP) {
+                    physical.reject("CANDIDATE_SCAN_LIMIT");
+                    continue;
                 }
-            }
-            int trapEncounterCount = trapComponents.size();
-            int trapRoofColumnCount = trapComponents.stream().mapToInt(List::size).sum();
-            for (List<int[]> trap : trapComponents) {
-                int[] representative = GlacialMarkScan.centreRepresentative(trap);
+                scannedCandidates++;
+                GlacialMarkScan.PhysicalScanReport report = scanPhysicalComponent(
+                        world, surface, originBlockX, originBlockZ, component);
+                physical.add(report);
+                if (report.validTraps() != 1) {
+                    continue;
+                }
+                int[] representative = GlacialMarkScan.centreRepresentative(component);
                 if (representative == null) {
                     continue;
                 }
-                final int wx = originBlockX + representative[0];
-                final int wz = originBlockZ + representative[1];
-                final int roofY = roofYByColumn[representative[0]][representative[1]];
-                final int coveredColumns = trap.size();
+                int roofY = surface[representative[0]][representative[1]] - 1;
+                traps.add(new PhysicalMarkedTrap(
+                        originBlockX + representative[0],
+                        roofY,
+                        originBlockZ + representative[1],
+                        report.coverColumns(),
+                        report.cushionMatches()));
+            }
+
+            int roofMarkers = 0;
+            int roofLines = 0;
+            for (PhysicalMarkedTrap trap : traps) {
                 if (roofMarkers < MARK_MARKER_CAP) {
-                    greenBeacon(world, wx, roofY, roofY + TRAP_PILLAR_HEIGHT, wz);
+                    greenBeacon(world, trap.x(), trap.roofY(),
+                            trap.roofY() + TRAP_PILLAR_HEIGHT, trap.z());
                     roofMarkers++;
                 }
                 if (roofLines < MARK_CHAT_CAP) {
-                    String tpCommand = "/latdev tpxz " + wx + " " + wz;
+                    String tpCommand = "/latdev tpxz " + trap.x() + " " + trap.z();
                     MutableComponent trapLine = Component.literal(String.format(Locale.ROOT,
-                            "[latdev]   GREEN TRAP encounter (%d covered blocks): x=%d y=%d z=%d ",
-                            coveredColumns, wx, roofY, wz))
+                            "[latdev]   GREEN PHYSICAL TRAP "
+                                    + "(covers=%d, cushions=%d, escape=verified): x=%d y=%d z=%d ",
+                            trap.coverColumns(), trap.cushionMatches(),
+                            trap.x(), trap.roofY(), trap.z()))
                             .append(Component.literal("[teleport]").withStyle(style -> style
                                     .withClickEvent(new ClickEvent.RunCommand(tpCommand))
                                     .withUnderlined(true)));
@@ -928,10 +893,6 @@ public final class LatitudeDevCommands {
                 }
             }
 
-            // Summary (always) + an explanation when a loaded, in-band scan still finds nothing.
-            final int fTrap = trapEncounterCount;
-            final int fTrapColumns = trapRoofColumnCount;
-            final int fRejectedRoofs = rejectedRoofComponents;
             final int fSlot = openSlotCount;
             final long fScanned = scannedColumns;
             final long fSkipped = skippedColumns;
@@ -939,41 +900,42 @@ public final class LatitudeDevCommands {
             final int fUnloaded = unloadedChunks;
             final int fr = r;
             src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                    "[latdev] markGlacial (r=%d chunks): GREEN trap encounters=%d (%d covered blocks) | "
-                            + "BLUE open crevasses=%d (no roof, by design) | scanned %d cols (%d chunks), "
-                            + "skipped %d cols (%d unloaded) | unverified/legacy powder caps skipped=%d",
-                    fr, fTrap, fTrapColumns, fSlot, fScanned, fLoaded, fSkipped, fUnloaded,
-                    fRejectedRoofs)), false);
-            if (trapEncounterCount > 0) {
+                    "[latdev] markGlacial PHYSICAL TEST128 (r=%d): "
+                            + "candidates=%d | valid traps=%d encounters=%d | "
+                            + "covers=%d cushions=%d escapeRoutes=%d | partial=%d unsafe=%d | "
+                            + "BLUE open crevasses=%d | scanned %d cols (%d chunks), "
+                            + "skipped %d cols (%d unloaded)",
+                    fr, physical.candidates, physical.validTraps, physical.encounters,
+                    physical.coverColumns, physical.cushionMatches,
+                    physical.validEscapeRoutes, physical.partialComponents,
+                    physical.unsafeComponents, fSlot,
+                    fScanned, fLoaded, fSkipped, fUnloaded)), false);
+            if (!physical.rejectionReasons.isEmpty()) {
+                String rejectionSummary =
+                        markPhysicalRejectionSummary(physical.rejectionReasons);
                 src.sendSuccess(() -> Component.literal(
-                        "[latdev] walk onto a GREEN pillar in survival — that powder cover drops the full shaft (cushion at the base)."), false);
+                        "[latdev] physical rejection reasons: " + rejectionSummary), false);
+            }
+            if (physical.validTraps > 0) {
+                src.sendSuccess(() -> Component.literal(
+                        "[latdev] GREEN is block-proven: deep clear fall, every cushion, "
+                                + "safe support, and a command-free exit all verified."), false);
+            } else if (physical.candidates > 0) {
+                src.sendSuccess(() -> Component.literal(
+                        "[latdev] surface-powder candidates exist, but none passed the full physical proof; "
+                                + "see the named reasons above."), false);
             } else if (openSlotCount > 0) {
-                // The exact TEST 123 confusion: markers everywhere, none of them traps.
                 src.sendSuccess(() -> Component.literal(
-                        "[latdev] no traps in range — every marker here is a BLUE open crevasse (a hole, no roof). "
-                                + "Traps only generate in NEW chunks, and only on true Polar Barrens land "
-                                + "(glacier over frozen OCEAN is excluded). Explore fresh ground and rescan."), false);
+                        "[latdev] no surface-powder trap candidates in range; BLUE marks open crevasses only."),
+                        false);
             }
-            if (rejectedRoofComponents > 0) {
-                final String rejectDetail = String.format(Locale.ROOT,
-                        "shape=%d mixedPlane=%d noLanding=%d depthRange=%d noCushion=%d unsafeSupport=%d "
-                                + "wrongBiome=%d noApproach=%d",
-                        roofRejectReasons[S36_TRAP_REJECT_SHAPE], roofRejectReasons[S36_TRAP_REJECT_PLANE],
-                        roofRejectReasons[S36_TRAP_REJECT_NO_LANDING], roofRejectReasons[S36_TRAP_REJECT_SHALLOW],
-                        roofRejectReasons[S36_TRAP_REJECT_NO_CUSHION], roofRejectReasons[S36_TRAP_REJECT_SUPPORT],
-                        roofRejectReasons[S36_TRAP_REJECT_BIOME], roofRejectReasons[S36_TRAP_REJECT_APPROACH]);
-                src.sendSuccess(() -> Component.literal(
-                        "[latdev] skipped-cap reasons: " + rejectDetail), false);
-                for (String detail : rejectedRoofDetails) {
-                    src.sendSuccess(() -> Component.literal("[latdev]   skipped cap: " + detail), false);
-                }
-            }
-            if (roofMarkers >= MARK_MARKER_CAP || slotMarkers >= MARK_MARKER_CAP) {
+            if (roofMarkers >= MARK_MARKER_CAP || slotMarkers >= SLOT_MARKER_CAP) {
                 src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                        "[latdev] (drew the first %d markers per signal — the counts above are the real totals)",
-                        MARK_MARKER_CAP)), false);
+                        "[latdev] (drew at most %d GREEN and %d BLUE markers "
+                                + "— the counts above are the real totals)",
+                        MARK_MARKER_CAP, SLOT_MARKER_CAP)), false);
             }
-            if (trapEncounterCount == 0 && openSlotCount == 0) {
+            if (physical.candidates == 0 && openSlotCount == 0) {
                 double absDeg = Mth.clamp(Math.abs(centerZ) / radius * 90.0, 0.0, 90.0);
                 if (scannedColumns == 0L) {
                     src.sendFailure(Component.literal(
@@ -985,9 +947,10 @@ public final class LatitudeDevCommands {
                             absDeg, GlacialBlend.BLEND_ONSET_DEG, GlacialBlend.BLEND_FULL_DEG)), false);
                 } else {
                     src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                            "[latdev] you're at %.1f° (in-band; the blend threshold rises %.0f°->%.0f°) — likely an unlucky "
-                                    + "low-probability patch. Try a larger radius, or move poleward toward %.0f°.",
-                            absDeg, GlacialBlend.BLEND_ONSET_DEG, GlacialBlend.BLEND_FULL_DEG, GlacialBlend.BLEND_FULL_DEG)), false);
+                            "[latdev] you're at %.1f° (in-band; glacial blend %.0f°->%.0f°) — no safe structural fit "
+                                    + "was found in the loaded glacial terrain scanned here. Try a larger radius, "
+                                    + "or move to another glacial area and scan again.",
+                            absDeg, GlacialBlend.BLEND_ONSET_DEG, GlacialBlend.BLEND_FULL_DEG)), false);
                 }
             }
             return 1;
@@ -997,129 +960,206 @@ public final class LatitudeDevCommands {
         }
     }
 
-    /**
-     * Reject legacy or lookalike powder roofs before calling them S36 encounters. Geometry must match the
-     * authored bridge law, every roof block must share one plane, and every fall column must remain empty down
-     * to a sufficiently deep powder cushion on dry support. This is deliberately stricter than the cheap
-     * powder-over-two-air discovery probe above; false negatives at a scan boundary are safer than directing
-     * the owner to an old two-block lid as if it proved the new design.
-     */
-    private static final int S36_TRAP_VALID = 0;
-    private static final int S36_TRAP_REJECT_SHAPE = 1;
-    private static final int S36_TRAP_REJECT_PLANE = 2;
-    private static final int S36_TRAP_REJECT_NO_LANDING = 3;
-    private static final int S36_TRAP_REJECT_SHALLOW = 4;
-    private static final int S36_TRAP_REJECT_NO_CUSHION = 5;
-    private static final int S36_TRAP_REJECT_SUPPORT = 6;
-    private static final int S36_TRAP_REJECT_BIOME = 7;
-    private static final int S36_TRAP_REJECT_APPROACH = 8;
-    private static final Identifier S36_POLAR_BARRENS_ID =
-            Identifier.fromNamespaceAndPath(GlobeMod.MOD_ID, "polar_barrens");
+    private record PhysicalMarkedTrap(
+            int x, int roofY, int z, int coverColumns, int cushionMatches) {
+    }
 
-    private static int s36TrapRejection(ServerLevel world, List<int[]> component,
-            int[][] roofYByColumn, int originBlockX, int originBlockZ) {
-        if (!PowderRoofTrap.patchEligible(component)) {
-            return S36_TRAP_REJECT_SHAPE;
+    private static final class PhysicalMarkCensus {
+        private int candidates;
+        private int validTraps;
+        private int encounters;
+        private int coverColumns;
+        private int cushionMatches;
+        private int validEscapeRoutes;
+        private int partialComponents;
+        private int unsafeComponents;
+        private final Map<String, Integer> rejectionReasons = new LinkedHashMap<>();
+
+        void add(GlacialMarkScan.PhysicalScanReport report) {
+            candidates += report.candidates();
+            validTraps += report.validTraps();
+            encounters += report.encounters();
+            coverColumns += report.coverColumns();
+            cushionMatches += report.cushionMatches();
+            validEscapeRoutes += report.validEscapeRoutes();
+            partialComponents += report.partialComponents();
+            unsafeComponents += report.unsafeComponents();
+            report.rejectionReasons().forEach(
+                    (reason, count) -> rejectionReasons.merge(reason, count, Integer::sum));
         }
-        int roofY = roofYByColumn[component.get(0)[0]][component.get(0)[1]];
+
+        void reject(String reason) {
+            candidates++;
+            partialComponents++;
+            rejectionReasons.merge(reason, 1, Integer::sum);
+        }
+    }
+
+    /** Deterministic cardinal surface-powder components; adjacent covers may differ by one block. */
+    private static List<List<int[]>> markPhysicalPowderComponents(
+            boolean[][] powderSurface, int[][] firstAir) {
+        List<List<int[]>> components = new ArrayList<>();
+        boolean[][] seen = new boolean[powderSurface.length][];
+        for (int x = 0; x < powderSurface.length; x++) {
+            seen[x] = new boolean[powderSurface[x].length];
+        }
+        int[][] directions = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int x = 0; x < powderSurface.length; x++) {
+            for (int z = 0; z < powderSurface[x].length; z++) {
+                if (!powderSurface[x][z] || seen[x][z]) {
+                    continue;
+                }
+                List<int[]> component = new ArrayList<>();
+                ArrayDeque<int[]> queue = new ArrayDeque<>();
+                queue.addLast(new int[]{x, z});
+                seen[x][z] = true;
+                while (!queue.isEmpty()) {
+                    int[] cell = queue.removeFirst();
+                    component.add(cell);
+                    for (int[] direction : directions) {
+                        int nx = cell[0] + direction[0];
+                        int nz = cell[1] + direction[1];
+                        if (nx < 0 || nx >= powderSurface.length
+                                || nz < 0 || nz >= powderSurface[nx].length
+                                || seen[nx][nz] || !powderSurface[nx][nz]
+                                || Math.abs(firstAir[nx][nz] - firstAir[cell[0]][cell[1]]) > 1) {
+                            continue;
+                        }
+                        seen[nx][nz] = true;
+                        queue.addLast(new int[]{nx, nz});
+                    }
+                }
+                components.add(List.copyOf(component));
+            }
+        }
+        return List.copyOf(components);
+    }
+
+    private static GlacialMarkScan.PhysicalScanReport scanPhysicalComponent(
+            ServerLevel world,
+            int[][] surface,
+            int originBlockX,
+            int originBlockZ,
+            List<int[]> component) {
+        int minX = component.stream().mapToInt(cell -> cell[0]).min().orElse(0);
+        int maxX = component.stream().mapToInt(cell -> cell[0]).max().orElse(0);
+        int minZ = component.stream().mapToInt(cell -> cell[1]).min().orElse(0);
+        int maxZ = component.stream().mapToInt(cell -> cell[1]).max().orElse(0);
+        int spanX = maxX - minX + 1;
+        int spanZ = maxZ - minZ + 1;
+        if (component.size() > MARK_PHYSICAL_COMPONENT_COLUMN_CAP
+                || spanX > MARK_PHYSICAL_COMPONENT_SPAN_CAP
+                || spanZ > MARK_PHYSICAL_COMPONENT_SPAN_CAP) {
+            return rejectedPhysicalReport("COMPONENT_TOO_LARGE");
+        }
+        if (minX < MARK_PHYSICAL_HALO || minZ < MARK_PHYSICAL_HALO
+                || maxX + MARK_PHYSICAL_HALO >= surface.length
+                || maxZ + MARK_PHYSICAL_HALO >= surface[0].length) {
+            return rejectedPhysicalReport("UNLOADED_OR_SCAN_BOUNDARY");
+        }
+
+        int minCoverY = component.stream()
+                .mapToInt(cell -> surface[cell[0]][cell[1]] - 1).min().orElse(world.getMinY());
+        int maxCoverY = component.stream()
+                .mapToInt(cell -> surface[cell[0]][cell[1]] - 1).max().orElse(world.getMinY());
+        int sampleMinY = Math.max(world.getMinY(),
+                minCoverY - PowderRoofTrap.MAX_SHAFT_DEPTH_BLOCKS - 2);
+        int sampleMaxY =
+                GlacialMarkScan.physicalSampleMaxYInclusive(maxCoverY, world.getMaxY());
+        if (sampleMaxY - sampleMinY < PowderRoofTrap.MIN_SHAFT_DEPTH_BLOCKS + 3) {
+            return rejectedPhysicalReport("UNLOADED_OR_SCAN_BOUNDARY");
+        }
+
+        int sampleMinX = minX - MARK_PHYSICAL_HALO;
+        int sampleMaxX = maxX + MARK_PHYSICAL_HALO;
+        int sampleMinZ = minZ - MARK_PHYSICAL_HALO;
+        int sampleMaxZ = maxZ + MARK_PHYSICAL_HALO;
+        int width = sampleMaxX - sampleMinX + 1;
+        int depth = sampleMaxZ - sampleMinZ + 1;
+        int height = sampleMaxY - sampleMinY + 1;
+        GlacialMarkScan.PhysicalCellKind[][][] cells =
+                new GlacialMarkScan.PhysicalCellKind[width][height][depth];
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-        Set<Long> occupied = new HashSet<>();
-        for (int[] cell : component) {
-            occupied.add(s36Pack(cell[0], cell[1]));
-        }
-        List<Integer> northBank = new ArrayList<>();
-        List<Integer> southBank = new ArrayList<>();
-        List<Integer> westBank = new ArrayList<>();
-        List<Integer> eastBank = new ArrayList<>();
-        for (int[] cell : component) {
-            if (roofYByColumn[cell[0]][cell[1]] != roofY) {
-                GlobeMod.LOGGER.info("[LAT][MARK_S36_REJECT] reason=mixedPlane x={} z={} expectedRoofY={} actualRoofY={}",
-                        originBlockX + cell[0], originBlockZ + cell[1], roofY,
-                        roofYByColumn[cell[0]][cell[1]]);
-                return S36_TRAP_REJECT_PLANE;
-            }
-            int worldX = originBlockX + cell[0];
-            int worldZ = originBlockZ + cell[1];
-            cursor.set(worldX, roofY + 1, worldZ);
-            if (!world.getBiome(cursor).unwrapKey()
-                    .map(key -> key.identifier().equals(S36_POLAR_BARRENS_ID))
-                    .orElse(false)) {
-                return S36_TRAP_REJECT_BIOME;
-            }
-            s36AddBankHeight(world, occupied, northBank, cell[0], cell[1] - 1,
-                    originBlockX, originBlockZ, roofYByColumn);
-            s36AddBankHeight(world, occupied, southBank, cell[0], cell[1] + 1,
-                    originBlockX, originBlockZ, roofYByColumn);
-            s36AddBankHeight(world, occupied, westBank, cell[0] - 1, cell[1],
-                    originBlockX, originBlockZ, roofYByColumn);
-            s36AddBankHeight(world, occupied, eastBank, cell[0] + 1, cell[1],
-                    originBlockX, originBlockZ, roofYByColumn);
-            int cushionY = Integer.MIN_VALUE;
-            for (int y = roofY - 1; y >= world.getMinY(); y--) {
-                cursor.set(worldX, y, worldZ);
-                if (!world.getBlockState(cursor).isAir()) {
-                    cushionY = y;
-                    break;
+        var chunkSource = world.getChunkSource();
+        boolean unknownColumn = false;
+        for (int lx = 0; lx < width; lx++) {
+            int gx = sampleMinX + lx;
+            int worldX = originBlockX + gx;
+            for (int lz = 0; lz < depth; lz++) {
+                int gz = sampleMinZ + lz;
+                int worldZ = originBlockZ + gz;
+                boolean loaded = surface[gx][gz] != GlacialMarkScan.UNLOADED
+                        && chunkSource.getChunkNow(
+                                Math.floorDiv(worldX, 16), Math.floorDiv(worldZ, 16)) != null;
+                unknownColumn |= !loaded;
+                for (int ly = 0; ly < height; ly++) {
+                    if (!loaded) {
+                        cells[lx][ly][lz] =
+                                GlacialMarkScan.PhysicalCellKind.UNLOADED;
+                        continue;
+                    }
+                    cursor.set(worldX, sampleMinY + ly, worldZ);
+                    BlockState state = world.getBlockState(cursor);
+                    cells[lx][ly][lz] = markPhysicalCell(world, cursor, state);
                 }
             }
-            if (cushionY == Integer.MIN_VALUE) {
-                return S36_TRAP_REJECT_NO_LANDING;
-            }
-            if (!PowderRoofTrap.columnDepthEligible(cushionY, roofY)) {
-                GlobeMod.LOGGER.info("[LAT][MARK_S36_REJECT] reason=depthRange x={} z={} roofY={} firstBlockY={} depth={}",
-                        worldX, worldZ, roofY, cushionY, (roofY + 1) - cushionY);
-                return S36_TRAP_REJECT_SHALLOW;
-            }
-            cursor.set(worldX, cushionY, worldZ);
-            if (world.getBlockState(cursor).getBlock() != Blocks.POWDER_SNOW) {
-                GlobeMod.LOGGER.info("[LAT][MARK_S36_REJECT] reason=noCushion x={} z={} roofY={} firstBlockY={} block={}",
-                        worldX, worldZ, roofY, cushionY, world.getBlockState(cursor));
-                return S36_TRAP_REJECT_NO_CUSHION;
-            }
-            cursor.set(worldX, cushionY - 1, worldZ);
-            var support = world.getBlockState(cursor);
-            if (support.isAir() || !support.getFluidState().isEmpty()) {
-                GlobeMod.LOGGER.info("[LAT][MARK_S36_REJECT] reason=unsafeSupport x={} z={} cushionY={} support={}",
-                        worldX, worldZ, cushionY, support);
-                return S36_TRAP_REJECT_SUPPORT;
-            }
         }
-        int verifiedRoofY = PowderRoofTrap.selectSnowfieldRoofY(
-                List.of(roofY + 1), northBank, southBank, westBank, eastBank);
-        if (verifiedRoofY != roofY) {
-            return S36_TRAP_REJECT_APPROACH;
+        if (unknownColumn) {
+            return rejectedPhysicalReport("UNLOADED_OR_SCAN_BOUNDARY");
         }
-        return S36_TRAP_VALID;
+
+        int[] anchor = component.get(0);
+        GlacialMarkScan.PhysicalScanReport report =
+                GlacialMarkScan.scanPhysicalTrapVolumeAt(
+                        cells,
+                        PowderRoofTrap.MIN_SHAFT_DEPTH_BLOCKS,
+                        anchor[0] - sampleMinX,
+                        anchor[1] - sampleMinZ);
+        return report.candidates() == 0
+                ? rejectedPhysicalReport("ADAPTER_ANCHOR_MISSING") : report;
     }
 
-    private static long s36Pack(int x, int z) {
-        return ((long) x << 32) ^ (z & 0xffffffffL);
-    }
-
-    private static void s36AddBankHeight(ServerLevel world, Set<Long> occupied, List<Integer> destination,
-            int gridX, int gridZ, int originBlockX, int originBlockZ, int[][] roofYByColumn) {
-        if (gridX < 0 || gridX >= roofYByColumn.length
-                || roofYByColumn[gridX] == null
-                || gridZ < 0 || gridZ >= roofYByColumn[gridX].length
-                || occupied.contains(s36Pack(gridX, gridZ))) {
-            return;
+    private static GlacialMarkScan.PhysicalCellKind markPhysicalCell(
+            ServerLevel world, BlockPos pos, BlockState state) {
+        if (world.getBlockEntity(pos) != null) {
+            return GlacialMarkScan.PhysicalCellKind.BLOCK_ENTITY;
         }
-        destination.add(world.getHeight(
-                Heightmap.Types.WORLD_SURFACE, originBlockX + gridX, originBlockZ + gridZ));
+        if (!state.getFluidState().isEmpty()) {
+            return GlacialMarkScan.PhysicalCellKind.FLUID;
+        }
+        if (state.is(Blocks.POWDER_SNOW)) {
+            return GlacialMarkScan.PhysicalCellKind.POWDER_SNOW;
+        }
+        if (state.is(Blocks.SNOW_BLOCK)) {
+            return GlacialMarkScan.PhysicalCellKind.SNOW_BLOCK;
+        }
+        if (state.is(Blocks.SNOW)) {
+            return GlacialMarkScan.PhysicalCellKind.SNOW_LAYER;
+        }
+        if (state.isAir()) {
+            return GlacialMarkScan.PhysicalCellKind.AIR;
+        }
+        if (state.getBlock() instanceof FallingBlock) {
+            return GlacialMarkScan.PhysicalCellKind.GRAVITY_SOLID;
+        }
+        if (state.getCollisionShape(world, pos).isEmpty()) {
+            return GlacialMarkScan.PhysicalCellKind.PASSABLE_DRY;
+        }
+        if (state.isCollisionShapeFullBlock(world, pos)) {
+            return GlacialMarkScan.PhysicalCellKind.DRY_SOLID;
+        }
+        return GlacialMarkScan.PhysicalCellKind.DRY_UNSTABLE;
     }
 
-    private static String s36TrapRejectionLabel(int rejection) {
-        return switch (rejection) {
-            case S36_TRAP_REJECT_SHAPE -> "shape";
-            case S36_TRAP_REJECT_PLANE -> "mixedPlane";
-            case S36_TRAP_REJECT_NO_LANDING -> "noLanding";
-            case S36_TRAP_REJECT_SHALLOW -> "shallow";
-            case S36_TRAP_REJECT_NO_CUSHION -> "noCushion";
-            case S36_TRAP_REJECT_SUPPORT -> "unsafeSupport";
-            case S36_TRAP_REJECT_BIOME -> "wrongBiome";
-            case S36_TRAP_REJECT_APPROACH -> "noApproach";
-            default -> "valid";
-        };
+    private static GlacialMarkScan.PhysicalScanReport rejectedPhysicalReport(String reason) {
+        return new GlacialMarkScan.PhysicalScanReport(
+                1, 0, 0, 0, 0, 0, 1, 0, Map.of(reason, 1));
+    }
+
+    private static String markPhysicalRejectionSummary(Map<String, Integer> reasons) {
+        return reasons.entrySet().stream()
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(java.util.stream.Collectors.joining(" "));
     }
 
     /**
