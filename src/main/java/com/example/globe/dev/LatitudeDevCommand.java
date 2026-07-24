@@ -538,7 +538,7 @@ public final class LatitudeDevCommand {
             double deg = LatitudeMath.absLatDegExact(world.getWorldBorder(), player.getZ());
             double t = Mth.clamp(Math.abs(player.getZ()) / (double) radius, 0.0, 1.0);
 
-            BandTarget band = BandTarget.fromZ(radius, player.getZ());
+            BandTarget band = BandTarget.fromZ(radius, pos.getZ());
             int authorityBandIndex = LatitudeBiomes.authoritativeLandBandIndex(pos.getX(), pos.getZ(), radius);
             LatitudeBands.Band authorityBand = LatitudeBiomes.bandFromIndex(authorityBandIndex);
             String biomeId = biomeId(world.getBiome(pos));
@@ -1194,12 +1194,9 @@ public final class LatitudeDevCommand {
     }
 
     private static int authoritativeRadius(CommandSourceStack source) {
-        int borderRadius = maxAbsZFromBorder(source);
-        int activeRadius = LatitudeBiomes.getActiveRadiusBlocks();
-        if (activeRadius > 0) {
-            return Mth.clamp(activeRadius, 1, Math.max(1, borderRadius));
-        }
-        return Math.max(1, borderRadius);
+        return DevToolPolicy.productionLatitudeRadius(
+                LatitudeBiomes.getActiveRadiusBlocks(),
+                LatitudeMath.worldRadiusBlocks(source.getLevel().getWorldBorder()));
     }
 
     private static int maxAbsZFromBorder(CommandSourceStack source) {

@@ -235,6 +235,45 @@ public final class DevToolPolicyTest {
     }
 
     private static void productionBorderRadiusOwnsCommandAndEvidenceLatitude() {
+        expectEquals(
+                10_000,
+                DevToolPolicy.productionLatitudeRadius(10_000, 10_000.0),
+                "active worldgen radius owns developer classification");
+        expectEquals(
+                10_000,
+                DevToolPolicy.productionLatitudeRadius(0, 10_000.0),
+                "world-border half-size is the developer-classification fallback");
+        expectEquals(
+                10_000,
+                DevToolPolicy.productionLatitudeRadius(10_000, 9_984.0),
+                "padded traversal radius cannot shrink active latitude authority");
+
+        int resolvedRadius = DevToolPolicy.productionLatitudeRadius(10_000, 10_000.0);
+        double northBelowBoundary = Math.abs(
+                DevToolPolicy.signedLatitudeDegrees(-5_555, 0.0, resolvedRadius));
+        double northAtBoundary = Math.abs(
+                DevToolPolicy.signedLatitudeDegrees(-5_556, 0.0, resolvedRadius));
+        double southBelowBoundary = Math.abs(
+                DevToolPolicy.signedLatitudeDegrees(5_555, 0.0, resolvedRadius));
+        double southAtBoundary = Math.abs(
+                DevToolPolicy.signedLatitudeDegrees(5_556, 0.0, resolvedRadius));
+        expectNear(49.995, northBelowBoundary,
+                "north O3 below-boundary block uses production radius");
+        expectNear(50.004, northAtBoundary,
+                "north O3 boundary block uses production radius");
+        expectNear(49.995, southBelowBoundary,
+                "south O3 below-boundary block uses production radius");
+        expectNear(50.004, southAtBoundary,
+                "south O3 boundary block uses production radius");
+        expectTrue(northBelowBoundary < 50.0,
+                "north O3 below-boundary block stays temperate");
+        expectTrue(northAtBoundary >= 50.0,
+                "north O3 boundary block enters subpolar");
+        expectTrue(southBelowBoundary < 50.0,
+                "south O3 below-boundary block stays temperate");
+        expectTrue(southAtBoundary >= 50.0,
+                "south O3 boundary block enters subpolar");
+
         DevToolPolicy.LatitudeTarget target = DevToolPolicy.latitudeTarget(
                 89.0,
                 0.0,
