@@ -62,13 +62,23 @@
       "minecraft:disk_clay",
       "minecraft:disk_gravel"
     ],
-    [],
+    [
+      "globe:hanging_icicles",
+      "globe:icicle_cluster",
+      "globe:glacial_snow_drift",
+      "globe:glacial_powder_pocket",
+      "globe:glacial_frost_carpet",
+      "globe:glacial_slush_floe"
+    ],
     [
       "minecraft:spring_water",
       "minecraft:spring_lava"
     ],
     [
-      "minecraft:glow_lichen"
+      "minecraft:glow_lichen",
+      "globe:pale_cave_hanging_moss",
+      "globe:pale_cave_moss_patch",
+      "globe:glacial_glow_lichen"
     ],
     [
       "minecraft:freeze_top_layer",

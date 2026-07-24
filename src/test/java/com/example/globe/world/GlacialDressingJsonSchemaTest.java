@@ -59,9 +59,13 @@ class GlacialDressingJsonSchemaTest {
         return out;
     }
 
-    /** Every dressing placement must end with the biome filter (so a feature never leaks outside
-     *  glacial_caves cells) and must cap its height range BELOW the glacial-caves ceiling as a
-     *  VerticalAnchor OBJECT (the grammar that breaks world creation if written as a plain number). */
+    /** Every dressing placement must end with the biome filter (so a feature never leaks outside its
+     *  listed biomes) and must express its height range as a VerticalAnchor OBJECT (the grammar that
+     *  breaks world creation if written as a plain number). S38 (Peetsa 2026-07-23, TEST 128 "I don't
+     *  see any icicles or any variety at all"): the old &lt;48 ceiling cap is RETIRED — the dressing now
+     *  spans the FULL cavern column (the features are listed in BOTH glacial_caves and polar_barrens, so
+     *  the biome filter still bounds them to glacial country); the cap assertion flips to "must reach
+     *  ABOVE the glacial-caves ceiling and cover the p95 surface band". */
     private static void assertCaveBandPlacement(String name, List<JsonObject> chain) {
         assertEquals("minecraft:biome", chain.get(chain.size() - 1).get("type").getAsString(),
                 name + ": the biome filter must be the LAST placement modifier");
@@ -70,8 +74,28 @@ class GlacialDressingJsonSchemaTest {
         assertTrue(max.isJsonObject(),
                 name + ": height-provider max_inclusive must be a VerticalAnchor OBJECT, not a number");
         int maxY = max.getAsJsonObject().get("absolute").getAsInt();
+        assertTrue(maxY > LatitudeBiomes.GLACIAL_CAVES_CEILING_Y,
+                name + ": S38 — dressing must reach ABOVE the glacial-caves ceiling into the upper cavern "
+                        + "country (" + maxY + " > 48)");
+        assertTrue(maxY >= 110,
+                name + ": S38 — the range must cover the p95 surface band (~Y120), was " + maxY);
+        assertTrue(height.get("min_inclusive").getAsJsonObject().has("above_bottom"),
+                name + ": range must start at the world floor (above_bottom anchor)");
+    }
+
+    /** S38 exception: the two ICE BLOBS stay DEEP-band only (max &lt; 48). Above Y0 the S37 body is already
+     *  solid ice, so blobs would be invisible no-ops there — they exist to seam the remaining sub-Y48
+     *  stone country. The caves-only listing is also pinned by the biome-schema step-6 prefix law. */
+    private static void assertDeepCaveBandPlacement(String name, List<JsonObject> chain) {
+        assertEquals("minecraft:biome", chain.get(chain.size() - 1).get("type").getAsString(),
+                name + ": the biome filter must be the LAST placement modifier");
+        JsonObject height = modifier(chain, "minecraft:height_range").getAsJsonObject("height");
+        JsonElement max = height.get("max_inclusive");
+        assertTrue(max.isJsonObject(),
+                name + ": height-provider max_inclusive must be a VerticalAnchor OBJECT, not a number");
+        int maxY = max.getAsJsonObject().get("absolute").getAsInt();
         assertTrue(maxY < LatitudeBiomes.GLACIAL_CAVES_CEILING_Y,
-                name + ": dressing must stay below the glacial-caves ceiling (" + maxY + " < 48)");
+                name + ": blobs stay below the glacial-caves ceiling (" + maxY + " < 48)");
         assertTrue(height.get("min_inclusive").getAsJsonObject().has("above_bottom"),
                 name + ": range must start at the world floor (above_bottom anchor)");
     }
@@ -438,7 +462,7 @@ class GlacialDressingJsonSchemaTest {
             JsonObject placedJson = placed(name);
             assertEquals("globe:" + name, placedJson.get("feature").getAsString());
             List<JsonObject> chain = placementChain(placedJson);
-            assertCaveBandPlacement(name, chain);
+            assertDeepCaveBandPlacement(name, chain);
             assertTrue(chain.stream().anyMatch(m -> "minecraft:count".equals(m.get("type").getAsString())),
                     name + ": count-based placement fills the band");
         }

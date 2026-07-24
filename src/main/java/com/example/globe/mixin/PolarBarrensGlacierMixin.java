@@ -203,7 +203,26 @@ public abstract class PolarBarrensGlacierMixin {
                         int depthBelowCap = capBottomY - y;
                         boolean blueHeart = depthBelowCap >= blueIceStartDepth
                                 && depthBelowCap < blueIceStartDepth + PolarBarrensBand.BLUE_ICE_HEART_THICKNESS_BLOCKS;
-                        chunk.setBlockState(cursor, blueHeart ? GLOBE_GLACIER_BLUE_ICE : GLOBE_GLACIER_PACKED_ICE);
+                        // S38 SPECKLE (Peetsa 2026-07-23, TEST 128: "notice how uniform everything looks"): the
+                        // non-heart body is no longer a monolithic packed slab -- a deterministic per-block hash
+                        // (world seed + salt, Art VI) flecks it with ~7% snow_block pockets and ~5% blue_ice
+                        // glints. Both speckle materials keep the carve story honest: snow_block IS carver-
+                        // replaceable, and blue flecks are bounded % just like the heart seam -- packed_ice
+                        // stays the overwhelming carvable majority.
+                        BlockState bodyState;
+                        if (blueHeart) {
+                            bodyState = GLOBE_GLACIER_BLUE_ICE;
+                        } else {
+                            double speck = LatitudeBiomes.polarBarrensBodySpeckle01(blockX, y, blockZ);
+                            if (speck < 0.05) {
+                                bodyState = GLOBE_GLACIER_BLUE_ICE;
+                            } else if (speck < 0.12) {
+                                bodyState = GLOBE_GLACIER_SNOW_BLOCK;
+                            } else {
+                                bodyState = GLOBE_GLACIER_PACKED_ICE;
+                            }
+                        }
+                        chunk.setBlockState(cursor, bodyState);
                     }
                 }
                 // S37 SUB-Y0 ICE DIFFUSION (Peetsa 2026-07-23: "sub-Y0, where there should be about a 10 block
