@@ -188,6 +188,9 @@ public class GlobeMod implements ModInitializer {
         // freeze -- a datapack configured_feature referencing an unregistered type would hard-fail at load.
         // All BEHAVIOUR is flag-gated (POLAR_BARRENS_ENABLED) inside the feature.
         com.example.globe.world.PowderCrevasseRoofFeature.register();
+        // S37: globe:icicle (vanilla speleothem rooted on packed ice) + its item. Unconditional (registry
+        // consistency law); generation is biome-JSON-scoped to glacial caves.
+        com.example.globe.world.IcicleBlocks.register();
 
         // Phase 5 S27: register the mod's first custom PARTICLE type (globe:frost_glint) into
         // BuiltInRegistries.PARTICLE_TYPE UNCONDITIONALLY, before registry freeze (same registry-consistency law
@@ -600,6 +603,23 @@ public class GlobeMod implements ModInitializer {
             }
             boolean coldDamagePaused =
                     com.example.globe.core.PolarImmersion.coldDamagePaused(coldSheltered, inWater, coldGrace);
+
+            // S37 F1: PONDED WATER CAUSES FREEZING (Peetsa: "the water that has ponded is not causing freezing
+            // damage -- hearts are red"). DIRECT water-contact chill: raises ticksFrozen itself, exactly like
+            // standing in vanilla powder snow, just faster (+3..+6/t vs vanilla's -2/t decay; PolarWaterChill).
+            // Raw |lat| (NOT the S7-shifted effective latitude) is the input -- see the law's javadoc. Gated on
+            // canFreeze() so any leather piece exempts (vanilla's own powder gate, javap-verified); isInWater()
+            // is false in a boat and in mere rain. SWEEP REQUIRED-FIX 1 (S37): sits AFTER coldDamagePaused and
+            // honors it -- during the sacred post-crossing grace curtain (or any pause) the chill must not
+            // build toward vanilla's own auto-freeze damage below the 87.5 suppression band. NOTE (sweep 2):
+            // an 82+ swimmer is ALREADY frostbite-band via the S7 +3 shift, so the chill's vanilla freeze
+            // damage STACKS with S7 frostbite -- deliberate ("polar water is colder than polar air"), owner
+            // confirms the harshness at flight.
+            if (inWater && player.canFreeze() && !coldDamagePaused
+                    && latDeg >= com.example.globe.core.PolarWaterChill.ONSET_LAT_DEG) {
+                player.setTicksFrozen(com.example.globe.core.PolarWaterChill.nextTicksFrozen(
+                        player.getTicksFrozen(), latDeg, player.getTicksRequiredToFreeze()));
+            }
 
             // B-7 S3: the FROSTBITE band [85,88) -- gentle freeze damage equatorward of the lethal core, handing
             // off EXACTLY at 88 deg to the untouched [88,90] curve (both bands evaluated at the S7 effective

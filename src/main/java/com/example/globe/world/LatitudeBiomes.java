@@ -942,26 +942,27 @@ public final class LatitudeBiomes {
     }
 
     /**
-     * S24 PERMAFROST STRATUM (Peetsa 2026-07-20, TEST 115: "the ice doesn't extend down very far. It just
-     * becomes regular cave"): how many blocks BELOW the glacier sole this column's packed-ice permafrost
-     * veining reaches (0..{@link PolarBarrensBand#PERMAFROST_BAND_BLOCKS}). REUSES the exact glacier
-     * depth-wobble field ({@code POLAR_BARRENS_GLACIER_SALT} -- the same sample that undulates the sole and
-     * warps the blue-ice line, per Art VI's no-new-noise discipline), so the permafrost fingers plunge
-     * deepest precisely where the glacier body is thickest, reading as one coherent ice mass. Consumed
-     * flag-gated by {@code PolarBarrensGlacierMixin} at the end of the surface stage, immediately below the
-     * body loop; worldgen-stage, deterministic, NEW CHUNKS ONLY. Callers ANDs the barrens-column decision
-     * (this is only invoked once {@link #polarBarrensGlacierIceBlocks} has confirmed the column is barrens),
-     * so a non-barrens column is never given permafrost.
+     * S37 SUB-Y0 ICE DIFFUSION (Peetsa 2026-07-23, TEST 127: "caverns almost all ice until sub-Y0, where
+     * there should be about a 10 block diffusion of the ice into stone/deepslate") -- the S24 permafrost
+     * stratum RELOCATED below Y0 now that the body carries solid ice down to {@link PolarBarrensBand#ICE_BODY_FLOOR_Y}:
+     * how many blocks BELOW Y0 this column's packed-ice fingering reaches
+     * (0..{@link PolarBarrensBand#PERMAFROST_BAND_BLOCKS}). REUSES the exact glacier depth-wobble field
+     * ({@code POLAR_BARRENS_GLACIER_SALT} -- the same sample that undulates the body sole and warps the
+     * blue-ice line, per Art VI's no-new-noise discipline), so the diffusion fingers plunge deepest precisely
+     * where the glacier body is thickest, reading as one coherent ice mass. Consumed flag-gated by
+     * {@code PolarBarrensGlacierMixin} at the end of the surface stage, immediately below the body loop;
+     * worldgen-stage, deterministic, NEW CHUNKS ONLY. The caller ANDs the barrens-column decision (this is
+     * only invoked once {@link #polarBarrensGlacierIceBlocks} has confirmed the column is barrens), so a
+     * non-barrens column is never given diffusion. (S37 rename: was {@code polarBarrensPermafrostDepthBelowSole}.)
      */
-    public static int polarBarrensPermafrostDepthBelowSole(int blockX, int blockZ) {
+    public static int polarBarrensPermafrostDepthBelowY0(int blockX, int blockZ) {
         double depthNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_BARRENS_GLACIER_SALT,
                 blockX, blockZ, POLAR_BARRENS_GLACIER_SCALE_BLOCKS);
-        // S24 sweep REQUIRED-FIX: the curve's reach is non-increasing in its input while the glacier BODY
-        // is thickest at HIGH noise -- passing the raw sample made fingers plunge deepest under the
-        // THINNEST glacier, inverting the stated law ("more overburden, deeper cementing"). Inverting the
-        // sample at this seam aligns the two: thick body (high noise) -> deep permafrost. Same field, same
-        // determinism; areal density unchanged by symmetry; NaN still degrades inside the pure curve.
-        return PolarBarrensBand.permafrostIceDepthBelowSole(1.0 - depthNoise);
+        // Sweep-carried fix: the curve's reach is non-increasing in its input while the glacier BODY is
+        // thickest at HIGH noise -- passing the raw sample would make fingers plunge deepest under the
+        // THINNEST glacier. Inverting the sample at this seam keeps the two coherent: thick body (high noise)
+        // -> deep diffusion. Same field, same determinism; NaN still degrades inside the pure curve.
+        return PolarBarrensBand.permafrostIceDepthBelowY0(1.0 - depthNoise);
     }
 
     /**
@@ -1018,10 +1019,11 @@ public final class LatitudeBiomes {
      * {@code dripstone_caves}/{@code lush_caves} quarts ARE swapped, not merely stone-biome quarts -- the
      * swap runs BEFORE the lush veto and its sole exemption is {@code !isDeepDark(current)}). The owner's
      * "abrupt end" is therefore NOT a swap floor (the biome identity is full-depth already) but the ice
-     * DRESSING thinning out: the permafrost stratum ({@code PolarBarrensGlacierMixin}, glacier scope --
-     * not this pass) fades to 0 within {@code PolarBarrensBand.PERMAFROST_BAND_BLOCKS} (24) of the sole,
-     * below which only the ice blobs seam the walls. S25 answers data-side by carrying the blob density
-     * to full depth (see {@code placed_feature/glacial_ice_blob.json}); the swap itself needs no change.
+     * DRESSING thinning out. S37 (owner TEST 127) closes this differently: the glacier body
+     * ({@code PolarBarrensGlacierMixin}, glacier scope -- not this pass) now carries SOLID ICE all the way
+     * down to Y0 ({@code PolarBarrensBand.ICE_BODY_FLOOR_Y}), and a ~10-block diffusion band
+     * ({@code PolarBarrensBand.PERMAFROST_BAND_BLOCKS}) fingers ice into the stone below Y0 -- so the deep
+     * caverns read glacial in their walls by construction; the swap itself still needs no change.
      */
     public static boolean isBelowGlacialCaveCeiling(int blockY) {
         return blockY < GLACIAL_CAVES_CEILING_Y;

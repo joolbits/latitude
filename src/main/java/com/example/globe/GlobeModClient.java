@@ -336,6 +336,9 @@ public class GlobeModClient implements ClientModInitializer {
             // surface (FrostMoteLaw), so it is a cheap biome-check no-op everywhere else. Shares the spawn-tick
             // cadence + the vanilla Particles tier; the ONE Latitude particle that spawns underground BY DESIGN.
             spawnFrostMotes(client, snowTier);
+            // S37 F2: torch-lit ice sparkle -- cosmetic-only, gated on its own 60-deg floor (independent of
+            // the ambient snow/glint band above), same spawn-tick cadence + Particles tier.
+            spawnTorchIceSparkle(client, absLatDeg, snowTier);
         }
 
         // TEST 89: the EW border DUST/sand storm particles are REMOVED entirely (Peetsa: "remove the dust
@@ -763,6 +766,75 @@ public class GlobeModClient implements ClientModInitializer {
             double vz = (random.nextDouble() - 0.5) * 2.0 * drift;
             // No upward term -- the SNOWFLAKE's own faint gravity settles it gently onto the water.
             client.particleEngine.createParticle(FROST_MOTE_PARTICLE, mx, my, mz, vx, 0.0, vz);
+        }
+    }
+
+    // ---- S37 F2: ICE SPARKLES IN TORCHLIGHT (Peetsa: "ice should have the sparkles when bathed in the
+    // light of a torch"). Extends the ambient GLINT sparkle (above) to torch-lit ice anywhere polar players
+    // build -- underground, in a base, wherever an ice-family block sits next to BLOCK-lit air. Reuses the
+    // SAME frost_glint particle + zero-drift spawn shape as spawnSnowSparkle, and the SAME
+    // ParticleDensity-tier budget-scaling discipline every ambient spawner here follows; deliberately NOT
+    // gated on the glacial band, sky-openness, or any flag (cosmetic-only, per spec) -- just a cheap
+    // latitude floor (60 deg, the SAME functional-band floor SnowSparkleLaw's extended onset uses) so the
+    // sampling loop is a no-op everywhere but polar country. ----
+    /** Peak per-spawn-tick cluster budget BEFORE the shared Particles-tier scaling -- deliberately tiny
+     *  (torchlit ice is everywhere a polar base is built; the ambient glint's per-snowfield sparseness
+     *  would look like noise here, so this budget is kept well under it). */
+    private static final int TORCH_ICE_SPARKLE_PEAK_BUDGET = 2;
+    /** Horizontal+vertical radius (blocks) around the player sampled for a torch-lit ice face. */
+    private static final double TORCH_ICE_SPARKLE_RADIUS = 8.0;
+    /** Minimum BLOCK light (NOT sky light) the exposed air face must read for the ice to "catch" the light. */
+    private static final int TORCH_ICE_SPARKLE_MIN_BLOCK_LIGHT = 8;
+    /** Latitude (deg) floor below which the sampling loop never runs -- KEEP-SHARED with
+     *  {@code SnowSparkleLaw.FUNCTIONAL_EXTENDED_ONSET_DEG} (60): the same "polar country begins here" line
+     *  the ambient glint's extended band already uses, so this cosmetic never fires equatorward of it. */
+    private static final double TORCH_ICE_SPARKLE_ONSET_LAT_DEG =
+            com.example.globe.core.SnowSparkleLaw.FUNCTIONAL_EXTENDED_ONSET_DEG;
+    /** The ice-family blocks a torch may make sparkle -- ice, packed ice, blue ice (per spec; frosted ice
+     *  intentionally excluded -- it is a translucent "melting" block, not the solid glacial ice this reads). */
+    private static final java.util.Set<Block> TORCH_ICE_SPARKLE_BLOCKS =
+            java.util.Set.of(Blocks.ICE, Blocks.PACKED_ICE, Blocks.BLUE_ICE);
+
+    private static void spawnTorchIceSparkle(Minecraft client, double absLatDeg,
+                                             com.example.globe.core.ParticleDensity.Tier tier) {
+        if (Double.isNaN(absLatDeg) || absLatDeg < TORCH_ICE_SPARKLE_ONSET_LAT_DEG) {
+            return; // cheap early-out for the equatorial majority of ticks -- no sampling at all.
+        }
+        int count = com.example.globe.core.ParticleDensity.scale(tier, TORCH_ICE_SPARKLE_PEAK_BUDGET);
+        if (count <= 0) {
+            return;
+        }
+        RandomSource random = client.player.getRandom();
+        double px = client.player.getX();
+        double py = client.player.getY();
+        double pz = client.player.getZ();
+        net.minecraft.core.Direction[] faces = net.minecraft.core.Direction.values();
+        for (int i = 0; i < count; i++) {
+            int bx = (int) Math.floor(px + (random.nextDouble() - 0.5) * TORCH_ICE_SPARKLE_RADIUS * 2.0);
+            int by = (int) Math.floor(py + (random.nextDouble() - 0.5) * TORCH_ICE_SPARKLE_RADIUS * 2.0);
+            int bz = (int) Math.floor(pz + (random.nextDouble() - 0.5) * TORCH_ICE_SPARKLE_RADIUS * 2.0);
+            BlockPos icePos = new BlockPos(bx, by, bz);
+            if (!TORCH_ICE_SPARKLE_BLOCKS.contains(client.level.getBlockState(icePos).getBlock())) {
+                continue; // not an ice-family block -- skip (a sampled point costs a cluster; intended).
+            }
+            // Pick one random exposed face; require AIR there (the "bathed in torchlight" exposed face) and
+            // BLOCK light (not sky light -- a lit cavern face, not a sunlit one) at/above the threshold.
+            net.minecraft.core.Direction face = faces[random.nextInt(faces.length)];
+            BlockPos facePos = icePos.relative(face);
+            if (!client.level.getBlockState(facePos).isAir()) {
+                continue;
+            }
+            int blockLight = client.level.getLightEngine()
+                    .getLayerListener(net.minecraft.world.level.LightLayer.BLOCK).getLightValue(facePos);
+            if (blockLight < TORCH_ICE_SPARKLE_MIN_BLOCK_LIGHT) {
+                continue;
+            }
+            double gx = bx + 0.5 + face.getStepX() * 0.51;
+            double gy = by + 0.5 + face.getStepY() * 0.51;
+            double gz = bz + 0.5 + face.getStepZ() * 0.51;
+            // Zero incoming velocity -- the sparkle twinkles in place on the ice face, mirroring the ambient
+            // glint's own zero-drift spawn (SPARKLE_DRIFT_UP/SPARKLE_DRIFT_LATERAL are both 0.0 today).
+            client.particleEngine.createParticle(SPARKLE_PARTICLE, gx, gy, gz, 0.0, 0.0, 0.0);
         }
     }
 

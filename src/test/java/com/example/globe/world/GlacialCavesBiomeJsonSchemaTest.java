@@ -109,14 +109,18 @@ class GlacialCavesBiomeJsonSchemaTest {
     @Test
     void dressingStepsCarryTheGlacialFeatures() {
         JsonObject caves = glacialCaves();
-        assertEquals(List.of("globe:hanging_icicles", "globe:glacial_snow_drift", "globe:glacial_powder_pocket",
-                        "globe:glacial_frost_carpet", "globe:glacial_slush_floe"),
+        assertEquals(List.of("globe:hanging_icicles", "globe:icicle_cluster", "globe:glacial_snow_drift",
+                        "globe:glacial_powder_pocket", "globe:glacial_frost_carpet", "globe:glacial_slush_floe"),
                 featureStep(caves, 7),
                 "underground_decoration (step 7) = the glacial dressing features, in authored order "
-                        + "(S24 appended the frost-floor carpet; S25 appended the slush floe)");
-        assertEquals(List.of("globe:glacial_glow_lichen"), featureStep(caves, 9),
+                        + "(S24 appended the frost-floor carpet; S25 appended the slush floe; S37 appended "
+                        + "the reshaded pointed-dripstone icicle cluster right after the plain-ice icicles)");
+        assertEquals(List.of("globe:glacial_glow_lichen", "globe:pale_cave_hanging_moss", "globe:pale_cave_moss_patch"),
+                featureStep(caves, 9),
                 "vegetal step replaces vanilla glow_lichen (count 104-157) with the sparse glacial one "
-                        + "-- punctuation, not illumination");
+                        + "-- punctuation, not illumination -- then S37 appends the pale-moss atmosphere "
+                        + "(hanging strands + floor patches), sparse-to-moderate and well under the icicle "
+                        + "density (owner: \"in some areas\", not everywhere)");
     }
 
     @Test

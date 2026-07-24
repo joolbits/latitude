@@ -79,6 +79,7 @@
     ],
     [
       "globe:hanging_icicles",
+      "globe:icicle_cluster",
       "globe:glacial_snow_drift",
       "globe:glacial_powder_pocket",
       "globe:glacial_frost_carpet",
@@ -89,7 +90,9 @@
       "minecraft:spring_lava"
     ],
     [
-      "globe:glacial_glow_lichen"
+      "globe:glacial_glow_lichen",
+      "globe:pale_cave_hanging_moss",
+      "globe:pale_cave_moss_patch"
     ],
     [
       "minecraft:freeze_top_layer"
