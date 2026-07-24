@@ -941,6 +941,17 @@ public final class LatitudeBiomes {
         return PolarBarrensBand.glacierIceBodyBlocks(absLatDeg, depthNoise);
     }
 
+    /** S38 (Peetsa 2026-07-23, TEST 128: "notice how uniform everything looks"): per-BLOCK speckle hash for
+     *  the ice body's material variety -- deterministic in (seed, x, y, z), Art VI (reuses the world seed +
+     *  a dedicated salt through the existing hash01; no new noise field). The mixin maps the unit value to
+     *  packed_ice majority / snow_block pockets / blue_ice flecks. */
+    public static double polarBarrensBodySpeckle01(int blockX, int blockY, int blockZ) {
+        return com.example.globe.util.LatitudeMath.hash01(
+                WORLD_SEED ^ POLAR_BARRENS_BODY_SPECKLE_SALT, blockX, blockZ, blockY);
+    }
+
+    private static final long POLAR_BARRENS_BODY_SPECKLE_SALT = 0x53_38_5350_45434BL; // "S8SPECK"
+
     /**
      * S37 SUB-Y0 ICE DIFFUSION (Peetsa 2026-07-23, TEST 127: "caverns almost all ice until sub-Y0, where
      * there should be about a 10 block diffusion of the ice into stone/deepslate") -- the S24 permafrost
