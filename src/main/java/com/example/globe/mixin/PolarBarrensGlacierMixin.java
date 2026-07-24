@@ -31,29 +31,30 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *       {@code snow_block} -- EXCEPT blocks that are already glacier-family (snow_block / the skin's
  *       {@code powder_snow} pockets / {@code packed_ice}-{@code ice} patches / snow layers), so the
  *       {@code PolarBarrensSurfaceMixin} surface dressing is preserved on top (A4's powder pockets stay).</li>
- *   <li><b>Ice body</b>: below the cap, {@code packed_ice} down to a noise-varied sole --
- *       {@link LatitudeBiomes#polarBarrensGlacierIceBlocks} = the band-fraction ramp (thin marginal glacier
- *       at the 82-deg frayed edge, 24-36 blocks at/above 84; fray-consistent with the barrens band, same
- *       latitude+fray decision, so the glacier never outruns the biome) wobbled by a dedicated coherent
- *       depth field. <b>B-9 P2 (Crew C, TEST 113):</b> below a noise-warped line 12-18 blocks into the
- *       body ({@link LatitudeBiomes#polarBarrensBlueIceStartDepthBlocks}, riding the SAME depth-wobble
- *       field as the sole) the body is {@code blue_ice} -- depth strata, thick glacier hearts only (the
- *       marginal 6-block body never reaches the line). Flag-ON output only, new chunks only; see the
- *       in-method comment for the carver-interaction consequences (blue ice is structurally uncarvable).</li>
- *   <li><b>Permafrost stratum</b> (S24, Peetsa 2026-07-20, TEST 115: "the ice doesn't extend down very
- *       far. It just becomes regular cave"): a transition band ~{@link PolarBarrensBand#PERMAFROST_BAND_BLOCKS}
- *       blocks below the sole where stone-family blocks are partially cemented to {@code packed_ice} veining
- *       -- a per-column reach ({@link LatitudeBiomes#polarBarrensPermafrostDepthBelowSole}, riding the SAME
- *       glacier depth-wobble field, Art VI) that fades from ~60% areal density at the sole to 0 at the band
- *       bottom, so the Glacial-Caves biome reads glacial in its deep walls rather than resuming plain stone.
- *       The band leaves native stone (partial density) so ore features keep homes -- see the in-method
- *       comment for the ore-home trade.</li>
+ *   <li><b>Ice body</b> (S37, Peetsa 2026-07-23, TEST 127: "not nearly enough ice ... caverns almost all
+ *       ice until sub-Y0"): below the cap the whole solid column is ice ALL THE WAY DOWN to
+ *       {@link PolarBarrensBand#ICE_BODY_FLOOR_Y} (Y0) -- a uniform {@code packed_ice} slab (the carvable
+ *       base) with a BOUNDED {@code blue_ice} heart seam ({@link PolarBarrensBand#BLUE_ICE_HEART_THICKNESS_BLOCKS}
+ *       thick) tracking the existing wobble-warped blue line
+ *       ({@link LatitudeBiomes#polarBarrensBlueIceStartDepthBlocks}, 12-18 blocks below the cap, riding the
+ *       SAME depth-wobble field), so deep hearts still read blue as an accent while packed ice dominates.
+ *       The seam is bounded ON PURPOSE: {@code blue_ice} is NOT in {@code #overworld_carver_replaceables} but
+ *       {@code packed_ice} IS, so an all-blue body would wall the crevasse/tunnel carvers out; the packed
+ *       slab keeps them cutting. {@link LatitudeBiomes#polarBarrensGlacierIceBlocks} is retained as the
+ *       barrens-column GATE (>0 = barrens) and the blue-line/wobble anchor -- the body's floor is now Y0, not
+ *       that thickness. Flag-ON output only, new chunks only.</li>
+ *   <li><b>Sub-Y0 diffusion band</b> (S37 -- the S24 permafrost stratum RELOCATED below Y0 now that the body
+ *       reaches Y0): a ~{@link PolarBarrensBand#PERMAFROST_BAND_BLOCKS}-block band below Y0 where
+ *       stone/deepslate are fingered with {@code packed_ice} -- a per-column reach
+ *       ({@link LatitudeBiomes#polarBarrensPermafrostDepthBelowY0}, riding the SAME glacier depth-wobble
+ *       field, Art VI) fading from 100% areal density at Y0 to 0 at the band bottom (Y-10), so the deep
+ *       caverns read glacial in their walls rather than resuming plain stone. Below the band native rock
+ *       resumes, so ore features keep homes -- see the in-method comment for the ore-home trade.</li>
  *   <li><b>The living underground stays alive</b> (the law that bounds the glacier's floor): below the
- *       permafrost band nothing is touched -- native stone/dirt resumes, and ore features (which run AFTER
+ *       diffusion band nothing is touched -- native stone/dirt resumes, and ore features (which run AFTER
  *       this, at the features stage, and never target packed_ice) populate the column under the ice exactly
- *       as anywhere else. AIR is never replaced (noise-stage caves thread the ice body = the free
- *       Glacial-Caves preview) and FLUIDS are never replaced (aquifer water/lava pockets stay), bedrock
- *       untouched.</li>
+ *       as anywhere else. AIR is never replaced (noise-stage caves thread the ice body = the ice-caves
+ *       cathedral) and FLUIDS are never replaced (aquifer water/lava pockets stay), bedrock untouched.</li>
  *   <li><b>Fluid columns skipped</b> entirely (the {@code isSurfaceSkin} land-column clause: WORLD_SURFACE
  *       vs OCEAN_FLOOR split &gt; 1): the frozen SEA is the water-freeze law's domain, not the glacier's.</li>
  * </ul>
@@ -67,8 +68,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *
  * <p><b>Cost/flag honesty:</b> flag-off returns on the first static check (byte-identical). Flag-on, a whole
  * chunk is skipped by one degree comparison unless it reaches the 86-deg band; in-band the work is one
- * column decision + &lt;= ~46 block writes per barrens column -- the same order as the surface stage itself,
- * paid once per NEW chunk only (existing chunks are never rewritten; the legacy-worldgen pin holds).
+ * column decision + one top-down pass from the surface to Y0 (S37: ~70-90 block writes per barrens column,
+ * up from ~46 -- the body now reaches Y0) plus a &lt;=10-block sub-Y0 diffusion pass. Still one single pass,
+ * no per-block allocation (the mutable cursor is reused), paid once per NEW chunk only (existing chunks are
+ * never rewritten; the legacy-worldgen pin holds).
  */
 @Mixin(NoiseBasedChunkGenerator.class)
 public abstract class PolarBarrensGlacierMixin {
@@ -128,39 +131,41 @@ public abstract class PolarBarrensGlacierMixin {
                 if (iceBlocks <= 0) {
                     continue; // not a barrens column (flag/band/fray) -- bitwise untouched.
                 }
-                // B-9 P2 BLUE-ICE DEPTH STRATA (Crew C, owner TEST 113: the underground read as generic
-                // stone -- the glacier body gets depth strata): below a noise-warped line 12-18 blocks
-                // INTO the packed-ice body the body becomes blue_ice, so a crevasse/tunnel wall reads
-                // snow cap -> packed ice -> blue-ice heart top-down, like real compression banding. The
-                // line REUSES the exact glacier depth-wobble field that already undulates the sole
-                // (LatitudeBiomes.polarBarrensBlueIceStartDepthBlocks -- no new noise, Art VI), so both
-                // strata warp together. BYTE-IDENTITY HONESTY: this changes FLAG-ON output only (the
-                // latitude.polarBarrens family, same as the glacier body itself) -- flag-off exits at the
-                // top of this method untouched; flag-on worlds get blue ice in NEW CHUNKS ONLY.
-                // CARVER INTERACTION (verified against the 26.2 jar's tag JSON): blue_ice is NOT in
-                // #minecraft:overworld_carver_replaceables (the tag lists packed_ice + #minecraft:snow;
-                // plain ice AND blue ice are both absent), so the B-9 carvers cannot cut the blue heart:
-                // a crevasse descending past the blue line gets a BLUE-ICE FLOOR (real glaciology --
-                // wanted) and glacial tunnels wind through the packed-ice upper body and the stone below
-                // the sole but deflect off the heart. Noise-stage caves are UNAFFECTED (they are air
-                // before this pass runs, and air is never replaced), so hollows still thread the blue
-                // band. Accepted + flagged as owner taste at the P2 flight; the alternative (appending
-                // blue_ice to the minecraft tag) would make every vanilla carver cut iceberg blue ice
-                // world-wide, a vanilla-behavior change this pass must not smuggle in.
+                // BLUE-ICE HEART SEAM (B-9 P2 Crew C, TEST 113; S37 BOUNDED): the blue line starts a
+                // noise-warped 12-18 blocks INTO the body (LatitudeBiomes.polarBarrensBlueIceStartDepthBlocks,
+                // REUSING the exact glacier depth-wobble field that undulates the body -- no new noise,
+                // Art VI). S37 caps the blue at BLUE_ICE_HEART_THICKNESS_BLOCKS: it is a compression-band
+                // ACCENT, not the whole deep body, so a crevasse/tunnel wall reads snow cap -> packed ice ->
+                // blue heart seam -> packed ice down to Y0. CARVER INTERACTION (verified against the 26.2
+                // jar's tag JSON): blue_ice is NOT in #minecraft:overworld_carver_replaceables (the tag lists
+                // packed_ice + #minecraft:snow; plain ice AND blue ice are absent) but packed_ice IS -- so
+                // KEEPING the body predominantly packed_ice is load-bearing: the carvers cut the packed slab
+                // and merely deflect off the thin blue seam (an all-blue body would wall them out entirely).
+                // Noise-stage caves are UNAFFECTED (air before this pass; air is never replaced), so hollows
+                // still thread the ice. BYTE-IDENTITY HONESTY: FLAG-ON output only (latitude.polarBarrens
+                // family), NEW CHUNKS ONLY; flag-off exits at the top of this method untouched.
                 int blueIceStartDepth = LatitudeBiomes.polarBarrensBlueIceStartDepthBlocks(blockX, blockZ);
                 // S14(b) WATERFALLS: a barrens column is land (never ocean), so its flowing-water freeze
-                // eligibility is ONE per-column decision on the SAME sea-freeze fray front. Every block the
-                // glacier loop scans lies above the sole ((near the 40-block water freeze floor; the sole may sit up to 6 deeper via wobble)), so freezesFlowing's
-                // aboveFreezeFloor arm holds by construction here; deep flowing springs below the sole are
-                // never scanned and stay liquid ("underground springs below the floor untouched").
+                // eligibility is ONE per-column decision on the SAME sea-freeze fray front (freezesFlowing's
+                // aboveFreezeFloor arm passed true -- a barrens column is a freeze column). The body loop now
+                // scans to Y0 (S37), so a FLOWING (non-source) water block anywhere in the body freezes to an
+                // ice cascade; SOURCE water (aquifer pools / the B-9 semi-ice reservoir) is preserved at every
+                // depth, so "underground springs untouched" still holds for the sources that matter.
                 double columnAbsLatDeg = Math.abs((double) blockZ) * 90.0 / radius;
                 boolean columnFlowFreezes = PolarWaterFreezeRule.freezesFlowing(
                         LatitudeV2Flags.POLAR_BARRENS_ENABLED, false, columnAbsLatDeg,
                         LatitudeBiomes.polarSeaFreezeFrayNoise(blockX, blockZ),
                         false, true);
                 int capBottomY = worldSurfaceY - PolarBarrensBand.GLACIER_SNOW_CAP_BLOCKS;
-                int soleY = Math.max(minY + 1, capBottomY - iceBlocks);
-                for (int y = worldSurfaceY; y > soleY; y--) {
+                // S37 (Peetsa 2026-07-23, TEST 127: "not nearly enough ice ... caverns almost all ice until
+                // sub-Y0"): the ice BODY reaches ALL THE WAY DOWN to Y0 (PolarBarrensBand.ICE_BODY_FLOOR_Y),
+                // no longer stopping at a shallow noise-wobbled sole. Below the snow cap the whole solid
+                // column becomes a uniform packed_ice slab (the carvable base -- packed_ice is in
+                // #overworld_carver_replaceables so crevasses/tunnels still cut it) with a BOUNDED blue_ice
+                // heart seam where the existing wobble-warped blue line runs; blue is capped in thickness ON
+                // PURPOSE (blue_ice is NOT carver-replaceable, so an all-blue body would wall out the carvers).
+                int iceFloorY = Math.max(minY + 1, PolarBarrensBand.ICE_BODY_FLOOR_Y);
+                for (int y = worldSurfaceY; y >= iceFloorY; y--) {
                     cursor.set(blockX, y, blockZ);
                     BlockState current = chunk.getBlockState(cursor);
                     // Never replace air (noise caves thread the glacier = ice caves) or bedrock. Fluids:
@@ -189,41 +194,42 @@ public abstract class PolarBarrensGlacierMixin {
                         }
                         chunk.setBlockState(cursor, GLOBE_GLACIER_SNOW_BLOCK);
                     } else {
-                        // B-9 P2 depth strata: packed ice down to the noise-warped blue line, blue_ice
-                        // below it (depth is 0-based at the first body block under the cap). A
-                        // pre-existing packed_ice/blue_ice block was skipped above -- idempotent either
-                        // way, and vanishingly rare at these depths (features run after this stage).
-                        chunk.setBlockState(cursor, (capBottomY - y) >= blueIceStartDepth
-                                ? GLOBE_GLACIER_BLUE_ICE
-                                : GLOBE_GLACIER_PACKED_ICE);
+                        // S37 body: packed_ice base wall-to-wall down to Y0, with a BOUNDED blue_ice heart
+                        // seam of BLUE_ICE_HEART_THICKNESS_BLOCKS starting at the wobble-warped blue line
+                        // (depth is 0-based at the first body block under the cap). The old open-ended
+                        // "blue below the line" law would turn the whole deep body blue -> uncarvable; the
+                        // cap keeps blue an accent and packed ice the carvable majority. A pre-existing
+                        // packed/blue block was skipped above -- idempotent, vanishingly rare here.
+                        int depthBelowCap = capBottomY - y;
+                        boolean blueHeart = depthBelowCap >= blueIceStartDepth
+                                && depthBelowCap < blueIceStartDepth + PolarBarrensBand.BLUE_ICE_HEART_THICKNESS_BLOCKS;
+                        chunk.setBlockState(cursor, blueHeart ? GLOBE_GLACIER_BLUE_ICE : GLOBE_GLACIER_PACKED_ICE);
                     }
                 }
-                // S24 PERMAFROST STRATUM (Peetsa 2026-07-20, TEST 115 video: "the ice doesn't extend down
-                // very far. It just becomes regular cave"): below the glacier sole (the body loop above
-                // stopped at soleY+1; soleY is the first native block) graft packed-ice VEINING onto the
-                // stone matrix for a transition band, so the Glacial-Caves biome reads glacial well below
-                // the body instead of resuming plain stone/dirt. The per-column REACH rides the SAME
-                // glacier depth-wobble field (LatitudeBiomes.polarBarrensPermafrostDepthBelowSole -> the
-                // POLAR_BARRENS_GLACIER_SALT sample, Art VI: NO new noise), faded from a ~60% areal density
-                // AT the sole to 0 at the band bottom -- so the ice extends as irregular fingers of varying
-                // depth (deepest where the glacier is thickest), never a flat slab. ORE-HOME TRADE: packed_ice
-                // is not #minecraft:base_stone_overworld, so ore features (features stage, later, target base
-                // stone) cannot home in the ice; the band leaves them native stone three ways -- ~40% of
-                // columns get zero permafrost (their noise >= the top density), every ice column has stone
-                // below its reach, and the whole ore Y-range under the ~24-block band (S25b) is untouched. AIR
-                // (noise caves thread the permafrost = ice-walled caverns) and FLUIDS (aquifer pockets /
-                // the B-9 semi-ice cave-lake reservoir) are NEVER replaced; bedrock is not in the block set.
-                // Flag-ON output only (same latitude.polarBarrens family + isBarrens gate as the body, via
-                // polarBarrensPermafrostDepthBelowSole's shared decision), NEW CHUNKS ONLY; flag-off exits at
-                // the top of the method, byte-identical.
-                int permafrostReach = LatitudeBiomes.polarBarrensPermafrostDepthBelowSole(blockX, blockZ);
-                if (permafrostReach > 0) {
-                    int permafrostBottomY = Math.max(minY + 1, soleY - permafrostReach + 1);
-                    for (int y = soleY; y >= permafrostBottomY; y--) {
+                // S37 SUB-Y0 ICE DIFFUSION (Peetsa 2026-07-23: "sub-Y0, where there should be about a 10 block
+                // diffusion of the ice into stone/deepslate"): the S24 permafrost stratum RELOCATED -- with the
+                // body now solid to Y0, the transition band hangs below Y0. From Y-1 down it grafts packed-ice
+                // fingering onto the stone/deepslate matrix, its per-column REACH riding the SAME glacier
+                // depth-wobble field (LatitudeBiomes.polarBarrensPermafrostDepthBelowY0 -> the
+                // POLAR_BARRENS_GLACIER_SALT sample, Art VI: NO new noise), the areal ice fraction fading from
+                // 100% at Y0 to 0 at Y-10 -- irregular fingers of varying depth (deepest where the glacier is
+                // thickest), never a flat slab. STRICTLY REPLACE-SOLID-ONLY: AIR (caves thread the diffusion =
+                // ice-walled caverns) and FLUIDS (aquifer pockets / the B-9 semi-ice cave-lake reservoir) are
+                // NEVER replaced; only stone-family walls (globe$isPermafrostReplaceable, which covers
+                // deepslate) turn to ice; bedrock is not in the block set. ORE-HOME TRADE: packed_ice is not
+                // #minecraft:base_stone_overworld, so ore features (features stage, later, target base stone)
+                // cannot home in the ice; every ore Y-range BELOW the ~10-block band is untouched native rock,
+                // and within the band high-noise columns give shallow reach. Flag-ON output only (same
+                // latitude.polarBarrens family + isBarrens gate as the body), NEW CHUNKS ONLY; flag-off exits
+                // at the top of the method, byte-identical.
+                int diffusionReach = LatitudeBiomes.polarBarrensPermafrostDepthBelowY0(blockX, blockZ);
+                if (diffusionReach > 0) {
+                    int diffusionBottomY = Math.max(minY + 1, PolarBarrensBand.ICE_BODY_FLOOR_Y - diffusionReach);
+                    for (int y = PolarBarrensBand.ICE_BODY_FLOOR_Y - 1; y >= diffusionBottomY; y--) {
                         cursor.set(blockX, y, blockZ);
                         BlockState current = chunk.getBlockState(cursor);
                         if (current.isAir() || !current.getFluidState().isEmpty()) {
-                            continue; // caves thread the permafrost; aquifer/reservoir water stays liquid
+                            continue; // caves thread the diffusion; aquifer/reservoir water stays liquid
                         }
                         if (globe$isPermafrostReplaceable(current.getBlock())) {
                             chunk.setBlockState(cursor, GLOBE_GLACIER_PACKED_ICE);
@@ -235,11 +241,12 @@ public abstract class PolarBarrensGlacierMixin {
     }
 
     /**
-     * S24: is {@code block} a native stone-family matrix block the permafrost stratum may cement into
-     * packed ice? The {@code #minecraft:base_stone_overworld} set the noise router fills at these depths
-     * (stone / deepslate / the three igneous variants / tuff) plus the surface rule's dirt and gravel that
-     * can poke just below a barrens sole. Deliberately EXCLUDES bedrock, glacier ice ({@code packed_ice} /
-     * {@code blue_ice}, already the body), and everything else -- and ores are not yet present at this
+     * S24/S37: is {@code block} a native stone-family matrix block the sub-Y0 ice-diffusion band may finger
+     * into packed ice? The {@code #minecraft:base_stone_overworld} set the noise router fills at these depths
+     * (stone / deepslate / the three igneous variants / tuff) plus the surface rule's dirt and gravel. S37
+     * moved the band below Y0, squarely in the deepslate zone -- {@code deepslate} is already in the set, so
+     * the diffusion fingers deepslate walls too. Deliberately EXCLUDES bedrock, glacier ice ({@code packed_ice}
+     * / {@code blue_ice}, already the body), and everything else -- and ores are not yet present at this
      * (surface-tail) stage, so none are ever overwritten.
      */
     @Unique

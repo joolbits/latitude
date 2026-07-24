@@ -311,39 +311,54 @@ class PolarBarrensBandTest {
                 PolarBarrensBand.glacierIceBodyBlocks(83.0, Double.NaN));
     }
 
-    // --- S24 permafrost stratum: reach curve below the glacier sole -------------------------------
+    // --- S37: the ice body reaches Y0, and the blue heart seam is bounded -------------------------
 
     @Test
-    void permafrostReachFadesFromFullBandAtTheSoleToNoneAtTheDensityPoint() {
-        // S25b: the band was STRETCHED 14 -> 24 (owner TEST 117: caves "end pretty abruptly"). Pin the new
-        // length + top density; only the length changed (the 0.60 density + inverted-noise curve are intact).
-        assertEquals(24, PolarBarrensBand.PERMAFROST_BAND_BLOCKS,
-                "S25b stretched the permafrost fade to 24 blocks below the sole");
-        assertEquals(0.60, PolarBarrensBand.PERMAFROST_TOP_DENSITY, 1e-9,
-                "the top areal density is UNCHANGED by the S25b stretch");
-        // density(d) = TOP_DENSITY * (1 - d/BAND); a column with noise n is ice for d < BAND*(1 - n/TOP).
-        // Lowest-noise columns push ice fingers to the very bottom of the band...
+    void iceBodyFloorIsYZeroAndBlueHeartSeamIsBounded() {
+        // S37 (owner TEST 127: "caverns almost all ice until sub-Y0"): the body reaches Y0.
+        assertEquals(0, PolarBarrensBand.ICE_BODY_FLOOR_Y,
+                "the ice body reaches Y0 (the deepslate seam / diffusion top)");
+        // The blue heart is a BOUNDED accent seam (not the old open-ended "blue below the line", which would
+        // turn the whole deep body blue = uncarvable). A positive, sane thickness keeps packed ice dominant.
+        assertTrue(PolarBarrensBand.BLUE_ICE_HEART_THICKNESS_BLOCKS > 0,
+                "the blue heart seam has a positive thickness");
+        assertTrue(PolarBarrensBand.BLUE_ICE_HEART_THICKNESS_BLOCKS <= 24,
+                "the blue seam is an accent, not a wall-to-wall blue body (packed ice must stay the carvable majority)");
+    }
+
+    // --- S37 sub-Y0 ice diffusion: reach curve below Y0 (the relocated permafrost band) -----------
+
+    @Test
+    void diffusionReachFadesFromFullAtY0ToNoneAtTheBandBottom() {
+        // S37: the permafrost band MOVED below Y0 and shortened to the owner's "about a 10 block diffusion".
+        // Top density is now 1.0 (the body meets the diffusion flush -- Y0 is full ice).
+        assertEquals(10, PolarBarrensBand.PERMAFROST_BAND_BLOCKS,
+                "S37 relocated + shortened the diffusion band to 10 blocks below Y0");
+        assertEquals(1.0, PolarBarrensBand.PERMAFROST_TOP_DENSITY, 1e-9,
+                "S37: 100% ice at Y0 -- the body carries solid ice down to it");
+        // Y0 FULL: the deepest-diffusion column (noise 0) fingers ice through the ENTIRE band, Y0 down to
+        // Y-10 -- the areal density at the top of the band is the full 1.0.
         assertEquals(PolarBarrensBand.PERMAFROST_BAND_BLOCKS,
-                PolarBarrensBand.permafrostIceDepthBelowSole(0.0),
-                "the deepest-permafrost column reaches the full band under the sole");
-        // ...noise = half the top density reaches half the band...
+                PolarBarrensBand.permafrostIceDepthBelowY0(0.0),
+                "the deepest-diffusion column reaches the full band (Y0 -> Y-10)");
+        // Monotone FADE: half-noise reaches half the band.
         assertEquals(PolarBarrensBand.PERMAFROST_BAND_BLOCKS / 2,
-                PolarBarrensBand.permafrostIceDepthBelowSole(PolarBarrensBand.PERMAFROST_TOP_DENSITY / 2.0),
-                "half the top density -> half the band");
-        // ...and any column at/above the top density gets NO permafrost ice at all -- the bare-stone ~40%
-        // that keeps ore homes and the "partial density" guarantee.
-        assertEquals(0, PolarBarrensBand.permafrostIceDepthBelowSole(PolarBarrensBand.PERMAFROST_TOP_DENSITY),
-                "at the top density the reach is exactly zero (continuous, no slab)");
-        assertEquals(0, PolarBarrensBand.permafrostIceDepthBelowSole(0.90),
-                "high-noise columns are bare stone straight from the sole -- ore homes survive");
+                PolarBarrensBand.permafrostIceDepthBelowY0(0.5),
+                "half noise -> half the band (the linear fade)");
+        // Y-10 ZERO: a column at the top density (noise 1.0) gets no diffusion ice at all -- native rock
+        // straight below Y0. The fade hits 0 exactly at the density point (continuous, no slab).
+        assertEquals(0, PolarBarrensBand.permafrostIceDepthBelowY0(PolarBarrensBand.PERMAFROST_TOP_DENSITY),
+                "at the top density (1.0) the reach is exactly zero (continuous, no slab)");
+        assertEquals(0, PolarBarrensBand.permafrostIceDepthBelowY0(0.99),
+                "the highest-noise columns are bare rock straight below Y0 -- ore homes survive");
     }
 
     @Test
-    void permafrostReachIsBoundedMonotoneAndNaNSafe() {
+    void diffusionReachIsBoundedMonotoneAndNaNSafe() {
         int prev = Integer.MAX_VALUE;
         for (int i = 0; i <= 100; i++) {
             double n = i / 100.0;
-            int reach = PolarBarrensBand.permafrostIceDepthBelowSole(n);
+            int reach = PolarBarrensBand.permafrostIceDepthBelowY0(n);
             assertTrue(reach >= 0 && reach <= PolarBarrensBand.PERMAFROST_BAND_BLOCKS,
                     "reach stays within [0, BAND] for noise " + n);
             assertTrue(reach <= prev, "reach is non-increasing in noise (was " + prev + ", now " + reach
@@ -351,12 +366,12 @@ class PolarBarrensBandTest {
             prev = reach;
         }
         // Out-of-range clamps; NaN reads as 0.5 (mid, never a slab and never zero-on-bad-data past density).
-        assertEquals(PolarBarrensBand.PERMAFROST_BAND_BLOCKS, PolarBarrensBand.permafrostIceDepthBelowSole(-1.0),
-                "negative noise clamps to the deepest reach");
-        assertEquals(0, PolarBarrensBand.permafrostIceDepthBelowSole(2.0),
-                "noise above 1 clamps above the density point -> no permafrost");
-        assertEquals(PolarBarrensBand.permafrostIceDepthBelowSole(0.5),
-                PolarBarrensBand.permafrostIceDepthBelowSole(Double.NaN),
+        assertEquals(PolarBarrensBand.PERMAFROST_BAND_BLOCKS, PolarBarrensBand.permafrostIceDepthBelowY0(-1.0),
+                "negative noise clamps to the deepest reach (full band below Y0)");
+        assertEquals(0, PolarBarrensBand.permafrostIceDepthBelowY0(2.0),
+                "noise above 1 clamps at/above the top density -> no diffusion ice");
+        assertEquals(PolarBarrensBand.permafrostIceDepthBelowY0(0.5),
+                PolarBarrensBand.permafrostIceDepthBelowY0(Double.NaN),
                 "NaN degrades to the 0.5 reach, never to a hard slab");
     }
 }
