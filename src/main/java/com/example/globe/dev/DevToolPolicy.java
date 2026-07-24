@@ -259,6 +259,24 @@ public final class DevToolPolicy {
         return ((z - centerZ) / latitudeRadius) * 90.0;
     }
 
+    /**
+     * Resolves the same latitude radius used by production worldgen.
+     *
+     * <p>The active radius is authoritative once worldgen has established it. The world-border
+     * half-size is only the pre-initialization fallback; traversal safety insets must not shrink
+     * classification or evidence coordinates.</p>
+     */
+    public static int productionLatitudeRadius(int activeRadius, double worldBorderRadius) {
+        requireFinite(worldBorderRadius, "world-border radius");
+        if (activeRadius > 0) {
+            return activeRadius;
+        }
+        if (!(worldBorderRadius >= 1.0) || worldBorderRadius > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("world-border radius is outside the supported block range");
+        }
+        return (int) Math.floor(worldBorderRadius);
+    }
+
     public static MovementDirection movementDirection(double previousAbsoluteDegrees, double currentAbsoluteDegrees) {
         requireFinite(currentAbsoluteDegrees, "current latitude");
         if (Double.isNaN(previousAbsoluteDegrees)) {

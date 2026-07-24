@@ -95,6 +95,11 @@ def verify_sources(failures: list[str]) -> None:
     require(command, "targetZ + 0.5", "achieved block-center latitude report", failures)
     tp_lat_method = method_body(command, "private static int tpLat(")
     case_context_method = method_body(command, "private static Map<String, String> caseContext(")
+    here_method = method_body(command, "private static int here(")
+    authoritative_radius_method = method_body(
+        command,
+        "private static int authoritativeRadius(",
+    )
     require(
         tp_lat_method,
         "LatitudeMath.worldRadiusBlocks(border)",
@@ -117,6 +122,36 @@ def verify_sources(failures: list[str]) -> None:
         case_context_method,
         "authoritativeRadius(source)",
         "case context padded audit-radius authority",
+        failures,
+    )
+    require(
+        authoritative_radius_method,
+        "DevToolPolicy.productionLatitudeRadius(",
+        "shared production latitude-radius policy",
+        failures,
+    )
+    require(
+        authoritative_radius_method,
+        "LatitudeMath.worldRadiusBlocks(",
+        "developer classification world-border fallback",
+        failures,
+    )
+    forbid(
+        authoritative_radius_method,
+        "maxAbsZFromBorder(",
+        "developer classification padded traversal radius",
+        failures,
+    )
+    require(
+        here_method,
+        "BandTarget.fromZ(radius, pos.getZ())",
+        "here block-coordinate band classification",
+        failures,
+    )
+    forbid(
+        here_method,
+        "BandTarget.fromZ(radius, player.getZ())",
+        "here player-center band classification",
         failures,
     )
     require(command, "source.getServer().isDedicatedServer()", "integrated-client boundary", failures)
