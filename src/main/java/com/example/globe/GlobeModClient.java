@@ -777,14 +777,20 @@ public class GlobeModClient implements ClientModInitializer {
     // gated on the glacial band, sky-openness, or any flag (cosmetic-only, per spec) -- just a cheap
     // latitude floor (60 deg, the SAME functional-band floor SnowSparkleLaw's extended onset uses) so the
     // sampling loop is a no-op everywhere but polar country. ----
-    /** Peak per-spawn-tick cluster budget BEFORE the shared Particles-tier scaling -- deliberately tiny
-     *  (torchlit ice is everywhere a polar base is built; the ambient glint's per-snowfield sparseness
-     *  would look like noise here, so this budget is kept well under it). */
-    private static final int TORCH_ICE_SPARKLE_PEAK_BUDGET = 2;
+    /** Peak per-spawn-tick cluster budget BEFORE the shared Particles-tier scaling. S39 (Peetsa 2026-07-23:
+     *  "I want more sparkle in the ice!!"): 2 -> 12. The original 2 was calibrated against the ambient
+     *  snow-glint's sparseness, but that spawner samples a 2D snow SURFACE (near-100% hit rate) whereas this
+     *  one samples a full 3D volume for an ice block WITH a lit exposed face -- most samples miss, so the
+     *  effective on-screen density was a fraction of the ambient glint's. 12 samples restores a jewel-like
+     *  glitter on torch-lit ice walls without approaching a performance concern (12 O(1) blockstate+light
+     *  reads per spawn-tick, only poleward of 60 deg). */
+    private static final int TORCH_ICE_SPARKLE_PEAK_BUDGET = 12;
     /** Horizontal+vertical radius (blocks) around the player sampled for a torch-lit ice face. */
     private static final double TORCH_ICE_SPARKLE_RADIUS = 8.0;
-    /** Minimum BLOCK light (NOT sky light) the exposed air face must read for the ice to "catch" the light. */
-    private static final int TORCH_ICE_SPARKLE_MIN_BLOCK_LIGHT = 8;
+    /** Minimum BLOCK light (NOT sky light) the exposed air face must read for the ice to "catch" the light.
+     *  S39: 8 -> 6, widening the "bathed in torchlight" zone from ~6 to ~8 blocks around each torch (a torch
+     *  emits light 14 at source, falling ~1/block) so far more ice faces qualify to catch a glint. */
+    private static final int TORCH_ICE_SPARKLE_MIN_BLOCK_LIGHT = 6;
     /** Latitude (deg) floor below which the sampling loop never runs -- KEEP-SHARED with
      *  {@code SnowSparkleLaw.FUNCTIONAL_EXTENDED_ONSET_DEG} (60): the same "polar country begins here" line
      *  the ambient glint's extended band already uses, so this cosmetic never fires equatorward of it. */
@@ -814,7 +820,13 @@ public class GlobeModClient implements ClientModInitializer {
             int by = (int) Math.floor(py + (random.nextDouble() - 0.5) * TORCH_ICE_SPARKLE_RADIUS * 2.0);
             int bz = (int) Math.floor(pz + (random.nextDouble() - 0.5) * TORCH_ICE_SPARKLE_RADIUS * 2.0);
             BlockPos icePos = new BlockPos(bx, by, bz);
-            if (!TORCH_ICE_SPARKLE_BLOCKS.contains(client.level.getBlockState(icePos).getBlock())) {
+            Block iceBlock = client.level.getBlockState(icePos).getBlock();
+            // S39: globe:icicle joins the sparkle set so the reshaded-dripstone icicles twinkle too (it is
+            // literally ice). Checked SEPARATELY from the Set.of, not folded in -- IcicleBlocks.ICICLE is
+            // populated at mod-init and would be null at this class's static-init, so a Set.of(...) capture
+            // could NPE; a runtime identity compare is null-safe.
+            if (!TORCH_ICE_SPARKLE_BLOCKS.contains(iceBlock)
+                    && iceBlock != com.example.globe.world.IcicleBlocks.ICICLE) {
                 continue; // not an ice-family block -- skip (a sampled point costs a cluster; intended).
             }
             // Pick one random exposed face; require AIR there (the "bathed in torchlight" exposed face) and
