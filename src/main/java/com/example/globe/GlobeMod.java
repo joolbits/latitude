@@ -191,6 +191,8 @@ public class GlobeMod implements ModInitializer {
         // S37: globe:icicle (vanilla speleothem rooted on packed ice) + its item. Unconditional (registry
         // consistency law); generation is biome-JSON-scoped to glacial caves.
         com.example.globe.world.IcicleBlocks.register();
+        // S44: in-cave drop traps (thin false floors over deeper galleries; punchlist item 1).
+        com.example.globe.world.CaveDropTrapFeature.register();
 
         // Phase 5 S27: register the mod's first custom PARTICLE type (globe:frost_glint) into
         // BuiltInRegistries.PARTICLE_TYPE UNCONDITIONALLY, before registry freeze (same registry-consistency law

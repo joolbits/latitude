@@ -110,7 +110,8 @@ class GlacialCavesBiomeJsonSchemaTest {
     void dressingStepsCarryTheGlacialFeatures() {
         JsonObject caves = glacialCaves();
         assertEquals(List.of("globe:hanging_icicles", "globe:glacial_snow_drift",
-                        "globe:glacial_powder_pocket", "globe:glacial_frost_carpet", "globe:glacial_slush_floe"),
+                        "globe:glacial_powder_pocket", "globe:glacial_frost_carpet", "globe:glacial_slush_floe",
+                        "globe:cave_drop_trap"),
                 featureStep(caves, 7),
                 "underground_decoration (step 7): the plain-ice hanging_icicles (reinstated S40 per owner) "
                         + "then the floor/pool dressing. S40 removed only the reshaded-DRIPSTONE icicle_cluster "

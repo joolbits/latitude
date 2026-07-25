@@ -213,10 +213,9 @@ class GlacialDressingJsonSchemaTest {
                         "placed feature " + featureId + " needs its configured_feature JSON");
             }
         }
-        assertEquals(8, globeFeatures, "eight globe features after S40 (owner removed pale moss + the "
-                + "reshaded-dripstone icicle_cluster, but REINSTATED the plain-ice hanging_icicles): "
-                + "hanging_icicles, snow_drift, powder_pocket, frost_carpet, slush_floe, glow_lichen "
-                + "+ 2 ice blobs, no silent drops");
+        assertEquals(9, globeFeatures, "nine globe features after S44 added the in-cave drop trap: "
+                + "hanging_icicles, snow_drift, powder_pocket, frost_carpet, slush_floe, cave_drop_trap, "
+                + "glow_lichen + 2 ice blobs, no silent drops");
     }
 
     /** S25 SLUSH FLOES (owner TEST 117, 2026-07-20: "very small ice blocks clustered together in the water
