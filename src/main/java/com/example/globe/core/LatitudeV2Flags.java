@@ -182,7 +182,7 @@ public final class LatitudeV2Flags {
      * {@code docs/binder/phase5-b7-pole-passage-design-20260713.md} (incl. the binding S1-S6 tail).
      */
     public static final boolean POLE_PASSAGE_V2_ENABLED =
-            Boolean.parseBoolean(System.getProperty("latitude.polePassageV2.enabled", "true")); // P3 LIVE-TEST STAGING (branch-local, B-6 precedent): default ON for the TEST 97 maiden pole flight. REVISIT BEFORE MERGE -- the shipped default is Peetsa's call after P3.
+            Boolean.parseBoolean(System.getProperty("latitude.polePassageV2.enabled", "true")); // SHIP DEFAULT ON — Peetsa decided 2026-07-25 ("ship the polar features on by default"); the REVISIT gate is CLOSED, this is the intended shipped default.
 
     /**
      * Phase 5 Slice B-5 (Hemisphere Passage polish, item 1): keep GENERATED STRUCTURES out of an absolute band
@@ -330,7 +330,7 @@ public final class LatitudeV2Flags {
      * {@code docs/binder/phase5-b8-snow-barrens-design-20260714.md}.
      */
     public static final boolean POLAR_BARRENS_ENABLED =
-            Boolean.parseBoolean(System.getProperty("latitude.polarBarrens.enabled", "true")); // P3 LIVE-TEST STAGING (branch-local, B-6/B-7 precedent): default ON for the TEST 99 flight so a FRESH world generates the Barrens. REVISIT BEFORE MERGE.
+            Boolean.parseBoolean(System.getProperty("latitude.polarBarrens.enabled", "true")); // SHIP DEFAULT ON — Peetsa decided 2026-07-25 ("ship the polar features on by default"); the REVISIT gate is CLOSED, this is the intended shipped default.
 
     /**
      * Absolute latitude (deg) where the Polar Barrens begin to fray in. Default 82 deg -- the owner's chosen
@@ -404,7 +404,7 @@ public final class LatitudeV2Flags {
      * (class-load side) + the orchestrator self-fly as the end-to-end carve proof.
      */
     public static final boolean GLACIAL_CAVES_V1_ENABLED =
-            Boolean.parseBoolean(System.getProperty("latitude.glacialCavesV1", "true")); // P3 LIVE-TEST STAGING (branch-local, B-6/B-7/B-8 precedent): default ON for the first glacial-caves flight so a FRESH world carves the crevasses. REVISIT BEFORE MERGE -- the design default is OFF; the shipped default is Peetsa's call after the flight.
+            Boolean.parseBoolean(System.getProperty("latitude.glacialCavesV1", "true")); // SHIP DEFAULT ON — Peetsa decided 2026-07-25 ("ship the polar features on by default"); the REVISIT gate is CLOSED, this is the intended shipped default.
 
     // ── S36 VOID TAMING (owner 2026-07-21: mechanism C / onset 82 / tame-not-eliminate) ──────────────────
     //
@@ -474,7 +474,7 @@ public final class LatitudeV2Flags {
     /** Master kill-switch for Solar Tilt (sky path tilt + seasons + the effective-sun mob rules). Default
      *  false → byte-identical flag-off. */
     public static final boolean SOLAR_TILT_V2_ENABLED =
-            Boolean.parseBoolean(System.getProperty("latitude.solarTiltV2.enabled", "true")); // P3 LIVE-TEST STAGING (branch-local, precedent x3): default ON for the TEST 101 first sun flight. REVISIT BEFORE MERGE.
+            Boolean.parseBoolean(System.getProperty("latitude.solarTiltV2.enabled", "true")); // SHIP DEFAULT ON — Peetsa decided 2026-07-25 ("ship the polar features on by default"); the REVISIT gate is CLOSED, this is the intended shipped default.
 
     /** Axial-tilt amplitude δ_max (deg). Default 30 → midnight-sun / polar-night onset at a round, visible
      *  60° (§11 "delta pick"; real Earth 23.5° → 66.5°, deep in the storm cap; max theatrical ≈ 35). */
