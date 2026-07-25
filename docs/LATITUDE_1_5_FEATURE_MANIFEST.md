@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 8 release-candidate gauntlet ACTIVE; Maintainer reports TEST 8 in good shape, exact proof reconciliation pending` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-21`
+`status: Phase 8 PASSED LOCALLY; release actions remain unauthorized` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-25`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -111,21 +111,45 @@ Canonical evidence:
 
 ## Phase 8 release-candidate gauntlet
 
-Maintainer reported that TEST 8 is now in good shape and authorized a final bounded release-candidate
-gauntlet at High reasoning. Phase 8 begins from clean tracked commit
-`7df70c596251c72d9b960de684ad4e965142a4f7`. It audits and proves the full post-Phase-5 production
-range, artifact purity/provenance, disposable lifecycle and compatibility rows, worldgen and
-structure invariants, HUD/config/UI behavior, and current performance risk. Only an exact,
-release-blocking red that survives contradiction review may enter source.
+Phase 8 passed its bounded local acceptance gate after the final document-bearing commit passed its
+immediate post-commit identity and protected-state readback. Starting from
+`7df70c596251c72d9b960de684ad4e965142a4f7`, it completed the full post-Phase-5 audit, exact-jar
+fresh/copied lifecycle, dedicated-server and Sodium checks, absent/Terralith/Tectonic/Biomes O'
+Plenty provider rows, nine-row vanilla worldgen matrix, targeted beach/Meadow/50-degree/strict-80
+runtime replay, HUD/config migration, loading-screen pixel proof, bounded performance
+reconciliation, public-jar purity, and repeated adversarial review.
 
-Canonical contract and chronology:
+The final custom-biome representation audit found no exact release-blocking imbalance. All 22
+admitted BOP IDs appeared; 16 of 18 admitted Terralith IDs appeared with the two absences explained
+or held rather than speculatively tuned; both windswept target biomes returned; Pale Garden was
+present inland across vanilla and provider rows; and all 51 tracked vanilla surface, shore, river,
+and ocean IDs appeared somewhere in the matrix.
+
+The final stale-code pass removed only demonstrably unreachable or inert remnants. Both registered
+warm-band snow guards remain present, executable, scoped to Latitude generation, and covered by the
+Java 25 build and policy tests.
+
+The post-prune public jar used for bytecode and purity proof has SHA-256
+`046c27b54e259454fe31ddd0c5c5954cac219c341ff254935f6b1596ec761973`, but its manifest records
+commit `3aa77dea5fac2dbadcf0a816039680c20d082481` and `Build-Dirty: true`. It contains the
+accepted snow-prune candidate bytes that were subsequently saved as `98b45b7b`, so it proves that
+candidate's bytecode closure and public-jar purity. It is not a clean final artifact bound to
+`98b45b7b` and is not the future release/profile-stage candidate.
+
+Canonical contract, chronology, and closure:
 
 - `docs/LATITUDE_1_5_PHASE8_RELEASE_CANDIDATE_GAUNTLET.md`
 - `docs/binder/latitude-1-5-phase8-release-candidate-gauntlet-20260721.md`
+- `docs/binder/latitude-1-5-phase8-closure-20260725.md`
 
-The campaign checkout, Latitude 2.0/Pivot, real worlds, tag, push, upload, publication, and release
-remain forbidden. The canonical campaign roadmap is protected concurrent dirt and is not reconciled
-from this implementation lane.
+Accepted old-save `/locate` ghosts, the irrecoverable exact 46-degree-south screenshot identity,
+Terralith performance attribution, Promenade/combined-provider parity, physical all-block Pale
+Garden contiguity, and non-attributable provider-distribution observations remain explicit HOLDs.
+No 26.2 FPS/MSPT magnitude is claimed.
+
+This is a local Phase 8 acceptance savepoint, not a release. The campaign checkout, Latitude
+2.0/Pivot, real profiles/worlds, tag, push, upload, publication, profile staging, public-version
+naming, release, and Phase 9 remain outside this lane.
 
 ## TEST 6 east/west advisory-to-particle correction
 

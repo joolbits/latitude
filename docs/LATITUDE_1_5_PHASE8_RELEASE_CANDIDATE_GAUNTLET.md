@@ -1,6 +1,6 @@
 # Latitude 1.5 Phase 8 — Release-Candidate Gauntlet
 
-`status: ACTIVE` · `reasoning: HIGH` · `source line: 1.5 pre-2.0 polish` ·
+`status: PASSED LOCALLY` · `reasoning: HIGH` · `source line: 1.5 pre-2.0 polish` ·
 `root: <home>/CascadeProjects/Latitude-1.5-26.2` ·
 `branch: codex/1.5-mini-launch-26.2` ·
 `starting HEAD: 7df70c596251c72d9b960de684ad4e965142a4f7` · `started: 2026-07-21`
@@ -40,25 +40,25 @@ unexplained worldgen regression, failed proof oracle, or a required product deci
 
 ## Obligation ledger
 
-| ID | Obligation | Initial status | Exit evidence |
+| ID | Obligation | Exit status | Exit evidence |
 | --- | --- | --- | --- |
-| O1 | Record the maintainer's TEST 8 human verdict without overstating unrecorded pixels. | pending | Binder entry plus exact artifact/profile identity or explicit identity limitation. |
-| O2 | Audit all production changes from Phase 5 artifact commit `96c43b45` through starting HEAD. | pending | Exact file manifest, independent findings/contradiction ledger, impact scan. |
-| O3 | Prove Java 25 build, all applicable policy/invariant suites, and proof-oracle integrity. | pending | Named commands and full logs. |
-| O4 | Prove public-jar metadata, purity, mixin closure, 2.0 denylist, and source provenance. | pending | Candidate certificate, hashes, jar inspection, corruption/negative controls. |
-| O5 | Prove fresh and copied-save create/load/save/reload plus clean shutdown. | pending | Disposable exact-jar lifecycle records. |
-| O6 | Prove fresh dedicated server and supported provider/Sodium rows. | pending | Frozen versions/configs and row-specific runtime evidence. |
-| O7 | Re-run a bounded worldgen/climate/structure regression matrix. | pending | Fixed seed/size/provider matrix covering beaches, Meadow, 50-degree boundary, villages, and 80-degree foliage law. |
-| O8 | Prove HUD/config/create-world/loading behavior at applicable widths and persistence boundaries. | pending | Automated policy/structure proof plus smallest necessary human circuit. |
-| O9 | Reconcile the completed performance audit and current hot paths without unsupported FPS/MSPT claims. | pending | Applied/HOLD ledger; controlled comparison only if current evidence warrants it. |
-| O10 | Admit and repair only exact release-blocking reds. | pending | Per-red working card, path allowlist, focused GREEN, regression proof, adversarial ACCEPT. |
-| O11 | Reconcile implementation manifest, binder/index/registry, limitations, hashes, and release packet. | pending | Validated docs diff and final evidence row. |
-| O12 | Create and verify one final proof-clean local Phase 8 savepoint. | pending | Commit identity, parent/path list, empty stage, protected-state readback. |
-| C1 | Preserve campaign, Pivot, donor, real-world, and unrelated worktree state. | pending | Frozen status fingerprints before and after. |
-| C2 | No tag, push, merge, upload, publication, release, or Phase 9 action. | pending | Git/action audit. |
-| A1 | the maintainer's statement that the build is now in good shape is the TEST 8 human verdict; exact artifact binding must still be reconstructed before recording it as identity-bound live proof. | pending | Profile/artifact evidence or an explicit limitation. |
-| R1 | The canonical campaign roadmap is stale and is protected concurrent dirt. | pending | Do not edit it; record implementation truth and a later reconciliation requirement. |
-| R2 | Promenade/combined exact parity, Terralith performance attribution, accepted old-save `/locate` ghosts, and the unrecoverable exact 46-degree-south beach scene remain accepted HOLDs unless a new exact target red appears. | pending | No silent conversion to PASS or speculative reopening. |
+| O1 | Record the maintainer's TEST 8 human verdict without overstating unrecorded pixels. | passed | TEST 8 remains identity-bound to its exact staged artifact; later source changes use separate proof classes and do not inherit unrecorded pixel acceptance. |
+| O2 | Audit all production changes from Phase 5 artifact commit `96c43b45` through starting HEAD. | passed | Exact commit/path/stat audit plus independent correctness, runtime, performance, and presentation reviews; no surviving P0/P1 outside admitted repairs. |
+| O3 | Prove Java 25 build, all applicable policy/invariant suites, and proof-oracle integrity. | passed | Clean Java 25 builds, focused policy suites, fail-closed runner repair, artifact-pair corruption controls, and V29 rotated-log hostile controls passed. |
+| O4 | Prove public-jar metadata, purity, mixin closure, 2.0 denylist, and source provenance. | passed | Public-artifact inspectors, metadata/purity/denylist scans, corruption negatives, and post-prune jar inspection passed for the accepted source candidate. The jar records commit `3aa77dea` plus `Build-Dirty: true`; it proves candidate bytecode/purity, not a clean final artifact bound to `98b45b7b`. |
+| O5 | Prove fresh and copied-save create/load/save/reload plus clean shutdown. | passed | Exact-candidate fresh lifecycle and copied 26.1 save/load/reload retained semantic identity and stopped cleanly. |
+| O6 | Prove fresh dedicated server and supported provider/Sodium rows. | passed | Fresh/reload dedicated server, Sodium compatibility, absent/Terralith/Tectonic/BOP provider rows passed; Promenade remains named N/A/HOLD. |
+| O7 | Re-run a bounded worldgen/climate/structure regression matrix. | passed | Nine vanilla rows, four provider rows, exact beach/inland, Meadow elevation, four 50-degree points, climate-compatible villages, and 12/12 strict-80 foliage cases passed. |
+| O8 | Prove HUD/config/create-world/loading behavior at applicable widths and persistence boundaries. | passed | Structural/persistence checks, legacy HUD migration, TEST 8 human evidence, and the exact TEST9016 rendered loading screenshot passed on their distinct proof surfaces. |
+| O9 | Reconcile the completed performance audit and current hot paths without unsupported FPS/MSPT claims. | passed | Hot-path tripwires passed; no exact 26.2 slowdown RED warranted a noisy timing run; no unsupported 26.2 magnitude claim is made. |
+| O10 | Admit and repair only exact release-blocking reds. | passed | Every accepted change has RED/GREEN, impact/diff proof, and fresh adversarial acceptance; non-attributable findings remain HOLD. |
+| O11 | Reconcile implementation manifest, binder/index/registry, limitations, hashes, and release packet. | passed | `docs/binder/latitude-1-5-phase8-closure-20260725.md`, the superseding evidence row, and the 2026-07-25 binder topic/freshness refresh contain final evidence classes, hashes, limitations, and reconstructible paths. |
+| O12 | Create and verify one final proof-clean local Phase 8 savepoint. | post-commit gate | This document-bearing commit is the intended final Phase 8 documentation savepoint. O12 becomes passed only when immediate readback confirms parent `98b45b7b`, the exact six-file docs path list, unchanged branch/protected hashes, empty stage, and no tag or external action. A failed readback stops the task without a second commit. |
+| C1 | Preserve campaign, Pivot, donor, real-world, and unrelated worktree state. | passed | Protected surfaces stayed outside the mutation lane; three pre-existing TEST-source paths retain their frozen hashes. |
+| C2 | No tag, push, merge, upload, publication, release, or Phase 9 action. | passed | Final Git/action audit; Phase 8 stops locally. |
+| A1 | the maintainer's statement that the build is now in good shape is the TEST 8 human verdict; exact artifact binding must still be reconstructed before recording it as identity-bound live proof. | passed | Exact TEST 8 artifact binding recorded; no later-candidate pixel equivalence inferred. |
+| R1 | The canonical campaign roadmap is stale and is protected concurrent dirt. | intentionally not done | Campaign checkout was not edited; implementation-side closure is authoritative until separately reconciled. |
+| R2 | Promenade/combined exact parity, Terralith performance attribution, accepted old-save `/locate` ghosts, and the unrecoverable exact 46-degree-south beach scene remain accepted HOLDs unless a new exact target red appears. | intentionally not done | Preserved as explicit HOLDs without speculative tuning or silent promotion. |
 
 ## Phase 8 proof matrix
 
@@ -81,3 +81,11 @@ A finding enters source only when it reproduces against the exact Phase 8 target
 stays inside an existing 1.5 subsystem, has a named narrow proof before editing, and survives an
 independent contradiction pass. Two failed narrow fixes return the symptom to HOLD and require a
 shared-cause decision. No finding is permission for cleanup or architecture work.
+
+## Exit decision
+
+Phase 8 passes locally on 2026-07-25 only when the document-bearing commit containing this statement
+passes its immediate post-commit readback. The final evidence and limitation ledger is
+`docs/binder/latitude-1-5-phase8-closure-20260725.md`. This closes the local gauntlet only. Tag,
+push, upload, publication, profile staging, public-version naming, release, Phase 9, and Latitude
+2.0 work remain unauthorized.
