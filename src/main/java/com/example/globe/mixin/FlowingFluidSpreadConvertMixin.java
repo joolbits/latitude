@@ -3,6 +3,7 @@ package com.example.globe.mixin;
 import com.example.globe.core.LatitudeV2Flags;
 import com.example.globe.core.PolarInstrument;
 import com.example.globe.core.PolarWaterFreezeRule;
+import com.example.globe.world.GlacialTrapRuntimeGuard;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.core.BlockPos;
@@ -10,18 +11,22 @@ import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BiomeTags;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlockContainer;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FlowingFluid;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.material.Fluids;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * S22 WATER v6 (c) -- CONVERT-AT-SPREAD, the REAL spread-stopper (owner flight TEST 113, 2026-07-19: the
@@ -78,6 +83,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * water they place is then caught by the hunter/sweep like any other. Air and existing-fluid destinations --
  * the entire ratchet surface -- convert.
  *
+ * <p><b>S36 trap-cushion exception.</b> Water spread planning treats one exact non-vanilla block as
+ * non-replaceable: a powder cushion on dry support, below an uninterrupted 18..128-block air/water fall path
+ * whose powder roof is in {@code globe:polar_barrens}. A one-cell collar immediately above that cushion closes
+ * vanilla's downward-planning bypass; the rest of the shaft's air/water volume remains vanilla. The check runs
+ * at {@code canHoldSpecificFluid}, before slope selection, so a pending cave flow routes around the safety
+ * block instead of destroying it and later freezing into lethal ice. Lava, ordinary powder pockets, and all
+ * worldgen calls remain vanilla.
+ *
  * <p><b>Byte-identical off-path.</b> Kill switch off, barrens family off, non-globe world, non-water fluid
  * (lava spreads are excluded by the {@code FLOWING_WATER} type gate), or equatorward of the 82 tick-front
  * onset: bail before any heightmap/biome read. Only in-front spreads pay for the adjacency reads -- and only
@@ -89,6 +102,58 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(FlowingFluid.class)
 public abstract class FlowingFluidSpreadConvertMixin {
+
+    /**
+     * Make only an authored S36 landing cushion non-replaceable to live water. Returning false here is
+     * stronger and safer than cancelling {@code spreadTo}: all four vanilla path-planning callers see a
+     * blocked destination, so the flow reroutes without repeatedly selecting a cell it can never claim.
+     */
+    @Inject(
+            method = "canHoldSpecificFluid(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/level/material/Fluid;)Z",
+            at = @At("HEAD"),
+            cancellable = true,
+            require = 1
+    )
+    private static void globe$protectTrapCushion(BlockGetter level, BlockPos pos, BlockState state,
+            Fluid fluid, CallbackInfoReturnable<Boolean> cir) {
+        if ((fluid != Fluids.WATER && fluid != Fluids.FLOWING_WATER)
+                || !LatitudeV2Flags.POLAR_BARRENS_ENABLED
+                || !LatitudeV2Flags.GLACIAL_CAVES_V1_ENABLED
+                || LatitudeBiomes.getActiveRadiusBlocks() <= 0
+                || !(level instanceof ServerLevel server)
+                || !globe$waterCanEnterCandidate(state)
+                || !GlacialTrapRuntimeGuard.protectsAuthoredCushionCollar(server, pos)) {
+            return;
+        }
+        cir.setReturnValue(false);
+    }
+
+    @Unique
+    private static boolean globe$waterCanEnterCandidate(BlockState state) {
+        return state.isAir() || state.is(Blocks.POWDER_SNOW) || state.is(Blocks.SNOW)
+                || state.getFluidState().is(Fluids.WATER);
+    }
+
+    /**
+     * Last-resort exact cushion guard for vanilla paths that reach {@code spreadTo} without honoring the
+     * planning result above. The one-cell collar normally reroutes first, so this cancellation is not a broad
+     * retry wall and never applies to shaft air, ordinary powder, or lava.
+     */
+    @Inject(
+            method = "spreadTo(Lnet/minecraft/world/level/LevelAccessor;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/Direction;Lnet/minecraft/world/level/material/FluidState;)V",
+            at = @At("HEAD"),
+            cancellable = true,
+            require = 1
+    )
+    private void globe$protectExactTrapCushion(LevelAccessor level, BlockPos pos, BlockState destState,
+            Direction direction, FluidState fluidState, CallbackInfo ci) {
+        if (fluidState.getType() == Fluids.FLOWING_WATER
+                && destState.is(Blocks.POWDER_SNOW)
+                && level instanceof ServerLevel server
+                && GlacialTrapRuntimeGuard.protectsAuthoredCushion(server, pos)) {
+            ci.cancel();
+        }
+    }
 
     @Inject(
             method = "spreadTo(Lnet/minecraft/world/level/LevelAccessor;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/Direction;Lnet/minecraft/world/level/material/FluidState;)V",
