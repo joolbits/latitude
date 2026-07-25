@@ -1,0 +1,6 @@
+{
+  "parent": "globe:block/icicle",
+  "textures": {
+    "cross": "globe:block/icicle_down_base"
+  }
+}

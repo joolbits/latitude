@@ -1,0 +1,182 @@
+BOP tropical/wet candidate audit
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: feat/1.3.1-cohesive-horizons-26.1.2
+HEAD: d9b708e7
+Tag at HEAD: save/bop-all-band-coverage-summary
+
+Scope
+- Audit only.
+- No activation.
+- No biome tag JSON edits.
+- No Java edits.
+- No weight tuning.
+
+Current tropical/wet Latitude tag structure
+- `src/main/resources/data/globe/tags/worldgen/biome/lat_tropical.json`
+  - vanilla jungle, savanna, desert, badlands coverage only; no BOP entries.
+- `src/main/resources/data/globe/tags/worldgen/biome/lat_tropics.json`
+  - vanilla jungle family only; no BOP entries.
+- `src/main/resources/data/globe/tags/worldgen/biome/lat_tropical_primary.json`
+  - not present in this repo slice.
+- `src/main/resources/data/globe/tags/worldgen/biome/lat_tropical_secondary.json`
+  - not present in this repo slice.
+- `src/main/resources/data/globe/tags/worldgen/biome/lat_tropical_accent.json`
+  - not present in this repo slice.
+- `src/main/resources/data/globe/tags/worldgen/biome/lat_subtropical_humid_primary.json`
+  - vanilla forest / birch_forest only; no BOP entries.
+- `src/main/resources/data/globe/tags/worldgen/biome/lat_subtropical_humid_secondary.json`
+  - vanilla dark_forest only; no BOP entries.
+- `src/main/resources/data/globe/tags/worldgen/biome/lat_subtropical_humid_accent.json`
+  - vanilla flower_forest only; no BOP entries.
+- `src/main/resources/data/globe/tags/worldgen/biome/lat_ocean_tropical.json`
+  - warm and lukewarm ocean only; no BOP entries.
+- `src/main/resources/data/globe/tags/worldgen/biome/lat_mangrove_candidate.json`
+  - not present in this repo slice.
+- `src/main/resources/data/globe/tags/worldgen/biome/lat_trans_arid_tropics_1_secondary.json`
+  - BOP optional entries already reserved for dry subtropical review:
+    - biomesoplenty:scrubland
+    - biomesoplenty:shrubland
+- `src/main/resources/data/globe/tags/worldgen/biome/lat_trans_arid_tropics_2_secondary.json`
+  - BOP optional entries already reserved for dry subtropical review:
+    - biomesoplenty:rocky_shrubland
+    - biomesoplenty:wasteland
+    - biomesoplenty:wasteland_steppe
+
+BOP candidate inventory relevant to tropical/wet
+- biomesoplenty:tropics
+- biomesoplenty:rainforest
+- biomesoplenty:rocky_rainforest
+- biomesoplenty:fungal_jungle
+- biomesoplenty:bayou
+- biomesoplenty:bog
+- biomesoplenty:marsh
+- biomesoplenty:wetland
+- biomesoplenty:floodplain
+- biomesoplenty:muskeg
+- biomesoplenty:hot_springs
+- biomesoplenty:overgrown_greens
+- biomesoplenty:undergrowth
+- biomesoplenty:subtropics
+- biomesoplenty:lush_desert
+- biomesoplenty:lush_savanna
+
+Classification table
+
+biome_id | current_status | proposed_bucket | possible_future_tag | confidence | reason | risk
+biomesoplenty:tropics | not tagged | SAFE TO CONSIDER FOR FUTURE ACTIVATION | lat_tropics_* or lat_tropical_* | medium | explicit tropical naming fits the hot/wet family better than generic near-equator inference | low unless band-first placement conflicts appear
+biomesoplenty:rainforest | not tagged | DEFER / NEEDS VISUAL OR POLICY REVIEW | lat_tropics_secondary or lat_tropical_secondary | medium | rainforest is climate-plausible, but it still needs hot + wet authority, not just equator-adjacent naming | medium because it can overconcentrate jungle/wet signals
+biomesoplenty:rocky_rainforest | not tagged | DEFER / NEEDS VISUAL OR POLICY REVIEW | lat_tropics_secondary or lat_tropical_secondary | low | climate reads tropical, but the rocky modifier makes it a policy and visual fit question rather than a direct admission | medium because it can drift into terrain-first rather than climate-first logic
+biomesoplenty:fungal_jungle | not tagged | SPECIAL-CASE ONLY | dedicated fantasy/jungle special-case logic | low | jungle-like but clearly gimmick/fantasy flavored; should not enter a generic tropical pool | high because it can skew the tropical palette and blur climate authority
+biomesoplenty:bayou | not tagged | SPECIAL-CASE ONLY | dedicated wetland / near-sea-level logic | medium | wetland-adjacent and likely lowland, but it belongs in a wetland-specific policy path, not general tropical admission | high because generic tropical activation would misclassify wetland behavior
+biomesoplenty:bog | not tagged | SPECIAL-CASE ONLY | dedicated wetland / cold-wetland logic | medium | bog is moisture-defined, but not a tropical proof and may need colder or peatland policy treatment | high because it is not a generic warm wet biome
+biomesoplenty:marsh | not tagged | SPECIAL-CASE ONLY | dedicated wetland / lowland wet policy | medium | marsh needs wetland-specific review and should not be auto-promoted by tropical labels alone | high because swamp/marsh classes can overwhelm general tropical pools
+biomesoplenty:wetland | not tagged | SPECIAL-CASE ONLY | dedicated wetland / lowland wet policy | medium | explicit wetland naming, but that makes it a special policy lane rather than a normal tropical candidate | high because it should not be merged into generic tropical/wet tags
+biomesoplenty:floodplain | not tagged | SPECIAL-CASE ONLY | dedicated river / lowland wet policy | medium | floodplain is hydrologically meaningful but should be handled as a water-adjacent special case, not tropical by default | medium because the right fit depends on river and sea-level evidence
+biomesoplenty:muskeg | not tagged | SPECIAL-CASE ONLY | dedicated wetland / cold-wetland policy | low | muskeg is wet, but likely too cool and peat-like to count as tropical/wet without a separate policy | high because it can falsely suggest warm wetland behavior
+biomesoplenty:hot_springs | not tagged | DEFER / NEEDS VISUAL OR POLICY REVIEW | possible geothermal special case | low | warm-sounding but climate-ambiguous; geothermal naming alone does not prove tropical fit | medium because it may be a terrain/gimmick feature rather than a climate biome
+biomesoplenty:overgrown_greens | not tagged | DEFER / NEEDS VISUAL OR POLICY REVIEW | possible lush forest special case | low | lush/fantasy phrasing suggests biome flavor rather than clear climate authority | medium because it could create overgreen or generic lush noise
+biomesoplenty:undergrowth | not tagged | DEFER / NEEDS VISUAL OR POLICY REVIEW | possible lush forest special case | low | name implies dense vegetation, but not enough to justify generic tropical/wet admission | medium because it may blur the line between tropical, temperate, and fantasy vegetation
+biomesoplenty:subtropics | not tagged | REJECT FOR TROPICAL/WET | lat_subtropical_humid_* or trans_arid_tropics review instead | medium | this is a subtropical climate name, so it belongs in subtropical policy, not tropical/wet | medium because it would cross band-first boundaries
+biomesoplenty:lush_desert | not tagged | REJECT FOR TROPICAL/WET | dry/subtropical review only | medium | lush plus desert points to a dry-family biome, not a wet tropical candidate | medium because it would contaminate wet tropical pools with dry logic
+biomesoplenty:lush_savanna | not tagged | REJECT FOR TROPICAL/WET | dry/subtropical review only | medium | lush savanna is still savanna-family and should stay out of wet tropical activation | medium because it would pull dry tropical-looking content into the wrong pool
+
+Bucket summary
+- SAFE TO CONSIDER FOR FUTURE ACTIVATION: 1
+- DEFER / NEEDS VISUAL OR POLICY REVIEW: 5
+- REJECT FOR TROPICAL/WET: 3
+- SPECIAL-CASE ONLY: 7
+
+Risk notes
+- The main risk is overloading the tropical pool with wetland, jungle, and fantasy-biome signals at once.
+- Mangrove-like and bayou-like candidates should stay out of generic tropical activation and move only through dedicated wetland or near-sea-level policy.
+- Tropical dry candidates belong to dry/subtropical review, not wet tropical admission.
+- Band-first placement must stay authoritative; near-equator naming alone is not enough.
+
+Failed activation attempt - tag authority mismatch
+- Added `biomesoplenty:tropics` to `src/main/resources/data/globe/tags/worldgen/biome/lat_tropics.json` during the failed activation attempt.
+- Audit showed `registered=true` and `in_original_source=true`, but `in_latitude_tag=false` and `selected_count=0` for `biomesoplenty:tropics`.
+- The activation was removed and this file is now back to its prior vanilla-only tropics entries.
+- No rainforest, wetland, or fantasy candidates were activated in this slice.
+- The next work is a live tropical tag-path audit to identify the actual authority path used by Latitude before any new activation attempt.
+- Exact live-path clue from inspection: `LatitudeBiomes` defines `LAT_TROPICS_PRIMARY`, `LAT_TROPICS_SECONDARY`, and `LAT_TROPICS_ACCENT`; no `LAT_TROPICAL` constant appeared in the read-only scan.
+
+Current diagnosis
+- Exact tag files that exist in this slice: `lat_tropical.json`, `lat_tropics.json`, `lat_tropics_primary.json`, `lat_tropics_secondary.json`, `lat_tropics_accent.json`.
+- Exact Java constants/tag keys that appear to be read: `LAT_TROPICS_PRIMARY`, `LAT_TROPICS_SECONDARY`, `LAT_TROPICS_ACCENT`.
+- Likely reason `lat_tropics.json` did not count as `in_latitude_tag`: the live picker/audit path appears to read the tropics primary/secondary/accent tag set rather than the broad `lat_tropics.json` file itself.
+- Next recommended activation target, if later confirmed by code/path audit: one of the live `lat_tropics_*` authority files, not `lat_tropics.json`.
+
+Mechanism update
+- `lat_tropics_secondary` is audit-visible but not currently wired into live tropical selection authority.
+- Tropical/wet activation is blocked until picker authority design is resolved.
+- Do not add more tropical tag activation in this lane until the live tag/picker architecture is clarified.
+
+Live tropics tag authority audit - HEAD 08212305
+- Exact Java constants found: `LAT_TROPICS_PRIMARY`, `LAT_TROPICS_SECONDARY`, `LAT_TROPICS_ACCENT`.
+- Exact resource files matching those constants: `src/main/resources/data/globe/tags/worldgen/biome/lat_tropics_primary.json`, `src/main/resources/data/globe/tags/worldgen/biome/lat_tropics_secondary.json`, `src/main/resources/data/globe/tags/worldgen/biome/lat_tropics_accent.json`.
+- Exact tag files proven live for audit membership: `lat_tropics_primary.json` and `lat_tropics_secondary.json`, because their vanilla entries show `in_latitude_tag=true` in the Small rollback audit CSV.
+- Exact tag file proven non-live for this audit path: `lat_tropics.json`, because the failed `biomesoplenty:tropics` activation there still produced `in_latitude_tag=false` and `selected_count=0`.
+- `lat_tropical.json` exists, but no live picker/audit code path read it in this scan, so treat it as broad/legacy for this specific tropical-tops authority question.
+- Recommended single future activation target: `lat_tropics_secondary.json`.
+- Reason: it is already a live tropics authority file, it already carries the non-primary vanilla jungle-family entries, and it is the narrowest proven live path that stays inside the tropics authority set.
+- No activation was performed in this slice.
+
+Single-candidate activation retry - live secondary tropics tag
+- Exact tag file changed: `src/main/resources/data/globe/tags/worldgen/biome/lat_tropics_secondary.json`
+- This follows the tag-path audit after `lat_tropics.json` failed to enter audit membership.
+- Activated candidate: `biomesoplenty:tropics` only.
+- Rainforest, wetland, and fantasy candidates remain inactive.
+- No Java, picker, or worldgen logic changed.
+- Proof target is `in_latitude_tag=true` first, `selected_count` second.
+
+Seed spot check — biomesoplenty:tropics live secondary candidate
+- Seeds checked: `24680`.
+- Sizes checked: Small and Tiny.
+- `in_latitude_tag` result:
+  - Small 24680: `biomesoplenty:tropics` => `in_latitude_tag=true`, `latitude_tags=globe:lat_tropics_secondary`.
+  - Tiny 24680: `biomesoplenty:tropics` => `in_latitude_tag=true`, `latitude_tags=globe:lat_tropics_secondary`.
+- `selected_count` result:
+  - Small 24680: `selected_count=0` (still unselected).
+  - Tiny 24680: `selected_count=0` (still unselected).
+- Tropical/wet BOP eligible/selected counts:
+  - Before spot-check: eligible 21 / selected 15.
+  - After spot-check runs: eligible 21 / selected 15.
+- `seasonal_forest_dominance` remained `false`.
+- Final classification: `PARTIAL`.
+- Recommended next slice: picker-pressure audit focused on the tropical secondary selection path to determine why `biomesoplenty:tropics` is pressure-starved despite being in live tag authority.
+
+Picker-pressure audit — biomesoplenty:tropics
+- Seeds/sizes checked in this slice:
+  - Small 12345
+  - Tiny 12345
+  - Small 24680
+  - Tiny 24680
+- Live membership proof:
+  - `biomesoplenty:tropics` is `registered=true`, `in_original_source=true`, `in_latitude_tag=true`, with `latitude_tags=globe:lat_tropics_secondary`.
+- Selection proof:
+  - `selected_count` stays `0` in all four checked seed/size runs.
+  - `minecraft:bamboo_jungle` and `minecraft:sparse_jungle` do select from the same live secondary tag pool:
+    - Small 12345: bamboo_jungle `657`, sparse_jungle `695`
+    - Tiny 12345: bamboo_jungle `657`, sparse_jungle `695`
+    - Small 24680: bamboo_jungle `220`, sparse_jungle `920`
+    - Tiny 24680: bamboo_jungle `220`, sparse_jungle `920`
+  - `minecraft:jungle` also selects in the checked runs, but through `globe:lat_tropics_primary` / `globe:lat_equator_primary`, not through `globe:lat_tropics_secondary`.
+- Exact `LAT_TROPICS_SECONDARY` use sites in this repo slice:
+  - `src/main/java/com/example/globe/world/LatitudeBiomes.java` defines the constant, but the picker search found no call site that passes `LAT_TROPICS_SECONDARY` into a selection helper.
+  - `src/main/java/com/example/globe/dev/BiomePreviewExporter.java` lists `globe:lat_tropics_secondary` as an exported tag spec for audit inventory.
+  - The live audit CSVs record membership for `biomesoplenty:tropics`, `minecraft:bamboo_jungle`, and `minecraft:sparse_jungle`, but only the vanilla entries show nonzero final selection counts.
+- Current `lat_tropics_secondary` members, in sorted order:
+  - `biomesoplenty:tropics`
+  - `minecraft:bamboo_jungle`
+  - `minecraft:sparse_jungle`
+- Best-fit mechanism:
+  - `E` another gate excludes it from final output despite tag membership.
+  - More specifically, the current picker path does not appear to route through `LAT_TROPICS_SECONDARY` at all, so `biomesoplenty:tropics` is live in audit membership but not live in selection authority.
+- Why vanilla secondary members are reachable while tropics is not:
+  - They are also selected through other live tropical/equator authority paths, while `biomesoplenty:tropics` is only present in `globe:lat_tropics_secondary`.
+- Post-pick demotion check:
+  - No later sanitize/clamp path found that specifically rewrites `biomesoplenty:tropics` after a pick.
+  - The tropical sanitize/clamp logic only rewrites warm-family or jungle-family outputs, so it does not explain the zero count for this biome.
+- Recommended next slice:
+  - Add gated debug counters for tropical secondary candidate hits vs final survival, or, if a tiny pressure fix is approved later, route one narrow tropical secondary authority path into the picker before any broader activation work.

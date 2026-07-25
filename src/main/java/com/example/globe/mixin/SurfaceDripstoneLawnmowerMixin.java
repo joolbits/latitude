@@ -1,12 +1,12 @@
 package com.example.globe.mixin;
 
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.Heightmap;
-import net.minecraft.world.gen.feature.DripstoneClusterFeature;
-import net.minecraft.world.gen.feature.LargeDripstoneFeature;
-import net.minecraft.world.gen.feature.SmallDripstoneFeature;
-import net.minecraft.world.gen.feature.util.FeatureContext;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
+import net.minecraft.world.level.levelgen.feature.LargeDripstoneFeature;
+import net.minecraft.world.level.levelgen.feature.SpeleothemClusterFeature;
+import net.minecraft.world.level.levelgen.feature.SpeleothemFeature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
@@ -15,7 +15,11 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin({LargeDripstoneFeature.class, DripstoneClusterFeature.class, SmallDripstoneFeature.class})
+// 26.2 renamed the dripstone worldgen feature classes: DripstoneClusterFeature -> SpeleothemClusterFeature
+// (type minecraft:speleothem_cluster) and PointedDripstoneFeature -> SpeleothemFeature (type minecraft:speleothem).
+// LargeDripstoneFeature is unchanged. All three still extend Feature and override place(FeaturePlaceContext),
+// so the HEAD inject below still targets the same generation entrypoint and the surface-mow behavior is preserved.
+@Mixin({LargeDripstoneFeature.class, SpeleothemClusterFeature.class, SpeleothemFeature.class})
 public class SurfaceDripstoneLawnmowerMixin {
 
     @Unique
@@ -41,19 +45,19 @@ public class SurfaceDripstoneLawnmowerMixin {
         LOGGED_CHUNKS.defaultReturnValue(Long.MIN_VALUE);
     }
 
-    @Inject(method = "generate(Lnet/minecraft/world/gen/feature/util/FeatureContext;)Z", at = @At("HEAD"), cancellable = true)
-    private void latitude$cancelSurfaceDripstone(FeatureContext<?> context, CallbackInfoReturnable<Boolean> cir) {
+    @Inject(method = "place(Lnet/minecraft/world/level/levelgen/feature/FeaturePlaceContext;)Z", at = @At("HEAD"), cancellable = true)
+    private void latitude$cancelSurfaceDripstone(FeaturePlaceContext<?> context, CallbackInfoReturnable<Boolean> cir) {
         if (!LATITUDE_FIX_SURFACE_DRIPSTONE) {
             return;
         }
 
-        BlockPos origin = context.getOrigin();
-        int seaLevel = context.getWorld().getSeaLevel();
-        int surfaceY = context.getWorld().getTopY(Heightmap.Type.WORLD_SURFACE_WG, origin.getX(), origin.getZ());
+        BlockPos origin = context.origin();
+        int seaLevel = context.level().getSeaLevel();
+        int surfaceY = context.level().getHeight(Heightmap.Types.WORLD_SURFACE_WG, origin.getX(), origin.getZ());
         boolean nearSurfaceByHeightmap = origin.getY() >= surfaceY - DRIPSTONE_SURFACE_BUFFER;
         boolean skyVisible = origin.getY() > seaLevel
-                && (context.getWorld().isSkyVisible(origin)
-                || context.getWorld().isSkyVisible(origin.up(2)));
+                && (context.level().canSeeSky(origin)
+                || context.level().canSeeSky(origin.above(2)));
         if (nearSurfaceByHeightmap || skyVisible) {
             if (DEBUG_DRIPSTONE_MOW) {
                 logOncePerChunk(origin);

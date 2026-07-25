@@ -1,0 +1,17 @@
+BYG-only Cohesive Horizons pilot proof
+
+Branch: feat/1.3.1-cohesive-horizons-26.1
+HEAD: 36abd39ed0c9061fcdb898450a91063f2be1298c
+Tags at HEAD: release/1.3.0+26.1-r2, save/26-1-release-artifact-purity
+
+Confirmed BYG entries:
+- `biomeswevegone:temperate_grove` as an object-form optional entry with `"required": false`
+- `biomeswevegone:frosted_taiga` as an object-form optional entry with `"required": false`
+
+Negative checks:
+- No Nature’s Spirit entries remain
+- No Terralith entries exist
+
+Validation:
+- `JAVA_HOME="/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home" ./gradlew --no-daemon compileJava` -> `BUILD SUCCESSFUL`
+- `git diff --check` -> clean

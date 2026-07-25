@@ -2,9 +2,17 @@
 
 A globe-style world + latitude-based biome bands with a customizable compass HUD and warnings.
 
-## Current 1.4 status
+## Latitude 2.0 overhaul front door
 
-The current Latitude 1.4 source of truth is the Minecraft `26.1.2` worktree at `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2`. Use [docs/release/checklist.md](<home>/CascadeProjects/Latitude%20(Globe)/docs/release/checklist.md) as the permanent rerun front door and [docs/release/scenic-drive-green-checklist.md](<home>/CascadeProjects/Latitude%20(Globe)/docs/release/scenic-drive-green-checklist.md) for the live scenic pass. This checkout remains the main docs/history root and still contains older `1.21.11`-era build metadata.
+The current planning front door is `docs/LATITUDE_2_0_OVERHAUL.md`.
+
+That document supersedes older "Mercator", E/W wrap, and ocean-seam design records for the Latitude 2.0 overhaul direction. The 2.0 plan keeps the 2:1 projected-planet foundation, pivots the planned canonical implementation to Minecraft `26.2`, and starts with portability plus Atlas geography measurement before any visible continent/climate behavior changes.
+
+## Current 1.4 candidate status
+
+This checkout is the canonical Minecraft `26.1.2` Latitude 1.4 candidate root. Current release-readiness truth lives in `docs/release/checklist.md`; do not treat older published `1.4.0+26.1.2` or `1.21.11` records as the active candidate gate. The permanent live rerun checklist lives in `docs/release/scenic-drive-green-checklist.md`.
+
+_(origin/main also tracked a parallel 1.4 candidate worktree at `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2`, with this checkout serving as the main docs/history root; preserved here for reference.)_
 
 ## Features
 
@@ -18,15 +26,19 @@ The current Latitude 1.4 source of truth is the Minecraft `26.1.2` worktree at `
   - Fully configurable: anchors, offsets, scale, background alpha, colors, show modes, direction modes
 
 ## Design Spec / Release Gate
-See: docs/design-spec.md
+See:
+
+- `docs/LATITUDE_2_0_OVERHAUL.md` for the Latitude 2.0 overhaul plan.
+- `docs/design-spec.md` for the existing design spec.
+- `docs/release/checklist.md` for release gates.
 
 ## Guardrails / Workflows
 - Savepoint Autopilot: `.windsurf/workflows/latitude-savepoint-autopilot.md`
 
 ## Dependencies
 
-- Current Latitude 1.4 candidate: Fabric Loader for Minecraft `26.1.2` in `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2`
-- This checkout's `gradle.properties` still describes the historical `1.21.11` / `1.3.0` line and is not the active 1.4 release source of truth.
+- Fabric Loader (current local source line: Minecraft 26.1.2; planned 2.0 canonical pivot: Minecraft 26.2)
+- _(origin/main also referenced a separate Latitude 1.4 candidate worktree using Fabric Loader for Minecraft `26.1.2` at `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2`; this checkout's `gradle.properties` has since moved onto the 26.2 pivot line above.)_
 - Fabric API
 
 ## Biome tag integration

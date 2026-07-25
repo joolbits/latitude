@@ -1,6 +1,6 @@
 package com.example.globe.client;
 
-import net.minecraft.world.border.WorldBorder;
+import net.minecraft.world.level.border.WorldBorder;
 
 public final class LatitudeMath {
     private LatitudeMath() {
@@ -12,5 +12,9 @@ public final class LatitudeMath {
 
     public static String formatLatitudeDeg(double playerZ, WorldBorder border) {
         return com.example.globe.util.LatitudeMath.formatLatitudeDeg(border, playerZ);
+    }
+
+    public static String formatLongitudeDeg(double playerX, WorldBorder border) {
+        return com.example.globe.util.LatitudeMath.formatLongitudeDeg(border, playerX);
     }
 }

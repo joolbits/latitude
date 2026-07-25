@@ -6,31 +6,67 @@ import com.mojang.serialization.DynamicOps;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.MapLike;
 import com.mojang.serialization.RecordBuilder;
-import net.minecraft.util.Identifier;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.source.BiomeSource;
-import net.minecraft.world.biome.source.util.MultiNoiseUtil;
-
 import java.util.Collection;
 import java.util.stream.Stream;
+import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.LevelHeightAccessor;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.biome.Climate;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+import net.minecraft.world.level.levelgen.RandomState;
 
 public final class LatitudeBiomeSource extends BiomeSource {
     private static final int MAX_CAVE_BIOME_Y = Integer.getInteger("latitude.maxCaveBiomeY", 96);
     private static final int HARD_DECK_SURFACE_Y = Integer.getInteger("latitude.hardDeckSurfaceY", 20);
     private static final int DEEP_DARK_MAX_Y = -16;
-    private static final Identifier LUSH_CAVES_ID = Identifier.of("minecraft", "lush_caves");
-    private static final Identifier DRIPSTONE_CAVES_ID = Identifier.of("minecraft", "dripstone_caves");
-    private static final Identifier DEEP_DARK_ID = Identifier.of("minecraft", "deep_dark");
+    private static final Identifier LUSH_CAVES_ID = Identifier.fromNamespaceAndPath("minecraft", "lush_caves");
+    private static final Identifier DRIPSTONE_CAVES_ID = Identifier.fromNamespaceAndPath("minecraft", "dripstone_caves");
+    // 26.2 "Chaos Cubed" cave biome — preserve underground like the others.
+    private static final Identifier SULFUR_CAVES_ID = Identifier.fromNamespaceAndPath("minecraft", "sulfur_caves");
+    private static final Identifier DEEP_DARK_ID = Identifier.fromNamespaceAndPath("minecraft", "deep_dark");
 
     private final BiomeSource original;
-    private final Collection<RegistryEntry<Biome>> biomes;
+    private final Collection<Holder<Biome>> biomes;
+    private final Registry<Biome> biomeRegistry;
     private final int borderRadiusBlocks;
+    private final NoiseBasedChunkGenerator generator;
+    private final RandomState noiseConfig;
+    private final LevelHeightAccessor heightView;
+    private final String callerContext;
 
-    public LatitudeBiomeSource(BiomeSource original, Collection<RegistryEntry<Biome>> biomes, int borderRadiusBlocks) {
+    public LatitudeBiomeSource(BiomeSource original, Collection<Holder<Biome>> biomes, int borderRadiusBlocks) {
+        this(original, biomes, null, borderRadiusBlocks, null, null, null, "SOURCE");
+    }
+
+    public static LatitudeBiomeSource forLocate(BiomeSource original,
+                                                Registry<Biome> biomeRegistry,
+                                                int borderRadiusBlocks,
+                                                NoiseBasedChunkGenerator generator,
+                                                RandomState noiseConfig,
+                                                LevelHeightAccessor heightView) {
+        return new LatitudeBiomeSource(original, original.possibleBiomes(), biomeRegistry,
+                borderRadiusBlocks, generator, noiseConfig, heightView, "MIXIN");
+    }
+
+    private LatitudeBiomeSource(BiomeSource original,
+                                Collection<Holder<Biome>> biomes,
+                                Registry<Biome> biomeRegistry,
+                                int borderRadiusBlocks,
+                                NoiseBasedChunkGenerator generator,
+                                RandomState noiseConfig,
+                                LevelHeightAccessor heightView,
+                                String callerContext) {
         this.original = original;
         this.biomes = biomes;
+        this.biomeRegistry = biomeRegistry;
         this.borderRadiusBlocks = borderRadiusBlocks;
+        this.generator = generator;
+        this.noiseConfig = noiseConfig;
+        this.heightView = heightView;
+        this.callerContext = callerContext == null || callerContext.isBlank() ? "SOURCE" : callerContext;
     }
 
     public BiomeSource original() {
@@ -38,9 +74,9 @@ public final class LatitudeBiomeSource extends BiomeSource {
     }
 
     @Override
-    protected com.mojang.serialization.MapCodec<? extends BiomeSource> getCodec() {
+    protected com.mojang.serialization.MapCodec<? extends BiomeSource> codec() {
         @SuppressWarnings("unchecked")
-        MapCodec<BiomeSource> delegate = (MapCodec<BiomeSource>) ((BiomeSourceAccessor) original).globe$invokeGetCodec();
+        MapCodec<BiomeSource> delegate = (MapCodec<BiomeSource>) ((BiomeSourceAccessor) original).globe$invokeCodec();
         return new MapCodec<>() {
             @Override
             public <T> RecordBuilder<T> encode(BiomeSource input, DynamicOps<T> ops, RecordBuilder<T> prefix) {
@@ -61,24 +97,30 @@ public final class LatitudeBiomeSource extends BiomeSource {
     }
 
     @Override
-    protected Stream<RegistryEntry<Biome>> biomeStream() {
-        return original.getBiomes().stream();
+    protected Stream<Holder<Biome>> collectPossibleBiomes() {
+        return LatitudeBiomes.expandSourceCandidatePool(original.possibleBiomes()).stream();
     }
 
     @Override
-    public RegistryEntry<Biome> getBiome(int x, int y, int z, MultiNoiseUtil.MultiNoiseSampler sampler) {
-        RegistryEntry<Biome> current = original.getBiome(x, y, z, sampler);
-        RegistryEntry<Biome> base = original.getBiome(x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
+    public Holder<Biome> getNoiseBiome(int x, int y, int z, Climate.Sampler sampler) {
+        Holder<Biome> current = original.getNoiseBiome(x, y, z, sampler);
+        Holder<Biome> base = original.getNoiseBiome(x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
         int blockX = x << 2;
         int blockZ = z << 2;
         int blockY = y << 2;
         if (shouldPreserveCave(current, base, blockY)) {
             return current;
         }
-        return LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "SOURCE", null, null, null);
+        if (biomeRegistry != null) {
+            return LatitudeBiomes.pick(biomeRegistry, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler,
+                    callerContext, generator, noiseConfig, heightView);
+        }
+        Collection<Holder<Biome>> sourceCandidates = LatitudeBiomes.expandSourceCandidatePool(biomes);
+        return LatitudeBiomes.pick(sourceCandidates, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler,
+                callerContext, generator, noiseConfig, heightView);
     }
 
-    private static boolean shouldPreserveCave(RegistryEntry<Biome> current, RegistryEntry<Biome> surfaceBase, int blockY) {
+    private static boolean shouldPreserveCave(Holder<Biome> current, Holder<Biome> surfaceBase, int blockY) {
         if (!isCaveBiome(current)) {
             return false;
         }
@@ -94,23 +136,23 @@ public final class LatitudeBiomeSource extends BiomeSource {
         return true;
     }
 
-    private static boolean isCaveBiome(RegistryEntry<Biome> entry) {
+    private static boolean isCaveBiome(Holder<Biome> entry) {
         Identifier id = biomeId(entry);
         if (id == null) {
             return false;
         }
-        return id.equals(LUSH_CAVES_ID) || id.equals(DRIPSTONE_CAVES_ID) || id.equals(DEEP_DARK_ID);
+        return id.equals(LUSH_CAVES_ID) || id.equals(DRIPSTONE_CAVES_ID) || id.equals(SULFUR_CAVES_ID) || id.equals(DEEP_DARK_ID);
     }
 
-    private static boolean isDeepDark(RegistryEntry<Biome> entry) {
+    private static boolean isDeepDark(Holder<Biome> entry) {
         Identifier id = biomeId(entry);
         return id != null && id.equals(DEEP_DARK_ID);
     }
 
-    private static Identifier biomeId(RegistryEntry<Biome> entry) {
+    private static Identifier biomeId(Holder<Biome> entry) {
         if (entry == null) {
             return null;
         }
-        return entry.getKey().map(key -> key.getValue()).orElse(null);
+        return entry.unwrapKey().map(key -> key.identifier()).orElse(null);
     }
 }

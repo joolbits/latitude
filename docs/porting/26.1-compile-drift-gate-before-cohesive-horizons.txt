@@ -1,0 +1,275 @@
+26.1 compile drift gate before Cohesive Horizons
+Date: 2026-05-03
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: port/26.1-latitudebiomes-final
+HEAD: 1b2c1c77f87e056155eb09f5fe288a6b4ec07042
+Tags at HEAD: save/26-1-latitudebiomes-final
+Tree: dirty only with the existing Cohesive Horizons tag pilot files, docs/research/, and tmp/
+
+Java/toolchain
+- Active Java before rerun: OpenJDK 21.0.10
+- Java 25 path used: /Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home
+
+Compile rerun
+- Command: JAVA_HOME="/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home" ./gradlew --no-daemon compileJava
+- Result: failed
+
+First compile bucket
+- Selected bucket: ExtremePolarVegetationGuardMixin -> RandomPatchFeature import / @Mixin target
+- Classification: behavior-sensitive, not a safe mechanical retarget without knowing the 26.1 replacement for the removed feature class
+- Files changed: none
+
+Remaining compile buckets seen in the same run
+- GuiGraphics
+- LevelRenderState
+- WorldBorderRenderState
+- KeyBindingHelper
+- ServerPlayer / WorldData mismatches
+
+Pilot status
+- Cohesive Horizons pilot remained untouched; the two tag JSONs were not edited in this gate
+
+Conclusion
+- This gate is blocked on broader 26.1 source/API drift, not on the optional-tag pilot itself
+- Safe next slice: resolve the first behavior-neutral 26.1 API bucket after identifying a direct 26.1 replacement target, then rerun compile with Java 25 unchanged
+
+Follow-up scout on 2026-05-03
+- Narrow mechanical bucket fixed: `src/main/java/com/example/globe/client/ClientKeybinds.java`
+- Change shape: `KeyBindingHelper` -> `KeyMappingHelper`, with `registerKeyBinding` -> `registerKeyMapping`
+- Compile result after that one-file retarget: still failed
+- New first behavior-neutral bucket surfaced: `GuiGraphics` drift in `LatitudePlanisphereRenderer`
+- Cohesive Horizons pilot tags remained untouched in this scout
+
+Planisphere slice on 2026-05-03
+- File retargeted: `src/main/java/com/example/globe/client/create/LatitudePlanisphereRenderer.java`
+- Change shape: `GuiGraphics` -> `GuiGraphicsExtractor`, plus `drawString` -> `text` for the renderer helper
+- Compile result after fix: still failed overall, but this file no longer appears in the remaining errors
+- Next first compile bucket now visible: `LatitudeCreateWorldScreen.ZoneRowWidget` needs `extractWidgetRenderState(GuiGraphicsExtractor, int, int, float)`
+- Cohesive Horizons pilot remained untouched
+
+Create-world widget-state scout on 2026-05-03
+- File touched: `src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java`
+- Attempted mechanical retarget: `GuiGraphics` -> `GuiGraphicsExtractor` and widget `renderWidget` -> `extractWidgetRenderState`
+- Result: compile still fails in the same file, now exposing coupled main-screen render and helper signature drift
+- Stop reason: the bucket is no longer a one-method mechanical retarget without making a broader superclass/API decision
+- Cohesive Horizons pilot remained untouched
+
+Create-world API-shape audit on 2026-05-03
+- Confirmed local 26.1 shape: `CreateWorldScreen.render(GuiGraphics, int, int, float)` and `AbstractWidget.renderWidget(GuiGraphics, int, int, float)`
+- Confirmed local mapping also contains `EditGameRulesScreen` under `net.minecraft.client.gui.screens.worldselection`
+- Conclusion: `LatitudeCreateWorldScreen` is not safe for a one-file `GuiGraphicsExtractor` retarget; it needs a broader create-world screen port slice, not another mechanical widget-only edit
+- Cohesive Horizons pilot remained untouched
+
+Boundary verdict on 2026-05-03
+- The smallest safe correction is to revert the bad `GuiGraphicsExtractor` conversion inside `src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java` and restore the `GuiGraphics` / `renderWidget` shape in that same file
+- The current file already contains all the needed create-world UI touchpoints, so no second source file is required for the next edit slice
+- If the next compile still exposes `EditGameRulesScreen`, that becomes a follow-up import retarget in the same file, not a broader UI split
+- Cohesive Horizons pilot remained untouched
+
+Correction result on 2026-05-03
+- `LatitudeCreateWorldScreen.java` now uses `GuiGraphics` and `renderWidget` again, with `drawString` restored on the text helpers
+- Compile rerun still fails in the same create-world file, now centered on `EditGameRulesScreen` import resolution and lingering shape drift in the same class
+- Stop condition met: further progress needs a fresh source/API confirmation for the create-world screen boundary rather than another blind mechanical swap
+- Cohesive Horizons pilot remained untouched
+
+Next-bucket audit on 2026-05-03
+- Remaining compile buckets are now broad client/API drift: `HandledScreenCompassToggleMixin`, `EwStormWallRendererMixin`, `CreateWorldScreenLatitudeToggleMixin`, `CreateWorldScreenSpawnZoneMixin`, `InGameHudMixin`, `WorldRendererWorldBorderMixin`, `DownloadingTerrainScreenFirstLoadMessageMixin`, `ZoneTitleOverlay`, `GlobeWarningOverlay`, `OverlayProof`, `LatitudeSettingsScreen`, `LatitudeHudStudioScreen`, `LatitudeHudAdjustScreen`, `EwSandstormOverlayHud`, `ZoneEnterTitleOverlay`, `GlobeMod`, plus the behavior-sensitive `ExtremePolarVegetationGuardMixin`
+- The next narrow candidate, `HandledScreenCompassToggleMixin`, is not a safe one-line retarget because it couples the missing `GuiGraphics` import with a separate `ItemStackTemplate` incompatibility in the same file
+- Audit conclusion: no clearly mechanical single-file bucket is obvious without reopening broader API shape questions
+- Cohesive Horizons pilot remained untouched
+
+Handled-screen patch result on 2026-05-03
+- File changed: `src/main/java/com/example/globe/mixin/HandledScreenCompassToggleMixin.java`
+- Mechanical patch: `GuiGraphics` -> `GuiGraphicsExtractor`, `drawSlot` -> `extractSlot`, `x`/`y` -> `leftPos`/`topPos`, and `BundleContents.items()` loop -> `itemCopyStream()`
+- Compile result: `HandledScreenCompassToggleMixin` cleared; remaining red bucket moved away from the client UI path and back into behavior-sensitive worldgen/API drift
+- Next bucket not patched: `ExtremePolarVegetationGuardMixin -> RandomPatchFeature`
+- Cohesive Horizons pilot remained untouched
+
+Spawn-zone mixin audit on 2026-05-03
+- File changed: `src/main/java/com/example/globe/mixin/client/CreateWorldScreenSpawnZoneMixin.java`
+- Mechanical patch: `GuiGraphics` -> `GuiGraphicsExtractor`, `render` -> `extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V`, and `worldCreator` -> `uiState`
+- Compile result: the spawn-zone mixin cleared cleanly
+- Next first compile bucket: `InGameHudMixin` / broader client GUI drift, with no create-world spawn-zone errors remaining
+- Cohesive Horizons pilot remained untouched
+
+High-reasoning create-world API audit on 2026-05-03
+- This supersedes the earlier stale API-shape note in this file.
+- Root verified: <home>/CascadeProjects/Latitude (Globe)
+- Branch: port/26.1-latitudebiomes-final
+- HEAD: 1b2c1c77f87e056155eb09f5fe288a6b4ec07042
+- Tag at HEAD: save/26-1-latitudebiomes-final
+- Tree before edit: dirty; tracked dirt was ClientKeybinds.java, LatitudePlanisphereRenderer.java, and the two Cohesive Horizons pilot biome tags. LatitudeCreateWorldScreen.java had no pre-audit diff.
+- Compile command: JAVA_HOME="/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home" ./gradlew --no-daemon compileJava
+- LatitudeCreateWorldScreen compile errors before edit: missing net.minecraft.client.gui.GuiGraphics import at line 9; missing EditGameRulesScreen import at line 17; unresolved GuiGraphics parameters at lines 1006, 1165, 1183, 1235, 1258, 1395, 1403, 1418, 1422, 1454, 1468, 1482, 1516, 1530, 1582, 1607, 1619, 1631, 1636, 1647, 1667, 1691, 1742, and 1826; unresolved EditGameRulesScreen constructor at line 870; @Override mismatches at lines 1005 and 1825.
+- Confirmed mapped API source: gradle.properties sets minecraft_version=26.1 and fabric_version=0.145.1+26.1.
+- Confirmed mapped API class jar: <home>/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged-deobf/26.1/minecraft-merged-deobf-26.1.jar
+- Confirmed mapped API facts: GuiGraphics.class is absent; GuiGraphicsExtractor.class is present.
+- Confirmed mapped API facts: CreateWorldScreen extends Screen and exposes extractRenderState(GuiGraphicsExtractor, int, int, float).
+- Confirmed mapped API facts: Screen implements Renderable and exposes extractRenderState(GuiGraphicsExtractor, int, int, float), extractBackground, extractMenuBackground, and extractTransparentBackground.
+- Confirmed mapped API facts: Renderable declares extractRenderState(GuiGraphicsExtractor, int, int, float).
+- Confirmed mapped API facts: AbstractWidget implements Renderable and exposes final extractRenderState plus abstract protected extractWidgetRenderState(GuiGraphicsExtractor, int, int, float).
+- Confirmed mapped API facts: EditGameRulesScreen is absent; WorldCreationGameRulesScreen exists and has constructor WorldCreationGameRulesScreen(GameRules, Consumer<Optional<GameRules>>).
+- Confirmed mapped API facts: GuiGraphicsExtractor has fill, enableScissor, disableScissor, pose, text, centeredText, setTooltipForNextFrame, and no drawString method.
+- Confirmed local dependency: LatitudePlanisphereRenderer.renderCompact already accepts GuiGraphicsExtractor; no edit was made to that file.
+- Decision: patch current file; do not rollback first. A rollback would preserve the stale GuiGraphics/EditGameRulesScreen/renderWidget shape that the local 26.1 mapped jar disproves.
+- One-file mechanical patch applied: GuiGraphics -> GuiGraphicsExtractor, EditGameRulesScreen -> WorldCreationGameRulesScreen, render -> extractRenderState, super.render -> super.extractRenderState, renderWidget -> extractWidgetRenderState, and context.drawString -> context.text.
+- Compile rerun after edit: build still failed overall with 59 errors, but filtered output contained no LatitudeCreateWorldScreen.java errors.
+- Files changed by this audit: src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java and this report file.
+- Cohesive Horizons pilot remained untouched.
+- Next single slice: audit the next remaining compile bucket from a fresh compile output; do not mix it with create-world UX work or Cohesive Horizons tags.
+
+HandledScreenCompassToggleMixin shared client graphics/API audit on 2026-05-03
+- Root verified: <home>/CascadeProjects/Latitude (Globe)
+- Branch: port/26.1-latitudebiomes-final
+- HEAD: 1b2c1c77f87e056155eb09f5fe288a6b4ec07042
+- Tag at HEAD: save/26-1-latitudebiomes-final
+- Tree: dirty with existing compile drift files, the two Cohesive Horizons pilot biome tags, docs/porting, docs/research, and tmp.
+- Compile command: JAVA_HOME="/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home" ./gradlew --no-daemon compileJava
+- Actual compile path: src/main/java/com/example/globe/mixin/HandledScreenCompassToggleMixin.java
+- Prompt allowed edit path mismatch: prompt allowed src/main/java/com/example/globe/mixin/client/HandledScreenCompassToggleMixin.java, which is not the compiling file.
+- Exact HandledScreenCompassToggleMixin errors: missing net.minecraft.client.gui.GuiGraphics import at line 6; unresolved GuiGraphics parameter in globe$drawCompassDisabledX at line 53; incompatible ItemStackTemplate to ItemStack in BundleContents.items() loop at line 85.
+- Directly related recurring errors: GuiGraphics remains unresolved across multiple other client HUD/screen files; ItemStackTemplate to ItemStack also recurs in GlobeMod.
+- Confirmed mapped API jar: <home>/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged-deobf/26.1/minecraft-merged-deobf-26.1.jar
+- Confirmed graphics API facts: GuiGraphics.class is absent; GuiGraphicsExtractor.class exists and provides fill, item, fakeItem, text, enableScissor, disableScissor, and tooltip methods.
+- Confirmed mixin target facts: AbstractContainerScreen exposes extractRenderState, extractContents, extractSlots, extractTooltip, extractLabels, and protected extractSlot(GuiGraphicsExtractor, Slot, int, int); there is no drawSlot method in the 26.1 mapped signature.
+- Confirmed coordinate facts: AbstractContainerScreen has protected leftPos and topPos, not the old x and y fields currently shadowed by this mixin.
+- Confirmed input facts: AbstractContainerScreen.mouseClicked(MouseButtonEvent, boolean) exists; MouseButtonEvent exposes x(), y(), button(), modifiers(), and buttonInfo(). The current mouseClicked injection shape is already mapped correctly for 26.1.
+- Confirmed bundle facts: ItemStackTemplate exists and implements ItemInstance; BundleContents.items() returns List<ItemStackTemplate>; BundleContents.itemCopyStream() returns Stream<ItemStack>. The behavior-preserving recursive replacement is to iterate itemCopyStream() or call anyMatch over it.
+- One-file safe at API level: yes, for the actual compile file only. Mechanical source changes would be GuiGraphics -> GuiGraphicsExtractor, @Inject method "drawSlot" -> "extractSlot", x/y shadows -> leftPos/topPos shadows and coordinate uses, and BundleContents.items() loop -> itemCopyStream().
+- Source edit performed: no. Stop reason was exact allowed-file boundary mismatch, not API uncertainty.
+- Shared migration plan required before this file: no. This file can be a narrow one-file compile slice once the actual path is authorized. Other GuiGraphics files should be separate later buckets.
+- Files changed by this audit: this report file only.
+- Cohesive Horizons pilot remained untouched.
+- Next single slice: authorize and patch src/main/java/com/example/globe/mixin/HandledScreenCompassToggleMixin.java exactly, then rerun compile once and stop if this same file still appears.
+
+ExtremePolarVegetationGuardMixin worldgen API audit on 2026-05-03
+- Root verified: <home>/CascadeProjects/Latitude (Globe)
+- Branch: port/26.1-latitudebiomes-final
+- HEAD: 1b2c1c77f87e056155eb09f5fe288a6b4ec07042
+- Tag at HEAD: save/26-1-latitudebiomes-final
+- Tree: dirty with existing compile drift files, the two BYG-only Cohesive Horizons pilot biome tags, docs/porting, docs/research, and tmp.
+- Compile command: JAVA_HOME="/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home" ./gradlew --no-daemon compileJava
+- Exact ExtremePolarVegetationGuardMixin errors: missing net.minecraft.world.level.levelgen.feature.RandomPatchFeature import at line 7; unresolved RandomPatchFeature class in @Mixin target at line 18.
+- Current mixin behavior: cancels feature placement when FeaturePlaceContext.origin().z is inside LatitudeBiomes.isBlockInExtremePolarCap(origin.getZ(), GlobeMod.BORDER_RADIUS). The invariant is barren extreme-polar land.
+- Confirmed mapped API jar: <home>/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged-deobf/26.1/minecraft-merged-deobf-26.1.jar
+- Confirmed 26.1 API facts: RandomPatchFeature.class is absent; Feature has no RANDOM_PATCH field and no registered "random_patch" constant in its static initializer.
+- Confirmed 26.1 API facts: TreeFeature still exists and has final place(FeaturePlaceContext<TreeConfiguration>).
+- Confirmed 26.1 API facts: Feature declares abstract place(FeaturePlaceContext<FC>) and a public wrapper place(FC, WorldGenLevel, ChunkGenerator, RandomSource, BlockPos).
+- Confirmed 26.1 API facts: SimpleBlockFeature exists and has place(FeaturePlaceContext<SimpleBlockConfiguration>); Feature registers it as "simple_block".
+- Confirmed 26.1 API facts: VegetationPatchFeature and WaterloggedVegetationPatchFeature exist and use VegetationPatchConfiguration; NetherForestVegetationFeature also exists. These are separate feature classes, not a single RandomPatchFeature rename.
+- Replacement decision: RandomPatchFeature appears deleted/split, not moved or renamed. A direct retarget to SimpleBlockFeature would change behavior scope from the old random-patch wrapper to every simple-block feature. Adding vegetation-patch classes would also widen the target set. That is not a safe blind compile retarget under the barren-polar invariant.
+- Source edit performed: no.
+- Patch plan: keep TreeFeature in this mixin, replace the removed random-patch boundary only after a narrow configured-feature audit identifies which 26.1 vegetation configured-feature types actually generate grass/flowers/shrubs in polar-cap land. Candidate compile patch after proof would change the injection method to place(FeaturePlaceContext) and add only the proven vegetation target class or classes.
+- Files changed by this audit: this report file only.
+- Cohesive Horizons BYG-only pilot remained untouched.
+- Next single slice: audit the 26.1 configured-feature references for polar vegetation emitters and choose the smallest proven target set before editing ExtremePolarVegetationGuardMixin.
+
+Extreme-polar vegetation emitter target audit on 2026-05-03
+- Root verified: <home>/CascadeProjects/Latitude (Globe)
+- Branch: port/26.1-latitudebiomes-final
+- HEAD: 1b2c1c77f87e056155eb09f5fe288a6b4ec07042
+- Tag at HEAD: save/26-1-latitudebiomes-final
+- Tree: dirty with existing compile drift files, the two BYG-only Cohesive Horizons pilot biome tags, docs/porting, docs/research, and tmp.
+- Compile rerun: skipped. The previous blocker was already locked as ExtremePolarVegetationGuardMixin -> RandomPatchFeature, and this pass needed configured-feature/resource evidence only.
+- Local vanilla configured-feature source: <home>/.gradle/caches/fabric-loom/26.1/minecraft-extracted_server.jar
+- Feature type mapping source: <home>/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged-deobf/26.1/minecraft-merged-deobf-26.1.jar
+- Mapped class facts: minecraft:tree -> TreeFeature; minecraft:fallen_tree -> FallenTreeFeature; minecraft:simple_block -> SimpleBlockFeature; minecraft:block_column -> BlockColumnFeature; minecraft:bamboo -> BambooFeature; minecraft:vegetation_patch -> VegetationPatchFeature; minecraft:waterlogged_vegetation_patch -> WaterloggedVegetationPatchFeature; minecraft:seagrass -> SeagrassFeature; minecraft:kelp -> KelpFeature; minecraft:huge_red_mushroom/huge_brown_mushroom -> huge mushroom feature classes; random_selector/simple_random_selector/random_boolean_selector are selector wrapper classes.
+- Configured-feature evidence: grass, grass_jungle, taiga_grass, tall_grass, dry_grass, large_fern, dead_bush, berry_bush, bush, firefly_bush, leaf_litter, flower_*, sunflower, wildflower, pale_forest_flower, brown_mushroom, and red_mushroom are top-level minecraft:simple_block.
+- Configured-feature evidence: cactus and sugar_cane are minecraft:block_column.
+- Configured-feature evidence: bamboo_no_podzol and bamboo_some_podzol are minecraft:bamboo; bamboo_vegetation is minecraft:random_selector.
+- Configured-feature evidence: trees_* and *_vegetation tree groups are mostly selector wrappers around tree features; actual tree configs are minecraft:tree, while fallen_*_tree configs are minecraft:fallen_tree.
+- Configured-feature evidence: moss_patch and pale_moss_patch are minecraft:vegetation_patch; seagrass_* is minecraft:seagrass; kelp is minecraft:kelp; crimson/warped_forest_vegetation is minecraft:nether_forest_vegetation; sculk_patch_* is minecraft:sculk_patch.
+- Must-block for extreme-polar land vegetation: TreeFeature remains must-block; SimpleBlockFeature-backed land plants and flowers listed above; BlockColumnFeature-backed cactus and sugar_cane; BambooFeature-backed bamboo; FallenTreeFeature if fallen logs are allowed by any polar-cap surface path.
+- Probably-block: huge mushroom feature classes, mushroom_island_vegetation selector, pale_moss_patch/pale_garden_vegetation, and selector wrappers only if a key-level implementation cannot reliably reach their child emitters.
+- Do-not-block / unrelated / cave/nether/water-only: ice_patch and disk_grass terrain disks; seagrass and kelp water vegetation; warm_ocean_vegetation; lush_caves_vegetation and lush_caves_ceiling_vegetation via moss_patch; sculk_patch_*; nether_forest_vegetation, crimson_roots, patch_fire, and patch_soul_fire. These prove a class-only SimpleBlockFeature retarget would cross into unrelated scopes.
+- Decision shape: C, a configured-feature/key-level or config-classified guard, not A. RandomPatchFeature split across multiple classes, and a one-class SimpleBlockFeature retarget is too broad because top-level simple_block includes land plants but also cave/nether/water/decorative emitters.
+- Source edit performed: no.
+- Files changed by this audit: this report file only.
+- Cohesive Horizons BYG-only pilot remained untouched.
+- Next single slice: inspect the narrowest 26.1 placement/configured-feature hook that can identify the configured feature key or at least the configured block provider, then patch ExtremePolarVegetationGuardMixin or a new guard only after that hook is proven locally.
+
+Extreme-polar configured-feature/key hook audit on 2026-05-03
+- Root verified: <home>/CascadeProjects/Latitude (Globe)
+- Branch: port/26.1-latitudebiomes-final
+- HEAD: 1b2c1c77f87e056155eb09f5fe288a6b4ec07042
+- Tag at HEAD: save/26-1-latitudebiomes-final
+- Tree: dirty with existing compile drift files, the two BYG-only Cohesive Horizons pilot biome tags, docs/porting, docs/research, and tmp.
+- Compile rerun: skipped. The locked blocker and this pass only needed mapped placement/configured-feature API evidence.
+- Mapped API jar: <home>/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged-deobf/26.1/minecraft-merged-deobf-26.1.jar
+- Placement hook candidate: PlacedFeature.place(WorldGenLevel, ChunkGenerator, RandomSource, BlockPos) and PlacedFeature.placeWithBiomeCheck(WorldGenLevel, ChunkGenerator, RandomSource, BlockPos) both delegate to private placeWithContext(PlacementContext, RandomSource, BlockPos).
+- PlacedFeature state: private final Holder<ConfiguredFeature<?, ?>> feature and private final List<PlacementModifier> placement. Holder exposes value(), unwrap(), and unwrapKey().
+- Key visibility: configured-feature key/id is visible from PlacedFeature.feature().unwrapKey() when the holder is registry-backed. Placed-feature key/id is not stored on PlacedFeature itself; PlacementContext.topFeature() exposes Optional<PlacedFeature>, not a holder/key.
+- Position caveat: PlacedFeature.placeWithContext has the configured-feature holder/key, but its direct BlockPos parameter is the starting origin before placement modifiers expand to emitted positions. The actual emitted positions are passed later to ConfiguredFeature.place(...).
+- Configured-feature hook candidate: ConfiguredFeature.place(WorldGenLevel, ChunkGenerator, RandomSource, BlockPos) is public and receives the post-placement candidate BlockPos. It exposes this.feature() and this.config(), but not the Holder or configured-feature key.
+- Feature/context facts: Feature.place(FeatureConfiguration, WorldGenLevel, ChunkGenerator, RandomSource, BlockPos) builds FeaturePlaceContext(Optional.empty(), level, generator, random, origin, config), so FeaturePlaceContext.topFeature() is empty on this path and cannot recover a key.
+- Config visibility at ConfiguredFeature.place: feature instance class, feature config object, WorldGenLevel, ChunkGenerator, RandomSource, and candidate BlockPos are visible.
+- Config-classification fields: SimpleBlockConfiguration.toPlace() returns BlockStateProvider; BlockColumnConfiguration.layers() returns layers whose state() is BlockStateProvider; BambooFeature uses ProbabilityFeatureConfiguration; TreeFeature uses TreeConfiguration; FallenTreeFeature uses FallenTreeConfiguration with trunkProvider; BlockStateProvider exposes getState(WorldGenLevel, RandomSource, BlockPos).
+- Recommended guard shape: B, a config-classified guard at ConfiguredFeature.place(WorldGenLevel, ChunkGenerator, RandomSource, BlockPos), not A. This preserves the old post-placement origin test while avoiding a broad SimpleBlockFeature class retarget.
+- Exact target signature for recommended hook: net.minecraft.world.level.levelgen.feature.ConfiguredFeature.place(Lnet/minecraft/world/level/WorldGenLevel;Lnet/minecraft/world/level/chunk/ChunkGenerator;Lnet/minecraft/util/RandomSource;Lnet/minecraft/core/BlockPos;)Z
+- Guard decision input at that hook: cancel only when BlockPos is inside LatitudeBiomes.isBlockInExtremePolarCap(pos.getZ(), GlobeMod.BORDER_RADIUS) and the visible feature/config classifies as land vegetation: TreeFeature, FallenTreeFeature, BambooFeature, selected SimpleBlockConfiguration providers, or selected BlockColumnConfiguration providers.
+- Why not A: key/id access is confirmed only at PlacedFeature before placement modifiers or indirectly through holders; the exact per-candidate position is confirmed at ConfiguredFeature.place without the key.
+- Why not C: multiple feature-class mixins would repeat the same cutoff logic and still need provider/config classification for SimpleBlockFeature and BlockColumnFeature.
+- Why not D: a compile-safe, behavior-preserving hook exists locally, so disabling the old mixin should remain a fallback only if the config classifier cannot be made narrow.
+- Source edit performed: no.
+- Files changed by this audit: this report file only.
+- Cohesive Horizons BYG-only pilot remained untouched.
+- Next single slice: patch only ExtremePolarVegetationGuardMixin to target ConfiguredFeature.place with a private classifier for land-vegetation configs, then rerun compile once and stop if the same mixin still fails.
+
+ExtremePolarVegetationGuardMixin ConfiguredFeature guard patch on 2026-05-03
+- Root verified: <home>/CascadeProjects/Latitude (Globe)
+- Branch: port/26.1-latitudebiomes-final
+- HEAD: 1b2c1c77f87e056155eb09f5fe288a6b4ec07042
+- Tag at HEAD: save/26-1-latitudebiomes-final
+- Tree before patch: dirty with existing compile drift files, the two BYG-only Cohesive Horizons pilot biome tags, docs/porting, docs/research, and tmp.
+- Retarget made: src/main/java/com/example/globe/mixin/ExtremePolarVegetationGuardMixin.java now targets ConfiguredFeature instead of TreeFeature plus removed RandomPatchFeature.
+- Injected method: ConfiguredFeature.place(Lnet/minecraft/world/level/WorldGenLevel;Lnet/minecraft/world/level/chunk/ChunkGenerator;Lnet/minecraft/util/RandomSource;Lnet/minecraft/core/BlockPos;)Z at HEAD, cancellable.
+- Cutoff preserved: still uses LatitudeBiomes.isBlockInExtremePolarCap(origin.getZ(), GlobeMod.BORDER_RADIUS).
+- Classifier scope: directly blocks TreeFeature, BambooFeature, and FallenTreeFeature; blocks SimpleBlockFeature only when its provider samples to explicit land vegetation block ids such as grasses, ferns, bushes, flowers, mushrooms, melon, pumpkin, and leaf_litter; blocks BlockColumnFeature only when layers sample to cactus, cactus_flower, or sugar_cane.
+- Classifier non-goals: does not block water-only seagrass/kelp, cave moss/spore blossom, nether roots/fire, sculk, terrain disks, or unrelated simple decorative features.
+- Provider sampling: uses a deterministic local RandomSource.create(0L) so the guard does not consume the feature placement random stream.
+- Compile command: JAVA_HOME="/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home" ./gradlew --no-daemon compileJava
+- Compile result: still failed overall with 54 errors, but no ExtremePolarVegetationGuardMixin.java errors appeared.
+- Next first compile bucket: src/main/java/com/example/globe/mixin/client/EwStormWallRendererMixin.java missing net.minecraft.client.renderer.state.LevelRenderState.
+- Files changed by this patch: src/main/java/com/example/globe/mixin/ExtremePolarVegetationGuardMixin.java and this report file.
+- Cohesive Horizons BYG-only pilot remained untouched.
+- Next single slice: audit EwStormWallRendererMixin against the 26.1 render-state API and decide whether it is a one-file retarget or a broader renderer bucket.
+
+EW storm wall render-state API audit and patch on 2026-05-03
+- Root verified: <home>/CascadeProjects/Latitude (Globe)
+- Branch: port/26.1-latitudebiomes-final
+- HEAD: 1b2c1c77f87e056155eb09f5fe288a6b4ec07042
+- Tag at HEAD: save/26-1-latitudebiomes-final
+- Tree before patch: dirty with existing compile drift files, the two BYG-only Cohesive Horizons pilot biome tags, docs/porting, docs/research, and tmp.
+- Compile command before patch: JAVA_HOME="/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home" ./gradlew --no-daemon compileJava
+- Exact EwStormWallRendererMixin errors before patch: missing net.minecraft.client.renderer.state.LevelRenderState import at line 11; unresolved LevelRenderState parameter in latitude$injectRenderWall at line 26.
+- Confirmed mapped API jar: <home>/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged-deobf/26.1/minecraft-merged-deobf-26.1.jar
+- Confirmed render API facts: LevelRenderState exists at net.minecraft.client.renderer.state.level.LevelRenderState, not net.minecraft.client.renderer.state.LevelRenderState.
+- Confirmed target facts: LevelRenderer exposes private submitEntities(PoseStack, net.minecraft.client.renderer.state.level.LevelRenderState, SubmitNodeCollector). The old pushEntityRenders method name is not present in the mapped LevelRenderer signature.
+- Confirmed collector facts: SubmitNodeCollector extends OrderedSubmitNodeCollector, and OrderedSubmitNodeCollector still exposes submitCustomGeometry(PoseStack, RenderType, SubmitNodeCollector.CustomGeometryRenderer).
+- Patch decision: one-file mechanical retarget was safe. The patch changed only the LevelRenderState import and @Inject method name; it did not change EW visual code, render order relative to the entity submit hook, fog ownership, blend/depth state code, or the currently disabled renderWall call.
+- Files changed by this patch: src/main/java/com/example/globe/mixin/client/EwStormWallRendererMixin.java and this report file.
+- Compile result after patch: still failed overall with 52 errors, but no EwStormWallRendererMixin.java errors appeared.
+- Next first compile bucket: src/main/java/com/example/globe/mixin/client/CreateWorldScreenLatitudeToggleMixin.java missing net.minecraft.client.gui.GuiGraphics.
+- Cohesive Horizons BYG-only pilot remained untouched.
+- Next single slice: audit CreateWorldScreenLatitudeToggleMixin against the 26.1 GuiGraphicsExtractor/create-world render extraction API, without reopening LatitudeCreateWorldScreen.
+
+CreateWorldScreenLatitudeToggleMixin render extraction API audit and patch on 2026-05-03
+- Root verified: <home>/CascadeProjects/Latitude (Globe)
+- Branch: port/26.1-latitudebiomes-final
+- HEAD: 1b2c1c77f87e056155eb09f5fe288a6b4ec07042
+- Tag at HEAD: save/26-1-latitudebiomes-final
+- Tree before patch: dirty with existing compile drift files, the two BYG-only Cohesive Horizons pilot biome tags, docs/porting, docs/research, and tmp.
+- Compile command before patch: JAVA_HOME="/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home" ./gradlew --no-daemon compileJava
+- Exact CreateWorldScreenLatitudeToggleMixin errors before patch: missing net.minecraft.client.gui.GuiGraphics import at line 4; unresolved GuiGraphics parameter in latitude$render at line 104.
+- Confirmed mapped API jar: <home>/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged-deobf/26.1/minecraft-merged-deobf-26.1.jar
+- Confirmed create-world API facts: CreateWorldScreen has private final WorldCreationUiState uiState and public getUiState(); the old worldCreator field name is not present in the mapped signature.
+- Confirmed render API facts: GuiGraphics.class and DrawContext.class are absent; GuiGraphicsExtractor.class exists. CreateWorldScreen exposes extractRenderState(GuiGraphicsExtractor, int, int, float). Screen also exposes extractRenderState(GuiGraphicsExtractor, int, int, float).
+- Confirmed draw API facts: GuiGraphicsExtractor exposes text(Font, String, int, int, int), but not drawString.
+- Patch decision: one-file mechanical retarget was safe. The patch changed GuiGraphics -> GuiGraphicsExtractor, render(DrawContext, int, int, float) injection -> extractRenderState(GuiGraphicsExtractor, int, int, float), drawString -> text, and the shadowed create-world state field worldCreator -> uiState.
+- Behavior preserved: no toggle semantics, world preset behavior, visible message text, or LatitudeCreateWorldScreen source was changed.
+- Files changed by this patch: src/main/java/com/example/globe/mixin/client/CreateWorldScreenLatitudeToggleMixin.java and this report file.
+- Compile result after patch: still failed overall with 50 errors, but no CreateWorldScreenLatitudeToggleMixin.java errors appeared.
+- Next first compile bucket: src/main/java/com/example/globe/mixin/client/CreateWorldScreenSpawnZoneMixin.java missing net.minecraft.client.gui.GuiGraphics.
+- Cohesive Horizons BYG-only pilot remained untouched.
+- Next single slice: audit CreateWorldScreenSpawnZoneMixin against the same 26.1 GuiGraphicsExtractor/create-world extraction surface.

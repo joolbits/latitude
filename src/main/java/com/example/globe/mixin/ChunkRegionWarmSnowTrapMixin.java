@@ -4,10 +4,10 @@ import com.example.globe.GlobeMod;
 import com.example.globe.debug.WarmSnowTrapStats;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.ChunkRegion;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.WorldGenRegion;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -18,16 +18,16 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
  * Rewrites the BlockState argument of ChunkRegion#setBlockState before
  * vanilla processes it. No recursion, no extra setBlockState calls.
  */
-@Mixin(ChunkRegion.class)
+@Mixin(WorldGenRegion.class)
 public abstract class ChunkRegionWarmSnowTrapMixin {
 
     @Unique
-    private static final BlockState STONE = Blocks.STONE.getDefaultState();
+    private static final BlockState STONE = Blocks.STONE.defaultBlockState();
     @Unique
-    private static final BlockState AIR = Blocks.AIR.getDefaultState();
+    private static final BlockState AIR = Blocks.AIR.defaultBlockState();
 
     @ModifyVariable(
-        method = "setBlockState(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;II)Z",
+        method = "setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;II)Z",
         at = @At("HEAD"),
         argsOnly = true,
         index = 2
@@ -41,10 +41,13 @@ public abstract class ChunkRegionWarmSnowTrapMixin {
             && state.getBlock() != Blocks.SNOW) {
             return state;
         }
+        if (pos.getY() >= LatitudeBiomes.ALPINE_ROCK_Y) {
+            return state;
+        }
 
         WarmSnowTrapStats.snowHits++;
         WarmSnowTrapStats.lastBlock = state.getBlock().toString();
-        WarmSnowTrapStats.lastPos = pos.toImmutable();
+        WarmSnowTrapStats.lastPos = pos.immutable();
 
         int radius = LatitudeBiomes.getActiveRadiusBlocks();
         if (radius <= 0) {

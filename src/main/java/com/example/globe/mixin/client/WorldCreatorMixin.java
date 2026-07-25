@@ -1,13 +1,5 @@
 package com.example.globe.mixin.client;
 
-import net.minecraft.client.gui.screen.world.WorldCreator;
-import net.minecraft.client.world.GeneratorOptionsHolder;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.util.Identifier;
-import net.minecraft.world.gen.WorldPreset;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -15,41 +7,52 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.List;
+import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
+import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
+import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.levelgen.presets.WorldPreset;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-@Mixin(WorldCreator.class)
+@Mixin(WorldCreationUiState.class)
 public abstract class WorldCreatorMixin {
-    private static final Identifier GLOBE_WORLD_PRESET_ID = Identifier.of("globe", "globe");
+    private static final Logger LOGGER = LoggerFactory.getLogger("globe");
+    private static final Identifier GLOBE_WORLD_PRESET_ID = Identifier.fromNamespaceAndPath("globe", "globe");
 
     @Shadow
-    public abstract GeneratorOptionsHolder getGeneratorOptionsHolder();
+    private WorldCreationContext settings;
 
     @Shadow
-    @Final
-    private List<WorldCreator.WorldType> normalWorldTypes;
+    public abstract java.util.List<WorldCreationUiState.WorldTypeEntry> getNormalPresetList();
 
     @Shadow
-    @Final
-    private List<WorldCreator.WorldType> extendedWorldTypes;
+    public abstract java.util.List<WorldCreationUiState.WorldTypeEntry> getAltPresetList();
 
-    @Inject(method = "updateWorldTypeLists", at = @At("TAIL"))
+    @Inject(method = "updatePresetLists", at = @At("TAIL"))
     private void globe$ensureGlobePresetIsListed(CallbackInfo ci) {
-        Registry<WorldPreset> presets = this.getGeneratorOptionsHolder()
-                .getCombinedRegistryManager()
-                .getOrThrow(RegistryKeys.WORLD_PRESET);
+        LOGGER.info("[LAT][CWPATH] WorldCreatorMixin.updatePresetLists settings={}", this.settings);
+        Registry<WorldPreset> presets = this.settings
+                .worldgenLoadContext()
+                .lookupOrThrow(Registries.WORLD_PRESET);
 
-        RegistryKey<WorldPreset> key = RegistryKey.of(RegistryKeys.WORLD_PRESET, GLOBE_WORLD_PRESET_ID);
-        presets.getOptional(key).ifPresent(entry -> {
-            WorldCreator.WorldType globeType = new WorldCreator.WorldType((RegistryEntry<WorldPreset>) entry);
+        ResourceKey<WorldPreset> key = ResourceKey.create(Registries.WORLD_PRESET, GLOBE_WORLD_PRESET_ID);
+        presets.get(key).ifPresent(entry -> {
+            WorldCreationUiState.WorldTypeEntry globeType = new WorldCreationUiState.WorldTypeEntry((Holder<WorldPreset>) entry);
 
-            if (!this.normalWorldTypes.contains(globeType)) {
-                int idx = this.normalWorldTypes.isEmpty() ? 0 : 1;
-                this.normalWorldTypes.add(idx, globeType);
+            var normalWorldTypes = this.getNormalPresetList();
+            if (!normalWorldTypes.contains(globeType)) {
+                int idx = normalWorldTypes.isEmpty() ? 0 : 1;
+                normalWorldTypes.add(idx, globeType);
             }
 
-            if (!this.extendedWorldTypes.contains(globeType)) {
-                int idx = this.extendedWorldTypes.isEmpty() ? 0 : 1;
-                this.extendedWorldTypes.add(idx, globeType);
+            var altWorldTypes = this.getAltPresetList();
+            if (!altWorldTypes.contains(globeType)) {
+                int idx = altWorldTypes.isEmpty() ? 0 : 1;
+                altWorldTypes.add(idx, globeType);
             }
         });
     }

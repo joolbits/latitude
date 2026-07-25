@@ -1,0 +1,14 @@
+{
+  "type": "minecraft:jigsaw",
+  "biomes": "#globe:has_structure/frozen_cache",
+  "max_distance_from_center": 16,
+  "size": 1,
+  "spawn_overrides": {},
+  "start_height": {
+    "absolute": 30
+  },
+  "start_pool": "globe:frozen_cache/campsite",
+  "step": "underground_structures",
+  "terrain_adaptation": "bury",
+  "use_expansion_hack": false
+}

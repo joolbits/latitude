@@ -1,4 +1,97 @@
 {
   "replace": false,
-  "values": []
+  "values": [
+    {
+      "id": "biomesoplenty:dryland",
+      "required": false
+    },
+    {
+      "id": "byg:mojave_desert",
+      "required": false
+    },
+    {
+      "id": "byg:atacama_desert",
+      "required": false
+    },
+    {
+      "id": "byg:windswept_desert",
+      "required": false
+    },
+    {
+      "id": "byg:red_rock_valley",
+      "required": false
+    },
+    {
+      "id": "byg:dead_sea",
+      "required": false
+    },
+    {
+      "id": "byg:sierra_badlands",
+      "required": false
+    },
+    {
+      "id": "terralith:ancient_sands",
+      "required": false
+    },
+    {
+      "id": "terralith:desert_canyon",
+      "required": false
+    },
+    {
+      "id": "terralith:desert_oasis",
+      "required": false
+    },
+    {
+      "id": "terralith:desert_spires",
+      "required": false
+    },
+    {
+      "id": "terralith:lush_desert",
+      "required": false
+    },
+    {
+      "id": "terralith:sandstone_valley",
+      "required": false
+    },
+    {
+      "id": "terrestria:dunes",
+      "required": false
+    },
+    {
+      "id": "terrestria:lush_desert",
+      "required": false
+    },
+    {
+      "id": "terrestria:outback",
+      "required": false
+    },
+    {
+      "id": "wilderwild:arid_forest",
+      "required": false
+    },
+    {
+      "id": "wilderwild:parched_forest",
+      "required": false
+    },
+    {
+      "id": "traverse:desert_shrubland",
+      "required": false
+    },
+    {
+      "id": "clifftree:shrubland",
+      "required": false
+    },
+    {
+      "id": "clifftree:oasis",
+      "required": false
+    },
+    {
+      "id": "clifftree:coniferous_badlands",
+      "required": false
+    },
+    {
+      "id": "clifftree:desert_cliff",
+      "required": false
+    }
+  ]
 }

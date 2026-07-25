@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROFILE="${MC_PROFILE:-"$HOME/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2"}"
+LOG="${MC_LOG:-"$PROFILE/logs/latest.log"}"
+EXPECT=""
+SHOT_DIR="$ROOT/tmp/live-cruise-helpers"
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: tools/mc-chat [--expect REGEX] "/command ..."
+
+Focuses the Minecraft Java window, opens chat with T, types the full text, presses Return,
+and optionally verifies new latest.log output against REGEX.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --expect)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      EXPECT="$2"
+      shift 2
+      ;;
+    --shot-dir)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      SHOT_DIR="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "mc-chat: unknown option $1" >&2
+      usage
+      exit 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+[[ $# -ge 1 ]] || { usage; exit 2; }
+TEXT="$*"
+[[ -f "$LOG" ]] || { echo "mc-chat: log not found: $LOG" >&2; exit 2; }
+
+"$ROOT/tools/mc-focus" >/dev/null
+mkdir -p "$SHOT_DIR"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+BEFORE_SHOT="$SHOT_DIR/mc-chat-before-$STAMP.png"
+AFTER_SHOT="$SHOT_DIR/mc-chat-after-$STAMP.png"
+"$ROOT/tools/mc-shot" "$BEFORE_SHOT" >/dev/null
+
+START_LINE="$(wc -l < "$LOG" | tr -d ' ')"
+
+MC_CHAT_TEXT="$TEXT" osascript <<'OSA'
+tell application "System Events"
+  tell process "java"
+    set raisedMinecraft to false
+    repeat with w in windows
+      set windowName to name of w
+      if windowName starts with "Minecraft" and windowName does not contain "Launcher" and windowName does not contain "launcher" then
+        perform action "AXRaise" of w
+        set raisedMinecraft to true
+        exit repeat
+      end if
+    end repeat
+    if raisedMinecraft is false then error "No non-launcher Minecraft java window"
+    set frontmost to true
+    key code 17
+    delay 0.12
+    keystroke (system attribute "MC_CHAT_TEXT")
+    delay 0.08
+    keystroke return
+  end tell
+end tell
+OSA
+
+"$ROOT/tools/mc-shot" "$AFTER_SHOT" >/dev/null
+printf 'before_shot=%s\n' "$BEFORE_SHOT"
+printf 'after_shot=%s\n' "$AFTER_SHOT"
+
+if [[ -n "$EXPECT" ]]; then
+  for _ in {1..30}; do
+    if sed -n "$((START_LINE + 1)),\$p" "$LOG" | rg -q "$EXPECT"; then
+      sed -n "$((START_LINE + 1)),\$p" "$LOG" | rg "$EXPECT" | tail -5
+      exit 0
+    fi
+    sleep 0.2
+  done
+  echo "mc-chat: expected log pattern not observed: $EXPECT" >&2
+  echo "mc-chat: before screenshot: $BEFORE_SHOT" >&2
+  echo "mc-chat: after screenshot: $AFTER_SHOT" >&2
+  sed -n "$((START_LINE + 1)),\$p" "$LOG" | tail -40 >&2
+  exit 1
+fi
+
+sed -n "$((START_LINE + 1)),\$p" "$LOG" | tail -40

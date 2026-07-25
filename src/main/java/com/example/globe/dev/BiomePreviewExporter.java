@@ -1,5 +1,7 @@
 package com.example.globe.dev;
 
+import com.example.globe.util.BiomeSamplerTools;
+import com.example.globe.util.BiomeColorUtil;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomeSource;
@@ -7,21 +9,23 @@ import com.example.globe.world.LatitudeBiomes;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.source.BiomeSource;
-import net.minecraft.world.biome.source.util.MultiNoiseUtil;
-import net.minecraft.world.gen.chunk.ChunkGenerator;
-import net.minecraft.world.gen.noise.NoiseConfig;
-
 import javax.imageio.ImageIO;
+import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.tags.TagKey;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.biome.Climate;
+import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.levelgen.RandomState;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.io.Reader;
@@ -29,12 +33,14 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -43,9 +49,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
+import net.fabricmc.loader.api.FabricLoader;
+
 public final class BiomePreviewExporter {
     private static final int BLOCKS_PER_CHUNK = 16;
     private static final int TOP_BIOME_COUNT = 20;
+    private static final String AUDIT_BAND_TEMPERATE = "temperate";
     private static final int MASK_MATCH_COLOR = 0xF2F5F8;
     private static final int MASK_MISS_COLOR = 0x11161B;
     private static final long DEFAULT_BUDGET_MS = 10L;
@@ -65,16 +74,47 @@ public final class BiomePreviewExporter {
             "minecraft:windswept_hills",
             "minecraft:stony_peaks");
     private static final int DEFAULT_INVENTORY_DISCOVERY_STEP = 32;
-    private static final Identifier MANGROVE_SWAMP_BIOME_ID = Identifier.of("minecraft:mangrove_swamp");
+    private static final Identifier MANGROVE_SWAMP_BIOME_ID = Identifier.parse("minecraft:mangrove_swamp");
     private static final DateTimeFormatter RUN_LABEL_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
             .withLocale(Locale.ROOT)
             .withZone(ZoneOffset.UTC);
     private static final Map<String, Integer> PALETTE_OVERRIDES = loadPaletteOverrides();
+    private static final List<TagSpec> LATITUDE_TAG_SPECS = List.of(
+            new TagSpec("globe:lat_equator_primary"),
+            new TagSpec("globe:lat_equator_secondary"),
+            new TagSpec("globe:lat_equator_accent"),
+            new TagSpec("globe:lat_tropics_primary"),
+            new TagSpec("globe:lat_tropics_secondary"),
+            new TagSpec("globe:lat_tropics_accent"),
+            new TagSpec("globe:lat_arid_primary"),
+            new TagSpec("globe:lat_arid_secondary"),
+            new TagSpec("globe:lat_arid_accent"),
+            new TagSpec("globe:lat_trans_arid_tropics_1_primary"),
+            new TagSpec("globe:lat_trans_arid_tropics_1_secondary"),
+            new TagSpec("globe:lat_trans_arid_tropics_1_accent"),
+            new TagSpec("globe:lat_trans_arid_tropics_2_primary"),
+            new TagSpec("globe:lat_trans_arid_tropics_2_secondary"),
+            new TagSpec("globe:lat_trans_arid_tropics_2_accent"),
+            new TagSpec("globe:lat_temperate_primary"),
+            new TagSpec("globe:lat_temperate_secondary"),
+            new TagSpec("globe:lat_temperate_accent"),
+            new TagSpec("globe:lat_temperate_mountain"),
+            new TagSpec("globe:lat_subpolar_primary"),
+            new TagSpec("globe:lat_subpolar_secondary"),
+            new TagSpec("globe:lat_subpolar_accent"),
+            new TagSpec("globe:lat_polar_primary"),
+            new TagSpec("globe:lat_polar_secondary"),
+            new TagSpec("globe:lat_polar_accent"),
+            new TagSpec("globe:lat_ocean_tropical"),
+            new TagSpec("globe:lat_ocean_temperate"),
+            new TagSpec("globe:lat_ocean_subpolar"),
+            new TagSpec("globe:lat_ocean_polar")
+    );
 
     private BiomePreviewExporter() {
     }
 
-    public static ExportResult export(ServerWorld world,
+    public static ExportResult export(ServerLevel world,
                                       int radiusBlocks,
                                       int stepBlocks,
                                       int y,
@@ -82,7 +122,7 @@ public final class BiomePreviewExporter {
         return export(world, radiusBlocks, stepBlocks, y, runDirectory, world.getSeed(), ExportOptions.singleBiome(), null);
     }
 
-    public static ExportResult export(ServerWorld world,
+    public static ExportResult export(ServerLevel world,
                                       int radiusBlocks,
                                       int stepBlocks,
                                       int y,
@@ -91,7 +131,7 @@ public final class BiomePreviewExporter {
         return export(world, radiusBlocks, stepBlocks, y, runDirectory, world.getSeed(), options, null);
     }
 
-    public static ExportResult export(ServerWorld world,
+    public static ExportResult export(ServerLevel world,
                                       int radiusBlocks,
                                       int stepBlocks,
                                       int y,
@@ -161,6 +201,9 @@ public final class BiomePreviewExporter {
         Map<String, Integer> biomeColors = new HashMap<>();
         Map<String, Integer> biomeIndices = new LinkedHashMap<>();
         Map<String, Integer> bandCounts = new HashMap<>();
+        Map<String, Integer> authorityBandCounts = new TreeMap<>();
+        Map<String, Integer> selectedBandCounts = new HashMap<>();
+        boolean includeBiomeAudit = effectiveOptions.includeBiomeAudit();
 
         boolean renderBiomes = layers.contains(Layer.BIOMES);
         boolean renderBands = layers.contains(Layer.BANDS);
@@ -171,27 +214,42 @@ public final class BiomePreviewExporter {
         boolean renderBiomeMasks = !maskTargets.isEmpty();
         boolean needsBiomeSampling = renderBiomes || renderBiomeMasks || emitBiomeIndex;
 
-        ChunkGenerator generator = world.getChunkManager().getChunkGenerator();
+        ChunkGenerator generator = world.getChunkSource().getGenerator();
         BiomeSource biomeSource = generator.getBiomeSource();
         BiomeSource baseSource = biomeSource instanceof LatitudeBiomeSource latitudeSource
                 ? latitudeSource.original()
                 : biomeSource;
-        Registry<Biome> biomeRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
-        NoiseConfig noiseConfig = NoiseConfig.create(
-                ((net.minecraft.world.gen.chunk.NoiseChunkGenerator) generator).getSettings().value(),
-                world.getRegistryManager().getOrThrow(RegistryKeys.NOISE_PARAMETERS),
+        Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
+        Map<String, BiomeAuditRecord> biomeAudit = includeBiomeAudit
+                ? collectBiomeAuditRows(biomeRegistry, baseSource)
+                : Map.of();
+        RandomState noiseConfig = RandomState.create(
+                ((net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) generator).generatorSettings().value(),
+                world.registryAccess().lookupOrThrow(Registries.NOISE),
                 atlasSeed);
-        MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
-        net.minecraft.world.gen.chunk.NoiseChunkGenerator noiseGen =
-                generator instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator ng ? ng : null;
-        // Lightweight surface stub for atlas mode: keep sea level from the generator,
-        // but skip expensive height probing by leaving noiseConfig/heightView unset.
-        net.minecraft.world.gen.chunk.NoiseChunkGenerator gatedNoiseGen = noiseGen;
-        NoiseConfig gatedNoiseConfig = null;
-        net.minecraft.world.HeightLimitView gatedHeightView = null;
+        // Phase 4 terrain-bias wrapper (docs/design/terrain-wrapper-design-20260705.md): this RandomState
+        // is constructed directly by dev/atlas tooling, bypassing ChunkMap's constructor (the mixin that
+        // installs the wrapper for real gameplay), so the atlas/proof-harness path must install it here too
+        // -- otherwise a flag-ON atlas run would silently never exercise the wrapper. No-op unless
+        // latitude.terrainV2.enabled AND latitude.geoV2.enabled AND this is a genuine globe world (checked
+        // via GlobeMod.isGlobeOverworld(world), which also covers this tooling's plain-minecraft:normal +
+        // persisted-LatitudeWorldState-radius way of marking a world as "globe").
+        com.example.globe.terrain.TerrainRouterWrapping.installIfArmed(noiseConfig, world);
+        Climate.Sampler sampler = noiseConfig.sampler();
+        net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator noiseGen =
+                generator instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng ? ng : null;
+        // Lightweight surface stub for atlas mode: keep sea level from the generator, but skip expensive
+        // height probing by leaving noiseConfig/heightView unset. Opt-in TERRAIN-AWARE mode
+        // (-Dlatitude.atlasTerrainAware=true) feeds the real RandomState + height view so terrain-correlated
+        // gates (e.g. the temperate plains-on-steep gate) actually fire and become map-provable. Slower
+        // (~10 getBaseHeight per sample) — run on a small world. Default off → byte-identical normal runs.
+        boolean terrainAware = Boolean.getBoolean("latitude.atlasTerrainAware");
+        net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator gatedNoiseGen = noiseGen;
+        RandomState gatedNoiseConfig = terrainAware ? noiseConfig : null;
+        net.minecraft.world.level.LevelHeightAccessor gatedHeightView = terrainAware ? world : null;
 
         int noiseY = Math.floorDiv(y, 4);
-        final String pickerContext = "ATLAS_SAMPLER";
+        final String pickerContext = terrainAware ? "ATLAS_TERRAIN" : "ATLAS_SAMPLER";
         for (int imageZ = 0, blockZ = zMin; imageZ < height; imageZ++, blockZ += stepBlocks) {
             int noiseZ = Math.floorDiv(blockZ, 4);
             for (int imageX = 0, blockX = xMin; imageX < width; imageX++, blockX += stepBlocks) {
@@ -199,8 +257,8 @@ public final class BiomePreviewExporter {
 
                 String sampledBiomeId = null;
                 if (needsBiomeSampling) {
-                    RegistryEntry<Biome> base = baseSource.getBiome(noiseX, noiseY, noiseZ, sampler);
-                    RegistryEntry<Biome> picked = LatitudeBiomes.pick(
+                    Holder<Biome> base = baseSource.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+                    Holder<Biome> picked = LatitudeBiomes.pick(
                             biomeRegistry,
                             base,
                             blockX,
@@ -212,7 +270,7 @@ public final class BiomePreviewExporter {
                             gatedNoiseGen,
                             gatedNoiseConfig,
                             gatedHeightView);
-                    RegistryEntry<Biome> out = picked != null ? picked : base;
+                    Holder<Biome> out = picked != null ? picked : base;
                     sampledBiomeId = biomeId(biomeRegistry, out);
 
                     boolean mangroveMaskHit = false;
@@ -244,9 +302,21 @@ public final class BiomePreviewExporter {
                 }
                 int chosenBandIndex = LatitudeBiomes.authoritativeChosenBandIndex(blockX, blockZ, radiusBlocks);
                 int landBandIndex = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radiusBlocks);
+                LatitudeBands.Band selectedDisplayBand = bandForBlockZ(radiusBlocks, blockZ);
+                authorityBandCounts.merge(latitudeBandIdFromIndex(landBandIndex), 1, Integer::sum);
                 chosenBandsImage.setRGB(imageX, imageZ, colorForBandIndex(chosenBandIndex));
                 landBandsImage.setRGB(imageX, imageZ, colorForBandIndex(landBandIndex));
                 double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
+                    if (includeBiomeAudit && sampledBiomeId != null) {
+                        BiomeAuditRecord row = biomeAudit.get(sampledBiomeId);
+                        if (row != null) {
+                            row.recordSelection(blockX, blockZ, latDeg, selectedDisplayBand.id(), latitudeBandIdFromIndex(landBandIndex));
+                            String chosenBandKey = "chosen:" + selectedDisplayBand.id();
+                            selectedBandCounts.merge(chosenBandKey, 1, Integer::sum);
+                            String landBandKey = "land:" + latitudeBandIdFromIndex(landBandIndex);
+                            selectedBandCounts.merge(landBandKey, 1, Integer::sum);
+                        }
+                }
                 if (latDeg >= SEAM_LAT_MIN_DEG && latDeg <= SEAM_LAT_MAX_DEG) {
                     SeamRowSummary row = seamRows.computeIfAbsent(blockZ, ignored -> new SeamRowSummary(latDeg));
                     row.addChosen(chosenBandIndex);
@@ -270,23 +340,23 @@ public final class BiomePreviewExporter {
                 }
 
                 if (renderTemperature || renderHumidity || renderContinentalness) {
-                    MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, noiseY, noiseZ);
+                    Climate.TargetPoint point = sampler.sample(noiseX, noiseY, noiseZ);
                     if (renderTemperature) {
-                        double temperature01 = normalizeNoise(MultiNoiseUtil.toFloat(point.temperatureNoise()));
+                        double temperature01 = normalizeNoise(Climate.unquantizeCoord(point.temperature()));
                         images.get(Layer.TEMPERATURE).setRGB(imageX, imageZ, colorForTemperature(temperature01));
                     }
                     if (renderHumidity) {
-                        double humidity01 = normalizeNoise(MultiNoiseUtil.toFloat(point.humidityNoise()));
+                        double humidity01 = normalizeNoise(Climate.unquantizeCoord(point.humidity()));
                         images.get(Layer.HUMIDITY).setRGB(imageX, imageZ, colorForHumidity(humidity01));
                     }
                     if (renderContinentalness) {
-                        double continentalness = MathHelper.clamp(MultiNoiseUtil.toFloat(point.continentalnessNoise()), -1.0, 1.0);
+                        double continentalness = Mth.clamp(Climate.unquantizeCoord(point.continentalness()), -1.0, 1.0);
                         images.get(Layer.CONTINENTALNESS).setRGB(imageX, imageZ, colorForContinentalness(continentalness));
                     }
                 }
 
                 if (renderRuggedness &&
-                        noiseGen instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator) {
+                        noiseGen instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) {
                     int delta = 0;
                     images.get(Layer.RUGGEDNESS).setRGB(imageX, imageZ, colorForRuggedness(delta));
                 }
@@ -360,6 +430,7 @@ public final class BiomePreviewExporter {
         Path inventoryPath = outputDir.resolve("world_biome_inventory.json");
         BiomeSamplerTools.writeInventoryJson(inventoryPath, inventoryReport);
 
+        writeRunFlagsSidecar(outputDir, seed, radiusBlocks, stepBlocks, y);
         Path summaryPath = outputDir.resolve("biomes.txt");
         long totalSamples = (long) width * height;
         long durationMs = (System.nanoTime() - startNanos) / 1_000_000L;
@@ -383,8 +454,32 @@ public final class BiomePreviewExporter {
                 totalSamples,
                 durationMs,
                 biomeCounts,
+                authorityBandCounts,
                 inventoryReport,
                 inventoryPath);
+        if (includeBiomeAudit) {
+            Path auditTxtPath = outputDir.resolve(auditTextFileName(seed, radiusBlocks, stepBlocks));
+            Path auditCsvPath = outputDir.resolve(auditCsvFileName(seed, radiusBlocks, stepBlocks));
+            writeBiomeAuditReport(
+                    auditTxtPath,
+                    auditCsvPath,
+                    seed,
+                    radiusBlocks,
+                    stepBlocks,
+                    y,
+                    xMin,
+                    zMin,
+                    xMax,
+                    zMax,
+                    width,
+                    height,
+                    totalSamples,
+                    inventoryReport,
+                    biomeCounts,
+                    selectedBandCounts,
+                    biomeAudit,
+                    effectiveOptions.includeBiomeAudit());
+        }
 
         if (effectiveOptions.writeLegends()) {
             writeLegendFiles(
@@ -399,6 +494,7 @@ public final class BiomePreviewExporter {
                     layerPaths,
                     maskPaths,
                     bandCounts,
+                    authorityBandCounts,
                     totalSamples);
         }
 
@@ -422,7 +518,13 @@ public final class BiomePreviewExporter {
      * Stateful processor for height-enabled exports that can be advanced in small time-budgeted chunks.
      */
     public static final class HeightStepProcessor {
-        private final ServerWorld world;
+        private enum Phase {
+            SAMPLING,
+            INVENTORY,
+            COMPLETE
+        }
+
+        private final ServerLevel world;
         private final int radiusBlocks;
         private final int stepBlocks;
         private final int y;
@@ -430,11 +532,13 @@ public final class BiomePreviewExporter {
         private final long atlasSeed;
         private final ExportOptions options;
         private final String runLabel;
+        private final BiomeSamplerTools.SamplerTemplate template;
 
         private final EnumSet<Layer> layers;
         private final EnumSet<Overlay> overlays;
         private final List<BiomeMaskLayer> maskTargets;
         private final boolean emitBiomeIndex;
+        private final boolean includeBiomeAudit;
 
         private final int xMin;
         private final int zMin;
@@ -450,30 +554,47 @@ public final class BiomePreviewExporter {
         private BufferedImage biomeIndexImage;
         private BufferedImage chosenBandsImage;
         private BufferedImage landBandsImage;
+        private final BufferedImage heightImage;
+        private final int heightEncodeOffset;
 
         private final Map<String, Integer> biomeCounts = new HashMap<>();
         private final Map<String, Integer> biomeColors = new HashMap<>();
         private final Map<String, Integer> biomeIndices = new LinkedHashMap<>();
+        private final Map<String, BiomeAuditRecord> biomeAuditRows;
+        private final Map<String, Integer> selectedBandCounts = new HashMap<>();
         private final Map<String, Integer> bandCounts = new HashMap<>();
+        private final Map<String, Integer> authorityBandCounts = new TreeMap<>();
         private final Map<Integer, SeamRowSummary> seamRows = new TreeMap<>();
         private final Map<Integer, TemperateShoulderCompositionRow> temperateShoulderRows = new TreeMap<>();
 
         private final ChunkGenerator generator;
         private final BiomeSource baseSource;
         private final Registry<Biome> biomeRegistry;
-        private final NoiseConfig noiseConfig;
-        private final MultiNoiseUtil.MultiNoiseSampler sampler;
-        private final net.minecraft.world.gen.chunk.NoiseChunkGenerator gatedNoiseGen;
-        private final NoiseConfig gatedNoiseConfig;
-        private final net.minecraft.world.HeightLimitView gatedHeightView;
+        private final RandomState noiseConfig;
+        private final Climate.Sampler sampler;
+        private final net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator gatedNoiseGen;
+        private final RandomState gatedNoiseConfig;
+        private final net.minecraft.world.level.LevelHeightAccessor gatedHeightView;
         private final int noiseY;
 
         private int imageX = 0;
         private int imageZ = 0;
         private final long startNanos;
+        private Phase phase = Phase.SAMPLING;
+        private boolean samplingStartLogged;
+        private int lastSamplingHeartbeatZ = -1;
+        private static final int ATLAS_SAMPLING_HEARTBEAT_ROWS = 32;
+        private BiomeSamplerTools.InventoryScanProcessor inventoryProcessor;
+        private BiomeSamplerTools.InventoryReport inventoryReport;
+        private EnumMap<Layer, Path> layerPaths;
+        private Map<BiomeMaskLayer, Path> maskPaths;
+        private Path outputDir;
+        private Path biomeIndexPath;
+        private Path primaryPng;
+        private Path summaryPath;
         private ExportResult result;
 
-        private HeightStepProcessor(ServerWorld world,
+        private HeightStepProcessor(ServerLevel world,
                                      int radiusBlocks,
                                      int stepBlocks,
                                      int y,
@@ -489,38 +610,102 @@ public final class BiomePreviewExporter {
             this.atlasSeed = atlasSeed;
             this.options = options != null ? options : ExportOptions.singleBiome();
             this.runLabel = resolveRunLabel(runLabel);
+            this.template = BiomeSamplerTools.createTemplate(world);
             this.layers = this.options.layers();
             this.overlays = this.options.overlays();
             this.maskTargets = this.options.maskLayers();
             this.emitBiomeIndex = this.options.emitBiomeIndex();
+            this.includeBiomeAudit = this.options.includeBiomeAudit();
 
-            this.xMin = -radiusBlocks;
+            if (stepBlocks <= 0) {
+                throw new IllegalArgumentException(String.format(
+                        Locale.ROOT,
+                        "Invalid preview step size: radius=%d step=%d width=%d height=%d totalPixels=%d",
+                        radiusBlocks,
+                        stepBlocks,
+                        0,
+                        0,
+                        0L));
+            }
+            if (radiusBlocks <= 0) {
+                throw new IllegalArgumentException(String.format(
+                        Locale.ROOT,
+                        "Invalid preview radius: radius=%d step=%d width=%d height=%d totalPixels=%d",
+                        radiusBlocks,
+                        stepBlocks,
+                        0,
+                        0,
+                        0L));
+            }
+
+            // Mercator-width render (dev-only, opt-in): -Dlatitude.atlasXAspect=2.0 widens the X sample extent
+            // to aspect*radius (the Mercator world's true E-W half-width) while Z stays at the latitude radius,
+            // so the atlas captures the full 2:1 horizontal extent instead of a square half-width sub-region.
+            // Default 1.0 = square, byte-identical to prior behavior. Bands are Z-derived, so wider X only
+            // samples MORE of each band (more representation) — exactly what this measures.
+            double xAspect = Double.parseDouble(System.getProperty("latitude.atlasXAspect", "1.0"));
+            int xExtent = (int) Math.round(radiusBlocks * Math.max(1.0, xAspect));
+            this.xMin = -xExtent;
             this.zMin = -radiusBlocks;
-            int xMax = radiusBlocks;
+            int xMax = xExtent;
             int zMax = radiusBlocks;
-            this.width = ((xMax - xMin) / stepBlocks) + 1;
-            this.height = ((zMax - zMin) / stepBlocks) + 1;
+            long widthLong = Math.floorDiv((long) (xMax - xMin), stepBlocks) + 1L;
+            long heightLong = Math.floorDiv((long) (zMax - zMin), stepBlocks) + 1L;
+            long totalSamples = widthLong * heightLong;
+            if (widthLong <= 0 || heightLong <= 0 || totalSamples <= 0) {
+                throw new IllegalArgumentException(String.format(
+                        Locale.ROOT,
+                        "Invalid preview dimensions: radius=%d step=%d width=%d height=%d totalPixels=%d",
+                        radiusBlocks,
+                        stepBlocks,
+                        widthLong,
+                        heightLong,
+                        totalSamples));
+            }
+            if (widthLong > Integer.MAX_VALUE || heightLong > Integer.MAX_VALUE || totalSamples > Integer.MAX_VALUE) {
+                throw new IllegalArgumentException(String.format(
+                        Locale.ROOT,
+                        "Preview allocation too large: radius=%d step=%d width=%d height=%d totalPixels=%d",
+                        radiusBlocks,
+                        stepBlocks,
+                        widthLong,
+                        heightLong,
+                        totalSamples));
+            }
+
+            this.width = (int) widthLong;
+            this.height = (int) heightLong;
             this.chunkMinX = Math.floorDiv(xMin, BLOCKS_PER_CHUNK);
             this.chunkMaxX = Math.floorDiv(xMax, BLOCKS_PER_CHUNK);
             this.chunkMinZ = Math.floorDiv(zMin, BLOCKS_PER_CHUNK);
             this.chunkMaxZ = Math.floorDiv(zMax, BLOCKS_PER_CHUNK);
 
-            this.generator = world.getChunkManager().getChunkGenerator();
+            this.generator = world.getChunkSource().getGenerator();
             BiomeSource biomeSource = generator.getBiomeSource();
             this.baseSource = biomeSource instanceof LatitudeBiomeSource latitudeSource
                     ? latitudeSource.original()
                     : biomeSource;
-            this.biomeRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
-            this.noiseConfig = NoiseConfig.create(
-                    ((net.minecraft.world.gen.chunk.NoiseChunkGenerator) this.generator).getSettings().value(),
-                    world.getRegistryManager().getOrThrow(RegistryKeys.NOISE_PARAMETERS),
+            this.biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
+            this.biomeAuditRows = includeBiomeAudit
+                    ? collectBiomeAuditRows(this.biomeRegistry, this.baseSource)
+                    : Map.of();
+            this.noiseConfig = RandomState.create(
+                    ((net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) this.generator).generatorSettings().value(),
+                    world.registryAccess().lookupOrThrow(Registries.NOISE),
                     atlasSeed);
-            this.sampler = noiseConfig.getMultiNoiseSampler();
-            net.minecraft.world.gen.chunk.NoiseChunkGenerator noiseGen =
-                    generator instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator ng ? ng : null;
+            // Phase 4 terrain-bias wrapper (docs/design/terrain-wrapper-design-20260705.md): see the
+            // matching comment at the other RandomState.create call site in this file (export()) for why
+            // this direct-construction path also needs the install call, not just the ChunkMap mixin.
+            com.example.globe.terrain.TerrainRouterWrapping.installIfArmed(this.noiseConfig, world);
+            this.sampler = noiseConfig.sampler();
+            net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator noiseGen =
+                    this.generator instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng ? ng : null;
+            // Opt-in terrain-aware atlas (-Dlatitude.atlasTerrainAware=true): feed real terrain so terrain
+            // gates fire (map-proves plains-on-steep etc.). Default off → byte-identical normal runs.
+            boolean terrainAware = Boolean.getBoolean("latitude.atlasTerrainAware");
             this.gatedNoiseGen = noiseGen;
-            this.gatedNoiseConfig = noiseConfig;
-            this.gatedHeightView = world;
+            this.gatedNoiseConfig = terrainAware ? this.noiseConfig : null;
+            this.gatedHeightView = terrainAware ? world : null;
             this.noiseY = Math.floorDiv(y, 4);
 
             for (Layer layer : layers) {
@@ -534,11 +719,15 @@ public final class BiomePreviewExporter {
             for (BiomeMaskLayer maskLayer : maskTargets) {
                 maskImages.put(maskLayer, new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB));
             }
+            // The whole point of this processor (vs. the direct export() path) is emitHeight=true, so the
+            // height raster is unconditional here, not gated on an options flag.
+            this.heightImage = new BufferedImage(width, height, BufferedImage.TYPE_USHORT_GRAY);
+            this.heightEncodeOffset = -world.getMinY();
 
             this.startNanos = System.nanoTime();
         }
 
-        static HeightStepProcessor create(ServerWorld world,
+        static HeightStepProcessor create(ServerLevel world,
                                           int radiusBlocks,
                                           int stepBlocks,
                                           int y,
@@ -559,115 +748,188 @@ public final class BiomePreviewExporter {
             }
             long budgetNanos = Math.max(1L, budgetMs) * 1_000_000L;
             long deadline = System.nanoTime() + budgetNanos;
-            final String pickerContext = "ATLAS_SAMPLER";
+            final String pickerContext = Boolean.getBoolean("latitude.atlasTerrainAware")
+                    ? "ATLAS_TERRAIN" : "ATLAS_SAMPLER";
 
-            while (imageZ < height && System.nanoTime() <= deadline) {
-                int blockZ = zMin + (imageZ * stepBlocks);
-                int noiseZ = Math.floorDiv(blockZ, 4);
-                int blockX = xMin + (imageX * stepBlocks);
-                int noiseX = Math.floorDiv(blockX, 4);
-
-                String sampledBiomeId = null;
-                if (needsBiomeSampling()) {
-                    RegistryEntry<Biome> base = baseSource.getBiome(noiseX, noiseY, noiseZ, sampler);
-                    RegistryEntry<Biome> picked = LatitudeBiomes.pick(
-                            biomeRegistry,
-                            base,
-                            blockX,
-                            blockZ,
-                            y,
+            if (phase == Phase.SAMPLING) {
+                if (!samplingStartLogged) {
+                    samplingStartLogged = true;
+                    System.out.println(String.format(
+                            Locale.ROOT,
+                            "[LAT][ATLAS_TIMING] phase=sampling-start seed=%d radius=%d step=%d y=%d width=%d height=%d totalSamples=%d",
+                            atlasSeed,
                             radiusBlocks,
-                            sampler,
-                            pickerContext,
-                            gatedNoiseGen,
-                            gatedNoiseConfig,
-                            gatedHeightView);
-                    RegistryEntry<Biome> out = picked != null ? picked : base;
-                    sampledBiomeId = biomeId(biomeRegistry, out);
+                            stepBlocks,
+                            y,
+                            width,
+                            height,
+                            (long) width * (long) height));
+                }
+                while (imageZ < height && System.nanoTime() <= deadline) {
+                    int blockZ = zMin + (imageZ * stepBlocks);
+                    int noiseZ = Math.floorDiv(blockZ, 4);
+                    int blockX = xMin + (imageX * stepBlocks);
+                    int noiseX = Math.floorDiv(blockX, 4);
 
-                    boolean mangroveMaskHit = false;
-                    if (!maskTargets.isEmpty() && sampledBiomeId != null) {
-                        for (BiomeMaskLayer maskLayer : maskTargets) {
-                            boolean maskMatch = maskLayer.matches(sampledBiomeId);
-                            int maskColor = maskMatch ? MASK_MATCH_COLOR : MASK_MISS_COLOR;
-                            maskImages.get(maskLayer).setRGB(imageX, imageZ, maskColor);
-                            if (maskMatch && isMangroveMaskLayer(maskLayer)) {
-                                mangroveMaskHit = true;
+                    String sampledBiomeId = null;
+                    if (needsBiomeSampling()) {
+                        Holder<Biome> base = baseSource.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+                        Holder<Biome> picked = LatitudeBiomes.pick(
+                                biomeRegistry,
+                                base,
+                                blockX,
+                                blockZ,
+                                y,
+                                radiusBlocks,
+                                sampler,
+                                pickerContext,
+                                gatedNoiseGen,
+                                gatedNoiseConfig,
+                                gatedHeightView);
+                        Holder<Biome> out = picked != null ? picked : base;
+                        sampledBiomeId = biomeId(biomeRegistry, out);
+
+                        boolean mangroveMaskHit = false;
+                        if (!maskTargets.isEmpty() && sampledBiomeId != null) {
+                            for (BiomeMaskLayer maskLayer : maskTargets) {
+                                boolean maskMatch = maskLayer.matches(sampledBiomeId);
+                                int maskColor = maskMatch ? MASK_MATCH_COLOR : MASK_MISS_COLOR;
+                                maskImages.get(maskLayer).setRGB(imageX, imageZ, maskColor);
+                                if (maskMatch && isMangroveMaskLayer(maskLayer)) {
+                                    mangroveMaskHit = true;
+                                }
                             }
+                        }
+
+                        if (mangroveMaskHit) {
+                            out = forceMangroveSwampForAtlas(biomeRegistry, out);
+                            sampledBiomeId = biomeId(biomeRegistry, out);
+                        }
+
+                        biomeCounts.merge(sampledBiomeId, 1, Integer::sum);
+                        if (emitBiomeIndex && biomeIndexImage != null) {
+                            int biomeIndex = biomeIndices.computeIfAbsent(sampledBiomeId, ignored -> biomeIndices.size());
+                            biomeIndexImage.setRGB(imageX, imageZ, encodeBiomeIndexColor(biomeIndex));
+                        }
+                        if (layers.contains(Layer.BIOMES)) {
+                            int rgb = biomeColors.computeIfAbsent(sampledBiomeId, BiomePreviewExporter::stableColorForBiomeId);
+                            images.get(Layer.BIOMES).setRGB(imageX, imageZ, rgb);
+                        }
+                    }
+                    int chosenBandIndex = LatitudeBiomes.authoritativeChosenBandIndex(blockX, blockZ, radiusBlocks);
+                    int landBandIndex = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radiusBlocks);
+                    LatitudeBands.Band selectedDisplayBand = bandForBlockZ(radiusBlocks, blockZ);
+                    authorityBandCounts.merge(latitudeBandIdFromIndex(landBandIndex), 1, Integer::sum);
+                    chosenBandsImage.setRGB(imageX, imageZ, colorForBandIndex(chosenBandIndex));
+                    landBandsImage.setRGB(imageX, imageZ, colorForBandIndex(landBandIndex));
+                    double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
+                    if (includeBiomeAudit && sampledBiomeId != null) {
+                        BiomeAuditRecord row = biomeAuditRows.get(sampledBiomeId);
+                        if (row != null) {
+                            row.recordSelection(blockX, blockZ, latDeg, selectedDisplayBand.id(), latitudeBandIdFromIndex(landBandIndex));
+                            String chosenBandKey = "chosen:" + selectedDisplayBand.id();
+                            selectedBandCounts.merge(chosenBandKey, 1, Integer::sum);
+                            String landBandKey = "land:" + latitudeBandIdFromIndex(landBandIndex);
+                            selectedBandCounts.merge(landBandKey, 1, Integer::sum);
+                        }
+                    }
+                    if (latDeg >= SEAM_LAT_MIN_DEG && latDeg <= SEAM_LAT_MAX_DEG) {
+                        SeamRowSummary row = seamRows.computeIfAbsent(blockZ, ignored -> new SeamRowSummary(latDeg));
+                        row.addChosen(chosenBandIndex);
+                        row.addLand(landBandIndex);
+                        if (isWarmDryBiomeId(sampledBiomeId)) {
+                            row.finalWarmDry++;
+                        }
+                        if (isTemperateBiomeId(sampledBiomeId)) {
+                            row.finalTemperate++;
+                        }
+                    }
+                    if (isTemperateShoulderProfileRow(latDeg, landBandIndex)) {
+                        TemperateShoulderCompositionRow row = temperateShoulderRows.computeIfAbsent(blockZ, ignored -> new TemperateShoulderCompositionRow(latDeg));
+                        row.addSample(sampledBiomeId);
+                    }
+
+                    if (layers.contains(Layer.BANDS)) {
+                        LatitudeBands.Band band = bandForBlockZ(radiusBlocks, blockZ);
+                        images.get(Layer.BANDS).setRGB(imageX, imageZ, colorForBand(band));
+                        bandCounts.merge(band.id(), 1, Integer::sum);
+                    }
+
+                    if (layers.contains(Layer.TEMPERATURE) || layers.contains(Layer.HUMIDITY) || layers.contains(Layer.CONTINENTALNESS)) {
+                        Climate.TargetPoint point = sampler.sample(noiseX, noiseY, noiseZ);
+                        if (layers.contains(Layer.TEMPERATURE)) {
+                            double temperature01 = normalizeNoise(Climate.unquantizeCoord(point.temperature()));
+                            images.get(Layer.TEMPERATURE).setRGB(imageX, imageZ, colorForTemperature(temperature01));
+                        }
+                        if (layers.contains(Layer.HUMIDITY)) {
+                            double humidity01 = normalizeNoise(Climate.unquantizeCoord(point.humidity()));
+                            images.get(Layer.HUMIDITY).setRGB(imageX, imageZ, colorForHumidity(humidity01));
+                        }
+                        if (layers.contains(Layer.CONTINENTALNESS)) {
+                            double continentalness = Mth.clamp(Climate.unquantizeCoord(point.continentalness()), -1.0, 1.0);
+                            images.get(Layer.CONTINENTALNESS).setRGB(imageX, imageZ, colorForContinentalness(continentalness));
                         }
                     }
 
-                    if (mangroveMaskHit) {
-                        out = forceMangroveSwampForAtlas(biomeRegistry, out);
-                        sampledBiomeId = biomeId(biomeRegistry, out);
+                    if (layers.contains(Layer.RUGGEDNESS) &&
+                            gatedNoiseGen instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) {
+                        int delta = com.example.globe.world.LatitudeBiomes.previewRobustDelta(
+                                gatedNoiseGen, gatedNoiseConfig, gatedHeightView, blockX, blockZ);
+                        images.get(Layer.RUGGEDNESS).setRGB(imageX, imageZ, colorForRuggedness(delta));
                     }
 
-                    biomeCounts.merge(sampledBiomeId, 1, Integer::sum);
-                    if (emitBiomeIndex && biomeIndexImage != null) {
-                        int biomeIndex = biomeIndices.computeIfAbsent(sampledBiomeId, ignored -> biomeIndices.size());
-                        biomeIndexImage.setRGB(imageX, imageZ, encodeBiomeIndexColor(biomeIndex));
-                    }
-                    if (layers.contains(Layer.BIOMES)) {
-                        int rgb = biomeColors.computeIfAbsent(sampledBiomeId, BiomePreviewExporter::stableColorForBiomeId);
-                        images.get(Layer.BIOMES).setRGB(imageX, imageZ, rgb);
-                    }
-                }
-                int chosenBandIndex = LatitudeBiomes.authoritativeChosenBandIndex(blockX, blockZ, radiusBlocks);
-                int landBandIndex = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radiusBlocks);
-                chosenBandsImage.setRGB(imageX, imageZ, colorForBandIndex(chosenBandIndex));
-                landBandsImage.setRGB(imageX, imageZ, colorForBandIndex(landBandIndex));
-                double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
-                if (latDeg >= SEAM_LAT_MIN_DEG && latDeg <= SEAM_LAT_MAX_DEG) {
-                    SeamRowSummary row = seamRows.computeIfAbsent(blockZ, ignored -> new SeamRowSummary(latDeg));
-                    row.addChosen(chosenBandIndex);
-                    row.addLand(landBandIndex);
-                    if (isWarmDryBiomeId(sampledBiomeId)) {
-                        row.finalWarmDry++;
-                    }
-                    if (isTemperateBiomeId(sampledBiomeId)) {
-                        row.finalTemperate++;
-                    }
-                }
-                if (isTemperateShoulderProfileRow(latDeg, landBandIndex)) {
-                    TemperateShoulderCompositionRow row = temperateShoulderRows.computeIfAbsent(blockZ, ignored -> new TemperateShoulderCompositionRow(latDeg));
-                    row.addSample(sampledBiomeId);
-                }
+                    // Real per-column terrain height. This generator call is the expensive part this
+                    // processor's tick-budgeted stepping exists to spread out — not gated on
+                    // atlasTerrainAware, since getBaseHeight() only needs noiseConfig + a height view,
+                    // both already held unconditionally by this processor.
+                    int realHeight = generator.getBaseHeight(
+                            blockX, blockZ, Heightmap.Types.WORLD_SURFACE_WG, world, noiseConfig);
+                    int encodedHeight = Mth.clamp(realHeight + heightEncodeOffset, 0, 0xFFFF);
+                    heightImage.getRaster().setSample(imageX, imageZ, 0, encodedHeight);
 
-                if (layers.contains(Layer.BANDS)) {
-                    LatitudeBands.Band band = bandForBlockZ(radiusBlocks, blockZ);
-                    images.get(Layer.BANDS).setRGB(imageX, imageZ, colorForBand(band));
-                    bandCounts.merge(band.id(), 1, Integer::sum);
-                }
-
-                if (layers.contains(Layer.TEMPERATURE) || layers.contains(Layer.HUMIDITY) || layers.contains(Layer.CONTINENTALNESS)) {
-                    MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, noiseY, noiseZ);
-                    if (layers.contains(Layer.TEMPERATURE)) {
-                        double temperature01 = normalizeNoise(MultiNoiseUtil.toFloat(point.temperatureNoise()));
-                        images.get(Layer.TEMPERATURE).setRGB(imageX, imageZ, colorForTemperature(temperature01));
-                    }
-                    if (layers.contains(Layer.HUMIDITY)) {
-                        double humidity01 = normalizeNoise(MultiNoiseUtil.toFloat(point.humidityNoise()));
-                        images.get(Layer.HUMIDITY).setRGB(imageX, imageZ, colorForHumidity(humidity01));
-                    }
-                    if (layers.contains(Layer.CONTINENTALNESS)) {
-                        double continentalness = MathHelper.clamp(MultiNoiseUtil.toFloat(point.continentalnessNoise()), -1.0, 1.0);
-                        images.get(Layer.CONTINENTALNESS).setRGB(imageX, imageZ, colorForContinentalness(continentalness));
+                    advanceCursor();
+                    if (imageX == 0 && imageZ > 0
+                            && imageZ - lastSamplingHeartbeatZ >= ATLAS_SAMPLING_HEARTBEAT_ROWS) {
+                        lastSamplingHeartbeatZ = imageZ;
+                        System.out.println(String.format(
+                                Locale.ROOT,
+                                "[LAT][ATLAS_TIMING] phase=sampling-heartbeat rows=%d totalRows=%d elapsedMs=%d",
+                                imageZ,
+                                height,
+                                samplingElapsedMs()));
                     }
                 }
-
-                if (layers.contains(Layer.RUGGEDNESS) &&
-                        gatedNoiseGen instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator) {
-                    int delta = com.example.globe.world.LatitudeBiomes.previewRobustDelta(
-                            gatedNoiseGen, gatedNoiseConfig, gatedHeightView, blockX, blockZ);
-                    images.get(Layer.RUGGEDNESS).setRGB(imageX, imageZ, colorForRuggedness(delta));
+                if (imageZ < height) {
+                    System.out.println(String.format(
+                            Locale.ROOT,
+                            "[LAT][ATLAS_TIMING] phase=sampling-yield rows=%d totalRows=%d imageX=%d elapsedMs=%d",
+                            imageZ,
+                            height,
+                            imageX,
+                            samplingElapsedMs()));
                 }
-
-                advanceCursor();
             }
 
-            if (imageZ >= height) {
-                finalizeResult();
+            if (phase == Phase.SAMPLING && imageZ >= height) {
+                System.out.println(String.format(
+                        Locale.ROOT,
+                        "[LAT][ATLAS_TIMING] phase=sampling-complete rows=%d elapsedMs=%d",
+                        height,
+                        samplingElapsedMs()));
+                prepareInventoryPhase();
             }
+
+            if (phase == Phase.INVENTORY && inventoryProcessor != null) {
+                long remainingMs = remainingBudgetMs(deadline);
+                if (remainingMs > 0L) {
+                    BiomeSamplerTools.InventoryReport report = inventoryProcessor.processBudget(remainingMs);
+                    if (report != null) {
+                        inventoryReport = report;
+                        finishExportArtifacts();
+                    }
+                }
+            }
+
             return result;
         }
 
@@ -679,83 +941,135 @@ public final class BiomePreviewExporter {
             }
         }
 
+        private long samplingElapsedMs() {
+            return (System.nanoTime() - startNanos) / 1_000_000L;
+        }
+
         private boolean needsBiomeSampling() {
             return layers.contains(Layer.BIOMES) || !maskTargets.isEmpty() || emitBiomeIndex;
         }
 
-        private void finalizeResult() {
+        private void prepareInventoryPhase() {
+            if (phase != Phase.SAMPLING) {
+                return;
+            }
             try {
-                if (!overlays.isEmpty()) {
-                    applyOverlays(images.values(), overlays, radiusBlocks, zMin, stepBlocks);
-                    applyOverlays(maskImages.values(), overlays, radiusBlocks, zMin, stepBlocks);
-                }
-
-                long seed = atlasSeed;
-                Path outputDir = atlasStepDirectory(defaultAtlasRoot(runDirectory), seed, runLabel, radiusBlocks, stepBlocks);
-                Files.createDirectories(outputDir);
-
-                EnumMap<Layer, Path> layerPaths = new EnumMap<>(Layer.class);
-                Map<BiomeMaskLayer, Path> maskPaths = new LinkedHashMap<>();
-                Path biomeIndexPath = null;
-                for (Layer layer : layers) {
-                    Path pngPath = outputDir.resolve(layer.fileStem() + ".png");
-                    BufferedImage image = images.get(layer);
-                    boolean wrote = ImageIO.write(image, "png", pngPath.toFile());
-                    if (!wrote) {
-                        throw new IOException("PNG writer unavailable for layer " + layer.fileStem());
-                    }
-                    layerPaths.put(layer, pngPath);
-                }
-                for (BiomeMaskLayer maskLayer : maskTargets) {
-                    Path pngPath = outputDir.resolve(maskLayer.fileStem() + ".png");
-                    BufferedImage image = maskImages.get(maskLayer);
-                    boolean wrote = ImageIO.write(image, "png", pngPath.toFile());
-                    if (!wrote) {
-                        throw new IOException("PNG writer unavailable for layer " + maskLayer.fileStem());
-                    }
-                    maskPaths.put(maskLayer, pngPath);
-                }
-                Path chosenBandsPath = outputDir.resolve("chosen_bands.png");
-                if (!ImageIO.write(chosenBandsImage, "png", chosenBandsPath.toFile())) {
-                    throw new IOException("PNG writer unavailable for chosen_bands");
-                }
-                Path landBandsPath = outputDir.resolve("land_bands.png");
-                if (!ImageIO.write(landBandsImage, "png", landBandsPath.toFile())) {
-                    throw new IOException("PNG writer unavailable for land_bands");
-                }
-                writeSeamRowSummary(outputDir.resolve("seam_rows.txt"), seamRows);
-                writeSeamCropArtifacts(
-                        outputDir,
-                        images.get(Layer.BIOMES),
-                        chosenBandsImage,
-                        landBandsImage,
-                        radiusBlocks,
-                        zMin,
-                        stepBlocks);
-                writeTemperateShoulderComposition(outputDir.resolve("seam_temperate_composition.txt"), temperateShoulderRows);
-                if (emitBiomeIndex && biomeIndexImage != null) {
-                    biomeIndexPath = outputDir.resolve("biome_ids.png");
-                    boolean wrote = ImageIO.write(biomeIndexImage, "png", biomeIndexPath.toFile());
-                    if (!wrote) {
-                        throw new IOException("PNG writer unavailable for biome_ids");
-                    }
-                    writeBiomePalette(outputDir.resolve("biome_palette.json"), biomeIndices);
-                    writePaletteAuthority(outputDir);
-                }
-
+                writeImageArtifacts();
                 int inventoryDiscoveryStep = inventoryDiscoveryStep(stepBlocks);
-                BiomeSamplerTools.InventoryReport inventoryReport = needsBiomeSampling()
-                        ? BiomeSamplerTools.discoverInventory(BiomeSamplerTools.createTemplate(world), seed, radiusBlocks, inventoryDiscoveryStep, y)
-                        : new BiomeSamplerTools.InventoryReport(seed, radiusBlocks, inventoryDiscoveryStep, y, List.of());
+                inventoryProcessor = BiomeSamplerTools.createInventoryScanProcessor(
+                        template,
+                        atlasSeed,
+                        radiusBlocks,
+                        inventoryDiscoveryStep,
+                        y);
+                System.out.println(String.format(
+                        Locale.ROOT,
+                        "[LAT][ATLAS_TIMING] phase=inventory-start seed=%d radius=%d step=%d y=%d",
+                        atlasSeed,
+                        radiusBlocks,
+                        inventoryDiscoveryStep,
+                        y));
+                phase = Phase.INVENTORY;
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        private void writeImageArtifacts() throws IOException {
+            if (!overlays.isEmpty()) {
+                applyOverlays(images.values(), overlays, radiusBlocks, zMin, stepBlocks);
+                applyOverlays(maskImages.values(), overlays, radiusBlocks, zMin, stepBlocks);
+            }
+
+            long seed = atlasSeed;
+            outputDir = atlasStepDirectory(defaultAtlasRoot(runDirectory), seed, runLabel, radiusBlocks, stepBlocks);
+            Files.createDirectories(outputDir);
+
+            layerPaths = new EnumMap<>(Layer.class);
+            maskPaths = new LinkedHashMap<>();
+            biomeIndexPath = null;
+            for (Layer layer : layers) {
+                Path pngPath = outputDir.resolve(layer.fileStem() + ".png");
+                BufferedImage image = images.get(layer);
+                boolean wrote = ImageIO.write(image, "png", pngPath.toFile());
+                if (!wrote) {
+                    throw new IOException("PNG writer unavailable for layer " + layer.fileStem());
+                }
+                layerPaths.put(layer, pngPath);
+            }
+            for (BiomeMaskLayer maskLayer : maskTargets) {
+                Path pngPath = outputDir.resolve(maskLayer.fileStem() + ".png");
+                BufferedImage image = maskImages.get(maskLayer);
+                boolean wrote = ImageIO.write(image, "png", pngPath.toFile());
+                if (!wrote) {
+                    throw new IOException("PNG writer unavailable for layer " + maskLayer.fileStem());
+                }
+                maskPaths.put(maskLayer, pngPath);
+            }
+            Path chosenBandsPath = outputDir.resolve("chosen_bands.png");
+            if (!ImageIO.write(chosenBandsImage, "png", chosenBandsPath.toFile())) {
+                throw new IOException("PNG writer unavailable for chosen_bands");
+            }
+            Path landBandsPath = outputDir.resolve("land_bands.png");
+            if (!ImageIO.write(landBandsImage, "png", landBandsPath.toFile())) {
+                throw new IOException("PNG writer unavailable for land_bands");
+            }
+            Path heightPath = outputDir.resolve("height.png");
+            if (!ImageIO.write(heightImage, "png", heightPath.toFile())) {
+                throw new IOException("PNG writer unavailable for height");
+            }
+            writeHeightMeta(outputDir.resolve("height_meta.json"), heightEncodeOffset,
+                    world.getMinY(), world.getMaxY());
+            writeSeamRowSummary(outputDir.resolve("seam_rows.txt"), seamRows);
+            writeSeamCropArtifacts(
+                    outputDir,
+                    images.get(Layer.BIOMES),
+                    chosenBandsImage,
+                    landBandsImage,
+                    radiusBlocks,
+                    zMin,
+                    stepBlocks);
+            writeTemperateShoulderComposition(outputDir.resolve("seam_temperate_composition.txt"), temperateShoulderRows);
+            if (emitBiomeIndex && biomeIndexImage != null) {
+                biomeIndexPath = outputDir.resolve("biome_ids.png");
+                boolean wrote = ImageIO.write(biomeIndexImage, "png", biomeIndexPath.toFile());
+                if (!wrote) {
+                    throw new IOException("PNG writer unavailable for biome_ids");
+                }
+                writeBiomePalette(outputDir.resolve("biome_palette.json"), biomeIndices);
+                writePaletteAuthority(outputDir);
+            }
+
+            primaryPng = layerPaths.get(Layer.BIOMES);
+            if (primaryPng == null && !layerPaths.isEmpty()) {
+                primaryPng = layerPaths.values().iterator().next();
+            }
+            if (primaryPng == null && !maskPaths.isEmpty()) {
+                primaryPng = maskPaths.values().iterator().next();
+            }
+            if (primaryPng == null && biomeIndexPath != null) {
+                primaryPng = biomeIndexPath;
+            }
+            if (primaryPng == null) {
+                throw new IOException("No export layers were generated");
+            }
+        }
+
+        private void finishExportArtifacts() {
+            try {
+                if (outputDir == null) {
+                    throw new IOException("Export output directory was not prepared");
+                }
                 Path inventoryPath = outputDir.resolve("world_biome_inventory.json");
                 BiomeSamplerTools.writeInventoryJson(inventoryPath, inventoryReport);
 
-                Path summaryPath = outputDir.resolve("biomes.txt");
+                writeRunFlagsSidecar(outputDir, atlasSeed, radiusBlocks, stepBlocks, y);
+                summaryPath = outputDir.resolve("biomes.txt");
                 long totalSamples = (long) width * height;
                 long durationMs = (System.nanoTime() - startNanos) / 1_000_000L;
                 writeSummary(
                         summaryPath,
-                        seed,
+                        atlasSeed,
                         radiusBlocks,
                         stepBlocks,
                         y,
@@ -773,13 +1087,37 @@ public final class BiomePreviewExporter {
                         totalSamples,
                         durationMs,
                         biomeCounts,
+                        authorityBandCounts,
                         inventoryReport,
                         inventoryPath);
+                if (options.includeBiomeAudit()) {
+                    Path auditTxtPath = outputDir.resolve(auditTextFileName(atlasSeed, radiusBlocks, stepBlocks));
+                    Path auditCsvPath = outputDir.resolve(auditCsvFileName(atlasSeed, radiusBlocks, stepBlocks));
+                    writeBiomeAuditReport(
+                            auditTxtPath,
+                            auditCsvPath,
+                            atlasSeed,
+                            radiusBlocks,
+                            stepBlocks,
+                            y,
+                            xMin,
+                            zMin,
+                            xMin + (width - 1) * stepBlocks,
+                            zMin + (height - 1) * stepBlocks,
+                            width,
+                            height,
+                            totalSamples,
+                            inventoryReport,
+                            biomeCounts,
+                            selectedBandCounts,
+                            biomeAuditRows,
+                            options.includeBiomeAudit());
+                }
 
                 if (options.writeLegends()) {
                     writeLegendFiles(
                             outputDir,
-                            seed,
+                            atlasSeed,
                             radiusBlocks,
                             stepBlocks,
                             y,
@@ -789,21 +1127,37 @@ public final class BiomePreviewExporter {
                             layerPaths,
                             maskPaths,
                             bandCounts,
+                            authorityBandCounts,
                             totalSamples);
                 }
 
                 this.result = new ExportResult(
+                        primaryPng,
                         summaryPath,
-                        summaryPath,
-                        seed,
+                        atlasSeed,
                         radiusBlocks,
                         stepBlocks,
                         width,
                         height,
                         totalSamples,
                         durationMs);
+                phase = Phase.COMPLETE;
             } catch (IOException e) {
                 throw new RuntimeException(e);
+            }
+        }
+
+        private long remainingBudgetMs(long deadlineNanos) {
+            long remainingNanos = deadlineNanos - System.nanoTime();
+            if (remainingNanos <= 0L) {
+                return 0L;
+            }
+            return Math.max(1L, remainingNanos / 1_000_000L);
+        }
+
+        public void close() {
+            if (inventoryProcessor != null) {
+                inventoryProcessor.close();
             }
         }
     }
@@ -836,6 +1190,20 @@ public final class BiomePreviewExporter {
         out.append("  ]\n");
         out.append("}\n");
         Files.writeString(palettePath, out.toString());
+    }
+
+    private static void writeHeightMeta(Path metaPath, int offsetY, int minY, int maxY)
+            throws IOException {
+        StringBuilder out = new StringBuilder();
+        out.append("{\n");
+        out.append("  \"format\": \"height.png is a single-channel 16-bit grayscale (TYPE_USHORT_GRAY) raster, one pixel per sampled column, same width/height/order as biomes.png\",\n");
+        out.append("  \"decode\": \"realY = pixelValue - offsetY\",\n");
+        out.append("  \"offsetY\": ").append(offsetY).append(",\n");
+        out.append("  \"minY\": ").append(minY).append(",\n");
+        out.append("  \"maxY\": ").append(maxY).append(",\n");
+        out.append("  \"heightmapType\": \"WORLD_SURFACE_WG\"\n");
+        out.append("}\n");
+        Files.writeString(metaPath, out.toString());
     }
 
     private static void writePaletteAuthority(Path outputDir) throws IOException {
@@ -990,6 +1358,34 @@ public final class BiomePreviewExporter {
         return "";
     }
 
+    /**
+     * Slice D (Fable audit P1-5): every atlas bundle self-describes the flag configuration that produced
+     * it. Written as a SIDECAR next to biomes.txt rather than into biomes.txt itself, deliberately: the
+     * project's flag-off byte-identity proofs diff biomes.txt across runs whose flags DIFFER, and an
+     * in-file echo would make two map-identical runs diff on the echo line alone.
+     */
+    private static void writeRunFlagsSidecar(Path outputDir, long seed, int radiusBlocks, int stepBlocks, int y) {
+        try {
+            String json = "{\n"
+                    + "  \"seed\": " + seed + ",\n"
+                    + "  \"radiusBlocks\": " + radiusBlocks + ",\n"
+                    + "  \"stepBlocks\": " + stepBlocks + ",\n"
+                    + "  \"y\": " + y + ",\n"
+                    + "  \"shape\": \"" + LatitudeBiomes.shapeToString(LatitudeBiomes.getGlobeShape()) + "\",\n"
+                    + "  \"geoV2Enabled\": " + com.example.globe.core.LatitudeV2Flags.GEO_V2_ENABLED + ",\n"
+                    + "  \"climateV2Enabled\": " + com.example.globe.core.LatitudeV2Flags.CLIMATE_V2_ENABLED + ",\n"
+                    + "  \"biomeConsumerV2Enabled\": " + com.example.globe.core.LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED + ",\n"
+                    + "  \"biomeConsumerV2OceanAuthorityEnabled\": " + com.example.globe.core.LatitudeV2Flags.BIOME_CONSUMER_V2_OCEAN_AUTHORITY_ENABLED + ",\n"
+                    + "  \"terrainV2Enabled\": " + com.example.globe.core.LatitudeV2Flags.TERRAIN_V2_ENABLED + ",\n"
+                    + "  \"terrainV2Strength\": " + com.example.globe.core.LatitudeV2Flags.TERRAIN_V2_STRENGTH + ",\n"
+                    + "  \"terrainV2OceanStrengthRatio\": " + com.example.globe.core.LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO + "\n"
+                    + "}\n";
+            Files.writeString(outputDir.resolve("run_flags.json"), json);
+        } catch (Throwable t) {
+            com.example.globe.GlobeMod.LOGGER.warn("[latdev][atlas] failed to write run_flags.json sidecar", t);
+        }
+    }
+
     private static void writeSummary(Path txtPath,
                                      long seed,
                                      int radiusBlocks,
@@ -1009,6 +1405,7 @@ public final class BiomePreviewExporter {
                                      long totalSamples,
                                      long durationMs,
                                      Map<String, Integer> biomeCounts,
+                                     Map<String, Integer> authorityBandCounts,
                                      BiomeSamplerTools.InventoryReport inventoryReport,
                                      Path inventoryPath) throws IOException {
         List<Map.Entry<String, Integer>> top = new ArrayList<>(biomeCounts.entrySet());
@@ -1026,6 +1423,9 @@ public final class BiomePreviewExporter {
         out.append("totalChunks=").append(totalChunks).append('\n');
         out.append("image=").append(width).append('x').append(height).append('\n');
         out.append("totalSamples=").append(totalSamples).append('\n');
+        out.append("authorityBandCounts=");
+        appendBandCountEntries(out, authorityBandCounts);
+        out.append('\n');
         out.append("durationMs=").append(durationMs).append('\n');
         if (inventoryReport != null) {
             out.append("worldBiomeInventoryCount=").append(inventoryReport.biomes().size()).append('\n');
@@ -1050,6 +1450,277 @@ public final class BiomePreviewExporter {
         Files.writeString(txtPath, out.toString());
     }
 
+    private static String auditTextFileName(long seed, int radiusBlocks, int stepBlocks) {
+        return String.format(Locale.ROOT, "biome-audit_seed-%d_R%d_step%d.txt", seed, radiusBlocks, stepBlocks);
+    }
+
+    private static String auditCsvFileName(long seed, int radiusBlocks, int stepBlocks) {
+        return String.format(Locale.ROOT, "biome-audit_seed-%d_R%d_step%d.csv", seed, radiusBlocks, stepBlocks);
+    }
+
+    private static void writeBiomeAuditReport(Path txtPath,
+                                             Path csvPath,
+                                             long seed,
+                                             int radiusBlocks,
+                                             int stepBlocks,
+                                             int y,
+                                             int xMin,
+                                             int zMin,
+                                             int xMax,
+                                             int zMax,
+                                             int width,
+                                             int height,
+                                             long totalSamples,
+                                             BiomeSamplerTools.InventoryReport inventoryReport,
+                                             Map<String, Integer> biomeCounts,
+                                             Map<String, Integer> selectedBandCounts,
+                                             Map<String, BiomeAuditRecord> biomeAuditRows,
+                                             boolean includeBiomeAudit) throws IOException {
+        if (!includeBiomeAudit) {
+            return;
+        }
+
+        writeBiomeAuditCsv(
+                csvPath,
+                biomeAuditRows,
+                selectedBandCounts);
+
+        List<BiomeAuditRecord> allRows = new ArrayList<>(biomeAuditRows != null ? biomeAuditRows.values() : List.of());
+        allRows.sort(Comparator.comparing(BiomeAuditRecord::biomeId));
+
+        List<String> loadedModIds = sortedLoadedModIds();
+        boolean bopLoaded = loadedModIds.contains("biomesoplenty");
+
+        Map<String, Integer> registeredByNamespace = countBiomeRowsByNamespace(allRows, row -> row.registered);
+        Map<String, Integer> inOriginalByNamespace = countBiomeRowsByNamespace(allRows, row -> row.inOriginalBiomeSource);
+        Map<String, Integer> inLatitudeByNamespace = countBiomeRowsByNamespace(allRows, row -> row.inLatitudeTag);
+        Map<String, Integer> selectedByNamespace = countBiomeRowsByNamespace(allRows, row -> row.selectedCount > 0);
+
+        List<BiomeAuditRecord> bopRows = new ArrayList<>();
+        for (BiomeAuditRecord row : allRows) {
+            if ("biomesoplenty".equals(row.namespace())) {
+                bopRows.add(row);
+            }
+        }
+
+        List<BiomeAuditRecord> temperateSelectedRows = new ArrayList<>();
+        int temperateTotal = 0;
+        for (BiomeAuditRecord row : allRows) {
+            int count = row.selectedCountForBand(AUDIT_BAND_TEMPERATE);
+            if (count > 0) {
+                temperateSelectedRows.add(row);
+                temperateTotal += count;
+            }
+        }
+        temperateSelectedRows.sort((a, b) -> {
+            int byCount = Integer.compare(
+                    b.selectedCountForBand(AUDIT_BAND_TEMPERATE),
+                    a.selectedCountForBand(AUDIT_BAND_TEMPERATE));
+            return byCount != 0 ? byCount : a.biomeId().compareTo(b.biomeId());
+        });
+
+        int seasonalForestTemperate = 0;
+        int maxTemperate = 0;
+        int maxTieCount = 0;
+        for (BiomeAuditRecord row : temperateSelectedRows) {
+            int count = row.selectedCountForBand(AUDIT_BAND_TEMPERATE);
+            if (count > maxTemperate) {
+                maxTemperate = count;
+                maxTieCount = 1;
+            } else if (count == maxTemperate && count > 0) {
+                maxTieCount++;
+            }
+            if ("biomesoplenty:seasonal_forest".equals(row.biomeId())) {
+                seasonalForestTemperate = count;
+            }
+        }
+        double seasonalPct = temperateTotal <= 0 ? 0.0 : (seasonalForestTemperate * 100.0) / temperateTotal;
+        boolean seasonalDominant = seasonalForestTemperate > 0
+                && seasonalForestTemperate == maxTemperate
+                && maxTieCount == 1
+                && seasonalForestTemperate >= (temperateTotal / 2.0);
+
+        StringBuilder out = new StringBuilder();
+        out.append("seed=").append(seed).append('\n');
+        out.append("radiusBlocks=").append(radiusBlocks).append('\n');
+        out.append("stepBlocks=").append(stepBlocks).append('\n');
+        out.append("y=").append(y).append('\n');
+        out.append("blockBounds=x[").append(xMin).append("..").append(xMax)
+                .append("],z[").append(zMin).append("..").append(zMax).append("]\n");
+        out.append("image=").append(width).append('x').append(height).append('\n');
+        out.append("totalSamples=").append(totalSamples).append('\n');
+        if (inventoryReport != null) {
+            out.append("worldBiomeInventoryCount=").append(inventoryReport.biomes().size()).append('\n');
+            out.append("worldBiomeInventoryStep=").append(inventoryReport.discoveryStepUsed()).append('\n');
+        }
+        out.append("Loaded mod biomesoplenty: ").append(bopLoaded).append('\n');
+        out.append("Loaded mod IDs: ").append(String.join(",", loadedModIds)).append('\n');
+        if (!bopLoaded) {
+            out.append("BOP is not loaded in the atlas runtime; no BOP selection conclusion can be drawn.").append('\n');
+        }
+        if (selectedBandCounts != null) {
+            out.append("selectedBandCounts=");
+            appendOrderedMapEntries(out, selectedBandCounts);
+            out.append('\n');
+        }
+        out.append("1. Registered biome counts by namespace\n");
+        appendNamespaceCounts(out, registeredByNamespace);
+        out.append("2. Original biome source biome counts by namespace\n");
+        appendNamespaceCounts(out, inOriginalByNamespace);
+        out.append("3. Latitude-tag-eligible biome counts by namespace\n");
+        appendNamespaceCounts(out, inLatitudeByNamespace);
+        out.append("4. Final selected biome counts by namespace\n");
+        appendNamespaceCounts(out, selectedByNamespace);
+
+        out.append("5. BOP-focused section\n");
+        out.append("  all registered BOP biomes: ").append(joinBiomeRows(bopRows)).append('\n');
+        out.append("  BOP biomes present in original biome source: ").append(listBiomeRows(bopRows, row -> row.inOriginalBiomeSource)).append('\n');
+        out.append("  BOP biomes present in any Latitude tag: ").append(listBiomeRows(bopRows, BiomeAuditRecord::inLatitudeTag)).append('\n');
+        out.append("  BOP biomes selected by final picker: ").append(listBiomeRows(bopRows, row -> row.selectedCount > 0)).append('\n');
+        out.append("  BOP biomes registered but not tagged: ").append(listBiomeRows(bopRows, row -> !row.inLatitudeTag && row.registered)).append('\n');
+        out.append("  BOP biomes tagged but never selected: ").append(listBiomeRows(bopRows, row -> row.inLatitudeTag && row.selectedCount == 0)).append('\n');
+        out.append("  BOP biomes selected despite no Latitude tag membership: ").append(listBiomeRows(bopRows, row -> row.selectedCount > 0 && !row.inLatitudeTag)).append('\n');
+
+        out.append("6. Temperate-focused section\n");
+        out.append("  all final selected biomes in temperate band: ").append(listBiomeRows(temperateSelectedRows)).append('\n');
+            out.append("  BOP selected biomes in temperate band: ").append(listBiomeRows(temperateSelectedRows, row -> "biomesoplenty".equals(row.namespace()))).append('\n');
+        out.append("  seasonal_forest_in_temperate_count=").append(seasonalForestTemperate).append('\n');
+        out.append("  seasonal_forest_dominance=").append(seasonalDominant).append('\n');
+        out.append("  seasonal_forest_in_temperate_ratio=").append(String.format(Locale.ROOT, "%.3f", seasonalPct)).append('\n');
+
+        Files.writeString(txtPath, out.toString());
+    }
+
+    private static void writeBiomeAuditCsv(Path csvPath,
+                                           Map<String, BiomeAuditRecord> rows,
+                                           Map<String, Integer> selectedBandCounts) throws IOException {
+        List<BiomeAuditRecord> orderedRows = new ArrayList<>(rows != null ? rows.values() : List.of());
+        orderedRows.sort(Comparator.comparing(BiomeAuditRecord::biomeId));
+
+        StringBuilder out = new StringBuilder();
+        out.append("biome_id,namespace,registered,in_original_source,in_latitude_tag,latitude_tags,selected_count,selected_bands,first_x,first_z,first_deg,selected_display_bands,selected_land_bands\n");
+        for (BiomeAuditRecord row : orderedRows) {
+            out.append(csvValue(row.biomeId())).append(',')
+                    .append(csvValue(row.namespace())).append(',')
+                    .append(row.registered).append(',')
+                    .append(row.inOriginalBiomeSource).append(',')
+                    .append(row.inLatitudeTag).append(',')
+                    .append(csvValue(String.join(";", row.latitudeTags())))
+                    .append(',')
+                    .append(row.selectedCount).append(',')
+                    .append(csvValue(row.selectedBandsSummary())).append(',')
+                    .append(row.firstSelectedX() != null ? row.firstSelectedX() : "").append(',')
+                    .append(row.firstSelectedZ() != null ? row.firstSelectedZ() : "").append(',')
+                    .append(row.firstSelectedDeg() != null ? String.format(Locale.ROOT, "%.3f", row.firstSelectedDeg()) : "").append(',')
+                    .append(csvValue(row.selectedDisplayBandsSummary())).append(',')
+                    .append(csvValue(row.selectedLandBandsSummary()))
+                    .append('\n');
+        }
+        Files.writeString(csvPath, out.toString());
+    }
+
+    private static String csvValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        return "\"".concat(value.replace("\"", "\"\"")).concat("\"");
+    }
+
+    private static String joinBiomeRows(List<BiomeAuditRecord> rows) {
+        List<String> ids = new ArrayList<>();
+        for (BiomeAuditRecord row : rows) {
+            ids.add(row.biomeId());
+        }
+        return joinSortedBiomeList(ids);
+    }
+
+    private static String listBiomeRows(List<BiomeAuditRecord> rows, java.util.function.Predicate<BiomeAuditRecord> predicate) {
+        List<String> ids = new ArrayList<>();
+        for (BiomeAuditRecord row : rows) {
+            if (predicate.test(row)) {
+                ids.add(row.biomeId());
+            }
+        }
+        return joinSortedBiomeList(ids);
+    }
+
+    private static String listBiomeRows(List<BiomeAuditRecord> rows) {
+        return joinBiomeRows(rows);
+    }
+
+    private static String joinSortedBiomeList(List<String> ids) {
+        if (ids.isEmpty()) {
+            return "none";
+        }
+        Collections.sort(ids);
+        return String.join(", ", ids);
+    }
+
+    private static String normalizeBandId(String bandId) {
+        if (bandId == null) {
+            return null;
+        }
+        return bandId.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String selectedBandsSummaryFromCounts(Map<String, Integer> selectedBandCounts) {
+        if (selectedBandCounts == null || selectedBandCounts.isEmpty()) {
+            return "";
+        }
+        List<String> bands = new ArrayList<>(selectedBandCounts.keySet());
+        Collections.sort(bands);
+        List<String> rows = new ArrayList<>();
+        for (String band : bands) {
+            Integer count = selectedBandCounts.get(band);
+            if (count != null && count > 0) {
+                rows.add(band + "=" + count);
+            }
+        }
+        return String.join(";", rows);
+    }
+
+    private static Map<String, Integer> countBiomeRowsByNamespace(List<BiomeAuditRecord> rows,
+                                                                 java.util.function.Predicate<BiomeAuditRecord> predicate) {
+        Map<String, Integer> counts = new TreeMap<>();
+        for (BiomeAuditRecord row : rows) {
+            if (predicate.test(row)) {
+                counts.merge(row.namespace(), 1, Integer::sum);
+            }
+        }
+        return counts;
+    }
+
+    private static void appendNamespaceCounts(StringBuilder out, Map<String, Integer> namespaceCounts) {
+        if (namespaceCounts == null || namespaceCounts.isEmpty()) {
+            out.append("  none\n");
+            return;
+        }
+        for (Map.Entry<String, Integer> entry : namespaceCounts.entrySet()) {
+            out.append("  ").append(entry.getKey()).append("=").append(entry.getValue()).append('\n');
+        }
+    }
+
+    private static void appendOrderedMapEntries(StringBuilder out, Map<String, Integer> entries) {
+        List<Map.Entry<String, Integer>> ordered = new ArrayList<>(entries.entrySet());
+        ordered.sort(Map.Entry.comparingByKey());
+        for (int i = 0; i < ordered.size(); i++) {
+            if (i > 0) {
+                out.append(',');
+            }
+            Map.Entry<String, Integer> entry = ordered.get(i);
+            out.append(entry.getKey()).append("=").append(entry.getValue());
+        }
+    }
+
+    private static List<String> sortedLoadedModIds() {
+        List<String> modIds = new ArrayList<>();
+        for (net.fabricmc.loader.api.ModContainer mod : FabricLoader.getInstance().getAllMods()) {
+            modIds.add(mod.getMetadata().getId().toLowerCase(Locale.ROOT));
+        }
+        modIds.sort(String::compareTo);
+        return modIds;
+    }
+
     private static void writeLegendFiles(Path outputDir,
                                          long seed,
                                          int radiusBlocks,
@@ -1061,9 +1732,10 @@ public final class BiomePreviewExporter {
                                          Map<Layer, Path> layerPaths,
                                          Map<BiomeMaskLayer, Path> maskPaths,
                                          Map<String, Integer> bandCounts,
+                                         Map<String, Integer> authorityBandCounts,
                                          long totalSamples) throws IOException {
-        writeLegendTxt(outputDir.resolve("legend.txt"), seed, radiusBlocks, stepBlocks, y, layers, overlays, maskTargets, layerPaths, maskPaths, bandCounts, totalSamples);
-        writeLegendJson(outputDir.resolve("legend.json"), seed, radiusBlocks, stepBlocks, y, layers, overlays, maskTargets, layerPaths, maskPaths);
+        writeLegendTxt(outputDir.resolve("legend.txt"), seed, radiusBlocks, stepBlocks, y, layers, overlays, maskTargets, layerPaths, maskPaths, bandCounts, authorityBandCounts, totalSamples);
+        writeLegendJson(outputDir.resolve("legend.json"), seed, radiusBlocks, stepBlocks, y, layers, overlays, maskTargets, layerPaths, maskPaths, authorityBandCounts, totalSamples);
     }
 
     private static void writeLegendTxt(Path legendPath,
@@ -1077,6 +1749,7 @@ public final class BiomePreviewExporter {
                                        Map<Layer, Path> layerPaths,
                                        Map<BiomeMaskLayer, Path> maskPaths,
                                        Map<String, Integer> bandCounts,
+                                       Map<String, Integer> authorityBandCounts,
                                        long totalSamples) throws IOException {
         StringBuilder out = new StringBuilder();
         out.append("seed=").append(seed).append('\n');
@@ -1115,6 +1788,8 @@ public final class BiomePreviewExporter {
                 appendBandLegendTxt(out, band, band.lowDeg() / 90.0, band.highDeg() / 90.0, bandCounts, totalSamples);
             }
         }
+
+        appendAuthorityBandCountsTxt(out, authorityBandCounts, totalSamples);
 
         if (layers.contains(Layer.TEMPERATURE)) {
             out.append("temperatureScale=-1.0..1.0 (blue -> cream -> red)\n");
@@ -1160,6 +1835,53 @@ public final class BiomePreviewExporter {
                 pct));
     }
 
+    private static void appendAuthorityBandCountsTxt(StringBuilder out,
+                                                     Map<String, Integer> authorityBandCounts,
+                                                     long totalSamples) {
+        out.append("authorityBands:\n");
+        for (LatitudeBands.Band band : LatitudeBands.Band.values()) {
+            int count = authorityBandCounts != null ? authorityBandCounts.getOrDefault(band.id(), 0) : 0;
+            double pct = totalSamples <= 0 ? 0.0 : (count * 100.0) / totalSamples;
+            out.append(String.format(
+                    Locale.ROOT,
+                    "  - %-11s count=%d (%.2f%%)%n",
+                    band.id(),
+                    count,
+                    pct));
+        }
+    }
+
+    private static void appendBandCountEntries(StringBuilder out,
+                                               Map<String, Integer> bandCounts) {
+        int index = 0;
+        for (LatitudeBands.Band band : LatitudeBands.Band.values()) {
+            if (index++ > 0) {
+                out.append(',');
+            }
+            out.append(band.id()).append('=')
+                    .append(bandCounts != null ? bandCounts.getOrDefault(band.id(), 0) : 0);
+        }
+    }
+
+    private static void appendAuthorityBandCountsJson(StringBuilder json,
+                                                      Map<String, Integer> authorityBandCounts,
+                                                      long totalSamples) {
+        json.append("  \"authorityBands\": {\n");
+        json.append("    \"source\": \"LatitudeBiomes.authoritativeLandBandIndex\",\n");
+        json.append("    \"totalSamples\": ").append(totalSamples).append(",\n");
+        json.append("    \"counts\": {");
+        int index = 0;
+        for (LatitudeBands.Band band : LatitudeBands.Band.values()) {
+            if (index++ > 0) {
+                json.append(", ");
+            }
+            json.append("\"").append(band.id()).append("\": ")
+                    .append(authorityBandCounts != null ? authorityBandCounts.getOrDefault(band.id(), 0) : 0);
+        }
+        json.append("}\n");
+        json.append("  },\n");
+    }
+
     private static void writeLegendJson(Path legendPath,
                                         long seed,
                                         int radiusBlocks,
@@ -1169,7 +1891,9 @@ public final class BiomePreviewExporter {
                                         EnumSet<Overlay> overlays,
                                         List<BiomeMaskLayer> maskTargets,
                                         Map<Layer, Path> layerPaths,
-                                        Map<BiomeMaskLayer, Path> maskPaths) throws IOException {
+                                        Map<BiomeMaskLayer, Path> maskPaths,
+                                        Map<String, Integer> authorityBandCounts,
+                                        long totalSamples) throws IOException {
         StringBuilder json = new StringBuilder();
         json.append("{\n");
         json.append("  \"seed\": ").append(seed).append(",\n");
@@ -1234,6 +1958,7 @@ public final class BiomePreviewExporter {
             appendBandLegendJson(json, band, band.lowDeg() / 90.0, band.highDeg() / 90.0, i + 1 < bands.length);
         }
         json.append("  ],\n");
+        appendAuthorityBandCountsJson(json, authorityBandCounts, totalSamples);
         json.append("  \"biomeBands\": {\n");
         List<Map.Entry<String, List<LatitudeBands.Band>>> bandEntries = new ArrayList<>(BiomeBandPolicy.policy().entrySet());
         bandEntries.sort(Map.Entry.comparingByKey());
@@ -1343,7 +2068,7 @@ public final class BiomePreviewExporter {
                                                           int stepBlocks,
                                                           int height,
                                                           int color) {
-        int absZ = (int) Math.round(MathHelper.clamp(absFraction, 0.0, 1.0) * radiusBlocks);
+        int absZ = (int) Math.round(Mth.clamp(absFraction, 0.0, 1.0) * radiusBlocks);
         addGuideRow(rowColors, absZ, zMin, stepBlocks, height, color);
         if (absZ != 0) {
             addGuideRow(rowColors, -absZ, zMin, stepBlocks, height, color);
@@ -1357,7 +2082,7 @@ public final class BiomePreviewExporter {
                                     int height,
                                     int color) {
         int row = (int) Math.round((zBlocks - zMin) / (double) stepBlocks);
-        row = MathHelper.clamp(row, 0, Math.max(0, height - 1));
+        row = Mth.clamp(row, 0, Math.max(0, height - 1));
         rowColors.put(row, color);
     }
 
@@ -1427,7 +2152,7 @@ public final class BiomePreviewExporter {
     }
 
     private static double normalizeNoise(float noiseValue) {
-        return MathHelper.clamp((noiseValue + 1.0) * 0.5, 0.0, 1.0);
+        return Mth.clamp((noiseValue + 1.0) * 0.5, 0.0, 1.0);
     }
 
     private static int colorForBand(LatitudeBands.Band band) {
@@ -1778,7 +2503,7 @@ public final class BiomePreviewExporter {
     }
 
     private static int colorForTemperature(double value01) {
-        double t = MathHelper.clamp(value01, 0.0, 1.0);
+        double t = Mth.clamp(value01, 0.0, 1.0);
         if (t < 0.5) {
             return lerpRgb(0x2C7BB6, 0xFFF3B0, t * 2.0);
         }
@@ -1786,7 +2511,7 @@ public final class BiomePreviewExporter {
     }
 
     private static int colorForHumidity(double value01) {
-        double t = MathHelper.clamp(value01, 0.0, 1.0);
+        double t = Mth.clamp(value01, 0.0, 1.0);
         if (t < 0.5) {
             return lerpRgb(0xB07D3B, 0xE9E7C5, t * 2.0);
         }
@@ -1794,7 +2519,7 @@ public final class BiomePreviewExporter {
     }
 
     private static int colorForContinentalness(double valueSigned) {
-        double c = MathHelper.clamp(valueSigned, -1.0, 1.0);
+        double c = Mth.clamp(valueSigned, -1.0, 1.0);
         if (c < 0.0) {
             return lerpRgb(0x0B3D91, 0xE0C097, c + 1.0);
         }
@@ -1810,7 +2535,7 @@ public final class BiomePreviewExporter {
     }
 
     private static int lerpRgb(int from, int to, double t) {
-        double clamped = MathHelper.clamp(t, 0.0, 1.0);
+        double clamped = Mth.clamp(t, 0.0, 1.0);
         int fromR = (from >> 16) & 0xFF;
         int fromG = (from >> 8) & 0xFF;
         int fromB = from & 0xFF;
@@ -1828,12 +2553,189 @@ public final class BiomePreviewExporter {
         return String.format(Locale.ROOT, "#%06X", rgb & 0x00FFFFFF);
     }
 
-    private static String biomeId(Registry<Biome> biomeRegistry, RegistryEntry<Biome> biome) {
-        Identifier id = biomeRegistry.getId(biome.value());
+    private static Map<String, BiomeAuditRecord> collectBiomeAuditRows(Registry<Biome> biomeRegistry,
+                                                                     BiomeSource baseSource) {
+        if (biomeRegistry == null) {
+            return Map.of();
+        }
+
+        Set<String> originalSourceBiomeIds = collectBiomeIdsFromSource(baseSource, biomeRegistry);
+        Map<String, Set<String>> latitudeTagBiomeIds = collectLatitudeTagBiomeIds(biomeRegistry);
+        Map<String, BiomeAuditRecord> rows = new HashMap<>();
+
+        for (Biome biome : biomeRegistry) {
+            String id = biomeIdFromBiomeValue(biomeRegistry, biome, null);
+            if (id == null) {
+                continue;
+            }
+            String normalizedId = normalizeBiomeId(id);
+            String namespace = namespaceFromBiomeId(normalizedId);
+            Set<String> tags = latitudeTagBiomeIds.getOrDefault(normalizedId, Collections.emptySet());
+            rows.put(normalizedId, new BiomeAuditRecord(
+                    normalizedId,
+                    namespace,
+                    true,
+                    originalSourceBiomeIds.contains(normalizedId),
+                    !tags.isEmpty(),
+                    new ArrayList<>(tags)));
+        }
+        return rows;
+    }
+
+    private static Map<String, Set<String>> collectLatitudeTagBiomeIds(Registry<Biome> biomeRegistry) {
+        Map<String, Set<String>> tagMembership = new HashMap<>();
+        if (biomeRegistry == null) {
+            return tagMembership;
+        }
+        for (TagSpec spec : LATITUDE_TAG_SPECS) {
+            for (Holder<Biome> holder : biomeRegistry.getTagOrEmpty(spec.tagKey())) {
+                String id = biomeId(biomeRegistry, holder);
+                if (id == null) {
+                    continue;
+                }
+                String normalizedId = normalizeBiomeId(id);
+                tagMembership.computeIfAbsent(normalizedId, ignored -> new HashSet<>()).add(spec.id());
+            }
+        }
+        return tagMembership;
+    }
+
+    private static Set<String> collectBiomeIdsFromSource(BiomeSource source, Registry<Biome> biomeRegistry) {
+        if (source == null || biomeRegistry == null) {
+            return Collections.emptySet();
+        }
+
+        Set<String> sourceBiomeIds = new HashSet<>();
+        try {
+            Method getBiomes = source.getClass().getMethod("possibleBiomes");
+            Object sourceBiomes = getBiomes.invoke(source);
+            collectBiomeIds(sourceBiomes, biomeRegistry, sourceBiomeIds);
+        } catch (Exception ignored) {
+            // fallback below
+        }
+        if (!sourceBiomeIds.isEmpty()) {
+            return sourceBiomeIds;
+        }
+
+        try {
+            Method getBiomes = source.getClass().getMethod("getBiomes");
+            Object sourceBiomes = getBiomes.invoke(source);
+            collectBiomeIds(sourceBiomes, biomeRegistry, sourceBiomeIds);
+        } catch (Exception ignored) {
+            // not all implementations expose this as a collection in the same way
+        }
+        return sourceBiomeIds;
+    }
+
+    private static void collectBiomeIds(Object rawBiomes,
+                                      Registry<Biome> biomeRegistry,
+                                      Set<String> out) {
+        if (rawBiomes == null || out == null) {
+            return;
+        }
+        if (rawBiomes instanceof Iterable<?> iterable) {
+            for (Object value : iterable) {
+                collectBiomeIds(value, biomeRegistry, out);
+            }
+            return;
+        }
+        if (rawBiomes.getClass().isArray()) {
+            int len = java.lang.reflect.Array.getLength(rawBiomes);
+            for (int i = 0; i < len; i++) {
+                collectBiomeIds(java.lang.reflect.Array.get(rawBiomes, i), biomeRegistry, out);
+            }
+            return;
+        }
+        if (rawBiomes instanceof java.util.stream.Stream<?> stream) {
+            stream.forEach(value -> collectBiomeIds(value, biomeRegistry, out));
+            return;
+        }
+
+        String id = normalizeBiomeIdForSource(rawBiomes, biomeRegistry);
+        if (id != null) {
+            out.add(id);
+        }
+    }
+
+    private static String normalizeBiomeIdForSource(Object value, Registry<Biome> biomeRegistry) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Holder<?> holder) {
+            if (holder.value() instanceof Biome biome) {
+                String id = biomeIdFromBiomeValue(biomeRegistry, biome, holder);
+                if (id != null) {
+                    return normalizeBiomeId(id);
+                }
+            }
+            return null;
+        }
+        if (value instanceof Biome biome) {
+            String id = biomeIdFromBiomeValue(biomeRegistry, biome, null);
+            return id != null ? normalizeBiomeId(id) : null;
+        }
+        if (value instanceof String raw) {
+            return normalizeBiomeId(raw);
+        }
+        if (value instanceof Identifier id) {
+            return normalizeBiomeId(id.toString());
+        }
+        return null;
+    }
+
+    private static String biomeIdFromBiomeValue(Registry<Biome> biomeRegistry, Biome biome, Holder<?> fallbackHolder) {
+        if (biome == null) {
+            return null;
+        }
+        if (fallbackHolder != null) {
+            return fallbackHolder.unwrapKey()
+                    .map(key -> key.identifier().toString())
+                    .orElse(null);
+        }
+        if (biomeRegistry != null) {
+            Identifier id = biomeRegistry.getKey(biome);
+            if (id != null) {
+                return id.toString();
+            }
+        }
+        return null;
+    }
+
+    private static String latitudeBandIdFromIndex(int bandIndex) {
+        return switch (bandIndex) {
+            case 0 -> LatitudeBands.Band.TROPICAL.id();
+            case 1 -> LatitudeBands.Band.SUBTROPICAL.id();
+            case 2 -> LatitudeBands.Band.TEMPERATE.id();
+            case 3 -> LatitudeBands.Band.SUBPOLAR.id();
+            case 4 -> LatitudeBands.Band.POLAR.id();
+            default -> "lat_unknown";
+        };
+    }
+
+    private static String normalizeBiomeId(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        return raw.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String namespaceFromBiomeId(String biomeId) {
+        if (biomeId == null) {
+            return "unknown";
+        }
+        int idx = biomeId.indexOf(':');
+        if (idx <= 0) {
+            return "minecraft";
+        }
+        return biomeId.substring(0, idx);
+    }
+
+    private static String biomeId(Registry<Biome> biomeRegistry, Holder<Biome> biome) {
+        Identifier id = biomeRegistry.getKey(biome.value());
         if (id != null) {
             return id.toString();
         }
-        return biome.getKey().map(key -> key.getValue().toString()).orElse("minecraft:plains");
+        return biome.unwrapKey().map(key -> key.identifier().toString()).orElse("minecraft:plains");
     }
 
     private static Integer paletteOverrideFor(String biomeId) {
@@ -1857,52 +2759,12 @@ public final class BiomePreviewExporter {
     }
 
     static int stableColorForBiomeId(String biomeId) {
-        String id = biomeId.toLowerCase(Locale.ROOT);
-        Integer override = paletteOverrideFor(id);
-        if (override != null) {
-            return override;
-        }
-        if (id.contains("snowy_beach")) {
-            return 0xE9E1CC;
-        }
-        if (id.contains("stony_shore")) {
-            return 0x9A9A9A;
-        }
-        if (id.contains("beach") || id.contains("shore") || id.contains("coast")) {
-            return 0xE7D7A5;
-        }
-        if (id.contains("ocean") || id.contains("river")) {
-            return 0x2F6FA8;
-        }
-        if (id.contains("snow") || id.contains("frozen") || id.contains("ice")) {
-            return 0xE6F4FF;
-        }
-        if (id.contains("desert") || id.contains("badlands")) {
-            return 0xD39B4D;
-        }
-        if (id.contains("swamp") || id.contains("mangrove")) {
-            return 0x3C6B43;
-        }
-        if (id.contains("jungle")) {
-            return 0x2E8A57;
-        }
-        if (id.contains("taiga") || id.contains("forest") || id.contains("grove")) {
-            return 0x4A7B4D;
-        }
-        if (id.contains("plains") || id.contains("savanna") || id.contains("meadow")) {
-            return 0x8FBF63;
-        }
-        if (id.contains("mountain") || id.contains("peak") || id.contains("hills")) {
-            return 0x7A7A7A;
-        }
-
-        // Neutral fallback for unknown/custom biomes.
-        return 0x8A8A8A;
+        return BiomeColorUtil.stableColorForBiomeId(biomeId);
     }
 
     private static int inventoryDiscoveryStep(int stepBlocks) {
         int configured = Integer.getInteger("latitude.atlas.inventoryStep", DEFAULT_INVENTORY_DISCOVERY_STEP);
-        int clamped = MathHelper.clamp(configured, 8, 512);
+        int clamped = Mth.clamp(configured, 8, 512);
         return Math.min(Math.max(1, stepBlocks), clamped);
     }
 
@@ -1961,8 +2823,8 @@ public final class BiomePreviewExporter {
                 || token.equals("minecraft:mangrove_swamp");
     }
 
-    private static RegistryEntry<Biome> forceMangroveSwampForAtlas(Registry<Biome> biomeRegistry, RegistryEntry<Biome> fallback) {
-        RegistryEntry.Reference<Biome> mangrove = biomeRegistry.getEntry(MANGROVE_SWAMP_BIOME_ID).orElse(null);
+    private static Holder<Biome> forceMangroveSwampForAtlas(Registry<Biome> biomeRegistry, Holder<Biome> fallback) {
+        Holder.Reference<Biome> mangrove = biomeRegistry.get(MANGROVE_SWAMP_BIOME_ID).orElse(null);
         return mangrove != null ? mangrove : fallback;
     }
 
@@ -1981,6 +2843,113 @@ public final class BiomePreviewExporter {
 
         public String token() {
             return "biomeMask:" + normalizedId;
+        }
+    }
+
+    private static final class BiomeAuditRecord {
+        private final String biomeId;
+        private final String namespace;
+        private final boolean registered;
+        private final boolean inOriginalBiomeSource;
+        private final boolean inLatitudeTag;
+        private final List<String> latitudeTags;
+        private final Map<String, Integer> selectedDisplayBandCounts = new HashMap<>();
+        private final Map<String, Integer> selectedLandBandCounts = new HashMap<>();
+        private int selectedCount;
+        private Integer firstSelectedX;
+        private Integer firstSelectedZ;
+        private Double firstSelectedDeg;
+
+        private BiomeAuditRecord(String biomeId,
+                                 String namespace,
+                                 boolean registered,
+                                 boolean inOriginalBiomeSource,
+                                 boolean inLatitudeTag,
+                                 List<String> latitudeTags) {
+            this.biomeId = biomeId;
+            this.namespace = namespace != null ? namespace : "unknown";
+            this.registered = registered;
+            this.inOriginalBiomeSource = inOriginalBiomeSource;
+            this.inLatitudeTag = inLatitudeTag;
+            this.latitudeTags = new ArrayList<>(latitudeTags == null ? List.of() : latitudeTags);
+            this.latitudeTags.sort(String::compareTo);
+        }
+
+        private void recordSelection(int blockX, int blockZ, double latDeg, String selectedDisplayBandId, String selectedLandBandId) {
+            selectedCount++;
+            if (firstSelectedX == null) {
+                firstSelectedX = blockX;
+            }
+            if (firstSelectedZ == null) {
+                firstSelectedZ = blockZ;
+            }
+            if (firstSelectedDeg == null) {
+                firstSelectedDeg = latDeg;
+            }
+            incrementBand(selectedDisplayBandCounts, selectedDisplayBandId);
+            incrementBand(selectedLandBandCounts, selectedLandBandId);
+        }
+
+        private void incrementBand(Map<String, Integer> counts, String bandId) {
+            String normalized = normalizeBandId(bandId);
+            if (normalized == null || normalized.isBlank()) {
+                return;
+            }
+            counts.merge(normalized, 1, Integer::sum);
+        }
+
+        private int selectedCountForBand(String bandId) {
+            String normalized = normalizeBandId(bandId);
+            if (normalized == null || normalized.isBlank()) {
+                return 0;
+            }
+            return selectedLandBandCounts.getOrDefault(normalized, 0);
+        }
+
+        private String selectedBandsSummary() {
+            return selectedLandBandsSummary();
+        }
+
+        private String selectedDisplayBandsSummary() {
+            return selectedBandsSummaryFromCounts(selectedDisplayBandCounts);
+        }
+
+        private String selectedLandBandsSummary() {
+            return selectedBandsSummaryFromCounts(selectedLandBandCounts);
+        }
+
+        private String biomeId() {
+            return biomeId;
+        }
+
+        private String namespace() {
+            return namespace;
+        }
+
+        private List<String> latitudeTags() {
+            return latitudeTags;
+        }
+
+        private boolean inLatitudeTag() {
+            return inLatitudeTag;
+        }
+
+        private Integer firstSelectedX() {
+            return firstSelectedX;
+        }
+
+        private Integer firstSelectedZ() {
+            return firstSelectedZ;
+        }
+
+        private Double firstSelectedDeg() {
+            return firstSelectedDeg;
+        }
+    }
+
+    private record TagSpec(String id, TagKey<Biome> tagKey) {
+        private TagSpec(String id) {
+            this(id, TagKey.create(Registries.BIOME, Identifier.parse(id)));
         }
     }
 
@@ -2051,7 +3020,8 @@ public final class BiomePreviewExporter {
                                 List<BiomeMaskLayer> maskLayers,
                                 boolean writeLegends,
                                 boolean emitBiomeIndex,
-                                boolean emitHeight) {
+                                boolean emitHeight,
+                                boolean includeBiomeAudit) {
         public ExportOptions {
             if (layers == null) {
                 layers = EnumSet.of(Layer.BIOMES);
@@ -2079,7 +3049,7 @@ public final class BiomePreviewExporter {
         }
 
         public static ExportOptions singleBiome() {
-            return new ExportOptions(EnumSet.of(Layer.BIOMES), EnumSet.noneOf(Overlay.class), List.of(), false, false, false);
+            return new ExportOptions(EnumSet.of(Layer.BIOMES), EnumSet.noneOf(Overlay.class), List.of(), false, false, false, false);
         }
 
         public static ExportOptions bundle() {
@@ -2089,13 +3059,15 @@ public final class BiomePreviewExporter {
                     List.of(),
                     true,
                     false,
+                    false,
                     false);
         }
 
         public static ExportOptions from(boolean bundle,
                                          List<Layer> requestedLayers,
                                          List<Overlay> requestedOverlays,
-                                         List<String> requestedMasks) {
+                                         List<String> requestedMasks,
+                                         boolean includeBiomeAudit) {
             EnumSet<Overlay> overlaySet = requestedOverlays == null || requestedOverlays.isEmpty()
                     ? EnumSet.noneOf(Overlay.class)
                     : EnumSet.copyOf(requestedOverlays);
@@ -2106,10 +3078,10 @@ public final class BiomePreviewExporter {
                         ? EnumSet.copyOf(requestedLayers)
                         : EnumSet.noneOf(Layer.class);
                 boolean legends = bundle || layerSet.size() > 1 || !maskLayers.isEmpty();
-                return new ExportOptions(layerSet, overlaySet, maskLayers, legends, false, false);
+                return new ExportOptions(layerSet, overlaySet, maskLayers, legends, false, false, includeBiomeAudit);
             }
             ExportOptions base = bundle ? bundle() : singleBiome();
-            return new ExportOptions(base.layers(), overlaySet, base.maskLayers(), base.writeLegends(), false, false);
+            return new ExportOptions(base.layers(), overlaySet, base.maskLayers(), base.writeLegends(), false, false, includeBiomeAudit);
         }
 
         private static List<BiomeMaskLayer> parseMaskLayers(List<String> requestedMasks) {

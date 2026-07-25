@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+OUT="${1:-"$ROOT/tmp/mc-window-$(date +%Y%m%d-%H%M%S).png"}"
+
+screen_locked() {
+  swift - <<'SWIFT'
+import Foundation
+import CoreGraphics
+
+if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
+   let locked = session["CGSSessionScreenIsLocked"] as? NSNumber,
+   locked.intValue != 0 {
+    print("locked")
+}
+SWIFT
+}
+
+if [[ "$(screen_locked)" == "locked" ]]; then
+  echo "mc-shot: screen is locked; exact window capture is unavailable until the session is unlocked" >&2
+  exit 13
+fi
+eval "$("$ROOT/tools/mc-window" --shell)"
+mkdir -p "$(dirname "$OUT")"
+screencapture -x -l "$MC_WINDOW_ID" "$OUT"
+printf '%s\n' "$OUT"

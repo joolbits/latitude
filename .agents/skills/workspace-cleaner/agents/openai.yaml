@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workspace Cleaner"
+  short_description: "Read-only workspace hygiene checker for Git repos"
+  default_prompt: "Use this skill to inventory runtime junk, logs, generated files, temp world files, and machine-specific clutter in a Git workspace, then classify what is safe to review manually versus what should be preserved, without deleting or modifying anything."

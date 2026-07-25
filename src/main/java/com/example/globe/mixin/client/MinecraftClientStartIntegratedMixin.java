@@ -1,76 +1,82 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.LatitudeClientState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtIo;
-import net.minecraft.nbt.NbtSizeTracker;
-import net.minecraft.resource.ResourcePackManager;
-import net.minecraft.server.SaveLoader;
-import net.minecraft.util.WorldSavePath;
-import net.minecraft.world.level.storage.LevelStorage;
+import net.minecraft.client.Minecraft;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.WorldStem;
+import net.minecraft.server.packs.repository.PackRepository;
+import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
+import net.minecraft.world.level.storage.LevelStorageSource;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Optional;
 
-@Mixin(MinecraftClient.class)
+@Mixin(Minecraft.class)
 public abstract class MinecraftClientStartIntegratedMixin {
+    @Unique private static final Logger GLOBE_LOGGER = LoggerFactory.getLogger("LatitudeLoadingOverlay");
+    @Unique private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_KEY =
+            globe$noiseSettingsKey("overworld");
+    @Unique private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_XSMALL_KEY =
+            globe$noiseSettingsKey("overworld_xsmall");
+    @Unique private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_SMALL_KEY =
+            globe$noiseSettingsKey("overworld_small");
+    @Unique private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_REGULAR_KEY =
+            globe$noiseSettingsKey("overworld_regular");
+    @Unique private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_LARGE_KEY =
+            globe$noiseSettingsKey("overworld_large");
+    @Unique private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_MASSIVE_KEY =
+            globe$noiseSettingsKey("overworld_massive");
 
-    @Inject(method = "startIntegratedServer", at = @At("HEAD"))
-    private void globe$markLatitudeLoad(LevelStorage.Session session,
-                                        ResourcePackManager dataPackManager,
-                                        SaveLoader saveLoader,
-                                        boolean newWorld,
-                                        CallbackInfo ci) {
-        if (LatitudeClientState.isLatitudeWorldLoading()) {
-            return;
-        }
-        if (globe$isLatitudeWorld(session)) {
+    @Inject(method = "doWorldLoad", at = @At("HEAD"))
+    private void globe$beginExistingLatitudeWorldLoading(LevelStorageSource.LevelStorageAccess session,
+                                                         PackRepository packRepository,
+                                                         WorldStem worldStem,
+                                                         Optional<GameRules> gameRules,
+                                                         boolean safeMode,
+                                                         CallbackInfo ci) {
+        if (!LatitudeClientState.isLatitudeWorldLoading()) {
+            LatitudeClientState.beginExpedition(System.currentTimeMillis());
             LatitudeClientState.activateLatitudeLoading();
-            LatitudeClientState.firstWorldLoad = false;
+            boolean detectedLatitudeWorld = globe$isLatitudeWorld(worldStem);
+            GLOBE_LOGGER.info("[Latitude lifecycle] integrated-world loading overlay activated — {}ms since beginExpedition (latitudeWorldDetected={})",
+                    LatitudeClientState.elapsedSinceExpeditionMs(), detectedLatitudeWorld);
         }
     }
 
-    private static boolean globe$isLatitudeWorld(LevelStorage.Session session) {
-        try {
-            Path levelDat = session.getDirectory(WorldSavePath.ROOT).resolve("level.dat");
-            if (!Files.exists(levelDat)) {
-                return false;
-            }
-            NbtCompound root = NbtIo.readCompressed(levelDat, NbtSizeTracker.ofUnlimitedBytes());
-            Optional<NbtCompound> dataOpt = root.getCompound("Data");
-            if (dataOpt.isEmpty()) return false;
-            Optional<NbtCompound> wgsOpt = dataOpt.get().getCompound("WorldGenSettings");
-            if (wgsOpt.isEmpty()) return false;
-            Optional<NbtCompound> dimsOpt = wgsOpt.get().getCompound("dimensions");
-            if (dimsOpt.isEmpty()) return false;
-            Optional<NbtCompound> overworldOpt = dimsOpt.get().getCompound("minecraft:overworld");
-            if (overworldOpt.isEmpty()) return false;
-            Optional<NbtCompound> generatorOpt = overworldOpt.get().getCompound("generator");
-            if (generatorOpt.isEmpty()) return false;
-            NbtCompound generator = generatorOpt.get();
-
-            Optional<String> settingsId = generator.getString("settings");
-            if (settingsId.isPresent() && settingsId.get().startsWith("globe:")) {
-                return true;
-            }
-            Optional<NbtCompound> settingsTag = generator.getCompound("settings");
-            if (settingsTag.isPresent()) {
-                Optional<String> preset = settingsTag.get().getString("preset");
-                if (preset.isPresent() && preset.get().startsWith("globe:")) {
-                    return true;
-                }
-            }
-            Optional<String> typeId = generator.getString("type");
-            return typeId.isPresent() && typeId.get().startsWith("globe:");
-        } catch (Exception ignored) {
+    @Unique
+    private static boolean globe$isLatitudeWorld(WorldStem worldStem) {
+        if (worldStem == null || worldStem.worldDataAndGenSettings() == null
+                || worldStem.worldDataAndGenSettings().genSettings() == null
+                || worldStem.worldDataAndGenSettings().genSettings().dimensions() == null) {
             return false;
         }
+
+        ChunkGenerator generator = worldStem.worldDataAndGenSettings().genSettings().dimensions().overworld();
+        if (!(generator instanceof NoiseBasedChunkGenerator noise)) {
+            return false;
+        }
+
+        return noise.stable(GLOBE_SETTINGS_KEY)
+                || noise.stable(GLOBE_SETTINGS_XSMALL_KEY)
+                || noise.stable(GLOBE_SETTINGS_SMALL_KEY)
+                || noise.stable(GLOBE_SETTINGS_REGULAR_KEY)
+                || noise.stable(GLOBE_SETTINGS_LARGE_KEY)
+                || noise.stable(GLOBE_SETTINGS_MASSIVE_KEY);
+    }
+
+    @Unique
+    private static ResourceKey<NoiseGeneratorSettings> globe$noiseSettingsKey(String path) {
+        return ResourceKey.create(net.minecraft.core.registries.Registries.NOISE_SETTINGS,
+                Identifier.fromNamespaceAndPath("globe", path));
     }
 }

@@ -1,0 +1,14 @@
+{
+  "placement": {
+    "type": "minecraft:random_spread",
+    "salt": 20260719,
+    "separation": 12,
+    "spacing": 48
+  },
+  "structures": [
+    {
+      "structure": "globe:frozen_cache",
+      "weight": 1
+    }
+  ]
+}

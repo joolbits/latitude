@@ -1,31 +1,83 @@
 package com.example.globe.client;
 
+import com.example.globe.core.config.LatitudeConfigData;
+import com.example.globe.core.config.LatitudeConfigData.AccessibilityMode;
+import com.example.globe.core.ui.AccessibilityPalette;
+import com.example.globe.core.ui.GroupRowLayout;
+import com.example.globe.core.ui.HudStudioLayout;
+import com.example.globe.core.ui.UiEase;
+import com.mojang.blaze3d.platform.InputConstants;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.ClickableWidget;
-import net.minecraft.client.gui.widget.CyclingButtonWidget;
-import net.minecraft.client.gui.widget.SliderWidget;
-import net.minecraft.client.gui.tooltip.Tooltip;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.MathHelper;
+import java.util.function.Consumer;
+import java.util.function.IntSupplier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.AbstractSliderButton;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.CycleButton;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 
-public class LatitudeHudStudioScreen extends Screen {
+public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Host {
+    private static final int GOLD = 0xFFD4A74A;
+    private static final int WARM_WHITE = 0xFFEDE0D0;
+    private static final int MUTED = 0xFF8C8078;
+    private static final int PANEL_BORDER = 0xFF5C4A3A;
+    private static final int PANEL_BG = 0xFF3A302A;
+
+    private static final String[] TAB_NAMES = {"Compass", "Labels", "Title", "Presets", "General"};
+    private static final int TAB_COMPASS = 0;
+    private static final int TAB_LABELS = 1;
+    private static final int TAB_TITLE = 2;
+    private static final int TAB_PRESETS = 3;
+    private static final int TAB_GENERAL = 4;
+    private static final int TAB_H = 20;
+    private static final int TAB_GAP = 4;
+    // Extra headroom on top of the wider sidebar so even "Placement" sits comfortably clear of its borders.
+    private static final float TAB_LABEL_SCALE = 0.85f;
+
     private final Screen parent;
 
+    // Cancel snapshot (UI round 13): the ENTIRE editable state as it was when the Studio opened. Every widget
+    // in this screen mutates the live config singletons AND saves to disk immediately (live preview), so a
+    // "Cancel" has to restore these captured values over the live singletons and re-save. Captured once in the
+    // constructor -- init() re-runs on every resize/tab-switch/widget-rebuild, so capturing there would snapshot
+    // already-edited state and defeat the whole point. Done keeps the live edits (they're already persisted);
+    // ESC keeps its existing behavior (also keeps edits) -- only this explicit Cancel discards.
+    private final CompassHudConfig hudSnapshot;
+    private final LatitudeConfigData latitudeSnapshot;
+
     private boolean sidebarVisible = true;
-    private int sidebarWidth = 180;
+    // Widened from 180 -- at 180 the 4-tab strip (~43px/tab) was too narrow for "Placement" to fit without
+    // touching its button's borders. Now re-derived every init() from the screen width via
+    // HudStudioLayout.sidebarWidth (GUI-scale parity audit H2): stays 208 above the narrow threshold
+    // (layout pixel-identical) and shrinks only at very narrow effective resolutions (e.g. the 320x240 floor)
+    // so the live-preview canvas and the Done|Cancel row still fit. The 208 initializer is just a seed for the
+    // first frame before init() runs.
+    private int sidebarWidth = 208;
 
-    private enum Target { COMPASS, TITLE, BOTH }
-    private Target target = Target.COMPASS;
+    private int activeTab = TAB_COMPASS;
+    private int tabStripY;
 
-    private enum DragElement { NONE, COMPASS, TITLE, ZONE }
+    private enum DragElement { NONE, COMPASS, TITLE, ZONE, BIOME, COORDS, CLOCK }
     private DragElement dragElement = DragElement.NONE;
+
+    // Direct drag-RESIZE (item k): when true, the active drag maps the corner grip's motion to the element's
+    // text-size field (instead of moving it). Armed by grabbing an element's bottom-right resize grip; the family
+    // is carried in dragElement (ZONE/BIOME/COORDS/CLOCK -- the text-size-scalable label families). The anchor is
+    // the element's opposite (top-left) corner captured at grab, so dragging the grip away enlarges.
+    private boolean resizing = false;
+    private int resizeAnchorX;
+    private int resizeAnchorY;
+    private double resizeStartDist;
+    private float resizeStartScale;
 
     private boolean wasLDown = false;
 
@@ -33,282 +85,1357 @@ public class LatitudeHudStudioScreen extends Screen {
     private int compassGrabDy;
     private int zoneGrabDx;
     private int zoneGrabDy;
+    private int biomeGrabDx;
+    private int biomeGrabDy;
+    private int coordsGrabDx;
+    private int coordsGrabDy;
+    private int clockGrabDx;
+    private int clockGrabDy;
 
     private double titleOffsetXf;
     private double titleOffsetYf;
+    // Wall-clock (ms) the static-preview glimmer replay started, or -1 = none. The preview is otherwise static
+    // (the glimmer is an appearance-triggered effect); we replay it once when the Title tab opens and each time
+    // the Title Glimmer toggle is flipped ON, as feedback. It self-expires after one sweep (~0.8s).
+    private long titleGlimmerReplayStartMs = -1L;
     private double titleGrabDx;
     private double titleGrabDy;
 
-    private ClickableWidget wTarget;
+    private AbstractWidget wCompassStyle;
+    private AbstractWidget wCompassScale;
+    private AbstractWidget wCompassAnalogSize;
+    private AbstractWidget wCompassAnalogInnerAlpha;
+    private AbstractWidget wCompassAnalogTheme;
+    private AbstractWidget wCompassRainbowSpeed;
+    private AbstractWidget wCompassTransparency;
+    private AbstractWidget wCompassBackground;
+    private AbstractWidget wCompassBgColor;
+    private AbstractWidget wCompassTextColor;
+    private AbstractWidget wCompassTextAlpha;
+    private AbstractWidget wCompassTextRainbow;
+    private AbstractWidget wCompassShowLatitude;
+    private AbstractWidget wCompassAnalogShowLatitude;
+    private AbstractWidget wCompassShowLongitude;
+    private AbstractWidget wCompassAnalogShowLongitude;
+    private AbstractWidget wCompassCompact;
+    private AbstractWidget wCompassAttachHotbar;
+    private AbstractWidget wZoneDisplay;
+    private AbstractWidget wZoneFollow;
+    private AbstractWidget wZoneTextScale;
+    private AbstractWidget wBiomeDisplay;
+    private AbstractWidget wBiomeFollow;
+    private AbstractWidget wBiomeTextScale;
+    private AbstractWidget wZoneBiomeOrder;
+    private AbstractWidget wCoordsFollow;
+    private AbstractWidget wCoordsTextScale;
+    private AbstractWidget wClockDisplay;
+    private AbstractWidget wClockTextScale;
+    private AbstractWidget wHudSnap;
+    private AbstractWidget wHudSnapPixels;
+    private AbstractWidget wTitleDraggable;
 
-    private ClickableWidget wCompassStyle;
-    private ClickableWidget wCompassScale;
-    private ClickableWidget wCompassAnalogSize;
-    private ClickableWidget wCompassAnalogInnerAlpha;
-    private ClickableWidget wCompassAnalogTheme;
-    private ClickableWidget wCompassTransparency;
-    private ClickableWidget wCompassBackground;
-    private ClickableWidget wCompassBgColor;
-    private ClickableWidget wCompassTextColor;
-    private ClickableWidget wCompassShowLatitude;
-    private ClickableWidget wCompassAnalogShowLatitude;
-    private ClickableWidget wCompassCompact;
-    private ClickableWidget wCompassAttachHotbar;
-    private ClickableWidget wZoneDisplay;
-    private ClickableWidget wZoneFollow;
+    private AbstractWidget wTitleScale;
+    private AbstractWidget wTitleEnabled;
+    private AbstractWidget wTitleDuration;
+    private AbstractWidget wTitleShowBaseDegrees;
+    private AbstractWidget wTitleColorPreset;
+    private AbstractWidget wTitleOutline;
+    private AbstractWidget wTitleOutlineThickness;
+    private AbstractWidget wTitleDropShadow;
+    private AbstractWidget wTitleGlow;
+    private AbstractWidget wTitleGlowIntensity;
+    private AbstractWidget wTitleGlimmer;
+    private AbstractWidget wTitleGlimmerIntensity;
+    private AbstractWidget wTitleCase;
+    private AbstractWidget wTitleLetterSpacing;
 
-    private ClickableWidget wTitleScale;
+    private AbstractWidget wResetHud;
+    // Presets-tab undo/redo: empty-labelled buttons; the arrow glyph is drawn scaled on top (the vanilla
+    // button message renders the unicode arrow tiny — Peetsa: "comically small").
+    private AbstractWidget wUndoLoad;
+    private AbstractWidget wRedoLoad;
 
-    private ClickableWidget wResetHud;
+    // RGB picker groups (Custom analog theme colors + text color + title color). Constructed only when relevant
+    // to the active tab/style/theme, mirroring how digital-vs-analog widgets are already conditionally
+    // constructed.
+    private RgbPickerGroup rgbTextColor;
+    private RgbPickerGroup rgbCustomFace;
+    private RgbPickerGroup rgbCustomRing;
+    private RgbPickerGroup rgbCustomMuted;
+    private RgbPickerGroup rgbCustomNeedle;
+    private RgbPickerGroup rgbTitleColor;
+    private RgbPickerGroup rgbTitleOutline;
+    private SwatchSlot swatchTextColor;
+    private SwatchSlot swatchCustomFace;
+    private SwatchSlot swatchCustomRing;
+    private SwatchSlot swatchCustomMuted;
+    private SwatchSlot swatchCustomNeedle;
+    private SwatchSlot swatchTitleColor;
+    private SwatchSlot swatchTitleOutline;
+    private final List<SwatchSlot> sidebarSwatches = new ArrayList<>();
+    // Non-widget section headers ("— Accessibility —" etc.) drawn as an overlay pass, scrolled/clipped the same
+    // way SwatchSlots are, so a group of related rows can carry a divider-flanked title without a fake widget
+    // muddying the row-animation tracker.
+    private final List<HeaderSlot> sidebarHeaders = new ArrayList<>();
 
     private int sidebarScrollY = 0;
     private int sidebarViewportTop;
     private int sidebarViewportBottom;
     private int sidebarContentHeight;
-    private final List<ClickableWidget> sidebarScrollWidgets = new ArrayList<>();
+    private final List<AbstractWidget> sidebarScrollWidgets = new ArrayList<>();
     private final List<Integer> sidebarScrollBaseYs = new ArrayList<>();
+    // Each tracked widget's INTRINSIC enabled state, captured at track time (before the visibility/animation
+    // layer overwrites w.active every frame) so a genuinely-disabled control -- an empty preset slot's Load/x,
+    // or undo/redo with nothing to undo -- stays greyed instead of reading as clickable. Keyed by identity.
+    private final IdentityHashMap<AbstractWidget, Boolean> rowIntrinsicEnabled = new IdentityHashMap<>();
     private int sidebarWidgetW;
     private int sidebarBgY;
 
+    // ---- Row roll-out/roll-in transition (audit H1) ----
+    // rowAnim[i] in [0,1] = how "present" tracked row i is (1 = full height, 0 = collapsed). Newly-shown rows
+    // ease 0->1, hidden rows ease 1->0, and the rows below slide smoothly instead of snapping. rowLogicalShown
+    // records each row's config-driven target (independent of the L hide-all and of the animation). Nulled on
+    // init() so a rebuild/tab-switch re-seeds to targets (no spurious animation on a deliberate context change).
+    private float[] rowAnim;
+    private float[] sidebarDispY;
+    // Per-widget group slot height (the vertical span the widget's same-line group reserves) and a flag marking
+    // rows that are mid-roll this frame, so drawAnimatingRows() can scissor-clip them. Sized to the tracked
+    // widget count in applySidebarScroll.
+    private float[] sidebarSlotH;
+    private boolean[] sidebarClipRow;
+    private final IdentityHashMap<AbstractWidget, Boolean> rowLogicalShown = new IdentityHashMap<>();
+
+    // The single open swatch/dropdown picker (audit C1). Its collapsed button is a tracked sidebar widget; its
+    // open list is painted and fed input by THIS screen (see the SwatchDropdown.Host methods) so it sits on top.
+    private SwatchDropdown openDropdown;
+
+    // Always-visible Snap-to-Grid toggle on the edit canvas (audit C2). Empty-labelled Button; a grid glyph is
+    // drawn scaled on top (undo/redo precedent), bright when snapping is on, dim when free-move.
+    private AbstractWidget wSnapToggle;
+
+    // Overwrite-confirm modal for the Presets tab: -1 == closed, otherwise the slot index awaiting confirmation
+    // (Peetsa: accidentally clicking a Save on an occupied slot overwrote it irreversibly). While open it is even
+    // more modal than openDropdown -- painted last, and it swallows ALL clicks/keys/scroll before the picker check
+    // and super (see mouseClicked/keyPressed/mouseScrolled/tick). Reset in init() so no dialog survives a rebuild
+    // (ghost-layer lesson: any screen-lifetime state must be cleared when the widget set is torn down).
+    private int pendingOverwriteSlot = -1;
+
+    // Preset rename modal (HUD Studio round 10 item j): -1 == closed, otherwise the slot index being renamed. Like
+    // the overwrite dialog it is a MANUAL modal (painted last, swallows all input) rather than a real EditBox
+    // widget -- so it needs no init() rebuild and can't leave a dangling focused widget behind (the overwrite-modal
+    // precedent). renameBuffer holds the in-progress text; a blank commit reverts the slot to its auto-summary.
+    private int renamingSlot = -1;
+    private final StringBuilder renameBuffer = new StringBuilder();
+    private static final int RENAME_MAX_LEN = 24;
+    // The per-slot rename buttons (empty-labelled; a hand-plotted pencil glyph is drawn on top, undo/redo
+    // precedent -- a unicode pencil isn't guaranteed in MC's font). Rebuilt each init(); used by the glyph pass.
+    private final List<AbstractWidget> presetRenameButtons = new ArrayList<>();
+
     public LatitudeHudStudioScreen(Screen parent) {
-        super(Text.literal("HUD Studio"));
+        super(Component.literal("HUD Studio"));
         this.parent = parent;
+        // Snapshot the full editable state up front (see field docs) so Cancel can restore it exactly.
+        this.hudSnapshot = CompassHudConfig.copyOf(CompassHudConfig.get());
+        this.latitudeSnapshot = LatitudeConfig.snapshot();
+    }
+
+    /** Cancel: roll back every live-preview mutation (config values, element positions, title fields, snap
+     *  settings) to the constructor snapshot, persist the rollback over the live-saved edits, and close to the
+     *  parent screen. */
+    private void cancelAndClose() {
+        CompassHudConfig.get().copyFrom(hudSnapshot);
+        CompassHudConfig.saveCurrent();
+        LatitudeConfig.restore(latitudeSnapshot);
+        LatitudeConfig.saveCurrent();
+        CompassHudPreset.clearUndoRedo();
+        Minecraft.getInstance().setScreenAndShow(parent);
     }
 
     @Override
     protected void init() {
-        this.clearChildren();
+        CompassDialRenderer.invalidateTextures(); // pack may have been toggled since last check
+
+        this.clearWidgets();
+        // Widgets are about to be re-created, so any open picker's collapsed button is now a dangling object,
+        // and the row-animation arrays are stale (a new tab may even have the same row count). Drop them so the
+        // transition layer re-seeds against the fresh row set and no picker lingers pointing at a dead widget.
+        this.openDropdown = null;
+        this.pendingOverwriteSlot = -1;   // no overwrite-confirm dialog survives a widget rebuild / tab switch
+        this.renamingSlot = -1;           // nor the rename modal (same ghost-layer discipline)
+        this.presetRenameButtons.clear();
+        this.rowAnim = null;
+        this.sidebarDispY = null;
+        this.sidebarSlotH = null;
+        this.sidebarClipRow = null;
+
+        // GUI-scale parity audit H2: adapt the sidebar to the screen width. Stays 208 above the narrow
+        // threshold (everything below keys off this, so wider screens are pixel-identical to before) and
+        // shrinks toward MIN_SIDEBAR_W at very narrow effective resolutions so the preview canvas + the
+        // re-anchored Done|Cancel row still fit. Set BEFORE panelW/widgetW/tab geometry, all of which read it.
+        this.sidebarWidth = HudStudioLayout.sidebarWidth(this.width);
 
         int hintLaneH = 20;         // 8px padding + ~9px font + 3px bottom margin
         int panelX = 8;
-        int panelY = hintLaneH + 8;  // 28 — first widget top
+        int tabStripYLocal = hintLaneH + 2;              // 22 — tab strip top
+        int cardTop = tabStripYLocal + TAB_H + 4;        // 46 — themed card top
+        int headingH = this.font.lineHeight + 8;          // heading text + breathing room
+        int panelY = cardTop + headingH + 4;              // first widget top
         int panelW = sidebarWidth;
         int scrollGutter = 7;        // 2px gap + 3px bar + 2px right pad
         int widgetW = panelW - scrollGutter;
         this.sidebarWidgetW = widgetW;
-        this.sidebarBgY = hintLaneH + 2; // 22 — sidebar bg rect top
+        this.sidebarBgY = cardTop;
+        this.tabStripY = tabStripYLocal;
         int rowH = 20;
         int rowGap = 4;
 
         var cfg = CompassHudConfig.get();
         boolean analog = cfg.style == CompassHudConfig.CompassStyle.ANALOG;
+        boolean customTheme = cfg.analogTheme == CompassHudConfig.AnalogCompassTheme.CUSTOM;
+        boolean rainbowTheme = cfg.analogTheme == CompassHudConfig.AnalogCompassTheme.RAINBOW;
 
         this.wCompassStyle = null;
         this.wCompassScale = null;
         this.wCompassAnalogSize = null;
         this.wCompassAnalogInnerAlpha = null;
         this.wCompassAnalogTheme = null;
+        this.wCompassRainbowSpeed = null;
         this.wCompassTransparency = null;
         this.wCompassBackground = null;
         this.wCompassBgColor = null;
         this.wCompassTextColor = null;
+        this.wCompassTextAlpha = null;
+        this.wCompassTextRainbow = null;
         this.wCompassShowLatitude = null;
         this.wCompassAnalogShowLatitude = null;
+        this.wCompassShowLongitude = null;
+        this.wCompassAnalogShowLongitude = null;
         this.wCompassCompact = null;
         this.wCompassAttachHotbar = null;
         this.wZoneDisplay = null;
         this.wZoneFollow = null;
+        this.wZoneTextScale = null;
+        this.wBiomeDisplay = null;
+        this.wBiomeFollow = null;
+        this.wBiomeTextScale = null;
+        this.wZoneBiomeOrder = null;
+        this.wCoordsFollow = null;
+        this.wCoordsTextScale = null;
+        this.wClockDisplay = null;
+        this.wClockTextScale = null;
+        this.wHudSnap = null;
+        this.wHudSnapPixels = null;
+        this.wTitleDraggable = null;
+        this.wTitleScale = null;
+        this.wTitleEnabled = null;
+        this.wTitleDuration = null;
+        this.wTitleShowBaseDegrees = null;
+        this.wTitleColorPreset = null;
+        this.wTitleOutline = null;
+        this.wTitleOutlineThickness = null;
+        this.wTitleDropShadow = null;
+        this.wTitleGlow = null;
+        this.wTitleGlowIntensity = null;
+        this.wTitleGlimmer = null;
+        this.wTitleGlimmerIntensity = null;
+        this.wTitleCase = null;
+        this.wTitleLetterSpacing = null;
+        this.wUndoLoad = null;
+        this.wRedoLoad = null;
+        this.rgbTextColor = null;
+        this.rgbCustomFace = null;
+        this.rgbCustomRing = null;
+        this.rgbCustomMuted = null;
+        this.rgbCustomNeedle = null;
+        this.rgbTitleColor = null;
+        this.rgbTitleOutline = null;
+        this.swatchTextColor = null;
+        this.swatchCustomFace = null;
+        this.swatchCustomRing = null;
+        this.swatchCustomMuted = null;
+        this.swatchCustomNeedle = null;
+        this.swatchTitleColor = null;
+        this.swatchTitleOutline = null;
 
         this.titleOffsetXf = LatitudeConfig.zoneEnterTitleOffsetX;
         this.titleOffsetYf = LatitudeConfig.zoneEnterTitleOffsetY;
 
         this.sidebarScrollWidgets.clear();
         this.sidebarScrollBaseYs.clear();
+        this.rowIntrinsicEnabled.clear();
+        this.sidebarSwatches.clear();
+        this.sidebarHeaders.clear();
         this.sidebarViewportTop = panelY;
         this.sidebarViewportBottom = Math.max(panelY + 24, this.height - 60);
 
         int y = panelY;
 
-        this.wTarget = this.addDrawableChild(ButtonWidget.builder(targetLabel(), b -> {
-                    this.target = switch (this.target) {
-                        case COMPASS -> Target.TITLE;
-                        case TITLE -> Target.BOTH;
-                        case BOTH -> Target.COMPASS;
-                    };
-                    b.setMessage(targetLabel());
-                    updateSidebarVisibility();
-                })
-                .dimensions(panelX, y, widgetW, rowH)
-                .build());
-        tooltip(this.wTarget, "Choose whether to adjust the compass, zone title, or both.");
-        trackSidebarWidget(this.wTarget, y);
-        y += rowH + rowGap;
-
-        this.wCompassStyle = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.CompassStyle>builder(v -> Text.literal(v == CompassHudConfig.CompassStyle.ANALOG ? "Analog" : "Digital"), () -> cfg.style)
-                .values(CompassHudConfig.CompassStyle.values())
-                .build(panelX, y, widgetW, rowH, Text.literal("Compass Style"), (btn, value) -> {
-                    cfg.style = value;
-                    CompassHudConfig.saveCurrent();
-                    this.init();
-                }));
-        tooltip(this.wCompassStyle, "Switch between the digital bar and the analog round compass.");
-        trackSidebarWidget(this.wCompassStyle, y);
-        y += rowH + rowGap;
-
-        if (analog) {
-            this.wCompassAnalogSize = this.addDrawableChild(new FloatSlider(panelX, y, widgetW, rowH, Text.literal("Analog Size"), 32.0f, 128.0f, cfg.analogSize, v -> cfg.analogSize = v));
-            tooltip(this.wCompassAnalogSize, "Sets the analog compass diameter.");
-            trackSidebarWidget(this.wCompassAnalogSize, y);
-            y += rowH + rowGap;
-            this.wCompassAnalogInnerAlpha = this.addDrawableChild(new FloatSlider(panelX, y, widgetW, rowH, Text.literal("Inner Transparency"), 0.0f, 1.0f, cfg.analogInnerAlpha, v -> cfg.analogInnerAlpha = v));
-            tooltip(this.wCompassAnalogInnerAlpha, "Controls how transparent the analog inner disc is.");
-            trackSidebarWidget(this.wCompassAnalogInnerAlpha, y);
-            y += rowH + rowGap;
-            this.wCompassAnalogTheme = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.AnalogCompassTheme>builder(v -> Text.literal(themeLabel(v)), () -> cfg.analogTheme)
-                    .values(CompassHudConfig.AnalogCompassTheme.values())
-                    .build(panelX, y, widgetW, rowH, Text.literal("Color Scheme"), (btn, value) -> {
-                        cfg.analogTheme = value;
+        if (activeTab == TAB_COMPASS) {
+            this.wCompassStyle = this.addRenderableWidget(CycleButton.<CompassHudConfig.CompassStyle>builder(v -> Component.literal(v == CompassHudConfig.CompassStyle.ANALOG ? "Analog" : "Digital"), () -> cfg.style)
+                    .withValues(CompassHudConfig.CompassStyle.values())
+                    .create(panelX, y, widgetW, rowH, Component.literal("Compass Style"), (btn, value) -> {
+                        cfg.style = value;
                         CompassHudConfig.saveCurrent();
+                        this.init();
                     }));
-            tooltip(this.wCompassAnalogTheme, "Pick a preset color scheme for the analog compass.");
+            tooltip(this.wCompassStyle, "Switch between the digital bar and the analog round compass.");
+            trackSidebarWidget(this.wCompassStyle, y);
+            y += rowH + rowGap;
+
+            // Direction Format only exists where it has a visible effect: the digital line's facing
+            // segment, or the Tape look's heading labels (TEST 28: the button read as dead on the
+            // dial looks, which show facing with their needle and have no formatted text to change).
+            if (!analog || cfg.analogLook == CompassHudConfig.CompassLook.TAPE) {
+                var wDirectionMode = this.addRenderableWidget(CycleButton.<CompassHudConfig.DirectionMode>builder(v -> Component.literal(switch (v) {
+                            case CARDINAL_4 -> "N / E / S / W";
+                            case CARDINAL_8 -> "8 winds (N, NE...)";
+                            case DEGREES -> "Degrees (0-359\u00b0)";
+                        }), () -> cfg.directionMode)
+                        .withValues(CompassHudConfig.DirectionMode.values())
+                        .create(panelX, y, widgetW, rowH, Component.literal("Direction Format"), (btn, value) -> {
+                            cfg.directionMode = value;
+                            CompassHudConfig.saveCurrent();
+                        }));
+                tooltip(wDirectionMode, "How the facing readout is written: four cardinals, eight winds, or exact degrees. Applies to the digital compass line and the Tape look's heading labels.");
+                trackSidebarWidget(wDirectionMode, y);
+                y += rowH + rowGap;
+            }
+
+            if (analog) {
+                CompassHudConfig.CompassLook[] lookValues = CompassHudConfig.CompassLook.values();
+                List<SwatchDropdown.Entry> lookEntries = new ArrayList<>();
+                for (CompassHudConfig.CompassLook v : lookValues) lookEntries.add(SwatchDropdown.Entry.text(lookLabel(v)));
+                var wLook = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Compass Look",
+                        lookEntries, cfg.analogLook.ordinal(), idx -> {
+                            cfg.analogLook = lookValues[idx];
+                            CompassHudConfig.saveCurrent();
+                            // Re-init like the style/theme pickers: the Direction Format row exists
+                            // only for TAPE, so the panel's row set changes with the look.
+                            this.init();
+                        }, this));
+                tooltip(wLook, "The dial's shape: classic disc, open ring, compass rose, a linear heading tape, or a minimal needle. Resource packs can reskin any look (globe:textures/gui/compass/<look>.png).");
+                trackSidebarWidget(wLook, y);
+                y += rowH + rowGap;
+
+                // Range narrowed from 32-128 per live feedback: 128 renders absurdly huge, and even ~30% along
+                // that old range (~60px) already dwarfs the readout box, while 32 (the smallest the old range
+                // allowed) was already the default. New range keeps the useful huge-vs-tiny span but adds real
+                // room below the default to go smaller, instead of the default sitting pinned at the floor.
+                // Tape raises its own minimum (TEST 32: below ~32 its heading labels squeeze illegible) --
+                // the slider's displayed/draggable range matches CompassDialRenderer's floor exactly, so the
+                // number shown is always what's actually rendered, never a lie.
+                float analogSizeMin = cfg.analogLook == CompassHudConfig.CompassLook.TAPE
+                        ? CompassDialRenderer.TAPE_MIN_DIAMETER : 16.0f;
+                this.wCompassAnalogSize = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Analog Size"), analogSizeMin, 72.0f, cfg.analogSize, v -> cfg.analogSize = v));
+                tooltip(this.wCompassAnalogSize, "Sets how big the analog compass is.");
+                trackSidebarWidget(this.wCompassAnalogSize, y);
+                y += rowH + rowGap;
+                this.wCompassAnalogInnerAlpha = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Inner Transparency"), 0.0f, 1.0f, cfg.analogInnerAlpha, v -> cfg.analogInnerAlpha = v));
+                tooltip(this.wCompassAnalogInnerAlpha, "The compass's inner face opacity. Left (lower) = more see-through, right (higher) = more solid.");
+                trackSidebarWidget(this.wCompassAnalogInnerAlpha, y);
+                y += rowH + rowGap;
+            } else {
+                this.wCompassScale = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Scale"), 0.5f, 3.0f, cfg.scale, v -> cfg.scale = v));
+                tooltip(this.wCompassScale, "Changes the size of the digital compass text.");
+                trackSidebarWidget(this.wCompassScale, y);
+                y += rowH + rowGap;
+
+                this.wCompassTransparency = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Transparency"), 0, 255, cfg.backgroundAlpha, v -> cfg.backgroundAlpha = v));
+                tooltip(this.wCompassTransparency, "Adjusts the opacity of the digital compass's background bar.");
+                trackSidebarWidget(this.wCompassTransparency, y);
+                y += rowH + rowGap;
+
+                this.wCompassBackground = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.showBackground)
+                        .withValues(true, false)
+                        .create(panelX, y, widgetW, rowH, Component.literal("Background"), (btn, value) -> cfg.showBackground = value));
+                tooltip(this.wCompassBackground, "Toggles the digital compass background box.");
+                trackSidebarWidget(this.wCompassBackground, y);
+                y += rowH + rowGap;
+
+                String[] bgNames = {"BLACK", "WHITE", "DARK_GRAY", "BLUE"};
+                List<SwatchDropdown.Entry> bgEntries = new ArrayList<>();
+                for (String name : bgNames) bgEntries.add(SwatchDropdown.Entry.swatch(bgColorTitle(name), bgColorRgb(name)));
+                this.wCompassBgColor = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Background Color",
+                        bgEntries, indexOf(bgNames, bgColorName(cfg.backgroundRgb)), idx -> {
+                            cfg.backgroundRgb = bgColorRgb(bgNames[idx]);
+                            CompassHudConfig.saveCurrent();
+                        }, this));
+                tooltip(this.wCompassBgColor, "Selects the background color for the digital compass.");
+                trackSidebarWidget(this.wCompassBgColor, y);
+                y += rowH + rowGap;
+            }
+
+            // Color Scheme -- and its Aurora Color Cycle Speed / Custom color rows -- are SHARED by both styles
+            // (item 5): the digital card borrows the same scheme colors the dials use (CompassHud.analogColors()
+            // drives its frame, ring-colored underline, and needle-tinted heading, Aurora's per-frame flow
+            // included), so a Digital user gets the same palette control. Only the dial-geometry rows above
+            // (Compass Look, Analog Size, Inner Transparency) stay analog-only. onSelect re-inits because Custom
+            // constructs/tears down its own RGB pickers -- same reason the analog picker always did.
+            CompassHudConfig.AnalogCompassTheme[] themeValues = CompassHudConfig.AnalogCompassTheme.values();
+            List<SwatchDropdown.Entry> themeEntries = new ArrayList<>();
+            for (CompassHudConfig.AnalogCompassTheme v : themeValues) {
+                themeEntries.add(SwatchDropdown.Entry.split(themeLabel(v), themeFacePreview(v, cfg), themeRingPreview(v, cfg)));
+            }
+            this.wCompassAnalogTheme = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Color Scheme",
+                    themeEntries, cfg.analogTheme.ordinal(), idx -> {
+                        cfg.analogTheme = themeValues[idx];
+                        CompassHudConfig.saveCurrent();
+                        this.init();
+                    }, this));
+            tooltip(this.wCompassAnalogTheme, "Pick a preset color scheme for your compass -- dial or digital card -- or choose Custom to set exact colors below. Each swatch previews that scheme's face and ring colors.");
             trackSidebarWidget(this.wCompassAnalogTheme, y);
             y += rowH + rowGap;
+
+            if (rainbowTheme) {
+                // Direction inverted (TEST 57): LEFT = slow/calm, RIGHT = quick -- matching the intuition that
+                // "further right = faster" and the rightward speed ripple + lightning glyph drawn on the track
+                // by drawSpeedSliderFlair(). Persistence is unchanged: SpeedSlider still stores seconds-per-loop
+                // (10 = fastest, 40 = slowest), so an existing saved value lands at the same speed, just a
+                // mirrored knob position; only the label reads as a friendly 0-100%.
+                this.wCompassRainbowSpeed = this.addRenderableWidget(new SpeedSlider(panelX, y, widgetW, rowH, Component.literal("Color Cycle Speed"), 10.0f, 40.0f, cfg.rainbowCycleSeconds, v -> cfg.rainbowCycleSeconds = v));
+                tooltip(this.wCompassRainbowSpeed, "How fast the Aurora colors drift. Slide left for slow and calm, right for quick (the little lightning bolt marks the fast end). The whole range is kept gentle on purpose -- even the fastest setting stays well short of a harsh strobe, so it's easy on the eyes.");
+                trackSidebarWidget(this.wCompassRainbowSpeed, y);
+                y += rowH + rowGap;
+            }
+
+            if (customTheme) {
+                y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Face", cfg.customFaceRgb,
+                        v -> cfg.customFaceRgb = v, g -> this.rgbCustomFace = g, s -> this.swatchCustomFace = s);
+                y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Ring", cfg.customRingArgb & 0xFFFFFF,
+                        v -> cfg.customRingArgb = 0xFF000000 | v, g -> this.rgbCustomRing = g, s -> this.swatchCustomRing = s);
+                y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Muted", cfg.customMutedArgb & 0xFFFFFF,
+                        v -> cfg.customMutedArgb = 0xFF000000 | v, g -> this.rgbCustomMuted = g, s -> this.swatchCustomMuted = s);
+                y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Needle", cfg.customNeedleArgb & 0xFFFFFF,
+                        v -> cfg.customNeedleArgb = 0xFF000000 | v, g -> this.rgbCustomNeedle = g, s -> this.swatchCustomNeedle = s);
+            }
+
+            String[] textNames = {"OFF_WHITE", "WHITE", "BLACK", "YELLOW", "RED", "CYAN"};
+            List<SwatchDropdown.Entry> textEntries = new ArrayList<>();
+            for (String name : textNames) textEntries.add(SwatchDropdown.Entry.swatch(textColorTitle(name), textColorRgb(name)));
+            this.wCompassTextColor = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Text Color",
+                    textEntries, indexOf(textNames, textColorName(cfg.textRgb)), idx -> {
+                        cfg.textRgb = textColorRgb(textNames[idx]);
+                        CompassHudConfig.saveCurrent();
+                    }, this));
+            tooltip(this.wCompassTextColor, "Selects the text color used for the compass and labels.");
+            trackSidebarWidget(this.wCompassTextColor, y);
+            y += rowH + rowGap;
+
+            y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Text", cfg.textRgb,
+                    v -> cfg.textRgb = v, g -> this.rgbTextColor = g, s -> this.swatchTextColor = s);
+
+            this.wCompassTextAlpha = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Text Opacity"), 0, 255, cfg.textAlpha, v -> cfg.textAlpha = v));
+            tooltip(this.wCompassTextAlpha, "Adjusts the opacity of the compass, zone, biome, and coordinate text.");
+            trackSidebarWidget(this.wCompassTextAlpha, y);
+            y += rowH + rowGap;
+
+            this.wCompassTextRainbow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.textRainbow)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Aurora Text"), (btn, value) -> {
+                        cfg.textRainbow = value;
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(this.wCompassTextRainbow, "Makes the compass, zone, biome, and coordinate text cycle through rainbow colors instead of using the Text Color above.");
+            trackSidebarWidget(this.wCompassTextRainbow, y);
+            y += rowH + rowGap;
+
+            if (analog) {
+                this.wCompassAnalogShowLatitude = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.analogShowLatitude))
+                        .withValues(true, false)
+                        .create(panelX, y, widgetW, rowH, Component.literal("Analog Latitude"), (btn, value) -> cfg.analogShowLatitude = value));
+                tooltip(this.wCompassAnalogShowLatitude, "Shows latitude next to the analog compass.");
+                trackSidebarWidget(this.wCompassAnalogShowLatitude, y);
+                y += rowH + rowGap;
+
+                this.wCompassAnalogShowLongitude = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.analogShowLongitude))
+                        .withValues(true, false)
+                        .create(panelX, y, widgetW, rowH, Component.literal("Analog Longitude"), (btn, value) -> cfg.analogShowLongitude = value));
+                tooltip(this.wCompassAnalogShowLongitude, "Shows longitude next to the analog compass.");
+                trackSidebarWidget(this.wCompassAnalogShowLongitude, y);
+                y += rowH + rowGap;
+            } else {
+                this.wCompassShowLatitude = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.showLatitude))
+                        .withValues(true, false)
+                        .create(panelX, y, widgetW, rowH, Component.literal("Show Latitude"), (btn, value) -> cfg.showLatitude = value));
+                tooltip(this.wCompassShowLatitude, "Shows latitude inside the digital compass line.");
+                trackSidebarWidget(this.wCompassShowLatitude, y);
+                y += rowH + rowGap;
+
+                this.wCompassShowLongitude = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.showLongitude))
+                        .withValues(true, false)
+                        .create(panelX, y, widgetW, rowH, Component.literal("Show Longitude"), (btn, value) -> cfg.showLongitude = value));
+                tooltip(this.wCompassShowLongitude, "Shows longitude inside the digital compass line.");
+                trackSidebarWidget(this.wCompassShowLongitude, y);
+                y += rowH + rowGap;
+
+                this.wCompassCompact = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
+                        .withValues(true, false)
+                        .create(panelX, y, widgetW, rowH, Component.literal("Compact HUD"), (btn, value) -> cfg.compactHud = value));
+                tooltip(this.wCompassCompact, "Packs the digital compass line closer together, with less space between parts.");
+                trackSidebarWidget(this.wCompassCompact, y);
+                y += rowH + rowGap;
+
+            }
+
+            this.wCompassAttachHotbar = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.dockMode == CompassHudConfig.DockMode.HOTBAR_RIGHT)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Attach to Hotbar"), (btn, value) -> {
+                        cfg.dockMode = value ? CompassHudConfig.DockMode.HOTBAR_RIGHT : CompassHudConfig.DockMode.NONE;
+                        cfg.attachToHotbarCompass = value; // legacy mirror for older jars reading this file
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(this.wCompassAttachHotbar, "Docks the compass next to your hotbar. It automatically shrinks or moves out of the way on narrow screens, so it can never overlap the hotbar or run off-screen.");
+            trackSidebarWidget(this.wCompassAttachHotbar, y);
+            y += rowH + rowGap;
+
+            var wResetCompass = this.addRenderableWidget(Button.builder(Component.literal("Reset Compass"), b -> {
+                        var fresh = CompassHudConfig.fresh();
+                        cfg.style = fresh.style;
+                        cfg.analogSize = fresh.analogSize;
+                        cfg.analogInnerAlpha = fresh.analogInnerAlpha;
+                        cfg.analogTheme = fresh.analogTheme;
+                        cfg.rainbowCycleSeconds = fresh.rainbowCycleSeconds;
+                        cfg.analogLook = fresh.analogLook;
+                        cfg.scale = fresh.scale;
+                        cfg.showBackground = fresh.showBackground;
+                        cfg.backgroundRgb = fresh.backgroundRgb;
+                        cfg.backgroundAlpha = fresh.backgroundAlpha;
+                        cfg.textRgb = fresh.textRgb;
+                        cfg.textAlpha = fresh.textAlpha;
+                        cfg.textRainbow = fresh.textRainbow;
+                        cfg.hAnchor = fresh.hAnchor;
+                        cfg.vAnchor = fresh.vAnchor;
+                        cfg.offXFrac = fresh.offXFrac;
+                        cfg.offYFrac = fresh.offYFrac;
+                        cfg.growH = fresh.growH;
+                        cfg.growV = fresh.growV;
+                        cfg.dockMode = fresh.dockMode;
+                        cfg.attachToHotbarCompass = fresh.attachToHotbarCompass;
+                        CompassHudConfig.saveCurrent();
+                        this.init();
+                    })
+                    .bounds(panelX, y, widgetW, rowH)
+                    .build());
+            tooltip(wResetCompass, "Restore the compass section to its defaults: style, look, size, colors, and placement.");
+            // Tracked like every other row (TEST 28: untracked, it neither scrolled with the panel
+            // nor hid with the L toggle).
+            trackSidebarWidget(wResetCompass, y);
+            y += rowH + rowGap;
+        } else if (activeTab == TAB_LABELS) {
+            this.wZoneDisplay = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.displayZoneInHud)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Display Zone in HUD"), (btn, value) -> {
+                        cfg.displayZoneInHud = value;
+                        CompassHudConfig.saveCurrent();
+                        updateSidebarVisibility();
+                    }));
+            tooltip(this.wZoneDisplay, "Shows the current zone as small HUD text.");
+            trackSidebarWidget(this.wZoneDisplay, y);
+            y += rowH + rowGap;
+
+            this.wZoneFollow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "FOLLOW" : "DETACH"), () -> cfg.zoneFollowsCompass)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Zone Placement"), (btn, value) -> {
+                        cfg.zoneFollowsCompass = value;
+                        CompassHudConfig.saveCurrent();
+                        updateSidebarVisibility();
+                    }));
+            tooltip(this.wZoneFollow, "Let the zone label ride with the compass or detach it for dragging.");
+            trackSidebarWidget(this.wZoneFollow, y);
+            y += rowH + rowGap;
+
+            this.wZoneTextScale = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Zone Text Size"), 0.5f, 3.0f, cfg.zoneTextScale, v -> cfg.zoneTextScale = v));
+            tooltip(this.wZoneTextScale, "How big the zone label's text is.");
+            trackSidebarWidget(this.wZoneTextScale, y);
+            y += rowH + rowGap;
+
+            this.wBiomeDisplay = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.displayBiomeInHud)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Display Biome in HUD"), (btn, value) -> {
+                        cfg.displayBiomeInHud = value;
+                        CompassHudConfig.saveCurrent();
+                        updateSidebarVisibility();
+                    }));
+            tooltip(this.wBiomeDisplay, "Shows the current biome (e.g. Plains, Jungle) as small HUD text.");
+            trackSidebarWidget(this.wBiomeDisplay, y);
+            y += rowH + rowGap;
+
+            this.wBiomeFollow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "FOLLOW" : "DETACH"), () -> cfg.biomeFollowsCompass)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Biome Placement"), (btn, value) -> {
+                        cfg.biomeFollowsCompass = value;
+                        CompassHudConfig.saveCurrent();
+                        updateSidebarVisibility();
+                    }));
+            tooltip(this.wBiomeFollow, "Let the biome label ride with the compass or detach it for dragging.");
+            trackSidebarWidget(this.wBiomeFollow, y);
+            y += rowH + rowGap;
+
+            this.wBiomeTextScale = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Biome Text Size"), 0.5f, 3.0f, cfg.biomeTextScale, v -> cfg.biomeTextScale = v));
+            tooltip(this.wBiomeTextScale, "How big the biome label's text is.");
+            trackSidebarWidget(this.wBiomeTextScale, y);
+            y += rowH + rowGap;
+
+            this.wZoneBiomeOrder = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "Biome, Zone" : "Zone, Biome"), () -> cfg.biomeBeforeZone)
+                    .withValues(false, true)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Zone/Biome Order"), (btn, value) -> {
+                        cfg.biomeBeforeZone = value;
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(this.wZoneBiomeOrder, "If both the zone and biome are shown next to the compass, choose which one appears first.");
+            trackSidebarWidget(this.wZoneBiomeOrder, y);
+            y += rowH + rowGap;
+
+            this.wCoordsFollow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "FOLLOW" : "DETACH"), () -> cfg.coordsFollowsCompass)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Coords Placement"), (btn, value) -> {
+                        cfg.coordsFollowsCompass = value;
+                        CompassHudConfig.saveCurrent();
+                        updateSidebarVisibility();
+                    }));
+            tooltip(this.wCoordsFollow, "Let the latitude/longitude readout ride with the compass or detach it for dragging.");
+            trackSidebarWidget(this.wCoordsFollow, y);
+            y += rowH + rowGap;
+
+            this.wCoordsTextScale = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Coords Text Size"), 0.5f, 3.0f, cfg.coordsTextScale, v -> cfg.coordsTextScale = v));
+            tooltip(this.wCoordsTextScale, "How big the latitude/longitude text is.");
+            trackSidebarWidget(this.wCoordsTextScale, y);
+            y += rowH + rowGap;
+
+            // Clock solar readout (item l): its own toggle + text-size, registered like the other label elements.
+            // Gated on Solar Tilt so flag-off there is no row (and no element) at all -- byte-identical.
+            if (com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_V2_ENABLED) {
+                this.wClockDisplay = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.displayClockReadout)
+                        .withValues(true, false)
+                        .create(panelX, y, widgetW, rowH, Component.literal("Clock Readout"), (btn, value) -> {
+                            cfg.displayClockReadout = value;
+                            CompassHudConfig.saveCurrent();
+                            updateSidebarVisibility();
+                        }));
+                tooltip(this.wClockDisplay, "When you're holding or carrying a clock, shows a small line naming what the sun is doing -- \"Midnight Sun\", \"Polar Night\", or which way and how high the sun sits. Drag it to place it; drag its corner grip to resize it.");
+                trackSidebarWidget(this.wClockDisplay, y);
+                y += rowH + rowGap;
+
+                this.wClockTextScale = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Clock Text Size"), 0.5f, 3.0f, cfg.clockTextScale, v -> cfg.clockTextScale = v));
+                tooltip(this.wClockTextScale, "How big the clock's solar-readout text is.");
+                trackSidebarWidget(this.wClockTextScale, y);
+                y += rowH + rowGap;
+            }
+
+            var growLabels = new java.util.LinkedHashMap<com.example.globe.core.ui.HudLayoutMath.GrowH, String>();
+            growLabels.put(com.example.globe.core.ui.HudLayoutMath.GrowH.LEFT, "Grow Right");
+            growLabels.put(com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER, "Grow Both Ways");
+            growLabels.put(com.example.globe.core.ui.HudLayoutMath.GrowH.RIGHT, "Grow Left");
+
+            var wZoneGrow = this.addRenderableWidget(CycleButton.<com.example.globe.core.ui.HudLayoutMath.GrowH>builder(v -> Component.literal(growLabels.get(v)), () -> cfg.zoneGrowH)
+                    .withValues(com.example.globe.core.ui.HudLayoutMath.GrowH.values())
+                    .create(panelX, y, widgetW, rowH, Component.literal("Zone Text Grow"), (btn, value) -> {
+                        cfg.zoneGrowH = value;
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(wZoneGrow, "If the zone name changes length (like \"Tropical\" vs \"Subtropical\"), pick which side the label grows from -- left, right, or evenly on both sides. Where you've placed the label on screen never moves, only which direction the text stretches from it.");
+            trackSidebarWidget(wZoneGrow, y);
+            y += rowH + rowGap;
+
+            var wBiomeGrow = this.addRenderableWidget(CycleButton.<com.example.globe.core.ui.HudLayoutMath.GrowH>builder(v -> Component.literal(growLabels.get(v)), () -> cfg.biomeGrowH)
+                    .withValues(com.example.globe.core.ui.HudLayoutMath.GrowH.values())
+                    .create(panelX, y, widgetW, rowH, Component.literal("Biome Text Grow"), (btn, value) -> {
+                        cfg.biomeGrowH = value;
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(wBiomeGrow, "If the biome name changes length (like \"Plains\" vs \"Windswept Gravelly Hills\"), pick which side the label grows from -- left, right, or evenly on both sides. Where you've placed the label on screen never moves, only which direction the text stretches from it.");
+            trackSidebarWidget(wBiomeGrow, y);
+            y += rowH + rowGap;
+
+            var wReserved = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.reservedTextWidth)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Reserved Width"), (btn, value) -> {
+                        cfg.reservedTextWidth = value;
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(wReserved, "Makes the text boxes as wide as this world's longest biome name, so their edges never shift as you move between biomes.");
+            trackSidebarWidget(wReserved, y);
+            y += rowH + rowGap;
+
+            // Drag/snap controls live with the other placement controls (moved from General per TEST 29
+            // feedback) — they govern how every draggable element moves, and Labels is where dragging
+            // gets configured.
+            // Renamed "Dragging" -> "Grid Snap" (audit C2). Shares LatitudeConfig.hudSnapEnabled with the
+            // always-visible canvas grid icon (wSnapToggle); toggling either keeps both in sync.
+            this.wHudSnap = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "Snap to Grid" : "Free Move"), () -> LatitudeConfig.hudSnapEnabled)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Grid Snap"), (btn, value) -> {
+                        LatitudeConfig.hudSnapEnabled = value;
+                        LatitudeConfig.saveCurrent();
+                        updateSidebarVisibility();
+                        refreshSnapToggleTooltip();
+                    }));
+            tooltip(this.wHudSnap, "Snap dragged HUD elements to a grid, or move them freely to any pixel. Same as the grid button on the canvas.");
+            trackSidebarWidget(this.wHudSnap, y);
+            y += rowH + rowGap;
+
+            this.wHudSnapPixels = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Grid Size"), 1, 32, LatitudeConfig.hudSnapPixels, v -> LatitudeConfig.hudSnapPixels = v));
+            tooltip(this.wHudSnapPixels, "How far apart the grid lines are when Snap to Grid is on.");
+            trackSidebarWidget(this.wHudSnapPixels, y);
+            y += rowH + rowGap;
+
+            var wResetLabels = this.addRenderableWidget(Button.builder(Component.literal("Reset Labels"), b -> {
+                        var fresh = CompassHudConfig.fresh();
+                        cfg.displayZoneInHud = fresh.displayZoneInHud;
+                        cfg.zoneFollowsCompass = fresh.zoneFollowsCompass;
+                        cfg.zoneHAnchor = fresh.zoneHAnchor;
+                        cfg.zoneVAnchor = fresh.zoneVAnchor;
+                        cfg.zoneOffXFrac = fresh.zoneOffXFrac;
+                        cfg.zoneOffYFrac = fresh.zoneOffYFrac;
+                        cfg.zoneGrowH = fresh.zoneGrowH;
+                        cfg.zoneGrowV = fresh.zoneGrowV;
+                        cfg.zoneTextScale = fresh.zoneTextScale;
+                        cfg.displayBiomeInHud = fresh.displayBiomeInHud;
+                        cfg.biomeFollowsCompass = fresh.biomeFollowsCompass;
+                        cfg.biomeHAnchor = fresh.biomeHAnchor;
+                        cfg.biomeVAnchor = fresh.biomeVAnchor;
+                        cfg.biomeOffXFrac = fresh.biomeOffXFrac;
+                        cfg.biomeOffYFrac = fresh.biomeOffYFrac;
+                        cfg.biomeGrowH = fresh.biomeGrowH;
+                        cfg.biomeGrowV = fresh.biomeGrowV;
+                        cfg.biomeTextScale = fresh.biomeTextScale;
+                        cfg.biomeBeforeZone = fresh.biomeBeforeZone;
+                        cfg.coordsFollowsCompass = fresh.coordsFollowsCompass;
+                        cfg.coordsHAnchor = fresh.coordsHAnchor;
+                        cfg.coordsVAnchor = fresh.coordsVAnchor;
+                        cfg.coordsOffXFrac = fresh.coordsOffXFrac;
+                        cfg.coordsOffYFrac = fresh.coordsOffYFrac;
+                        cfg.coordsGrowH = fresh.coordsGrowH;
+                        cfg.coordsGrowV = fresh.coordsGrowV;
+                        cfg.coordsTextScale = fresh.coordsTextScale;
+                        cfg.displayClockReadout = fresh.displayClockReadout;
+                        cfg.clockHAnchor = fresh.clockHAnchor;
+                        cfg.clockVAnchor = fresh.clockVAnchor;
+                        cfg.clockOffXFrac = fresh.clockOffXFrac;
+                        cfg.clockOffYFrac = fresh.clockOffYFrac;
+                        cfg.clockGrowH = fresh.clockGrowH;
+                        cfg.clockGrowV = fresh.clockGrowV;
+                        cfg.clockTextScale = fresh.clockTextScale;
+                        cfg.reservedTextWidth = fresh.reservedTextWidth;
+                        CompassHudConfig.saveCurrent();
+                        this.init();
+                    })
+                    .bounds(panelX, y, widgetW, rowH)
+                    .build());
+            tooltip(wResetLabels, "Restore the zone/biome/coords/clock label settings to their defaults.");
+            trackSidebarWidget(wResetLabels, y);
+            y += rowH + rowGap;
+        } else if (activeTab == TAB_TITLE) {
+            this.wTitleEnabled = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleEnabled)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Zone Title"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleEnabled = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(this.wTitleEnabled, "Master on/off for the big title that pops up when crossing a latitude zone.");
+            trackSidebarWidget(this.wTitleEnabled, y);
+            y += rowH + rowGap;
+
+            this.wTitleScale = this.addRenderableWidget(new StepSlider(panelX, y, widgetW, rowH, Component.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
+            tooltip(this.wTitleScale, "Changes how big the zone-entry title appears when it pops up.");
+            trackSidebarWidget(this.wTitleScale, y);
+            y += rowH + rowGap;
+
+            this.wTitleDuration = this.addRenderableWidget(new StepSlider(panelX, y, widgetW, rowH, Component.literal("Title Duration"), 2.0, 10.0, 0.5, LatitudeConfig.zoneEnterTitleSeconds, v -> LatitudeConfig.zoneEnterTitleSeconds = v));
+            tooltip(this.wTitleDuration, "How many seconds the zone-enter title stays on screen.");
+            trackSidebarWidget(this.wTitleDuration, y);
+            y += rowH + rowGap;
+
+            this.wTitleShowBaseDegrees = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.showZoneBaseDegreesOnTitle)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Show Degrees"), (btn, value) -> {
+                        LatitudeConfig.showZoneBaseDegreesOnTitle = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(this.wTitleShowBaseDegrees, "Adds your latitude in degrees to the title text (e.g. \"Tropical 12°S\" instead of just \"Tropical\").");
+            trackSidebarWidget(this.wTitleShowBaseDegrees, y);
+            y += rowH + rowGap;
+
+            LatitudeConfigData.TitleColorPreset[] titleColorValues = LatitudeConfigData.TitleColorPreset.values();
+            List<SwatchDropdown.Entry> titleColorEntries = new ArrayList<>();
+            for (LatitudeConfigData.TitleColorPreset v : titleColorValues) {
+                titleColorEntries.add(SwatchDropdown.Entry.swatch(titleColorLabel(v), titleColorPreview(v)));
+            }
+            this.wTitleColorPreset = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Title Color",
+                    titleColorEntries, LatitudeConfig.zoneEnterTitleColorPreset.ordinal(), idx -> {
+                        LatitudeConfig.zoneEnterTitleColorPreset = titleColorValues[idx];
+                        LatitudeConfig.saveCurrent();
+                        // Custom needs its own RGB sliders constructed/torn down -- same reason the compass
+                        // Color Scheme picker forces a full re-init when picking Custom.
+                        this.init();
+                    }, this));
+            tooltip(this.wTitleColorPreset, "Pick a color for the zone-enter title: a solid color, Custom to dial in exact colors, Rainbow for a still left-to-right rainbow across the letters, or Aurora for the same rainbow gently flowing over time.");
+            trackSidebarWidget(this.wTitleColorPreset, y);
+            y += rowH + rowGap;
+
+            if (LatitudeConfig.zoneEnterTitleColorPreset == LatitudeConfigData.TitleColorPreset.CUSTOM) {
+                y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Title", LatitudeConfig.zoneEnterTitleRgb,
+                        v -> LatitudeConfig.zoneEnterTitleRgb = v, g -> this.rgbTitleColor = g, s -> this.swatchTitleColor = s);
+            }
+
+            this.wTitleOutline = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleOutline)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Outline"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleOutline = value;
+                        LatitudeConfig.saveCurrent();
+                        // The Outline Color rows below appear only when Outline is ON, so (re)build the sidebar
+                        // to add/remove them -- same construct/teardown the Title Color "Custom" picker uses.
+                        this.init();
+                    }));
+            tooltip(this.wTitleOutline, "Draws a crisp outline around the title's letters so they stand out against any background. The outline color is set below.");
+            trackSidebarWidget(this.wTitleOutline, y);
+            y += rowH + rowGap;
+
+            if (LatitudeConfig.zoneEnterTitleOutline) {
+                y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Outline", LatitudeConfig.zoneEnterTitleOutlineRgb,
+                        v -> LatitudeConfig.zoneEnterTitleOutlineRgb = v, g -> this.rgbTitleOutline = g, s -> this.swatchTitleOutline = s);
+
+                this.wTitleOutlineThickness = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH,
+                        Component.literal("Outline Thickness"), 1, com.example.globe.core.ui.TitleStyle.MAX_OUTLINE_THICKNESS,
+                        LatitudeConfig.zoneEnterTitleOutlineThickness, v -> LatitudeConfig.zoneEnterTitleOutlineThickness = v));
+                tooltip(this.wTitleOutlineThickness, "How thick the title's outline is drawn, in pixels (1 = a thin crisp edge, up to 4 for a bold border).");
+                trackSidebarWidget(this.wTitleOutlineThickness, y);
+                y += rowH + rowGap;
+            }
+
+            this.wTitleDropShadow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleDropShadow)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Drop Shadow"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleDropShadow = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(this.wTitleDropShadow, "The classic hard shadow behind the title (a single dark copy offset down-right). Usually looks best OFF when the Outline is ON.");
+            trackSidebarWidget(this.wTitleDropShadow, y);
+            y += rowH + rowGap;
+
+            this.wTitleGlow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleGlow)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Shadow Glow"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleGlow = value;
+                        LatitudeConfig.saveCurrent();
+                        // The Glow Intensity row below appears only when Shadow Glow is ON, so (re)build the
+                        // sidebar to add/remove it -- same construct/teardown the Outline picker uses.
+                        this.init();
+                    }));
+            tooltip(this.wTitleGlow, "A soft, dark halo that spreads gently out behind the title -- a gentler, blurrier glow than the hard drop shadow.");
+            trackSidebarWidget(this.wTitleGlow, y);
+            y += rowH + rowGap;
+
+            if (LatitudeConfig.zoneEnterTitleGlow) {
+                this.wTitleGlowIntensity = this.addRenderableWidget(new StepSlider(panelX, y, widgetW, rowH,
+                        Component.literal("Glow Intensity"), 0.2, 2.0, 0.1, LatitudeConfig.zoneEnterTitleGlowIntensity,
+                        v -> LatitudeConfig.zoneEnterTitleGlowIntensity = v));
+                tooltip(this.wTitleGlowIntensity, "How strong the soft glow behind the title is: lower is a faint whisper, higher is a bolder halo.");
+                trackSidebarWidget(this.wTitleGlowIntensity, y);
+                y += rowH + rowGap;
+            }
+
+            this.wTitleGlimmer = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleGlimmer)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Title Glimmer"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleGlimmer = value;
+                        LatitudeConfig.saveCurrent();
+                        // Nice feedback: flipping it ON replays the one-shot sweep once in the static preview.
+                        if (value) this.titleGlimmerReplayStartMs = System.currentTimeMillis();
+                        // The Glimmer Strength row below appears only when the glimmer is ON, so (re)build the
+                        // sidebar to add/remove it -- same construct/teardown the Shadow Glow picker uses.
+                        this.init();
+                    }));
+            tooltip(this.wTitleGlimmer, "A quick shine sweeps across the title when it appears.");
+            trackSidebarWidget(this.wTitleGlimmer, y);
+            y += rowH + rowGap;
+
+            if (LatitudeConfig.zoneEnterTitleGlimmer) {
+                this.wTitleGlimmerIntensity = this.addRenderableWidget(new StepSlider(panelX, y, widgetW, rowH,
+                        Component.literal("Glimmer Strength"),
+                        com.example.globe.core.ui.TitleStyle.GLIMMER_INTENSITY_MIN,
+                        com.example.globe.core.ui.TitleStyle.GLIMMER_INTENSITY_MAX, 0.1,
+                        LatitudeConfig.zoneEnterTitleGlimmerIntensity,
+                        v -> {
+                            LatitudeConfig.zoneEnterTitleGlimmerIntensity = v;
+                            // Replay the sweep so the new strength is visible immediately in the static preview.
+                            this.titleGlimmerReplayStartMs = System.currentTimeMillis();
+                        }));
+                tooltip(this.wTitleGlimmerIntensity, "How strong the title's shine sweep is: lower is a gentle glint, higher is a bold flash.");
+                trackSidebarWidget(this.wTitleGlimmerIntensity, y);
+                y += rowH + rowGap;
+            }
+
+            LatitudeConfigData.TitleCaseMode[] titleCaseValues = LatitudeConfigData.TitleCaseMode.values();
+            List<SwatchDropdown.Entry> titleCaseEntries = new ArrayList<>();
+            for (LatitudeConfigData.TitleCaseMode v : titleCaseValues) titleCaseEntries.add(SwatchDropdown.Entry.text(titleCaseLabel(v)));
+            this.wTitleCase = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Title Case",
+                    titleCaseEntries, LatitudeConfig.zoneEnterTitleCase.ordinal(), idx -> {
+                        LatitudeConfig.zoneEnterTitleCase = titleCaseValues[idx];
+                        LatitudeConfig.saveCurrent();
+                    }, this));
+            tooltip(this.wTitleCase, "Changes how the title's letters are written: Normal, UPPERCASE, lowercase, or mOcKiNg.");
+            trackSidebarWidget(this.wTitleCase, y);
+            y += rowH + rowGap;
+
+            this.wTitleLetterSpacing = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Letter Spacing"), -4, 16, LatitudeConfig.zoneEnterTitleLetterSpacing, v -> LatitudeConfig.zoneEnterTitleLetterSpacing = v));
+            tooltip(this.wTitleLetterSpacing, "Adds (or removes) extra space between letters in the zone-enter title.");
+            trackSidebarWidget(this.wTitleLetterSpacing, y);
+            y += rowH + rowGap;
+
+            this.wTitleDraggable = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleDraggable)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Title Draggable"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleDraggable = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(this.wTitleDraggable, "Allows the zone-enter title to be repositioned by dragging it in this editor.");
+            trackSidebarWidget(this.wTitleDraggable, y);
+            y += rowH + rowGap;
+
+            var wResetTitle = this.addRenderableWidget(Button.builder(Component.literal("Reset Title"), b -> {
+                        LatitudeConfig.zoneEnterTitleOffsetX = 0;
+                        LatitudeConfig.zoneEnterTitleOffsetY = -40;
+                        // Match the true fresh defaults (LatitudeConfigData / resetHudDefaults) — Reset Title
+                        // previously used 1.6/4.0, which didn't actually reset to the defaults (1.8/6.0).
+                        LatitudeConfig.zoneEnterTitleScale = 1.8;
+                        LatitudeConfig.zoneEnterTitleSeconds = 6.0;
+                        // Restore the default title styling (outline off @ 1px, faded drop shadow on, glow off).
+                        LatitudeConfig.zoneEnterTitleOutline = false;
+                        LatitudeConfig.zoneEnterTitleOutlineRgb = 0x000000;
+                        LatitudeConfig.zoneEnterTitleOutlineThickness = 1;
+                        LatitudeConfig.zoneEnterTitleDropShadow = true;
+                        LatitudeConfig.zoneEnterTitleGlow = false;
+                        LatitudeConfig.zoneEnterTitleGlowIntensity = 0.75;
+                        LatitudeConfig.zoneEnterTitleGlimmer = true;
+                        LatitudeConfig.zoneEnterTitleGlimmerIntensity =
+                                com.example.globe.core.ui.TitleStyle.GLIMMER_INTENSITY_DEFAULT;
+                        LatitudeConfig.zoneEnterTitleLetterSpacing = 1; // matches the fresh default (+1)
+                        LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfigData.TitleColorPreset.OFF_WHITE;
+                        LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.UPPERCASE;
+                        LatitudeConfig.zoneEnterTitleRgb = 0xFFFFFF;
+                        LatitudeConfig.saveCurrent();
+                        this.titleOffsetXf = 0;
+                        this.titleOffsetYf = -40;
+                        this.init();
+                    })
+                    .bounds(panelX, y, widgetW, rowH)
+                    .build());
+            tooltip(wResetTitle, "Restore the zone-enter title settings to their defaults.");
+            trackSidebarWidget(wResetTitle, y);
+            y += rowH + rowGap;
+        } else if (activeTab == TAB_PRESETS) {
+            var wExport = this.addRenderableWidget(Button.builder(Component.literal("Export to Clipboard"), b -> {
+                        Minecraft.getInstance().keyboardHandler.setClipboard(CompassHudPreset.captureCurrent().toJson());
+                    })
+                    .bounds(panelX, y, widgetW, rowH)
+                    .build());
+            tooltip(wExport, "Copies your current HUD look (compass + labels + title) to the clipboard so you can paste it somewhere to share or back up.");
+            trackSidebarWidget(wExport, y);
+            y += rowH + rowGap;
+
+            var wImport = this.addRenderableWidget(Button.builder(Component.literal("Import from Clipboard"), b -> {
+                        CompassHudPreset p = CompassHudPreset.fromJson(Minecraft.getInstance().keyboardHandler.getClipboard());
+                        if (p != null) {
+                            p.applyToLive();
+                            this.init();
+                        }
+                    })
+                    .bounds(panelX, y, widgetW, rowH)
+                    .build());
+            tooltip(wImport, "Reads a HUD look from the clipboard (something exported here, or shared by someone else) and applies it. Does nothing if the clipboard doesn't contain a valid HUD look.");
+            trackSidebarWidget(wImport, y);
+            y += rowH + rowGap;
+
+            // Undo / redo as two compact arrow-icon buttons side by side (Peetsa: drop the verbose label).
+            // Labels are empty here; the arrow glyph is drawn large in drawPresetHistoryIcons() because the
+            // vanilla button message renders the unicode arrow far too small.
+            int histGap = 3;
+            int undoW = (widgetW - histGap) / 2;
+            int redoW = widgetW - undoW - histGap;
+            this.wUndoLoad = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
+                        CompassHudPreset.undoLastLoad();
+                        this.init();
+                    })
+                    .bounds(panelX, y, undoW, rowH)
+                    .build());
+            this.wUndoLoad.active = CompassHudPreset.hasUndo();
+            tooltip(this.wUndoLoad, "Undo: restore your HUD look to whatever it was right before the last Load or Import -- for when you tap the wrong slot. Goes back one step.");
+            trackSidebarWidget(this.wUndoLoad, y);
+
+            this.wRedoLoad = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
+                        CompassHudPreset.redoLastLoad();
+                        this.init();
+                    })
+                    .bounds(panelX + undoW + histGap, y, redoW, rowH)
+                    .build());
+            this.wRedoLoad.active = CompassHudPreset.hasRedo();
+            tooltip(this.wRedoLoad, "Redo: re-apply the Load or Import you just undid.");
+            trackSidebarWidget(this.wRedoLoad, y);
+            y += rowH + rowGap;
+
+            // Row layout gains a rename button (item j): [Load ...............][Save][✎][×]. The rename button
+            // carries a hand-plotted pencil glyph (empty label) drawn in the glyph pass, active only for occupied
+            // slots -- naming an empty slot has nothing to name.
+            int slotGap = 3;
+            int clearW = 18;
+            int renameW = 18;
+            int saveW = 40;
+            int loadW = widgetW - clearW - renameW - saveW - slotGap * 3;
+            for (int slot = 0; slot < CompassHudPresetSlots.SLOT_COUNT; slot++) {
+                final int s = slot;
+                String label = (s + 1) + ": " + CompassHudPresetSlots.summarize(s);
+                var wLoad = this.addRenderableWidget(Button.builder(Component.literal(label), b -> {
+                            if (CompassHudPresetSlots.loadFrom(s)) this.init();
+                        })
+                        .bounds(panelX, y, loadW, rowH)
+                        .build());
+                wLoad.active = CompassHudPresetSlots.isOccupied(s);
+                tooltip(wLoad, "Loads the HUD look saved in slot " + (s + 1) + ".");
+                trackSidebarWidget(wLoad, y);
+
+                var wSave = this.addRenderableWidget(Button.builder(Component.literal("Save"), b -> {
+                            // Saving into an OCCUPIED slot pops a confirm dialog first (Peetsa: an accidental click
+                            // used to overwrite irreversibly). An EMPTY slot saves instantly -- no friction where
+                            // there's nothing to lose. Same isOccupied() gate the Load/Clear buttons use.
+                            if (CompassHudPresetSlots.isOccupied(s)) {
+                                this.pendingOverwriteSlot = s;
+                            } else {
+                                CompassHudPresetSlots.saveCurrentInto(s);
+                                this.init();
+                            }
+                        })
+                        .bounds(panelX + loadW + slotGap, y, saveW, rowH)
+                        .build());
+                tooltip(wSave, "Saves your current HUD look into slot " + (s + 1) + ". If the slot already has a preset, asks you to confirm before overwriting it.");
+                trackSidebarWidget(wSave, y);
+
+                int renameX = panelX + loadW + slotGap + saveW + slotGap;
+                var wRename = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
+                            // Open the manual rename modal, pre-filled with the slot's current custom name (blank
+                            // if it's still on the auto-summary). No init() here -- the modal is a paint layer, not
+                            // widgets; committing/cancelling refreshes the labels.
+                            renamingSlot = s;
+                            renameBuffer.setLength(0);
+                            renameBuffer.append(CompassHudPresetSlots.getName(s));
+                            if (renameBuffer.length() > RENAME_MAX_LEN) renameBuffer.setLength(RENAME_MAX_LEN);
+                        })
+                        .bounds(renameX, y, renameW, rowH)
+                        .build());
+                wRename.active = CompassHudPresetSlots.isOccupied(s);
+                tooltip(wRename, "Give slot " + (s + 1) + " a name of your own, so it's not just \"Rose / Sunset.\" Clearing the name puts it back to the automatic description.");
+                trackSidebarWidget(wRename, y);
+                presetRenameButtons.add(wRename);
+
+                var wClear = this.addRenderableWidget(Button.builder(Component.literal("×"), b -> {
+                            CompassHudPresetSlots.clear(s);
+                            this.init();
+                        })
+                        .bounds(renameX + renameW + slotGap, y, clearW, rowH)
+                        .build());
+                wClear.active = CompassHudPresetSlots.isOccupied(s);
+                tooltip(wClear, "Empties slot " + (s + 1) + ".");
+                trackSidebarWidget(wClear, y);
+
+                y += rowH + rowGap;
+            }
         } else {
-            this.wCompassScale = this.addDrawableChild(new FloatSlider(panelX, y, widgetW, rowH, Text.literal("Scale"), 0.5f, 3.0f, cfg.scale, v -> cfg.scale = v));
-            tooltip(this.wCompassScale, "Changes the size of the digital compass text.");
-            trackSidebarWidget(this.wCompassScale, y);
+            var wShowMode = this.addRenderableWidget(CycleButton.<CompassHudConfig.ShowMode>builder(v -> Component.literal(switch (v) {
+                        case ALWAYS -> "Always";
+                        case COMPASS_PRESENT -> "Compass in inventory";
+                        case HOLDING_COMPASS -> "Holding compass";
+                    }), () -> cfg.showMode)
+                    .withValues(CompassHudConfig.ShowMode.values())
+                    .create(panelX, y, widgetW, rowH, Component.literal("Show HUD"), (btn, value) -> {
+                        cfg.showMode = value;
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(wShowMode, "Controls when the compass appears while you're playing. This screen always shows it so you can edit it, but in-game it only shows under this rule.");
+            trackSidebarWidget(wShowMode, y);
             y += rowH + rowGap;
 
-            this.wCompassTransparency = this.addDrawableChild(new IntSlider(panelX, y, widgetW, rowH, Text.literal("Transparency"), 0, 255, cfg.backgroundAlpha, v -> cfg.backgroundAlpha = v));
-            tooltip(this.wCompassTransparency, "Adjusts the opacity of the digital compass background bar.");
-            trackSidebarWidget(this.wCompassTransparency, y);
+            var wWarnings = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.showWarningMessages)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Warning Messages"), (btn, value) -> {
+                        LatitudeConfig.showWarningMessages = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(wWarnings, "Shows on-screen warnings for things like nearing the world border or polar hazards.");
+            trackSidebarWidget(wWarnings, y);
             y += rowH + rowGap;
 
-            this.wCompassBackground = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.showBackground)
-                    .values(true, false)
-                    .build(panelX, y, widgetW, rowH, Text.literal("Background"), (btn, value) -> cfg.showBackground = value));
-            tooltip(this.wCompassBackground, "Toggles the digital compass background box.");
-            trackSidebarWidget(this.wCompassBackground, y);
+            var wReprompt = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.borderRepromptGesture)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Border Re-prompt Gesture"), (btn, value) -> {
+                        LatitudeConfig.borderRepromptGesture = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(wReprompt, "At the far east/west edge of the world, if you dismissed the \"cross to the other hemisphere\" prompt you can bring it back by facing the fog wall and clicking (either mouse button) instead of walking away and back. Turn this off if you'd rather only get the prompt by walking out and returning.");
+            trackSidebarWidget(wReprompt, y);
             y += rowH + rowGap;
 
-            this.wCompassBgColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(Text::literal, () -> bgColorName(cfg.backgroundRgb))
-                    .values("BLACK", "WHITE", "DARK_GRAY", "BLUE")
-                    .build(panelX, y, widgetW, rowH, Text.literal("Background Color"), (btn, value) -> cfg.backgroundRgb = bgColorRgb(value)));
-            tooltip(this.wCompassBgColor, "Selects the background color for the digital compass.");
-            trackSidebarWidget(this.wCompassBgColor, y);
+            var wPreviewText = this.addRenderableWidget(CycleButton.<CompassHud.PreviewTextSource>builder(v -> Component.literal(switch (v) {
+                        case SAMPLE -> "Short sample";
+                        case LONGEST -> "Longest real text";
+                        case LIVE -> "Live values";
+                    }), () -> CompassHud.previewTextSource)
+                    .withValues(CompassHud.PreviewTextSource.values())
+                    .create(panelX, y, widgetW, rowH, Component.literal("Preview Text"), (btn, value) -> CompassHud.previewTextSource = value));
+            tooltip(wPreviewText, "What sample text this screen uses to show you where things sit. \"Longest real text\" (default) uses the biggest it could realistically get, so where you place things here matches what you'll see in-game.");
+            trackSidebarWidget(wPreviewText, y);
+            y += rowH + rowGap;
+
+            // Accessibility group (Peetsa 2026-07-11): a divider-flanked "— Accessibility —" header, then the
+            // color-mode dropdown, then the Reduce Motion toggle DIRECTLY BENEATH it, so the pair reads as one
+            // group. Reduce Motion stays its own orthogonal row (a player can want High Contrast AND reduced
+            // animation) -- it's grouped WITH accessibility here, not folded into the mode enum, and no longer
+            // floats as an unrelated outside button.
+            int a11yHeaderH = 12;
+            this.sidebarHeaders.add(new HeaderSlot(y, a11yHeaderH, "Accessibility"));
+            y += a11yHeaderH + rowGap;
+
+            LatitudeConfigData.AccessibilityMode[] a11yValues = LatitudeConfigData.AccessibilityMode.values();
+            List<SwatchDropdown.Entry> a11yEntries = new ArrayList<>();
+            for (LatitudeConfigData.AccessibilityMode v : a11yValues) a11yEntries.add(SwatchDropdown.Entry.text(accessibilityLabel(v)));
+            // Item (h): the dropdown itself is labelled "Color Schemes" (Peetsa: "this dropdown should be called
+            // color schemes") -- it picks the color/contrast scheme (Standard / High Contrast / Colorblind). The
+            // divider-flanked SECTION header above stays "Accessibility".
+            var wAccessibility = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Color Schemes",
+                    a11yEntries, LatitudeConfig.accessibilityMode.ordinal(), idx -> {
+                        LatitudeConfig.accessibilityMode = a11yValues[idx];
+                        LatitudeConfig.saveCurrent();
+                    }, this));
+            tooltip(wAccessibility, "Extra help reading the HUD -- this row sets colors and contrast. High Contrast makes text and outlines bold and solid, with no see-through panels. Colorblind-Friendly avoids red/green-only cues and leans on blue, gold, and white plus shapes. Standard is the normal look. (This pass brightens this editor; the full in-game HUD treatment arrives in a later update.)");
+            trackSidebarWidget(wAccessibility, y);
+            y += rowH + rowGap;
+
+            var wReduceMotion = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.reduceMotion)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Reduce Motion"), (btn, value) -> {
+                        LatitudeConfig.reduceMotion = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(wReduceMotion, "The animation half of accessibility: for motion-sensitive players, turns off the gentle slide when controls appear or disappear in this editor, so rows switch instantly instead. Also flags the rest of the mod's little animations (like the moving zone-title and map shimmers) to hold still where supported.");
+            trackSidebarWidget(wReduceMotion, y);
+            y += rowH + rowGap;
+
+            // Item (i): a comfort option for the polar blizzard, grouped WITH accessibility (like Reduce Motion) --
+            // when ON, the pole snowstorm's particle budget is scaled down hard so the whiteout is gentler on
+            // players it might discomfort. Global-only (not preset-scoped), read once in GlobeModClient's snow path.
+            var wReduceSnow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.reducePolarSnowParticles)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Reduce Polar Snow Particles"), (btn, value) -> {
+                        LatitudeConfig.reducePolarSnowParticles = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(wReduceSnow, "A comfort option for the heavy snow near the poles: turns the blizzard's flurry way down (to about a quarter of the usual amount) so the whiteout is easier on the eyes. The cold, fog, and everything else are unchanged -- only how many snowflakes fly.");
+            trackSidebarWidget(wReduceSnow, y);
             y += rowH + rowGap;
         }
 
-        this.wCompassTextColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(Text::literal, () -> textColorName(cfg.textRgb))
-                .values("WHITE", "BLACK", "YELLOW", "RED", "CYAN")
-                .build(panelX, y, widgetW, rowH, Text.literal("Text Color"), (btn, value) -> cfg.textRgb = textColorRgb(value)));
-        tooltip(this.wCompassTextColor, "Selects the text color used for the compass and labels.");
-        trackSidebarWidget(this.wCompassTextColor, y);
-        y += rowH + rowGap;
+        this.sidebarContentHeight = Math.max(0, y - rowGap - panelY);
 
-        if (analog) {
-            this.wCompassAnalogShowLatitude = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.analogShowLatitude))
-                    .values(true, false)
-                    .build(panelX, y, widgetW, rowH, Text.literal("Analog Latitude"), (btn, value) -> cfg.analogShowLatitude = value));
-            tooltip(this.wCompassAnalogShowLatitude, "Shows latitude next to the analog compass.");
-            trackSidebarWidget(this.wCompassAnalogShowLatitude, y);
-            y += rowH + rowGap;
-        } else {
-            this.wCompassShowLatitude = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.showLatitude))
-                    .values(true, false)
-                    .build(panelX, y, widgetW, rowH, Text.literal("Show Latitude"), (btn, value) -> cfg.showLatitude = value));
-            tooltip(this.wCompassShowLatitude, "Shows latitude inside the digital compass line.");
-            trackSidebarWidget(this.wCompassShowLatitude, y);
-            y += rowH + rowGap;
-
-            this.wCompassCompact = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
-                    .values(true, false)
-                    .build(panelX, y, widgetW, rowH, Text.literal("Compact HUD"), (btn, value) -> cfg.compactHud = value));
-            tooltip(this.wCompassCompact, "Uses a tighter layout with minimal spacing.");
-            trackSidebarWidget(this.wCompassCompact, y);
-            y += rowH + rowGap;
-        }
-
-        this.wCompassAttachHotbar = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.attachToHotbarCompass)
-                .values(true, false)
-                .build(panelX, y, widgetW, rowH, Text.literal("Attach to Hotbar"), (btn, value) -> {
-                    cfg.attachToHotbarCompass = value;
-                    CompassHudConfig.saveCurrent();
-                }));
-        tooltip(this.wCompassAttachHotbar, "Snaps the digital compass to the hotbar. Analog ignores this for now.");
-        trackSidebarWidget(this.wCompassAttachHotbar, y);
-        y += rowH + rowGap;
-
-        this.wZoneDisplay = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.displayZoneInHud)
-                .values(true, false)
-                .build(panelX, y, widgetW, rowH, Text.literal("Display Zone in HUD"), (btn, value) -> {
-                    cfg.displayZoneInHud = value;
-                    CompassHudConfig.saveCurrent();
-                    updateSidebarVisibility();
-                }));
-        tooltip(this.wZoneDisplay, "Shows the current zone as small HUD text.");
-        trackSidebarWidget(this.wZoneDisplay, y);
-        y += rowH + rowGap;
-
-        this.wZoneFollow = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "FOLLOW" : "DETACH"), () -> cfg.zoneFollowsCompass)
-                .values(true, false)
-                .build(panelX, y, widgetW, rowH, Text.literal("Zone Placement"), (btn, value) -> {
-                    cfg.zoneFollowsCompass = value;
-                    CompassHudConfig.saveCurrent();
-                    updateSidebarVisibility();
-                }));
-        tooltip(this.wZoneFollow, "Let the zone label ride with the compass or detach it for dragging.");
-        trackSidebarWidget(this.wZoneFollow, y);
-        y += rowH + rowGap;
-
-        this.wTitleScale = this.addDrawableChild(new StepSlider(panelX, y, widgetW, rowH, Text.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
-        tooltip(this.wTitleScale, "Scales the zone enter title preview.");
-        trackSidebarWidget(this.wTitleScale, y);
-        this.sidebarContentHeight = y + rowH - panelY;
+        // Always-visible Snap-to-Grid toggle on the edit canvas (audit C2 / Peetsa item 6). Lives at top-right,
+        // clear of the sidebar and the usual preview area, so grid snapping is one click away no matter which
+        // tab is open. Empty label; the grid glyph is drawn scaled on top in extractRenderState. It flips the
+        // same LatitudeConfig.hudSnapEnabled the Labels "Grid Snap" row uses, then re-inits so the two stay in
+        // sync (and the Grid Size row reveals/hides to match).
+        int snapSize = 20;
+        this.wSnapToggle = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
+                    LatitudeConfig.hudSnapEnabled = !LatitudeConfig.hudSnapEnabled;
+                    LatitudeConfig.saveCurrent();
+                    this.init();
+                })
+                .bounds(this.width - snapSize - 8, 6, snapSize, snapSize)
+                .build());
+        refreshSnapToggleTooltip();
 
         int resetY = this.height - 52;
-        this.wResetHud = this.addDrawableChild(ButtonWidget.builder(Text.literal("Reset HUD"), b -> {
+        this.wResetHud = this.addRenderableWidget(Button.builder(Component.literal("Reset HUD"), b -> {
                     resetHudDefaults();
                     dragElement = DragElement.NONE;
                     this.init();
                 })
-                .dimensions(panelX, resetY, widgetW, rowH)
+                .bounds(panelX, resetY, widgetW, rowH)
                 .build());
         tooltip(this.wResetHud, "Restore compass and zone HUD settings to defaults.");
 
-        int bw = 200;
+        // Done|Cancel geometry (GUI-scale parity audit H2). Above the narrow threshold this is the established
+        // screen-centered 200px group (pixel-identical); below it the group is re-anchored to the right of the
+        // sidebar card and shrunk to fit, so it never underlaps the card. The buttons keep these init-time
+        // bounds when L hides the sidebar, so anchoring clear of the card is correct in both states.
         int bh = 20;
-        int doneX = (this.width - bw) / 2;
+        HudStudioLayout.ActionButtons ab = HudStudioLayout.actionButtons(this.width, this.sidebarWidth);
+        int groupX = ab.groupX();
         int doneY = this.height - 28;
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Done"), btn -> {
+        this.addRenderableWidget(Button.builder(Component.literal("Done"), btn -> {
                     CompassHudConfig.saveCurrent();
                     LatitudeConfig.saveCurrent();
-                    MinecraftClient.getInstance().setScreen(parent);
+                    Minecraft.getInstance().setScreenAndShow(parent);
                 })
-                .dimensions(doneX, doneY, bw, bh)
+                .bounds(groupX, doneY, ab.doneW(), bh)
                 .build());
+        Button cancelBtn = this.addRenderableWidget(Button.builder(Component.literal("Cancel"), btn -> cancelAndClose())
+                .bounds(groupX + ab.doneW() + ab.gap(), doneY, ab.cancelW(), bh)
+                .build());
+        tooltip(cancelBtn, "Discard every change made since opening HUD Studio and go back.");
 
         updateSidebarVisibility();
     }
 
+    /** Last render-pass mouse position, for hover checks outside the widget event flow (the compass
+     *  preview asks {@link #transparencyAdjustActive()} during its own draw). */
+    private int lastMouseX = -1;
+    private int lastMouseY = -1;
+
+    /** True while the player is plausibly adjusting Inner Transparency (slider hovered, or mid-drag).
+     *  The checkerboard transparency aid draws only then — always-on it read as visual noise and made
+     *  the compass graphic look bigger than it is (TEST 29). Deliberately does NOT check isFocused():
+     *  vanilla keyboard focus is sticky (it persists after mouseUp until some other widget is clicked),
+     *  which locked the checkerboard on permanently after the very first touch of the slider (TEST 30).
+     *  FloatSlider.isDragging() tracks the actual click-drag-release lifecycle instead. */
+    public boolean transparencyAdjustActive() {
+        if (wCompassAnalogInnerAlpha == null || !wCompassAnalogInnerAlpha.visible) {
+            return false;
+        }
+        boolean dragging = wCompassAnalogInnerAlpha instanceof FloatSlider fs && fs.isDragging();
+        return dragging || wCompassAnalogInnerAlpha.isMouseOver(lastMouseX, lastMouseY);
+    }
+
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
-        this.renderInGameBackground(ctx);
+    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        this.lastMouseX = mouseX;
+        this.lastMouseY = mouseY;
+        this.extractTransparentBackground(ctx);
         ctx.fill(0, 0, this.width, this.height, 0x66000000);
 
+        // While a picker's list is open it is MODAL: nothing beneath it should read as hovered, or that
+        // underlying widget still flags its tooltip for the next frame and it draws ON TOP of the open list
+        // (TEST 57: with "Compass Look" open, the Analog Size slider sitting under the list still registered
+        // "Sets how big the analog compass is." over it). Feeding the widget pass an off-screen cursor makes
+        // every underlying widget compute hovered=false, so none flags a tooltip -- the open list's own rows
+        // are then the only thing the cursor can touch. The open list itself is still drawn/handled with the
+        // REAL mouse position below. (Not a regression risk: a modal shouldn't show hover feedback beneath it,
+        // and clicks under an open list are already intercepted by mouseClicked's modal branch.)
+        boolean pickerOpen = sidebarVisible && openDropdown != null && openDropdown.isOpen();
+        int hoverX = pickerOpen ? Integer.MIN_VALUE : mouseX;
+        int hoverY = pickerOpen ? Integer.MIN_VALUE : mouseY;
+
         int sidebarX = 6;
-        int sidebarY = this.sidebarBgY;
 
         if (sidebarVisible) {
+            drawTabStrip(ctx, hoverX, hoverY);
+
             int px = sidebarX;
-            int py = sidebarY;
+            int py = this.sidebarBgY;
             int pw = sidebarWidth + 4;
-            int ph = this.height - 44;
-            ctx.fill(px, py, px + pw, py + ph, 0xAA000000);
+            int cardBottom = this.height - 22;
+            int ph = Math.max(24, cardBottom - py);
+
+            // Themed card: border shell + fill + thin gold accent lines, matching the look already
+            // established on the Settings and World Creation screens. High Contrast brightens the accent
+            // lines, heading, and edge so the panel reads unmistakably -- all via the shared palette so the
+            // Studio obeys the same accessibility rulebook as the compass HUD and the create screen.
+            boolean hc = highContrast();
+            int accentLine = a11yBg(GOLD & 0x66FFFFFF);      // translucent gold -> floored near-solid under HC
+            int headingColor = a11yText(GOLD);               // gold -> bright cream-gold under HC
+            int dividerColor = a11yMuted(PANEL_BORDER);      // dim frame -> lifted under HC
+            ctx.fill(px, py, px + pw, py + ph, a11yMuted(PANEL_BORDER));
+            ctx.fill(px + 1, py + 1, px + pw - 1, py + ph - 1, a11yBg(PANEL_BG));
+            ctx.fill(px + 2, py + 2, px + pw - 2, py + 3, accentLine);
+            ctx.fill(px + 2, py + ph - 3, px + pw - 2, py + ph - 2, accentLine);
+            if (hc) {
+                // Bright 1px inner outline around the whole card so its edge is unambiguous.
+                ctx.fill(px + 1, py + 1, px + pw - 1, py + 2, GOLD);
+                ctx.fill(px + 1, py + ph - 2, px + pw - 1, py + ph - 1, GOLD);
+                ctx.fill(px + 1, py + 1, px + 2, py + ph - 1, GOLD);
+                ctx.fill(px + pw - 2, py + 1, px + pw - 1, py + ph - 1, GOLD);
+            }
+
+            String heading = TAB_NAMES[activeTab];
+            int headingW = this.font.width(heading);
+            int headingX = px + (pw - headingW) / 2;
+            int headingY = py + 6;
+            int lineGap = 6;
+            int lineLen = Math.max(10, (pw - headingW - lineGap * 2) / 2 - 4);
+            int lineY = headingY + this.font.lineHeight / 2;
+            ctx.fill(px + 4, lineY, px + 4 + lineLen, lineY + 1, dividerColor);
+            ctx.fill(px + pw - 4 - lineLen, lineY, px + pw - 4, lineY + 1, dividerColor);
+            ctx.text(this.font, heading, headingX, headingY, headingColor);
         }
 
-        var mc = MinecraftClient.getInstance();
-        double z = 0.0;
-        var border = mc.world != null ? mc.world.getWorldBorder() : null;
-        if (mc.player != null) {
-            z = mc.player.getZ();
-        }
-
-        String degText = (border != null) ? LatitudeMath.formatLatitudeDeg(z, border) : "0\u00b0";
-        String sampleTitle = "TROPICAL " + degText;
+        var mc = Minecraft.getInstance();
+        // Shared with the drag hit-test (studioPreviewTitle) so the rendered text and the grabbable area
+        // can never drift apart -- and so "Show Degrees" (TEST 32: reported as doing nothing) has exactly
+        // one place to be honored instead of a second, easily-forgotten inline copy.
+        String sampleTitle = studioPreviewTitle(mc);
 
         int titleOffsetX = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetXf) : LatitudeConfig.zoneEnterTitleOffsetX;
         int titleOffsetY = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetYf) : LatitudeConfig.zoneEnterTitleOffsetY;
+
+        // One-shot glimmer replay: the preview is static, but on Title-tab open / toggle-ON we drive the whole
+        // choreography once from wall-clock ms so the appear -> hero -> bloom -> melt effect is visible here too.
+        // glimmerFrame self-expires to INERT after the melt, and we gate on the same toggle + Reduce Motion as
+        // gameplay.
+        com.example.globe.core.ui.TitleStyle.GlimmerFrame previewGlimmer =
+                com.example.globe.core.ui.TitleStyle.GlimmerFrame.INERT;
+        if (this.titleGlimmerReplayStartMs >= 0 && LatitudeConfig.zoneEnterTitleGlimmer && !LatitudeConfig.reduceMotion) {
+            long elapsedMs = System.currentTimeMillis() - this.titleGlimmerReplayStartMs;
+            previewGlimmer = com.example.globe.core.ui.TitleStyle.glimmerFrame(elapsedMs,
+                    LatitudeConfig.zoneEnterTitleGlimmerIntensity);
+        }
+
+        // Editor-only backing plate behind the live preview title so the outline / drop shadow / glow / fill stay
+        // evaluable no matter what world lighting sits behind the open Studio (reported: "hard to see the
+        // shadow/outline against a dark cave"). STUDIO-ONLY -- drawn here, immediately before the shared
+        // static-title render, so the real gameplay ZoneEnterTitleOverlay.render() path is completely untouched.
+        // GATED to the Title tab only (Peetsa: the plate "can be misleading for someone thinking that's how it will
+        // look in-game" -- so it appears only while you're actually adjusting title characteristics). The title
+        // PREVIEW itself keeps rendering on every tab exactly as before; only this backdrop toggles with the tab.
+        // Painted as a PHOTOSHOP-STYLE TRANSPARENCY CHECKERBOARD (alternating gray squares) -- the universal "this
+        // area is transparent / not part of the image" visual language -- so nobody mistakes it for an in-game
+        // backdrop. Sized to the title's actual on-screen box and centered on the SAME (x,y) renderStaticAt() draws
+        // at (screenW/2 + offset), so it tracks Title Size and the drag offset 1:1. renderStaticAt() does NOT apply
+        // OverlayLayout.fitScale (it uses the raw scale -- unlike the gameplay render() path), so neither do we:
+        // the plate matches the un-fitted preview exactly. Deliberately plain neutral grays, NOT routed through the
+        // gold a11y helpers -- a tinted backdrop would bias how the title's own colors read, and this plate's whole
+        // job is to be a truthful reference for BOTH a light-fill/dark-outline and a dark-fill/light-outline combo.
+        // It's static (no animation), so there's nothing for Reduce Motion to gate.
+        if (activeTab == TAB_TITLE) {
+            double previewScale = LatitudeConfig.zoneEnterTitleScale;
+            // 8px covers the fixed 4.5px max glow ring + 1px outline (both are fixed SCREEN px regardless of
+            // Title Size -- the invScale in drawStyledTitle cancels the pose scale) plus a little breathing room.
+            final int pad = 8;
+            // Sized to the (possibly two-line) lockup box so a degrees sample's taller/degrees-line preview stays
+            // inside the plate exactly like the drag hit-test and the gameplay clamp (all share measure()).
+            ZoneEnterTitleOverlay.TitleBox plateBox = ZoneEnterTitleOverlay.measure(mc.font, sampleTitle);
+            int plateHalfW = (int) Math.ceil(plateBox.contentW() * previewScale / 2.0) + pad;
+            int plateHalfH = (int) Math.ceil(plateBox.contentH() * previewScale / 2.0) + pad;
+            int pcx = (this.width / 2) + titleOffsetX;
+            int pcy = (this.height / 2) + titleOffsetY;
+            int plx0 = pcx - plateHalfW, ply0 = pcy - plateHalfH;
+            int plx1 = pcx + plateHalfW, ply1 = pcy + plateHalfH;
+            // Checkerboard: ~7px squares, two neutral grays (0x50 light / 0x38 dark) at ~75% opacity (0xC0). Opaque
+            // enough that the world behind stops mattering (preview reads the same over a bright plain or a black
+            // cave); the alternating tiles read unambiguously as "transparency", not a real backdrop. Squares are
+            // clamped to the plate rect on the trailing edge so partial tiles don't spill past the box.
+            final int sq = 7;
+            final int checkerLight = 0xC0505050;
+            final int checkerDark = 0xC0383838;
+            for (int ty = ply0, ry = 0; ty < ply1; ty += sq, ry++) {
+                int tyEnd = Math.min(ty + sq, ply1);
+                for (int tx = plx0, rx = 0; tx < plx1; tx += sq, rx++) {
+                    int txEnd = Math.min(tx + sq, plx1);
+                    ctx.fill(tx, ty, txEnd, tyEnd, ((rx + ry) & 1) == 0 ? checkerLight : checkerDark);
+                }
+            }
+            // Faint light rim (mirrors the snap-glyph plate idiom) to delineate the box on top of the checker.
+            int rim = 0x33FFFFFF;
+            ctx.fill(plx0, ply0, plx1, ply0 + 1, rim);
+            ctx.fill(plx0, ply1 - 1, plx1, ply1, rim);
+            ctx.fill(plx0, ply0, plx0 + 1, ply1, rim);
+            ctx.fill(plx1 - 1, ply0, plx1, ply1, rim);
+        }
 
         ZoneEnterTitleOverlay.renderStaticAt(
                 ctx,
@@ -317,29 +1444,374 @@ public class LatitudeHudStudioScreen extends Screen {
                 sampleTitle,
                 LatitudeConfig.zoneEnterTitleScale,
                 titleOffsetX,
-                titleOffsetY);
+                titleOffsetY,
+                previewGlimmer);
 
         CompassHud.renderAdjustPreview(ctx, this.width, this.height);
 
-        applySidebarScroll();
+        applySidebarScroll(delta);
+        drawSidebarSwatches(ctx);
+        drawSidebarHeaders(ctx);
         drawSidebarScrollbar(ctx);
-        super.render(ctx, mouseX, mouseY, delta);
+        super.extractRenderState(ctx, hoverX, hoverY, delta);
+
+        // Rows caught mid roll-out/roll-in are skipped by super (visible=false) and drawn here instead, each
+        // sliding out from under the row above and scissor-clipped to its open slot for a continuous reveal.
+        drawAnimatingRows(ctx, hoverX, hoverY, delta);
+
+        // Drawn AFTER the widgets so the big glyphs sit on top of the (empty-labelled) undo/redo buttons.
+        if (sidebarVisible && activeTab == TAB_PRESETS) {
+            drawButtonGlyph(ctx, wUndoLoad, "↶");
+            drawButtonGlyph(ctx, wRedoLoad, "↷");
+            for (AbstractWidget w : presetRenameButtons) drawPencilGlyph(ctx, w);
+        }
+
+        // Grid glyph over the always-visible canvas snap toggle; bright when snapping, dim when free-move.
+        drawSnapGlyph(ctx);
+
+        // Rightward speed ripple + lightning glyph on the Color Cycle Speed slider (only present on the analog
+        // Aurora scheme; the method self-guards when the widget is absent). Drawn on top of the vanilla slider,
+        // same as the snap/undo glyphs above.
+        drawSpeedSliderFlair(ctx);
 
         if (sidebarVisible) {
-            ctx.drawTextWithShadow(this.textRenderer, "Press L to hide settings", 8, 8, 0xAAFFFFFF);
+            ctx.text(this.font, "Press L to hide settings", 8, 8, a11yText(0xAAFFFFFF));
         } else {
-            ctx.drawTextWithShadow(this.textRenderer, "Press L to show settings", 8, 8, 0xFFFFFFFF);
+            ctx.text(this.font, "Press L to show settings", 8, 8, a11yText(0xFFFFFFFF));
         }
+
+        // Painted last of all so an open picker's list sits above every widget and the compass preview.
+        if (sidebarVisible && openDropdown != null && openDropdown.isOpen()) {
+            openDropdown.renderOpenList(ctx, mouseX, mouseY);
+        }
+
+        // The overwrite-confirm dialog is painted after even the picker so it is the topmost layer (in practice
+        // the two can't coexist -- the Presets tab has no swatch pickers -- but "modal paints last" stays true).
+        drawOverwriteDialog(ctx, mouseX, mouseY);
+        // The rename modal (item j) is the last paint of all. Only one of overwrite/rename can be open at a time
+        // (both live on the Presets tab and each swallows all input), so their order relative to each other is moot.
+        drawRenameDialog(ctx, mouseX, mouseY);
+    }
+
+    // ---- Overwrite-confirm modal (Presets tab). Manual paint + hit-test, mirroring the openDropdown modality
+    //      (screen-owned single slot, painted last, swallows input while open) rather than adding real widgets --
+    //      so it needs no init() rebuild and can't leave a dangling widget behind. ----
+
+    /** The centered dialog card rect: {x, y, w, h}. Single source of truth shared by paint and hit-test. */
+    private int[] overwriteDialogRect() {
+        int w = 244, h = 96;
+        return new int[]{(this.width - w) / 2, (this.height - h) / 2, w, h};
+    }
+
+    /** Rect of one of the two dialog buttons: {x, y, w, h}. {@code overwrite=true} = left [Overwrite], else the
+     *  right [Keep It]. Derived from {@link #overwriteDialogRect()} so clicks land exactly where they paint. */
+    private int[] overwriteButtonRect(boolean overwrite) {
+        int[] d = overwriteDialogRect();
+        int btnW = 92, btnH = 20, gap = 14;
+        int bx = d[0] + (d[2] - (btnW * 2 + gap)) / 2;
+        int by = d[1] + d[3] - btnH - 12;
+        return new int[]{overwrite ? bx : bx + btnW + gap, by, btnW, btnH};
+    }
+
+    private static boolean pointInRect(double px, double py, int[] r) {
+        return px >= r[0] && px < r[0] + r[2] && py >= r[1] && py < r[1] + r[3];
+    }
+
+    /** Perform the deferred save into the pending slot, then close the dialog (init() also clears the field). */
+    private void confirmOverwrite() {
+        int s = pendingOverwriteSlot;
+        pendingOverwriteSlot = -1;
+        if (s >= 0) {
+            CompassHudPresetSlots.saveCurrentInto(s);
+            this.init();
+        }
+    }
+
+    private void drawOverwriteDialog(GuiGraphicsExtractor ctx, int mouseX, int mouseY) {
+        if (pendingOverwriteSlot < 0) return;
+        int s = pendingOverwriteSlot;
+        int[] d = overwriteDialogRect();
+        int x = d[0], y = d[1], w = d[2], h = d[3];
+        // Extra scrim so the dialog reads as the only live layer while it's up.
+        ctx.fill(0, 0, this.width, this.height, 0x88000000);
+        // Card: border + fill + gold accent rails -- same idiom as the tab card, routed through the a11y helpers.
+        ctx.fill(x - 1, y - 1, x + w + 1, y + h + 1, a11yMuted(PANEL_BORDER));
+        ctx.fill(x, y, x + w, y + h, a11yBg(PANEL_BG));
+        ctx.fill(x + 2, y + 2, x + w - 2, y + 3, GOLD);
+        ctx.fill(x + 2, y + h - 3, x + w - 2, y + h - 2, GOLD);
+
+        String head = "Overwrite preset " + (s + 1) + "?";
+        ctx.text(this.font, head, x + (w - this.font.width(head)) / 2, y + 11, GOLD);
+        // Its current summary, trimmed with an ellipsis to fit the card if the preset name is long.
+        String summary = CompassHudPresetSlots.summarize(s);
+        int maxW = w - 16;
+        if (this.font.width(summary) > maxW) {
+            while (summary.length() > 1 && this.font.width(summary + "…") > maxW) {
+                summary = summary.substring(0, summary.length() - 1);
+            }
+            summary = summary + "…";
+        }
+        ctx.text(this.font, summary, x + (w - this.font.width(summary)) / 2, y + 27, a11yText(0xFFCFC6B8));
+
+        drawDialogButton(ctx, overwriteButtonRect(true), "Overwrite", mouseX, mouseY);
+        drawDialogButton(ctx, overwriteButtonRect(false), "Keep It", mouseX, mouseY);
+    }
+
+    // ---- Preset rename modal (item j). Manual paint + hit-test, mirroring the overwrite dialog (screen-owned
+    //      single slot, painted last, swallows input while open) so it needs no init() rebuild. ----
+
+    /** The centered rename card rect {x, y, w, h}. Single source of truth shared by paint and hit-test. */
+    private int[] renameDialogRect() {
+        int w = 244, h = 104;
+        return new int[]{(this.width - w) / 2, (this.height - h) / 2, w, h};
+    }
+
+    /** Rect {x, y, w, h} of a rename dialog button: {@code ok=true} = left [Save], else right [Cancel]. */
+    private int[] renameButtonRect(boolean ok) {
+        int[] d = renameDialogRect();
+        int btnW = 92, btnH = 20, gap = 14;
+        int bx = d[0] + (d[2] - (btnW * 2 + gap)) / 2;
+        int by = d[1] + d[3] - btnH - 12;
+        return new int[]{ok ? bx : bx + btnW + gap, by, btnW, btnH};
+    }
+
+    /** Commit the rename buffer to the slot (blank reverts to the auto-summary), close the modal, refresh labels. */
+    private void commitRename() {
+        int s = renamingSlot;
+        renamingSlot = -1;
+        if (s >= 0) {
+            CompassHudPresetSlots.setName(s, renameBuffer.toString());
+            this.init();
+        }
+    }
+
+    private void drawRenameDialog(GuiGraphicsExtractor ctx, int mouseX, int mouseY) {
+        if (renamingSlot < 0) return;
+        int s = renamingSlot;
+        int[] d = renameDialogRect();
+        int x = d[0], y = d[1], w = d[2], h = d[3];
+        ctx.fill(0, 0, this.width, this.height, 0x88000000);
+        ctx.fill(x - 1, y - 1, x + w + 1, y + h + 1, a11yMuted(PANEL_BORDER));
+        ctx.fill(x, y, x + w, y + h, a11yBg(PANEL_BG));
+        ctx.fill(x + 2, y + 2, x + w - 2, y + 3, GOLD);
+        ctx.fill(x + 2, y + h - 3, x + w - 2, y + h - 2, GOLD);
+
+        String head = "Name preset " + (s + 1);
+        ctx.text(this.font, head, x + (w - this.font.width(head)) / 2, y + 11, GOLD);
+
+        // The editable text field: a bordered chip with the buffer text and a blinking caret. Text is clipped
+        // to the field width from the LEFT so the caret/tail stays visible as it grows (a hand-rolled EditBox
+        // stand-in, matching the manual-modal idiom instead of hosting a real focused widget).
+        int fx = x + 12, fy = y + 30, fw = w - 24, fh = 18;
+        ctx.fill(fx - 1, fy - 1, fx + fw + 1, fy + fh + 1, a11yMuted(PANEL_BORDER));
+        ctx.fill(fx, fy, fx + fw, fy + fh, a11yBg(0xFF201A16));
+        String text = renameBuffer.toString();
+        String shown = text;
+        int innerW = fw - 8;
+        while (shown.length() > 0 && this.font.width(shown) > innerW - 4) {
+            shown = shown.substring(1); // scroll left so the tail (where you're typing) stays in view
+        }
+        int tx = fx + 4;
+        int ty = fy + (fh - this.font.lineHeight) / 2 + 1;
+        ctx.text(this.font, shown, tx, ty, a11yText(0xFFF3ECDD));
+        // Blinking caret at the end of the shown text.
+        if (((System.currentTimeMillis() / 500L) & 1L) == 0L) {
+            int caretX = tx + this.font.width(shown);
+            ctx.fill(caretX, fy + 3, caretX + 1, fy + fh - 3, a11yText(0xFFF3ECDD));
+        }
+        // A faint hint when empty, so the field doesn't read as broken.
+        if (text.isEmpty()) {
+            ctx.text(this.font, "(auto)", tx + 6, ty, a11yMuted(0xFF7A6F63));
+        }
+
+        drawDialogButton(ctx, renameButtonRect(true), "Save", mouseX, mouseY);
+        drawDialogButton(ctx, renameButtonRect(false), "Cancel", mouseX, mouseY);
+    }
+
+    /** A tiny hand-plotted 7x7 pencil (nib bottom-left, body up-right), drawn on the empty-labelled per-slot
+     *  rename buttons -- MC's font has no reliable pencil glyph, so this follows the lightning/undo glyph
+     *  workaround. Dimmed on a disabled (empty-slot) button so it doesn't read as clickable. */
+    private void drawPencilGlyph(GuiGraphicsExtractor ctx, AbstractWidget w) {
+        if (w == null || !w.visible) return;
+        int[] rows = {
+                0b0000011,
+                0b0000111,
+                0b0001110,
+                0b0011100,
+                0b0111000,
+                0b1110000,
+                0b1100000,
+        };
+        int gw = 7;
+        int lx = w.getX() + (w.getWidth() - gw) / 2;
+        int ly = w.getY() + (w.getHeight() - gw) / 2;
+        int color = w.active ? (highContrast() ? 0xFFFFFFFF : 0xFFE8E0D4) : a11yMuted(0xFF8C8078);
+        GlyphDraw.drawBitmap(ctx, rows, gw, lx, ly, color);
+    }
+
+    private void drawDialogButton(GuiGraphicsExtractor ctx, int[] r, String label, int mouseX, int mouseY) {
+        int bx = r[0], by = r[1], bw = r[2], bh = r[3];
+        boolean hover = mouseX >= bx && mouseX < bx + bw && mouseY >= by && mouseY < by + bh;
+        ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, hover ? GOLD : a11yMuted(PANEL_BORDER));
+        ctx.fill(bx, by, bx + bw, by + bh, hover ? a11yBg(0xFF4A3E34) : a11yBg(0xFF2A221C));
+        ctx.text(this.font, label, bx + (bw - this.font.width(label)) / 2,
+                by + (bh - this.font.lineHeight) / 2 + 1, hover ? GOLD : a11yText(0xFFE8E0D4));
+    }
+
+    /** Re-applies the canvas snap toggle's tooltip text to match the CURRENT LatitudeConfig.hudSnapEnabled.
+     *  Unlike {@link #drawSnapGlyph} (which reads the live flag every frame), a Button's tooltip is static
+     *  text set once -- so this must be called explicitly anywhere the flag can change: here at init() and
+     *  from the Labels-tab "Grid Snap" row's handler, which used to leave this toggle's tooltip stale (still
+     *  saying the old state) until the next full init(). */
+    private void refreshSnapToggleTooltip() {
+        tooltip(this.wSnapToggle, "Snap to Grid: " + (LatitudeConfig.hudSnapEnabled ? "On" : "Off")
+                + ". Click to toggle whether dragged HUD elements jump to a grid or move freely.");
+    }
+
+    /** Grid glyph drawn on the empty-labelled canvas snap toggle: a crisp, evenly-spaced 3x3 grid. Bright gold
+     *  when Snap to Grid is on (plus 4 bright dots marking the interior snap nodes), dim muted lines when
+     *  free-move, so the state reads at a glance (plus the tooltip). Redrawn "more griddy" (TEST 57): the span
+     *  is chosen divisible by 3 and every one of the 4 gridlines each way lands on an exact third, so all nine
+     *  cells are the same size and the far edges sit ON a line -- the old version put the right/bottom frame a
+     *  pixel short of the last interior line, making the end cells read a pixel narrow ("the grid is... off"). */
+    private void drawSnapGlyph(GuiGraphicsExtractor ctx) {
+        if (wSnapToggle == null || !wSnapToggle.visible) return;
+        boolean on = LatitudeConfig.hudSnapEnabled;
+        // Strokes lift to a legible floor under High Contrast (STANDARD identity keeps the exact gold/dim look).
+        int line = a11yMuted(on ? GOLD : 0xFF6E655C);
+        int x = wSnapToggle.getX();
+        int y = wSnapToggle.getY();
+        int w = wSnapToggle.getWidth();
+        int h = wSnapToggle.getHeight();
+        int cells = 3;
+        int span = 12;                    // 12 / 3 = 4px cells, exactly even
+        int gx = x + (w - span) / 2;      // centered in the button
+        int gy = y + (h - span) / 2;
+        // High Contrast: a dark backing plate + bright hairline behind the glyph so it never washes out against
+        // the canvas/world preview it floats over (same treatment the rule icons get on the create screen).
+        int plate = a11yBackingAlpha();
+        if (plate > 0) {
+            int px0 = gx - 2, py0 = gy - 2, px1 = gx + span + 3, py1 = gy + span + 3;
+            ctx.fill(px0, py0, px1, py1, plate << 24);
+            int rim = 0x66FFFFFF;
+            ctx.fill(px0, py0, px1, py0 + 1, rim);
+            ctx.fill(px0, py1 - 1, px1, py1, rim);
+            ctx.fill(px0, py0, px0 + 1, py1, rim);
+            ctx.fill(px1 - 1, py0, px1, py1, rim);
+        }
+        // Four evenly-spaced gridlines each way (offsets 0, 4, 8, 12 -- integer, no rounding drift).
+        for (int i = 0; i <= cells; i++) {
+            int off = i * span / cells;
+            ctx.fill(gx + off, gy, gx + off + 1, gy + span + 1, line);   // vertical
+            ctx.fill(gx, gy + off, gx + span + 1, gy + off + 1, line);   // horizontal
+        }
+        // Snapping ON: mark the 4 interior nodes (the real snap points) with small bright dots, so the icon
+        // reads as "snapping TO a grid," not just "a grid." Plain lines when free-move.
+        if (on) {
+            int dot = 0xFFF6E4B8; // brighter than the gold lines
+            for (int iy = 1; iy < cells; iy++) {
+                for (int ix = 1; ix < cells; ix++) {
+                    int cx = gx + ix * span / cells;
+                    int cy = gy + iy * span / cells;
+                    ctx.fill(cx - 1, cy - 1, cx + 1, cy + 1, dot); // 2x2 dot centered on the node
+                }
+            }
+        }
+    }
+
+    /** Subtle rightward-flowing "speed" flair painted over the Color Cycle Speed slider so its direction reads
+     *  as "further right = faster": a faint gold brightness crest drifting left->right along the track edges on
+     *  a slow wall-clock loop, plus a tiny hand-drawn lightning bolt at the RIGHT (fast) end. Reduce Motion
+     *  freezes the crest to a static mid-track sheen (no drift). Drawn after super, on top of the vanilla
+     *  slider (same layer/precedent as drawSnapGlyph / the undo-redo glyphs); self-guards when the slider is
+     *  absent (only present on the analog Aurora scheme) or scrolled/animated out of view. */
+    private void drawSpeedSliderFlair(GuiGraphicsExtractor ctx) {
+        AbstractWidget w = wCompassRainbowSpeed;
+        if (w == null || !w.visible) return;
+        int x = w.getX();
+        int y = w.getY();
+        int wdt = w.getWidth();
+        int h = w.getHeight();
+        int inset = 3;
+        int trackL = x + inset;
+        int trackR = x + wdt - inset;
+        int trackW = Math.max(1, trackR - trackL);
+
+        // Crest center: static mid-track under Reduce Motion, else drifting left->right on a slow loop.
+        float phase = LatitudeConfig.reduceMotion
+                ? 0.5f
+                : (System.currentTimeMillis() % 2600L) / 2600.0f;
+        int center = trackL + Math.round(phase * trackW);
+        int bandW = 10;
+        // A soft gold crest confined to the top and bottom 2px edges of the track (kept off the centered value
+        // text so legibility is untouched). Alpha falls off from the crest center for a gentle sheen.
+        for (int dx = -bandW; dx <= bandW; dx++) {
+            int px = center + dx;
+            if (px < trackL || px >= trackR) continue;
+            float f = 1f - Math.abs(dx) / (float) bandW;
+            int a = (int) (f * f * 90f);
+            if (a <= 0) continue;
+            int argb = (a << 24) | (GOLD & 0xFFFFFF);
+            ctx.fill(px, y + 1, px + 1, y + 3, argb);          // top edge
+            ctx.fill(px, y + h - 3, px + 1, y + h - 1, argb);  // bottom edge
+        }
+        // Lightning bolt at the fast (right) end, ~6x8, scheme-neutral gold.
+        drawLightningGlyph(ctx, trackR - 6, y + (h - 8) / 2, GOLD);
+    }
+
+    /** Tiny hand-drawn 6x8 lightning bolt (a zigzag from top-right to bottom-left with a mid crossbar), used to
+     *  mark the "fast" end of the Color Cycle Speed slider. Hand-plotted for the same reason the undo/redo and
+     *  snap glyphs are: the unicode fallback renders far too small and fuzzy at this size. */
+    private void drawLightningGlyph(GuiGraphicsExtractor ctx, int lx, int ly, int color) {
+        int[] rows = {
+                0b000011,
+                0b000110,
+                0b001100,
+                0b011110,
+                0b001110,
+                0b001100,
+                0b011000,
+                0b110000,
+        };
+        // Plotting mechanic shared via GlyphDraw (see its class doc); the bit pattern above is this
+        // glyph's own artwork and stays here.
+        GlyphDraw.drawBitmap(ctx, rows, 6, lx, ly, color);
+    }
+
+    /** Draws a glyph scaled up and centered on a button — used for the undo/redo arrows, whose default
+     *  (unicode-fallback) rendering is far too small at button size. Mirrors the tab-strip's scaled label
+     *  draw. Only draws visible buttons (applySidebarScroll already hid disabled/scrolled-out ones). */
+    private void drawButtonGlyph(GuiGraphicsExtractor ctx, AbstractWidget w, String glyph) {
+        if (w == null || !w.visible) return;
+        float scale = 1.9f;
+        int cx = w.getX() + w.getWidth() / 2;
+        int cy = w.getY() + w.getHeight() / 2;
+        // High Contrast: a dark backing plate behind the arrow so it reads on any button state, and -- since a
+        // disabled undo/redo button stays visible with only a greyed vanilla background -- a legibly-lifted
+        // muted tone for the disabled glyph instead of full white, so "nothing to undo" no longer reads as
+        // clickable. STANDARD keeps the exact 0xFFFFFFFF glyph for both states (byte-identical).
+        int plate = a11yBackingAlpha();
+        if (plate > 0) {
+            int r = GlyphDraw.scaledTextPlateRadius(this.font, scale);
+            ctx.fill(cx - r, cy - r, cx + r, cy + r, plate << 24);
+        }
+        int color = highContrast() ? (w.active ? 0xFFFFFFFF : a11yMuted(0xFF8C8078)) : 0xFFFFFFFF;
+        // Scale/center/draw mechanic shared via GlyphDraw (see its class doc, cataloguing the 3 prior
+        // reinventions of this "unicode fallback renders too small" workaround); which glyph and what
+        // color to use stays this call site's decision.
+        GlyphDraw.drawScaledCenteredText(ctx, this.font, glyph, cx, cy, scale, color);
     }
 
     @Override
     public void tick() {
         super.tick();
-        var mc = MinecraftClient.getInstance();
+        var mc = Minecraft.getInstance();
         if (mc == null || mc.getWindow() == null) return;
 
-        boolean lDown = InputUtil.isKeyPressed(mc.getWindow(), InputUtil.GLFW_KEY_L);
-        if (lDown && !wasLDown) {
+        boolean lDown = InputConstants.isKeyDown(mc.getWindow(), InputConstants.KEY_L);
+        // Suppressed while a modal (overwrite-confirm or rename) is up so its modality also covers the poll-based L
+        // toggle -- and so an 'L' typed into the rename field toggles the sidebar instead of appearing in the name.
+        if (lDown && !wasLDown && pendingOverwriteSlot < 0 && renamingSlot < 0) {
             sidebarVisible = !sidebarVisible;
             updateSidebarVisibility();
         }
@@ -348,18 +1820,59 @@ public class LatitudeHudStudioScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (pendingOverwriteSlot >= 0 || renamingSlot >= 0) {
+            return true;   // swallow scroll while a modal (overwrite-confirm / rename) is up (fully modal)
+        }
+        if (openDropdown != null && openDropdown.isOpen()) {
+            return openDropdown.handleScroll(verticalAmount);
+        }
         if (sidebarVisible && mouseX < sidebarWidth + 10) {
             int viewportH = sidebarViewportBottom - sidebarViewportTop;
             int maxScroll = Math.max(0, sidebarContentHeight - viewportH);
             sidebarScrollY -= (int) Math.signum(verticalAmount) * 20;
-            sidebarScrollY = MathHelper.clamp(sidebarScrollY, 0, maxScroll);
+            sidebarScrollY = Mth.clamp(sidebarScrollY, 0, maxScroll);
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubleClick) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubleClick) {
+        // The rename modal (item j) is topmost: a left click hits [Save]/[Cancel] or is swallowed, before anything
+        // else. [Save] commits the buffer (blank => auto-summary); [Cancel] discards; elsewhere is consumed.
+        if (renamingSlot >= 0) {
+            if (click.button() == 0) {
+                double mx = click.x(), my = click.y();
+                if (pointInRect(mx, my, renameButtonRect(true))) {
+                    commitRename();
+                } else if (pointInRect(mx, my, renameButtonRect(false))) {
+                    renamingSlot = -1;   // Cancel
+                }
+            }
+            return true;
+        }
+
+        // The overwrite-confirm dialog is the topmost modal: while it's open EVERY click either hits one of its two
+        // buttons or is swallowed here, before the picker check, the widgets, and super. A left click on [Overwrite]
+        // saves + closes; on [Keep It] just closes; anywhere else is consumed (click-through would defeat the point).
+        if (pendingOverwriteSlot >= 0) {
+            if (click.button() == 0) {
+                double mx = click.x(), my = click.y();
+                if (pointInRect(mx, my, overwriteButtonRect(true))) {
+                    confirmOverwrite();
+                } else if (pointInRect(mx, my, overwriteButtonRect(false))) {
+                    pendingOverwriteSlot = -1;   // Keep It
+                }
+            }
+            return true;
+        }
+
+        // An open picker is modal: any left click either selects an entry or dismisses it, and nothing else on
+        // the screen sees the click. This runs BEFORE super so a click on another widget can't slip through.
+        if (click.button() == 0 && openDropdown != null && openDropdown.isOpen()) {
+            return openDropdown.handleClick(click.x(), click.y());
+        }
+
         if (super.mouseClicked(click, doubleClick)) {
             return true;
         }
@@ -368,6 +1881,10 @@ public class LatitudeHudStudioScreen extends Screen {
         double my = click.y();
 
         if (click.button() == 0) {
+            if (handleTabClick(mx, my)) {
+                return true;
+            }
+
             if (LatitudeConfig.zoneEnterTitleDraggable && isMouseOverTitle(mx, my)) {
                 dragElement = DragElement.TITLE;
                 int cx = (this.width / 2) + LatitudeConfig.zoneEnterTitleOffsetX;
@@ -379,7 +1896,28 @@ public class LatitudeHudStudioScreen extends Screen {
                 return true;
             }
 
+            // Item (k): a click on a resizable label's corner grip starts a RESIZE (checked before the move
+            // hit-tests, since the grip sits inside the element's box). Only the text-size-scalable label families.
+            if (tryStartResize(mx, my)) {
+                return true;
+            }
+
             if (isMouseOverCompass(mx, my)) {
+                var cfg = CompassHudConfig.get();
+                if (cfg.dockMode == CompassHudConfig.DockMode.HOTBAR_RIGHT) {
+                    // Grabbing a docked compass UNDOCKS it (TEST 29 request): the pin is seeded at the
+                    // docked position first so nothing jumps before the first drag event, then the drag
+                    // proceeds exactly like any detached drag. init() refreshes the Attach button to OFF.
+                    var mc = Minecraft.getInstance();
+                    var b = CompassHud.computeBounds(mc, cfg);
+                    cfg.dockMode = CompassHudConfig.DockMode.NONE;
+                    cfg.attachToHotbarCompass = false; // legacy mirror
+                    if (b != null) {
+                        CompassHud.applyCompassDrag(mc, cfg, b.x(), b.y());
+                    }
+                    CompassHudConfig.saveCurrent();
+                    this.init();
+                }
                 dragElement = DragElement.COMPASS;
                 return true;
             }
@@ -388,13 +1926,28 @@ public class LatitudeHudStudioScreen extends Screen {
                 dragElement = DragElement.ZONE;
                 return true;
             }
+
+            if (isMouseOverBiome(mx, my)) {
+                dragElement = DragElement.BIOME;
+                return true;
+            }
+
+            if (isMouseOverCoords(mx, my)) {
+                dragElement = DragElement.COORDS;
+                return true;
+            }
+
+            if (isMouseOverClock(mx, my)) {
+                dragElement = DragElement.CLOCK;
+                return true;
+            }
         }
 
         return false;
     }
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (super.mouseDragged(click, deltaX, deltaY)) {
             return true;
         }
@@ -406,27 +1959,48 @@ public class LatitudeHudStudioScreen extends Screen {
             return false;
         }
 
+        // Item (k): a resize in progress maps the corner grip's distance from the element's fixed (top-left)
+        // anchor to the element's text-size, clamped to the SAME 0.5..3.0 range the sliders enforce. Ratio-based
+        // (newDist / startDist) so dragging the grip outward enlarges, inward shrinks -- like a window corner.
+        if (resizing && dragElement != DragElement.NONE) {
+            double dist = Math.max(1.0, Math.hypot(mx - resizeAnchorX, my - resizeAnchorY));
+            float newScale = clampLabelScale((float) (resizeStartScale * (dist / resizeStartDist)));
+            applyLabelScale(dragElement, newScale);
+            return true;
+        }
+
         if (dragElement == DragElement.TITLE) {
             double newCx = mx - titleGrabDx;
             double newCy = my - titleGrabDy;
+            // Grid Snap parity (title-drag fix): the compass/labels snap LIVE during their drag (inside
+            // CompassHud.applyCompassDrag -> maybeSnap), quantizing the widget's absolute SCREEN pixel
+            // reference point to the grid every frame. The title previously moved freely here and only
+            // snapped its screen-CENTER-relative offset once on release -- a different coordinate space and
+            // no live feedback, so it read as "ignores snap." Snap the title's ABSOLUTE center point to the
+            // same grid the others use (its center is the anchor the render clamp centers on), then store the
+            // offset. Snap off -> free move, unchanged.
+            if (LatitudeConfig.hudSnapEnabled) {
+                newCx = snap((int) Math.round(newCx), LatitudeConfig.hudSnapPixels);
+                newCy = snap((int) Math.round(newCy), LatitudeConfig.hudSnapPixels);
+            }
             titleOffsetXf = newCx - (this.width / 2.0);
             titleOffsetYf = newCy - (this.height / 2.0);
             return true;
         }
 
         if (dragElement == DragElement.COMPASS) {
-            var mc = MinecraftClient.getInstance();
+            var mc = Minecraft.getInstance();
             if (mc == null || mc.getWindow() == null) {
                 return true;
             }
 
             var cfg = CompassHudConfig.get();
-            if (cfg.attachToHotbarCompass) {
-                return true;
+            if (cfg.dockMode != CompassHudConfig.DockMode.NONE) {
+                return true; // docked position is computed from the hotbar, not draggable
             }
 
-            int screenW = mc.getWindow().getScaledWidth();
-            int screenH = mc.getWindow().getScaledHeight();
+            int screenW = mc.getWindow().getGuiScaledWidth();
+            int screenH = mc.getWindow().getGuiScaledHeight();
 
             int targetX = (int) Math.round(mx) - compassGrabDx;
             int targetY = (int) Math.round(my) - compassGrabDy;
@@ -438,25 +2012,19 @@ public class LatitudeHudStudioScreen extends Screen {
             targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
             targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
 
-            var base = CompassHud.computeBasePosition(mc, cfg);
-            cfg.offsetX = targetX - base.x();
-            cfg.offsetY = targetY - base.y();
-
-            if (LatitudeConfig.hudSnapEnabled) {
-                cfg.offsetX = snap(cfg.offsetX, LatitudeConfig.hudSnapPixels);
-                cfg.offsetY = snap(cfg.offsetY, LatitudeConfig.hudSnapPixels);
-            }
+            // Pin & Grow v1: the drag moves the PIN (snap applies to the pin point inside the helper).
+            CompassHud.applyCompassDrag(mc, cfg, targetX, targetY);
             return true;
         }
 
         if (dragElement == DragElement.ZONE) {
-            var mc = MinecraftClient.getInstance();
+            var mc = Minecraft.getInstance();
             if (mc == null || mc.getWindow() == null) return true;
             var cfg = CompassHudConfig.get();
             if (!cfg.displayZoneInHud || cfg.zoneFollowsCompass) return true;
 
-            int screenW = mc.getWindow().getScaledWidth();
-            int screenH = mc.getWindow().getScaledHeight();
+            int screenW = mc.getWindow().getGuiScaledWidth();
+            int screenH = mc.getWindow().getGuiScaledHeight();
             var zb = CompassHud.computeZoneBounds(mc, cfg);
             if (zb == null) return true;
 
@@ -467,15 +2035,76 @@ public class LatitudeHudStudioScreen extends Screen {
             targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
             targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
 
-            int baseX = anchoredZoneX(cfg, screenW, boxW);
-            int baseY = anchoredZoneY(cfg, screenH, boxH);
-            cfg.zoneOffsetX = targetX - baseX;
-            cfg.zoneOffsetY = targetY - baseY;
+            CompassHud.applyZoneDrag(mc, cfg, targetX, targetY, boxW, boxH);
+            return true;
+        }
 
-            if (LatitudeConfig.hudSnapEnabled) {
-                cfg.zoneOffsetX = snap(cfg.zoneOffsetX, LatitudeConfig.hudSnapPixels);
-                cfg.zoneOffsetY = snap(cfg.zoneOffsetY, LatitudeConfig.hudSnapPixels);
-            }
+        // Mirrors the ZONE block above, for the biome label.
+        if (dragElement == DragElement.BIOME) {
+            var mc = Minecraft.getInstance();
+            if (mc == null || mc.getWindow() == null) return true;
+            var cfg = CompassHudConfig.get();
+            if (!cfg.displayBiomeInHud || cfg.biomeFollowsCompass) return true;
+
+            int screenW = mc.getWindow().getGuiScaledWidth();
+            int screenH = mc.getWindow().getGuiScaledHeight();
+            var bb = CompassHud.computeBiomeBounds(mc, cfg);
+            if (bb == null) return true;
+
+            int targetX = (int) Math.round(mx) - biomeGrabDx;
+            int targetY = (int) Math.round(my) - biomeGrabDy;
+            int boxW = bb.w();
+            int boxH = bb.h();
+            targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
+            targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
+
+            CompassHud.applyBiomeDrag(mc, cfg, targetX, targetY, boxW, boxH);
+            return true;
+        }
+
+        // Mirrors the ZONE block above, for the detached coords (lat/lon) label.
+        if (dragElement == DragElement.COORDS) {
+            var mc = Minecraft.getInstance();
+            if (mc == null || mc.getWindow() == null) return true;
+            var cfg = CompassHudConfig.get();
+            if (cfg.coordsFollowsCompass) return true;
+
+            int screenW = mc.getWindow().getGuiScaledWidth();
+            int screenH = mc.getWindow().getGuiScaledHeight();
+            var cb = CompassHud.computeCoordsBounds(mc, cfg);
+            if (cb == null) return true;
+
+            int targetX = (int) Math.round(mx) - coordsGrabDx;
+            int targetY = (int) Math.round(my) - coordsGrabDy;
+            int boxW = cb.w();
+            int boxH = cb.h();
+            targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
+            targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
+
+            CompassHud.applyCoordsDrag(mc, cfg, targetX, targetY, boxW, boxH);
+            return true;
+        }
+
+        // Mirrors the COORDS block above, for the detached clock solar readout.
+        if (dragElement == DragElement.CLOCK) {
+            var mc = Minecraft.getInstance();
+            if (mc == null || mc.getWindow() == null) return true;
+            var cfg = CompassHudConfig.get();
+            if (!cfg.displayClockReadout) return true;
+
+            int screenW = mc.getWindow().getGuiScaledWidth();
+            int screenH = mc.getWindow().getGuiScaledHeight();
+            var kb = CompassHud.computeClockBounds(mc, cfg);
+            if (kb == null) return true;
+
+            int targetX = (int) Math.round(mx) - clockGrabDx;
+            int targetY = (int) Math.round(my) - clockGrabDy;
+            int boxW = kb.w();
+            int boxH = kb.h();
+            targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
+            targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
+
+            CompassHud.applyClockDrag(mc, cfg, targetX, targetY, boxW, boxH);
             return true;
         }
 
@@ -483,17 +2112,26 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         if (click.button() == 0) {
+            // Item (k): a finished resize persists the new text-size and re-inits so the matching size SLIDER
+            // re-reads the value (the sliders stay authoritative; the grip is just a second way to set the same
+            // field). Handled before the move branches and returns early -- a resize is never also a move.
+            if (resizing) {
+                resizing = false;
+                CompassHudConfig.saveCurrent();
+                dragElement = DragElement.NONE;
+                this.init();
+                return super.mouseReleased(click);
+            }
             if (dragElement == DragElement.TITLE) {
-                int x = (int) Math.round(titleOffsetXf);
-                int y = (int) Math.round(titleOffsetYf);
-                if (LatitudeConfig.hudSnapEnabled) {
-                    x = snap(x, LatitudeConfig.hudSnapPixels);
-                    y = snap(y, LatitudeConfig.hudSnapPixels);
-                }
-                LatitudeConfig.zoneEnterTitleOffsetX = x;
-                LatitudeConfig.zoneEnterTitleOffsetY = y;
+                // Snap is applied LIVE during the drag (mouseDragged), on the title's absolute center in
+                // screen pixels -- exactly like the compass/labels. So release just persists the already-
+                // snapped float, mirroring the compass release (which also only saves). Re-snapping the
+                // screen-center-relative offset here would quantize in a different space and fight the live
+                // snap whenever width/2 or height/2 isn't a grid multiple.
+                LatitudeConfig.zoneEnterTitleOffsetX = (int) Math.round(titleOffsetXf);
+                LatitudeConfig.zoneEnterTitleOffsetY = (int) Math.round(titleOffsetYf);
                 LatitudeConfig.saveCurrent();
             }
             if (dragElement == DragElement.COMPASS) {
@@ -502,9 +2140,94 @@ public class LatitudeHudStudioScreen extends Screen {
             if (dragElement == DragElement.ZONE) {
                 CompassHudConfig.saveCurrent();
             }
+            if (dragElement == DragElement.BIOME) {
+                CompassHudConfig.saveCurrent();
+            }
+            if (dragElement == DragElement.COORDS) {
+                CompassHudConfig.saveCurrent();
+            }
+            if (dragElement == DragElement.CLOCK) {
+                CompassHudConfig.saveCurrent();
+            }
             dragElement = DragElement.NONE;
         }
         return super.mouseReleased(click);
+    }
+
+    @Override
+    public boolean keyPressed(KeyEvent input) {
+        // Rename modal owns the keyboard while open: Esc = Cancel, Enter = Save, Backspace edits the buffer, and
+        // every other key is swallowed (printable characters arrive via charTyped, below). Runs before everything.
+        if (renamingSlot >= 0) {
+            int k = input.key();
+            if (k == InputConstants.KEY_ESCAPE) {
+                renamingSlot = -1;   // Cancel -- keep the Studio open, discard the edit
+            } else if (k == InputConstants.KEY_RETURN || k == InputConstants.KEY_NUMPADENTER) {
+                commitRename();
+            } else if (k == InputConstants.KEY_BACKSPACE) {
+                if (renameBuffer.length() > 0) renameBuffer.setLength(renameBuffer.length() - 1);
+            }
+            return true;
+        }
+        // Overwrite-confirm dialog owns the keyboard while open: Esc = Keep It (and does NOT fall through to the
+        // vanilla Esc-closes-the-Screen path), Enter = Overwrite, every other key is swallowed so nothing beneath
+        // reacts. Runs before the picker + super.
+        if (pendingOverwriteSlot >= 0) {
+            int k = input.key();
+            if (k == InputConstants.KEY_ESCAPE) {
+                pendingOverwriteSlot = -1;   // Keep It -- close the dialog, keep the Studio open
+            } else if (k == InputConstants.KEY_RETURN) {
+                confirmOverwrite();
+            }
+            return true;
+        }
+        // Arrow keys / Enter / Esc drive an open picker (accessibility) instead of the screen underneath.
+        if (openDropdown != null && openDropdown.isOpen() && openDropdown.handleKey(input)) {
+            return true;
+        }
+        return super.keyPressed(input);
+    }
+
+    @Override
+    public boolean charTyped(net.minecraft.client.input.CharacterEvent event) {
+        // Feed printable characters into the rename buffer (the manual EditBox stand-in). Only while the rename
+        // modal is open; otherwise the Studio has no text field and defers to the base routing.
+        if (renamingSlot >= 0) {
+            int cp = event.codepoint();
+            if (cp >= 0x20 && cp != 0x7F && renameBuffer.length() < RENAME_MAX_LEN
+                    && Character.isValidCodePoint(cp)) {
+                renameBuffer.appendCodePoint(cp);
+            }
+            return true;
+        }
+        return super.charTyped(event);
+    }
+
+    // ---- SwatchDropdown.Host: this screen owns the single open picker, paints its list, and routes input. ----
+
+    @Override
+    public void dropdownOpened(SwatchDropdown d) {
+        if (openDropdown != null && openDropdown != d) {
+            openDropdown.close();
+        }
+        openDropdown = d;
+    }
+
+    @Override
+    public void dropdownClosed(SwatchDropdown d) {
+        if (openDropdown == d) {
+            openDropdown = null;
+        }
+    }
+
+    @Override
+    public int hostScreenWidth() {
+        return this.width;
+    }
+
+    @Override
+    public int hostScreenHeight() {
+        return this.height;
     }
 
     private static void resetHudDefaults() {
@@ -515,30 +2238,173 @@ public class LatitudeHudStudioScreen extends Screen {
         LatitudeConfig.zoneEnterTitleScale = 1.8;
         LatitudeConfig.zoneEnterTitleOffsetX = 0;
         LatitudeConfig.zoneEnterTitleOffsetY = -40;
+        LatitudeConfig.zoneEnterTitleEnabled = true;
+        LatitudeConfig.zoneEnterTitleSeconds = 6.0;
+        LatitudeConfig.showZoneBaseDegreesOnTitle = true;
+        // Fresh out-of-box title look (title-styling overhaul 2026-07-11, refined same day): warm off-white
+        // fill, no outline (1px when enabled), FADED drop shadow ON, glow OFF (intensity 0.75 when enabled),
+        // ALL CAPS, letter spacing 1 -- matches LatitudeConfigData's field initializers.
+        LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfigData.TitleColorPreset.OFF_WHITE;
+        LatitudeConfig.zoneEnterTitleRgb = 0xFFFFFF;
+        LatitudeConfig.zoneEnterTitleOutline = false;
+        LatitudeConfig.zoneEnterTitleOutlineRgb = 0x000000;
+        LatitudeConfig.zoneEnterTitleOutlineThickness = 1;
+        LatitudeConfig.zoneEnterTitleDropShadow = true;
+        LatitudeConfig.zoneEnterTitleGlow = false;
+        LatitudeConfig.zoneEnterTitleGlowIntensity = 0.75;
+        LatitudeConfig.zoneEnterTitleGlimmer = true;
+        LatitudeConfig.zoneEnterTitleGlimmerIntensity =
+                com.example.globe.core.ui.TitleStyle.GLIMMER_INTENSITY_DEFAULT;
+        LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.UPPERCASE;
+        LatitudeConfig.zoneEnterTitleLetterSpacing = 1;
+        LatitudeConfig.zoneEnterTitleDraggable = true;
+        // Matches LatitudeConfig's own field-initializer defaults (hudSnapEnabled=true, hudSnapPixels=8) --
+        // there's no fresh()-style factory on LatitudeConfig (unlike CompassHudConfig), so this follows the same
+        // hardcoded-literal pattern already used for the zoneEnterTitle* resets above.
+        LatitudeConfig.hudSnapEnabled = true;
+        LatitudeConfig.hudSnapPixels = 8;
+        // Border Re-prompt Gesture (TEST 93): a General-tab toggle -> restored by "Reset HUD". Reads the SINGLE
+        // shared default constant (duplicated-default-sites law) so it can never drift from the field initializer.
+        LatitudeConfig.borderRepromptGesture = LatitudeConfigData.BORDER_REPROMPT_GESTURE_DEFAULT;
         LatitudeConfig.saveCurrent();
     }
 
-    private void trackSidebarWidget(ClickableWidget w, int baseY) {
+    private void trackSidebarWidget(AbstractWidget w, int baseY) {
         sidebarScrollWidgets.add(w);
         sidebarScrollBaseYs.add(baseY);
+        // Snapshot the intrinsic enabled state NOW, before the per-frame visibility/animation layer starts
+        // overwriting w.active. Callers that gate a button (undo/redo/preset Load/x) set w.active just before
+        // this call; everything else is enabled by default.
+        if (w != null) rowIntrinsicEnabled.put(w, w.active);
     }
 
-    private void applySidebarScroll() {
+    /** Reveal within this of 0 or 1 counts as "settled" -- fully collapsed (skip) or fully open (render normally
+     *  through super at rest position). Anything strictly between is mid-roll and gets the clipped slide. */
+    private static final float ROW_REVEAL_EPSILON = 0.02f;
+
+    private void applySidebarScroll(float delta) {
+        advanceRowAnimations(delta);
         if (!sidebarVisible) return;
+
+        int n = sidebarScrollWidgets.size();
+        if (sidebarClipRow == null || sidebarClipRow.length != n) sidebarClipRow = new boolean[n];
+
+        // Pass 1 (regression fix): widgets that share a base Y are ONE logical row -- a same-line GROUP such as
+        // undo+redo, or a preset slot's Load/Save/x -- and advance the cumulative cursor only ONCE, by the
+        // group's slot height scaled by its reveal. (The pre-885b3da4 rework advanced per widget, so every
+        // side-by-side widget consumed its own full row and the panel exploded into a staircase.) When every
+        // reveal is 1.0, Σ slot heights == baseY[i], so dispY[i] == baseY[i] and the layout is byte-identical
+        // to the old fixed-baseY one at rest; as a row rolls, its slot grows/shrinks and rows below ease along.
+        // The actual walk lives in GroupRowLayout (core/ui/), which is plain-JUnit testable independent of
+        // this MC Screen subclass.
+        int[] baseYArr = new int[n];
+        int[] heightsArr = new int[n];
+        for (int k = 0; k < n; k++) {
+            baseYArr[k] = sidebarScrollBaseYs.get(k);
+            AbstractWidget w = sidebarScrollWidgets.get(k);
+            heightsArr[k] = w != null ? w.getHeight() : 0;
+        }
+        GroupRowLayout.Result layout = GroupRowLayout.compute(sidebarViewportTop, baseYArr, rowAnim, heightsArr);
+        sidebarDispY = layout.dispY;
+        sidebarSlotH = layout.slotH;
+        this.sidebarContentHeight = Math.max(0, Math.round(layout.contentBottom - sidebarViewportTop));
+
         int viewportH = sidebarViewportBottom - sidebarViewportTop;
         int maxScroll = Math.max(0, sidebarContentHeight - viewportH);
-        sidebarScrollY = MathHelper.clamp(sidebarScrollY, 0, maxScroll);
-        for (int i = 0; i < sidebarScrollWidgets.size(); i++) {
-            ClickableWidget w = sidebarScrollWidgets.get(i);
+        sidebarScrollY = Mth.clamp(sidebarScrollY, 0, maxScroll);
+
+        for (int idx = 0; idx < n; idx++) {
+            AbstractWidget w = sidebarScrollWidgets.get(idx);
+            sidebarClipRow[idx] = false;
             if (w == null) continue;
-            int baseY = sidebarScrollBaseYs.get(i);
-            int drawY = baseY - sidebarScrollY;
-            w.setY(drawY);
-            w.visible = w.active && drawY >= sidebarViewportTop && drawY + w.getHeight() <= sidebarViewportBottom;
+            float reveal = rowAnim[idx];
+            boolean shown = Boolean.TRUE.equals(rowLogicalShown.get(w));
+            boolean intrinsic = !Boolean.FALSE.equals(rowIntrinsicEnabled.get(w));
+            int restTop = Math.round(sidebarDispY[idx]) - sidebarScrollY;
+            boolean inView = restTop >= sidebarViewportTop && restTop + w.getHeight() <= sidebarViewportBottom;
+            if (reveal <= ROW_REVEAL_EPSILON) {
+                // Fully collapsed -- nothing to show.
+                w.setY(restTop);
+                w.visible = false;
+                w.active = false;
+            } else if (reveal >= 1f - ROW_REVEAL_EPSILON) {
+                // Settled: render normally through super at its rest position (full slot open, no clip needed).
+                w.setY(restTop);
+                w.visible = inView;
+                w.active = intrinsic && shown && inView;
+            } else {
+                // Mid-roll: hand off to drawAnimatingRows(), which slides the control out from under the row
+                // above and scissor-clips it to the currently-open slot so the reveal reads as a smooth roll
+                // (no 0.85 pop) and never overlaps its neighbours. Hidden from super's batch here; kept
+                // inactive until settled so a half-open control can't be clicked.
+                w.setY(restTop);
+                w.visible = false;
+                w.active = false;
+                sidebarClipRow[idx] = restTop + w.getHeight() > sidebarViewportTop && restTop < sidebarViewportBottom;
+            }
+        }
+
+        // If the picker whose button just scrolled (or animated) out of view is still open, dismiss it.
+        if (openDropdown != null && openDropdown.isOpen() && !openDropdown.visible) {
+            openDropdown.close();
         }
     }
 
-    private void drawSidebarScrollbar(DrawContext ctx) {
+    /** Renders the rows that are mid-roll (0 &lt; reveal &lt; 1): each control slides down out from under the row
+     *  above and is scissor-clipped to its currently-open slot, so the reveal reads as a continuous roll instead
+     *  of the old pop where the widget snapped in at reveal 0.85. Called right after super so these sit in the
+     *  same layer as the settled widgets. Reduce Motion never reaches here -- advanceRowAnimations snaps reveals
+     *  straight to 0/1, so no row is ever mid-animation. */
+    private void drawAnimatingRows(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        if (!sidebarVisible || sidebarClipRow == null) return;
+        int n = Math.min(sidebarScrollWidgets.size(), sidebarClipRow.length);
+        for (int idx = 0; idx < n; idx++) {
+            if (!sidebarClipRow[idx]) continue;
+            AbstractWidget w = sidebarScrollWidgets.get(idx);
+            if (w == null) continue;
+            float reveal = rowAnim[idx];
+            float slotH = sidebarSlotH[idx];
+            int groupTop = Math.round(sidebarDispY[idx]) - sidebarScrollY;
+            int openH = Math.round(slotH * reveal);
+            int clipTop = Math.max(groupTop, sidebarViewportTop);
+            int clipBottom = Math.min(groupTop + openH, sidebarViewportBottom);
+            if (clipBottom <= clipTop) continue;
+            // Slide the control down out from under the row above: at reveal=1 its top sits at groupTop (rest
+            // position); as reveal shrinks, its top rises by (1-reveal)*slotH so only the emerged sliver shows
+            // inside the clip. Restored to its rest position afterward so hit-testing isn't left offset.
+            int slideTop = groupTop - Math.round(slotH * (1f - reveal));
+            w.setY(slideTop);
+            w.visible = true;
+            ctx.enableScissor(6, clipTop, 6 + sidebarWidth + 4, clipBottom);
+            w.extractRenderState(ctx, mouseX, mouseY, delta);
+            ctx.disableScissor();
+            w.visible = false;
+            w.setY(groupTop);
+        }
+    }
+
+    /** Ease every tracked row's reveal toward its logical target each frame. Snaps instantly under Reduce
+     *  Motion (audit H1 / M5). Re-seeds (no animation) right after an init() rebuild or tab switch. */
+    private void advanceRowAnimations(float delta) {
+        int n = sidebarScrollWidgets.size();
+        if (rowAnim == null || rowAnim.length != n) {
+            rowAnim = new float[n];
+            for (int i = 0; i < n; i++) {
+                AbstractWidget w = sidebarScrollWidgets.get(i);
+                rowAnim[i] = (w != null && Boolean.TRUE.equals(rowLogicalShown.get(w))) ? 1f : 0f;
+            }
+            return;
+        }
+        if (!sidebarVisible) return;
+        boolean reduce = LatitudeConfig.reduceMotion;
+        for (int i = 0; i < n; i++) {
+            AbstractWidget w = sidebarScrollWidgets.get(i);
+            boolean shown = w != null && Boolean.TRUE.equals(rowLogicalShown.get(w));
+            rowAnim[i] = reduce ? (shown ? 1f : 0f) : UiEase.advanceReveal(rowAnim[i], shown, delta);
+        }
+    }
+
+    private void drawSidebarScrollbar(GuiGraphicsExtractor ctx) {
         if (!sidebarVisible) return;
         int viewportH = sidebarViewportBottom - sidebarViewportTop;
         int maxScroll = sidebarContentHeight - viewportH;
@@ -550,39 +2416,206 @@ public class LatitudeHudStudioScreen extends Screen {
         if (trackH < 10) return;
         int thumbH = Math.max(8, trackH * viewportH / sidebarContentHeight);
         int thumbY = trackTop + (trackH - thumbH) * sidebarScrollY / maxScroll;
-        ctx.fill(trackX, trackTop, trackX + 3, trackBottom, 0x55FFFFFF);
-        ctx.fill(trackX, thumbY, trackX + 3, thumbY + thumbH, 0xFFD4A74A);
+        ctx.fill(trackX, trackTop, trackX + 3, trackBottom, a11yBg(0x55FFFFFF));
+        ctx.fill(trackX, thumbY, trackX + 3, thumbY + thumbH, a11yMuted(0xFFD4A74A));
     }
 
+    private void drawSidebarSwatches(GuiGraphicsExtractor ctx) {
+        if (!sidebarVisible) return;
+        int panelX = 8;
+        for (SwatchSlot s : sidebarSwatches) {
+            int drawY = s.baseY + swatchDispDelta(s.baseY) - sidebarScrollY;
+            if (drawY < sidebarViewportTop || drawY + s.height > sidebarViewportBottom) continue;
+            int argb = 0xFF000000 | (s.color.getAsInt() & 0xFFFFFF);
+            ctx.fill(panelX, drawY, panelX + sidebarWidgetW, drawY + s.height, argb);
+            ctx.fill(panelX, drawY, panelX + sidebarWidgetW, drawY + 1, a11yMuted(PANEL_BORDER));
+            ctx.fill(panelX, drawY + s.height - 1, panelX + sidebarWidgetW, drawY + s.height, a11yMuted(PANEL_BORDER));
+        }
+    }
+
+    /** Draws the inline section headers (e.g. "— Accessibility —") using the same divider-flanked, centered idiom
+     *  as the card's tab heading, scrolled/clipped in lockstep with the tracked rows via {@link #swatchDispDelta}.
+     *  Colors route through the accessibility palette so High Contrast lifts the header exactly like everything
+     *  else in the Studio. */
+    private void drawSidebarHeaders(GuiGraphicsExtractor ctx) {
+        if (!sidebarVisible) return;
+        int panelX = 8;
+        int pw = sidebarWidgetW;
+        int headingColor = a11yText(GOLD);
+        int dividerColor = a11yMuted(PANEL_BORDER);
+        for (HeaderSlot h : sidebarHeaders) {
+            int drawY = h.baseY + swatchDispDelta(h.baseY) - sidebarScrollY;
+            if (drawY < sidebarViewportTop || drawY + h.height > sidebarViewportBottom) continue;
+            int textW = this.font.width(h.text);
+            int textX = panelX + (pw - textW) / 2;
+            int textY = drawY + (h.height - this.font.lineHeight) / 2;
+            int lineGap = 6;
+            int lineLen = Math.max(6, (pw - textW - lineGap * 2) / 2 - 4);
+            int lineY = textY + this.font.lineHeight / 2;
+            ctx.fill(panelX + 4, lineY, panelX + 4 + lineLen, lineY + 1, dividerColor);
+            ctx.fill(panelX + pw - 4 - lineLen, lineY, panelX + pw - 4, lineY + 1, dividerColor);
+            ctx.text(this.font, h.text, textX, textY, headingColor);
+        }
+    }
+
+    /** Cumulative displacement a hand-drawn swatch at {@code baseY} inherits from the animated row above it, so
+     *  it rides along when earlier rows collapse. Zero in every context a swatch actually appears (Custom /
+     *  text / title RGB pickers, where nothing above animates), but stays correct if that ever changes. */
+    private int swatchDispDelta(int baseY) {
+        if (sidebarDispY == null) return 0;
+        int k = -1;
+        int m = Math.min(sidebarScrollBaseYs.size(), sidebarDispY.length);
+        for (int i = 0; i < m; i++) {
+            if (sidebarScrollBaseYs.get(i) <= baseY) k = i; else break;
+        }
+        if (k < 0) return 0;
+        return Math.round(sidebarDispY[k]) - sidebarScrollBaseYs.get(k);
+    }
+
+    private void drawTabStrip(GuiGraphicsExtractor ctx, int mouseX, int mouseY) {
+        int tabCount = TAB_NAMES.length;
+        int totalW = sidebarWidth + 4;
+        int tabW = (totalW - TAB_GAP * (tabCount - 1)) / tabCount;
+        // GUI-scale parity audit P2: couple the label scale to the (possibly shrunk) tab width. Returns the
+        // established TAB_LABEL_SCALE unchanged whenever the sidebar is at full width, so the wide layout is
+        // untouched; only shrinks the labels once the sidebar itself has narrowed so they still fit their tabs.
+        int maxLabelW = 0;
+        for (String name : TAB_NAMES) maxLabelW = Math.max(maxLabelW, this.font.width(name));
+        float labelScale = HudStudioLayout.tabLabelScale(sidebarWidth, TAB_GAP, tabCount, maxLabelW, TAB_LABEL_SCALE);
+        int x = 6;
+        for (int i = 0; i < tabCount; i++) {
+            boolean active = i == activeTab;
+            boolean hovered = !active && mouseX >= x && mouseX < x + tabW && mouseY >= tabStripY && mouseY < tabStripY + TAB_H;
+            int bg = a11yBg(active ? PANEL_BG : (hovered ? 0xFF3A302A : 0xFF2A2420));
+            int border = active ? a11yMuted(GOLD) : a11yMuted(PANEL_BORDER);
+            ctx.fill(x, tabStripY, x + tabW, tabStripY + TAB_H, bg);
+            ctx.fill(x, tabStripY, x + tabW, tabStripY + 1, border);
+            ctx.fill(x, tabStripY, x + 1, tabStripY + TAB_H, border);
+            ctx.fill(x + tabW - 1, tabStripY, x + tabW, tabStripY + TAB_H, border);
+            if (active) {
+                ctx.fill(x + 1, tabStripY + TAB_H - 1, x + tabW - 1, tabStripY + TAB_H, a11yBg(PANEL_BG));
+            } else {
+                ctx.fill(x, tabStripY + TAB_H - 1, x + tabW, tabStripY + TAB_H, a11yMuted(PANEL_BORDER));
+            }
+            // Active/hover labels lift to the opaque text floor; inactive tab labels lift off dim grey so the
+            // whole strip reads under High Contrast (STANDARD identity).
+            int labelColor = active ? a11yText(GOLD) : (hovered ? a11yText(WARM_WHITE) : a11yMuted(MUTED));
+            String label = TAB_NAMES[i];
+            int labelW = this.font.width(label);
+            int cx = x + tabW / 2;
+            int cy = tabStripY + TAB_H / 2;
+            var m = ctx.pose();
+            m.pushMatrix();
+            try {
+                m.translate(cx, cy);
+                m.scale(labelScale, labelScale);
+                ctx.text(this.font, label, -labelW / 2, -this.font.lineHeight / 2, labelColor);
+            } finally {
+                m.popMatrix();
+            }
+            x += tabW + TAB_GAP;
+        }
+    }
+
+    private boolean handleTabClick(double mouseX, double mouseY) {
+        if (!sidebarVisible) return false;
+        if (mouseY < tabStripY || mouseY >= tabStripY + TAB_H) return false;
+        int tabCount = TAB_NAMES.length;
+        int totalW = sidebarWidth + 4;
+        int tabW = (totalW - TAB_GAP * (tabCount - 1)) / tabCount;
+        int x = 6;
+        for (int i = 0; i < tabCount; i++) {
+            if (mouseX >= x && mouseX < x + tabW) {
+                switchTab(i);
+                return true;
+            }
+            x += tabW + TAB_GAP;
+        }
+        return false;
+    }
+
+    private void switchTab(int tab) {
+        if (tab == activeTab) return;
+        activeTab = tab;
+        sidebarScrollY = 0;
+        // Entering the Title tab replays the one-shot glimmer once in the static preview, so its effect is
+        // visible on arrival even though the preview is otherwise static (appearance-triggered in-game).
+        if (tab == TAB_TITLE) this.titleGlimmerReplayStartMs = System.currentTimeMillis();
+        this.init();
+    }
+
+    // Places a labeled RGB picker (3 stacked 0-255 sliders + a color swatch row) starting at y, tracking its
+    // sliders for sidebar scrolling and its swatch for the swatch-draw pass. Returns the next available row's Y.
+    private int placeRgbPicker(int panelX, int y, int widgetW, int rowH, int rowGap, String label, int initialRgb,
+                                IntConsumer onChangeRgb, Consumer<RgbPickerGroup> groupSink, Consumer<SwatchSlot> swatchSink) {
+        RgbPickerGroup group = new RgbPickerGroup(panelX, y, widgetW, rowH, rowGap, label, initialRgb, onChangeRgb);
+        AbstractWidget[] sliders = group.sliders();
+        String[] channelNames = {"Red", "Green", "Blue"};
+        for (int i = 0; i < sliders.length; i++) {
+            this.addRenderableWidget(sliders[i]);
+            trackSidebarWidget(sliders[i], y + i * (rowH + rowGap));
+            tooltip(sliders[i], label + " color -- " + channelNames[i] + " channel (0-255).");
+        }
+        int swatchY = y + sliders.length * (rowH + rowGap);
+        int swatchH = 10;
+        SwatchSlot swatch = new SwatchSlot(swatchY, swatchH, group::color);
+        sidebarSwatches.add(swatch);
+        groupSink.accept(group);
+        swatchSink.accept(swatch);
+        return swatchY + swatchH + rowGap;
+    }
+
+    /**
+     * Recomputes each tracked row's LOGICAL target visibility (config-driven, independent of the L hide-all and
+     * of the roll animation) into {@link #rowLogicalShown}; the per-frame transition layer
+     * ({@link #advanceRowAnimations}/{@link #applySidebarScroll}) eases each row's reveal toward it and sets the
+     * actual {@code visible}/{@code active}. The L toggle is a hard, instant gate: when the sidebar is hidden
+     * this bypasses the animation and hides everything outright.
+     *
+     * <p>Only a handful of rows are config-conditional (all on the Labels tab): the dependents of Display
+     * Zone / Display Biome, the zone/biome order (needs both attached to the compass), and the Grid Size row
+     * (needs snapping on). Everything else is shown whenever the sidebar is. Local-var widgets (Direction
+     * Format, the color pickers, Reset buttons, General cyclers) are reachable only through the tracker list,
+     * which is why the target is keyed on the tracked-widget set rather than a hand-maintained field list
+     * (relying on the field list alone once left locals visible when hidden — TEST 28).
+     */
     private void updateSidebarVisibility() {
-        setVisible(wTarget, sidebarVisible);
+        var cfg = CompassHudConfig.get();
 
-        boolean analog = CompassHudConfig.get().style == CompassHudConfig.CompassStyle.ANALOG;
-        boolean showCompassControls = sidebarVisible && (target == Target.COMPASS || target == Target.BOTH);
-        setVisible(wCompassStyle, showCompassControls);
-        setVisible(wCompassScale, showCompassControls && !analog);
-        setVisible(wCompassAnalogSize, showCompassControls && analog);
-        setVisible(wCompassAnalogTheme, showCompassControls && analog);
-        setVisible(wCompassAnalogInnerAlpha, showCompassControls && analog);
-        setVisible(wCompassTransparency, showCompassControls && !analog);
-        setVisible(wCompassBackground, showCompassControls && !analog);
-        setVisible(wCompassBgColor, showCompassControls && !analog);
-        setVisible(wCompassTextColor, showCompassControls);
-        setVisible(wCompassShowLatitude, showCompassControls && !analog);
-        setVisible(wCompassAnalogShowLatitude, showCompassControls && analog);
-        setVisible(wCompassCompact, showCompassControls && !analog);
-        setVisible(wCompassAttachHotbar, showCompassControls && !analog);
-        setVisible(wZoneDisplay, showCompassControls);
-        setVisible(wZoneFollow, showCompassControls && CompassHudConfig.get().displayZoneInHud);
+        if (!sidebarVisible) {
+            // L toggle: hide the whole sidebar instantly (the hide-all is not something to animate).
+            for (AbstractWidget w : sidebarScrollWidgets) {
+                setVisible(w, false);
+            }
+            setVisible(wResetHud, false);
+            return;
+        }
 
-        boolean showTitleControls = sidebarVisible && (target == Target.TITLE || target == Target.BOTH);
-        setVisible(wTitleScale, showTitleControls);
+        rowLogicalShown.clear();
+        for (AbstractWidget w : sidebarScrollWidgets) {
+            if (w != null) rowLogicalShown.put(w, Boolean.TRUE);
+        }
 
-        setVisible(wResetHud, sidebarVisible);
+        setLogicalShown(wZoneFollow, cfg.displayZoneInHud);
+        setLogicalShown(wZoneTextScale, cfg.displayZoneInHud);
+        setLogicalShown(wBiomeFollow, cfg.displayBiomeInHud);
+        setLogicalShown(wBiomeTextScale, cfg.displayBiomeInHud);
+        boolean bothAttached = cfg.displayZoneInHud && cfg.zoneFollowsCompass
+                && cfg.displayBiomeInHud && cfg.biomeFollowsCompass;
+        setLogicalShown(wZoneBiomeOrder, bothAttached);
+        setLogicalShown(wClockTextScale, cfg.displayClockReadout);
+        setLogicalShown(wHudSnapPixels, LatitudeConfig.hudSnapEnabled);
+
+        setVisible(wResetHud, true);
+    }
+
+    private void setLogicalShown(AbstractWidget w, boolean shown) {
+        if (w == null) return;
+        rowLogicalShown.put(w, shown);
     }
 
     private boolean isMouseOverZone(double mx, double my) {
-        var mc = MinecraftClient.getInstance();
+        var mc = Minecraft.getInstance();
         if (mc == null) return false;
         var cfg = CompassHudConfig.get();
         if (!cfg.displayZoneInHud || cfg.zoneFollowsCompass) return false;
@@ -594,60 +2627,224 @@ public class LatitudeHudStudioScreen extends Screen {
         return true;
     }
 
-    private static void applyDefaults(CompassHudConfig cfg) {
-        cfg.enabled = true;
-        cfg.showMode = CompassHudConfig.ShowMode.COMPASS_PRESENT;
-        cfg.directionMode = CompassHudConfig.DirectionMode.CARDINAL_8;
-        cfg.style = CompassHudConfig.CompassStyle.DIGITAL;
-        cfg.hAnchor = CompassHudConfig.HAnchor.CENTER;
-        cfg.vAnchor = CompassHudConfig.VAnchor.TOP;
-        cfg.offsetX = 0;
-        cfg.offsetY = 0;
-        cfg.scale = 1.0f;
-        cfg.analogSize = 48.0f;
-        cfg.analogInnerAlpha = 0.65f;
-        cfg.analogTheme = CompassHudConfig.AnalogCompassTheme.CLASSIC_GOLD;
-        cfg.padding = 3;
-        cfg.showBackground = true;
-        cfg.backgroundRgb = 0x000000;
-        cfg.backgroundAlpha = 64;
-        cfg.textRgb = 0xFFFFFF;
-        cfg.textAlpha = 255;
-        cfg.shadow = true;
-        cfg.showLatitude = true;
-        cfg.analogShowLatitude = true;
-        cfg.latitudeDecimals = 0;
-        cfg.attachToHotbarCompass = false;
-        cfg.compactHud = false;
-        cfg.displayZoneInHud = false;
-        cfg.zoneFollowsCompass = true;
-        cfg.zoneHAnchor = CompassHudConfig.HAnchor.CENTER;
-        cfg.zoneVAnchor = CompassHudConfig.VAnchor.TOP;
-        cfg.zoneOffsetX = 0;
-        cfg.zoneOffsetY = 0;
+    // Mirrors isMouseOverZone exactly, for the biome label.
+    private boolean isMouseOverBiome(double mx, double my) {
+        var mc = Minecraft.getInstance();
+        if (mc == null) return false;
+        var cfg = CompassHudConfig.get();
+        if (!cfg.displayBiomeInHud || cfg.biomeFollowsCompass) return false;
+        var b = CompassHud.computeBiomeBounds(mc, cfg);
+        if (b == null) return false;
+        if (mx < b.x() || mx >= (b.x() + b.w()) || my < b.y() || my >= (b.y() + b.h())) return false;
+        biomeGrabDx = (int) Math.round(mx) - b.x();
+        biomeGrabDy = (int) Math.round(my) - b.y();
+        return true;
     }
 
-    private static void setVisible(ClickableWidget w, boolean v) {
+    // Mirrors isMouseOverZone exactly, for the detached coords (lat/lon) label.
+    private boolean isMouseOverCoords(double mx, double my) {
+        var mc = Minecraft.getInstance();
+        if (mc == null) return false;
+        var cfg = CompassHudConfig.get();
+        if (cfg.coordsFollowsCompass) return false;
+        var b = CompassHud.computeCoordsBounds(mc, cfg);
+        if (b == null) return false;
+        if (mx < b.x() || mx >= (b.x() + b.w()) || my < b.y() || my >= (b.y() + b.h())) return false;
+        coordsGrabDx = (int) Math.round(mx) - b.x();
+        coordsGrabDy = (int) Math.round(my) - b.y();
+        return true;
+    }
+
+    // Mirrors isMouseOverZone exactly, for the detached clock solar readout (item l).
+    private boolean isMouseOverClock(double mx, double my) {
+        var mc = Minecraft.getInstance();
+        if (mc == null) return false;
+        var cfg = CompassHudConfig.get();
+        if (!cfg.displayClockReadout) return false;
+        var b = CompassHud.computeClockBounds(mc, cfg);
+        if (b == null) return false;
+        if (mx < b.x() || mx >= (b.x() + b.w()) || my < b.y() || my >= (b.y() + b.h())) return false;
+        clockGrabDx = (int) Math.round(mx) - b.x();
+        clockGrabDy = (int) Math.round(my) - b.y();
+        return true;
+    }
+
+    // ---- Direct drag-resize (item k) helpers ----
+
+    /** The resizable, text-size-scalable label families, in hit-test order. The compass (Analog Size / digital
+     *  Scale) and the zone-enter Title (Title Size) are intentionally NOT here -- their size sliders stay, but the
+     *  corner-grip resize ships for these text-label families first (see the round-10 report). */
+    private static final DragElement[] RESIZABLE = {
+            DragElement.ZONE, DragElement.BIOME, DragElement.COORDS, DragElement.CLOCK };
+
+    /** If {@code (mx,my)} lands on a resizable element's bottom-right corner grip, arm a resize on that family and
+     *  return true (checked before the move hit-tests, since the grip sits inside the element's box). */
+    private boolean tryStartResize(double mx, double my) {
+        var mc = Minecraft.getInstance();
+        if (mc == null) return false;
+        var cfg = CompassHudConfig.get();
+        for (DragElement e : RESIZABLE) {
+            CompassHud.HudBounds b = elementBounds(mc, cfg, e);
+            if (b == null) continue;
+            int g = CompassHud.RESIZE_GRIP_PX;
+            int gx0 = b.x() + b.w() - g;
+            int gy0 = b.y() + b.h() - g;
+            if (mx >= gx0 && mx < b.x() + b.w() && my >= gy0 && my < b.y() + b.h()) {
+                dragElement = e;
+                resizing = true;
+                // Anchor at the element's TOP-LEFT (the corner opposite the grip) so dragging the grip away from it
+                // enlarges. Store the start distance + scale for the ratio mapping.
+                resizeAnchorX = b.x();
+                resizeAnchorY = b.y();
+                resizeStartDist = Math.max(1.0, Math.hypot(mx - resizeAnchorX, my - resizeAnchorY));
+                resizeStartScale = elementScale(cfg, e);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Current on-screen bounds of a resizable label family, or null if it isn't shown. */
+    private static CompassHud.HudBounds elementBounds(Minecraft mc, CompassHudConfig cfg, DragElement e) {
+        return switch (e) {
+            case ZONE -> (cfg.displayZoneInHud && !cfg.zoneFollowsCompass) ? CompassHud.computeZoneBounds(mc, cfg) : null;
+            case BIOME -> (cfg.displayBiomeInHud && !cfg.biomeFollowsCompass) ? CompassHud.computeBiomeBounds(mc, cfg) : null;
+            case COORDS -> (!cfg.coordsFollowsCompass) ? CompassHud.computeCoordsBounds(mc, cfg) : null;
+            case CLOCK -> cfg.displayClockReadout ? CompassHud.computeClockBounds(mc, cfg) : null;
+            default -> null;
+        };
+    }
+
+    private static float elementScale(CompassHudConfig cfg, DragElement e) {
+        return switch (e) {
+            case ZONE -> cfg.zoneTextScale;
+            case BIOME -> cfg.biomeTextScale;
+            case COORDS -> cfg.coordsTextScale;
+            case CLOCK -> cfg.clockTextScale;
+            default -> 1.0f;
+        };
+    }
+
+    private static void applyLabelScale(DragElement e, float scale) {
+        var cfg = CompassHudConfig.get();
+        switch (e) {
+            case ZONE -> cfg.zoneTextScale = scale;
+            case BIOME -> cfg.biomeTextScale = scale;
+            case COORDS -> cfg.coordsTextScale = scale;
+            case CLOCK -> cfg.clockTextScale = scale;
+            default -> { }
+        }
+    }
+
+    /** Clamp to the SAME 0.5..3.0 range the text-size sliders enforce (and CompassHudConfig.sanitize backstops). */
+    private static float clampLabelScale(float v) {
+        if (Float.isNaN(v)) return 1.0f;
+        return Math.max(0.5f, Math.min(3.0f, v));
+    }
+
+    // Copies every field from a fresh CompassHudConfig instance onto the live (loaded) instance, so "Reset HUD"
+    // always matches CompassHudConfig's own field initializers -- there is exactly one place that defines the
+    // defaults now. (This used to be a hand-duplicated list of values here that silently drifted out of sync
+    // with the class defaults, e.g. still resetting to the pre-2.0 DIGITAL/48.0/0.65 compass instead of the
+    // current ANALOG/32.0/0.50 default.)
+    private static void applyDefaults(CompassHudConfig cfg) {
+        CompassHudConfig fresh = CompassHudConfig.fresh();
+        cfg.enabled = fresh.enabled;
+        cfg.showMode = fresh.showMode;
+        cfg.directionMode = fresh.directionMode;
+        cfg.style = fresh.style;
+        cfg.analogLook = fresh.analogLook;
+        cfg.hAnchor = fresh.hAnchor;
+        cfg.vAnchor = fresh.vAnchor;
+        cfg.offsetX = fresh.offsetX;
+        cfg.offsetY = fresh.offsetY;
+        cfg.offXFrac = fresh.offXFrac;
+        cfg.offYFrac = fresh.offYFrac;
+        cfg.growH = fresh.growH;
+        cfg.growV = fresh.growV;
+        cfg.dockMode = fresh.dockMode;
+        cfg.reservedTextWidth = fresh.reservedTextWidth;
+        cfg.layoutVersion = fresh.layoutVersion;
+        cfg.scale = fresh.scale;
+        cfg.analogSize = fresh.analogSize;
+        cfg.analogInnerAlpha = fresh.analogInnerAlpha;
+        cfg.analogTheme = fresh.analogTheme;
+        cfg.rainbowCycleSeconds = fresh.rainbowCycleSeconds;
+        cfg.padding = fresh.padding;
+        cfg.showBackground = fresh.showBackground;
+        cfg.backgroundRgb = fresh.backgroundRgb;
+        cfg.backgroundAlpha = fresh.backgroundAlpha;
+        cfg.textRgb = fresh.textRgb;
+        cfg.textAlpha = fresh.textAlpha;
+        cfg.textRainbow = fresh.textRainbow;
+        cfg.shadow = fresh.shadow;
+        cfg.showLatitude = fresh.showLatitude;
+        cfg.analogShowLatitude = fresh.analogShowLatitude;
+        cfg.latitudeDecimals = fresh.latitudeDecimals;
+        cfg.showLongitude = fresh.showLongitude;
+        cfg.analogShowLongitude = fresh.analogShowLongitude;
+        cfg.attachToHotbarCompass = fresh.attachToHotbarCompass;
+        cfg.compactHud = fresh.compactHud;
+        cfg.displayZoneInHud = fresh.displayZoneInHud;
+        cfg.zoneFollowsCompass = fresh.zoneFollowsCompass;
+        cfg.zoneHAnchor = fresh.zoneHAnchor;
+        cfg.zoneVAnchor = fresh.zoneVAnchor;
+        cfg.zoneOffsetX = fresh.zoneOffsetX;
+        cfg.zoneOffXFrac = fresh.zoneOffXFrac;
+        cfg.zoneOffYFrac = fresh.zoneOffYFrac;
+        cfg.zoneGrowH = fresh.zoneGrowH;
+        cfg.zoneGrowV = fresh.zoneGrowV;
+        cfg.zoneOffsetY = fresh.zoneOffsetY;
+        cfg.zoneTextScale = fresh.zoneTextScale;
+        cfg.displayBiomeInHud = fresh.displayBiomeInHud;
+        cfg.biomeFollowsCompass = fresh.biomeFollowsCompass;
+        cfg.biomeHAnchor = fresh.biomeHAnchor;
+        cfg.biomeVAnchor = fresh.biomeVAnchor;
+        cfg.biomeOffsetX = fresh.biomeOffsetX;
+        cfg.biomeOffXFrac = fresh.biomeOffXFrac;
+        cfg.biomeOffYFrac = fresh.biomeOffYFrac;
+        cfg.biomeGrowH = fresh.biomeGrowH;
+        cfg.biomeGrowV = fresh.biomeGrowV;
+        cfg.biomeOffsetY = fresh.biomeOffsetY;
+        cfg.biomeTextScale = fresh.biomeTextScale;
+        cfg.biomeBeforeZone = fresh.biomeBeforeZone;
+        cfg.coordsFollowsCompass = fresh.coordsFollowsCompass;
+        cfg.coordsHAnchor = fresh.coordsHAnchor;
+        cfg.coordsVAnchor = fresh.coordsVAnchor;
+        cfg.coordsOffsetX = fresh.coordsOffsetX;
+        cfg.coordsOffXFrac = fresh.coordsOffXFrac;
+        cfg.coordsOffYFrac = fresh.coordsOffYFrac;
+        cfg.coordsGrowH = fresh.coordsGrowH;
+        cfg.coordsGrowV = fresh.coordsGrowV;
+        cfg.coordsOffsetY = fresh.coordsOffsetY;
+        cfg.coordsTextScale = fresh.coordsTextScale;
+        cfg.displayClockReadout = fresh.displayClockReadout;
+        cfg.clockHAnchor = fresh.clockHAnchor;
+        cfg.clockVAnchor = fresh.clockVAnchor;
+        cfg.clockOffXFrac = fresh.clockOffXFrac;
+        cfg.clockOffYFrac = fresh.clockOffYFrac;
+        cfg.clockGrowH = fresh.clockGrowH;
+        cfg.clockGrowV = fresh.clockGrowV;
+        cfg.clockTextScale = fresh.clockTextScale;
+        cfg.customFaceRgb = fresh.customFaceRgb;
+        cfg.customRingArgb = fresh.customRingArgb;
+        cfg.customMutedArgb = fresh.customMutedArgb;
+        cfg.customNeedleArgb = fresh.customNeedleArgb;
+    }
+
+    private static void setVisible(AbstractWidget w, boolean v) {
         if (w == null) return;
         w.visible = v;
         w.active = v;
     }
 
-    private Text targetLabel() {
-        return switch (target) {
-            case COMPASS -> Text.literal("Target: Compass");
-            case TITLE -> Text.literal("Target: Title");
-            case BOTH -> Text.literal("Target: Both");
-        };
-    }
-
     private boolean isMouseOverCompass(double mx, double my) {
-        var mc = MinecraftClient.getInstance();
+        var mc = Minecraft.getInstance();
         if (mc == null) {
             return false;
         }
         var cfg = CompassHudConfig.get();
-        if (cfg.attachToHotbarCompass) {
+        if (cfg.dockMode != CompassHudConfig.DockMode.NONE) {
             return false;
         }
         var b = CompassHud.computeBounds(mc, cfg);
@@ -663,28 +2860,60 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     private boolean isMouseOverTitle(double mx, double my) {
-        var mc = MinecraftClient.getInstance();
-        if (mc == null || mc.textRenderer == null) {
+        var mc = Minecraft.getInstance();
+        if (mc == null || mc.font == null) {
             return false;
         }
 
-        String s = "TROPICAL 0\u00b0";
-        int w = mc.textRenderer.getWidth(s);
-        int h = mc.textRenderer.fontHeight;
+        // U-B: measure the SAME string the preview draws, with case + letter-spacing applied, so the grab
+        // box always matches the letters on screen (was a hardcoded "TROPICAL 0\u00b0" measurement). Uses the
+        // (possibly two-line) lockup box so a degrees title's taller/wider box is fully grabbable.
+        String s = studioPreviewTitle(mc);
+        ZoneEnterTitleOverlay.TitleBox box = ZoneEnterTitleOverlay.measure(mc.font, s);
 
-        double scale = MathHelper.clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
+        double scale = Mth.clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
 
         int cx = (this.width / 2) + LatitudeConfig.zoneEnterTitleOffsetX;
         int cy = (this.height / 2) + LatitudeConfig.zoneEnterTitleOffsetY;
 
-        double halfW = (w * scale) / 2.0;
-        double halfH = (h * scale) / 2.0;
+        double halfW = (box.contentW() * scale) / 2.0;
+        double halfH = (box.contentH() * scale) / 2.0;
         double pad = 6.0;
 
         return mx >= (cx - halfW - pad)
                 && mx <= (cx + halfW + pad)
                 && my >= (cy - halfH - pad)
                 && my <= (cy + halfH + pad);
+    }
+
+    /** The exact string the title preview renders (shared by the render path and the drag hit-test) --
+     *  the single place "Show Degrees" is honored (TEST 32: previously duplicated inline at the render
+     *  call site, which never checked the flag, so toggling it visibly did nothing in the Studio).
+     *  Natural case ("Tropical", not "TROPICAL") in BOTH branches, including the no-world fallback -- an
+     *  ALL-CAPS fallback made "Normal" indistinguishable from "UPPERCASE" in exactly the no-world Studio
+     *  preview Peetsa opens from the create-world screen (TEST 33: reported as "remove Normal, it's a
+     *  duplicate of Uppercase" before he clarified he wants Normal/"Tropical" kept -- the real bug was
+     *  this fallback's casing, not the option itself). */
+    private static String studioPreviewTitle(Minecraft mc) {
+        var level = mc.level;
+        var player = mc.player;
+        boolean showDegrees = LatitudeConfig.showZoneBaseDegreesOnTitle;
+        if (level != null && player != null) {
+            var border = level.getWorldBorder();
+            // Use the SINGLE canonical zone word (LatitudeBands.displayNameForZoneKey) so the Studio preview
+            // matches the real zone-enter title / compass HUD. This replaces a local "Tropics"/"Subtropics"
+            // switch that still emitted the OLD, diverged vocabulary. Natural case is preserved because
+            // displayName() is natural-case and ZoneEnterTitleOverlay's applyCase() controls final casing,
+            // so the "Normal" title-case option still looks different from "UPPERCASE".
+            String zoneWord = com.example.globe.util.LatitudeBands.displayNameForZoneKey(
+                    com.example.globe.util.LatitudeMath.zoneKey(border, player.getZ()));
+            if (!showDegrees) {
+                return zoneWord;
+            }
+            String degText = com.example.globe.util.LatitudeMath.formatLatitudeDeg(border, player.getZ());
+            return zoneWord + " " + degText;
+        }
+        return showDegrees ? "Tropical 12\u00b0S" : "Tropical";
     }
 
     private static int snap(int v, int step) {
@@ -696,19 +2925,13 @@ public class LatitudeHudStudioScreen extends Screen {
         return Math.max(lo, Math.min(hi, v));
     }
 
-    private static int anchoredZoneX(CompassHudConfig cfg, int screenW, int boxW) {
-        return switch (cfg.zoneHAnchor) {
-            case LEFT -> 4;
-            case CENTER -> (screenW - boxW) / 2;
-            case RIGHT -> screenW - boxW - 4;
-        };
-    }
-
-    private static int anchoredZoneY(CompassHudConfig cfg, int screenH, int boxH) {
-        return switch (cfg.zoneVAnchor) {
-            case TOP -> 4;
-            case CENTER -> (screenH - boxH) / 2;
-            case BOTTOM -> screenH - boxH - 4;
+    private static String lookLabel(CompassHudConfig.CompassLook look) {
+        return switch (look) {
+            case DISC -> "Disc";
+            case RING -> "Ring";
+            case ROSE -> "Rose";
+            case TAPE -> "Tape";
+            case MINIMAL -> "Minimal";
         };
     }
 
@@ -718,18 +2941,231 @@ public class LatitudeHudStudioScreen extends Screen {
             case RED_IVORY -> "Red & Ivory";
             case CYAN_STEEL -> "Cyan Steel";
             case MINT_BRASS -> "Mint Brass";
+            case OBSIDIAN_RED -> "Obsidian & Red";
+            case ARCTIC_BLUE -> "Arctic Blue";
+            case EMERALD -> "Emerald";
+            case ROYAL_PURPLE -> "Royal Purple";
+            case SUNSET -> "Sunset";
+            case MONOCHROME -> "Monochrome";
             case CLASSIC_GOLD -> "Classic Gold";
+            case RAINBOW -> "Aurora";
+            case CUSTOM -> "Custom";
         };
     }
 
-    private static void tooltip(ClickableWidget w, String text) {
-        if (w != null) {
-            w.setTooltip(Tooltip.of(Text.literal(text)));
+    private static String titleColorLabel(LatitudeConfigData.TitleColorPreset preset) {
+        return switch (preset) {
+            case WHITE -> "White";
+            case GOLD -> "Gold";
+            case RED -> "Red";
+            case CYAN -> "Cyan";
+            case GREEN -> "Green";
+            case CUSTOM -> "Custom";
+            case RAINBOW -> "Rainbow";
+            case AURORA -> "Aurora";
+            case OFF_WHITE -> "Off-White";
+        };
+    }
+
+    // ---- Swatch-picker preview colors + small utilities (audit C1) ----
+
+    private static int indexOf(String[] arr, String value) {
+        for (int i = 0; i < arr.length; i++) {
+            if (arr[i].equals(value)) return i;
         }
+        return 0;
+    }
+
+    /** Friendlier Title Case for the digital background-color picker (the config key stays the ALL_CAPS name). */
+    private static String bgColorTitle(String name) {
+        return switch (name) {
+            case "WHITE" -> "White";
+            case "DARK_GRAY" -> "Dark Gray";
+            case "BLUE" -> "Blue";
+            default -> "Black";
+        };
+    }
+
+    private static String textColorTitle(String name) {
+        return switch (name) {
+            case "OFF_WHITE" -> "Off-White";
+            case "BLACK" -> "Black";
+            case "YELLOW" -> "Yellow";
+            case "RED" -> "Red";
+            case "CYAN" -> "Cyan";
+            default -> "White";
+        };
+    }
+
+    // Face/ring preview colors mirror CompassHud.analogColors' literals (the design source) so a scheme's chip
+    // shows the colors it will actually paint. Kept local (a duplicated constant, not a live call) so this
+    // Pass-A change stays inside its allowed files; CUSTOM reads the live custom RGB, Aurora shows a mid hue.
+    private static int themeFacePreview(CompassHudConfig.AnalogCompassTheme theme, CompassHudConfig cfg) {
+        return switch (theme) {
+            case PALE_GOLD -> 0x233029;
+            case RED_IVORY -> 0x292221;
+            case CYAN_STEEL -> 0x1A232A;
+            case MINT_BRASS -> 0x1C2823;
+            case OBSIDIAN_RED -> 0x14110F;
+            case ARCTIC_BLUE -> 0x16202B;
+            case EMERALD -> 0x122019;
+            case ROYAL_PURPLE -> 0x1A1426;
+            case SUNSET -> 0x261712;
+            case MONOCHROME -> 0x1B1B1E;
+            case CLASSIC_GOLD -> 0x1A1410;
+            case RAINBOW -> 0x1A1426;
+            case CUSTOM -> cfg.customFaceRgb & 0xFFFFFF;
+        };
+    }
+
+    private static int themeRingPreview(CompassHudConfig.AnalogCompassTheme theme, CompassHudConfig cfg) {
+        return switch (theme) {
+            case PALE_GOLD -> 0xE5C07B;
+            case RED_IVORY -> 0xE3D4C8;
+            case CYAN_STEEL -> 0x5CC8FF;
+            case MINT_BRASS -> 0xD4B87A;
+            case OBSIDIAN_RED -> 0xB0A8A0;
+            case ARCTIC_BLUE -> 0xCFE8FF;
+            case EMERALD -> 0x7BE0A0;
+            case ROYAL_PURPLE -> 0xC9A6F0;
+            case SUNSET -> 0xF2A65A;
+            case MONOCHROME -> 0xD8D8DC;
+            case CLASSIC_GOLD -> 0xD4A74A;
+            case RAINBOW -> 0x8FD0FF;
+            case CUSTOM -> cfg.customRingArgb & 0xFFFFFF;
+        };
+    }
+
+    /** Representative chip color for a title color preset (Custom reads the live custom RGB; Rainbow gets a
+     *  vivid stand-in since it's a per-letter cycle, not one flat color). */
+    private static int titleColorPreview(LatitudeConfigData.TitleColorPreset preset) {
+        return switch (preset) {
+            case WHITE -> 0xFFFFFF;
+            case GOLD -> 0xD4A74A;
+            case RED -> 0xFF5555;
+            case CYAN -> 0x55FFFF;
+            case GREEN -> 0x55FF55;
+            case CUSTOM -> LatitudeConfig.zoneEnterTitleRgb & 0xFFFFFF;
+            // Rainbow = static ROYGBIV: a warm mid-spectrum chip. Aurora = the flowing gradient: an aurora-blue
+            // chip matching the compass "Aurora" scheme's ring, so the two read as distinct at a glance.
+            case RAINBOW -> 0xFF8A3D;
+            case AURORA -> 0x8FD0FF;
+            case OFF_WHITE -> LatitudeConfigData.OFF_WHITE_RGB;
+        };
+    }
+
+    // Each label is styled in its own case, so the button doubles as a live preview of the effect.
+    private static String titleCaseLabel(LatitudeConfigData.TitleCaseMode mode) {
+        return switch (mode) {
+            case NORMAL -> "Normal";
+            case UPPERCASE -> "UPPERCASE";
+            case LOWERCASE -> "lowercase";
+            case MOCKING -> "mOcKiNg";
+        };
+    }
+
+    private static void tooltip(AbstractWidget w, String text) {
+        if (w == null) return;
+        Tooltip t = Tooltip.create(Component.literal(text));
+        w.setTooltip(t);
+        if (w instanceof CycleButton<?> cycle) {
+            patchCycleButtonTooltip(cycle, t);
+        }
+    }
+
+    /**
+     * CycleButton has its OWN internal tooltip-refresh hook: a private {@code tooltipSupplier} field,
+     * consulted by a private {@code updateTooltip()} that vanilla calls automatically on every value
+     * change (i.e. every click/cycle) -- unconditionally, no null-check: {@code setTooltip(tooltipSupplier
+     * .apply(value))}. This codebase attaches every tooltip externally via {@link #tooltip} instead of the
+     * builder's {@code withTooltip(...)}, so that field is left at its no-op default (returns null) --
+     * meaning the FIRST click on ANY CycleButton silently overwrites our tooltip with null, permanently
+     * (TEST 34: "after you click on a button and go back and hover over it, the tooltip is gone and will
+     * not come back" -- exactly this, on every dropdown-style control in the Studio, confirmed against the
+     * decompiled 26.2 CycleButton class). Patches the field via reflection (CycleButton exposes no public
+     * setter post-construction; the builder-time {@code withTooltip} would mean touching every one of the
+     * ~30 call sites in this screen instead of this one shared helper) to a constant supplier returning
+     * THIS tooltip, so the button's own auto-refresh re-applies it instead of wiping it. Every tooltip
+     * here is static descriptive text (doesn't vary by the button's current value), so "always return the
+     * same Tooltip" is exactly the desired behavior, not an approximation. Falls back to the (buggy-after-
+     * one-click) external-only behavior if the field is ever renamed/retyped by a future mapping update,
+     * rather than crashing.
+     */
+    private static void patchCycleButtonTooltip(CycleButton<?> cycle, Tooltip t) {
+        try {
+            java.lang.reflect.Field f = CycleButton.class.getDeclaredField("tooltipSupplier");
+            f.setAccessible(true);
+            f.set(cycle, (net.minecraft.client.OptionInstance.TooltipSupplier<Object>) v -> t);
+        } catch (ReflectiveOperationException ignored) {
+            // Field renamed/retyped upstream -- degrade to the pre-existing (still functional on first
+            // hover, just not after a click) behavior rather than throw.
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // Accessibility (Peetsa 2026-07-11). The player's Accessibility dropdown (LatitudeConfig.accessibilityMode,
+    // read live each frame in the General tab) drives the Studio's OWN look through the same pure, unit-tested
+    // core.ui.AccessibilityPalette used by the compass HUD and the world-creation screen -- ONE rulebook, no
+    // Studio-local contrast math. Flipping to High Contrast makes the very editor Peetsa is looking at change:
+    // every hand-drawn text/label/border/glyph below routes through these helpers.
+    //   HIGH_CONTRAST -> panel/tab/dropdown text forced opaque and dim greys lifted to a legible floor, card &
+    //                    dropdown backgrounds floored near-solid, borders/dividers/scrollbars brightened, the
+    //                    open picker list made fully opaque with brighter entries + a stronger selection bar,
+    //                    and the canvas snap / undo / redo glyphs given brighter strokes on a dark backing plate.
+    //   COLORBLIND    -> the Studio's palette is gold/cream/brown with NO red-vs-green signals (audited), so
+    //                    adjustSignalColor finds nothing to remap and the look is correctly unchanged; state
+    //                    that could ride on color alone (snap on/off, occupied/empty slot, undo/redo enabled)
+    //                    already carries a redundant shape/text/enabled cue -- see the audit note in the report.
+    //   STANDARD      -> every helper is the identity; byte-identical to today's look.
+    // ------------------------------------------------------------------------------------------------
+
+    private static AccessibilityMode a11yMode() {
+        AccessibilityMode m = LatitudeConfig.accessibilityMode;
+        return m == null ? AccessibilityMode.STANDARD : m;
+    }
+
+    /** True when the Accessibility setting is High Contrast -- gates the extra structural chrome (full gold card
+     *  outline, dark glyph backing plates) whose SHAPE, not just color, only appears in that mode. All actual
+     *  color/alpha choices go through the palette helpers below, not through this boolean. */
+    private static boolean highContrast() {
+        return a11yMode() == AccessibilityMode.HIGH_CONTRAST;
+    }
+
+    /** Panel/HUD body & heading text: HIGH_CONTRAST forces full opacity and lifts dim greys to a legible
+     *  luminance; STANDARD/COLORBLIND identity. Idempotent. */
+    private static int a11yText(int argb) {
+        return AccessibilityPalette.adjustPanelText(a11yMode(), argb);
+    }
+
+    /** Muted chrome (borders, dividers, tab hairlines, inactive labels, scrollbars): a gentler luminance floor
+     *  under HIGH_CONTRAST so framing reads clearly; identity otherwise. Idempotent. */
+    private static int a11yMuted(int argb) {
+        return AccessibilityPalette.adjustMuted(a11yMode(), argb);
+    }
+
+    /** Floor a fill's ALPHA to near-solid under HIGH_CONTRAST (no barely-there cards), keeping its RGB;
+     *  identity otherwise. */
+    private static int a11yBg(int argb) {
+        int a = AccessibilityPalette.backgroundAlpha(a11yMode(), (argb >>> 24) & 0xFF);
+        return (a << 24) | (argb & 0xFFFFFF);
+    }
+
+    /** Alpha (0..255) for a dark backing plate behind a glyph, or 0 for "draw none" (non-HIGH_CONTRAST). */
+    private static int a11yBackingAlpha() {
+        return AccessibilityPalette.outlineStrength(a11yMode());
+    }
+
+    private static String accessibilityLabel(LatitudeConfigData.AccessibilityMode m) {
+        return switch (m) {
+            case STANDARD -> "Standard";
+            case HIGH_CONTRAST -> "High Contrast";
+            case COLORBLIND_FRIENDLY -> "Colorblind-Friendly";
+        };
     }
 
     private static String textColorName(int rgb) {
         int c = rgb & 0xFFFFFF;
+        if (c == 0xF3ECDD) return "OFF_WHITE";
         if (c == 0x000000) return "BLACK";
         if (c == 0xFFFF00) return "YELLOW";
         if (c == 0xFF0000) return "RED";
@@ -739,6 +3175,7 @@ public class LatitudeHudStudioScreen extends Screen {
 
     private static int textColorRgb(String name) {
         return switch (name) {
+            case "OFF_WHITE" -> 0xF3ECDD;
             case "BLACK" -> 0x000000;
             case "YELLOW" -> 0xFFFF00;
             case "RED" -> 0xFF0000;
@@ -776,14 +3213,14 @@ public class LatitudeHudStudioScreen extends Screen {
         void accept(double v);
     }
 
-    private static final class IntSlider extends SliderWidget {
-        private final Text label;
+    private static final class IntSlider extends AbstractSliderButton {
+        private final Component label;
         private final int min;
         private final int max;
         private final IntConsumer onChange;
 
-        private IntSlider(int x, int y, int width, int height, Text label, int min, int max, int initial, IntConsumer onChange) {
-            super(x, y, width, height, Text.empty(), toNorm(initial, min, max));
+        private IntSlider(int x, int y, int width, int height, Component label, int min, int max, int initial, IntConsumer onChange) {
+            super(x, y, width, height, Component.empty(), toNorm(initial, min, max));
             this.label = label;
             this.min = min;
             this.max = max;
@@ -793,7 +3230,7 @@ public class LatitudeHudStudioScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            this.setMessage(Text.literal(label.getString() + ": " + getValue()));
+            this.setMessage(Component.literal(label.getString() + ": " + getValue()));
         }
 
         @Override
@@ -802,7 +3239,7 @@ public class LatitudeHudStudioScreen extends Screen {
         }
 
         private int getValue() {
-            return MathHelper.clamp((int) Math.round(min + (max - min) * this.value), min, max);
+            return Mth.clamp((int) Math.round(min + (max - min) * this.value), min, max);
         }
 
         private static double toNorm(int v, int min, int max) {
@@ -811,14 +3248,18 @@ public class LatitudeHudStudioScreen extends Screen {
         }
     }
 
-    private static final class FloatSlider extends SliderWidget {
-        private final Text label;
+    private static final class FloatSlider extends AbstractSliderButton {
+        private final Component label;
         private final float min;
         private final float max;
         private final FloatConsumer onChange;
+        // Explicit click-drag-release tracking (TEST 30): vanilla's own private `dragging` field has no
+        // public getter, and its `isFocused()` is sticky past mouseUp -- unusable as a "currently being
+        // adjusted" signal. This mirrors the click/release pair exactly.
+        private boolean dragging;
 
-        private FloatSlider(int x, int y, int width, int height, Text label, float min, float max, float initial, FloatConsumer onChange) {
-            super(x, y, width, height, Text.empty(), toNorm(initial, min, max));
+        private FloatSlider(int x, int y, int width, int height, Component label, float min, float max, float initial, FloatConsumer onChange) {
+            super(x, y, width, height, Component.empty(), toNorm(initial, min, max));
             this.label = label;
             this.min = min;
             this.max = max;
@@ -826,9 +3267,25 @@ public class LatitudeHudStudioScreen extends Screen {
             updateMessage();
         }
 
+        boolean isDragging() {
+            return dragging;
+        }
+
+        @Override
+        public void onClick(net.minecraft.client.input.MouseButtonEvent click, boolean doubled) {
+            dragging = true;
+            super.onClick(click, doubled);
+        }
+
+        @Override
+        public void onRelease(net.minecraft.client.input.MouseButtonEvent click) {
+            dragging = false;
+            super.onRelease(click);
+        }
+
         @Override
         protected void updateMessage() {
-            this.setMessage(Text.literal(label.getString() + ": " + format(getValue())));
+            this.setMessage(Component.literal(label.getString() + ": " + format(getValue())));
         }
 
         @Override
@@ -838,7 +3295,7 @@ public class LatitudeHudStudioScreen extends Screen {
 
         private float getValue() {
             float v = min + (max - min) * (float) this.value;
-            return MathHelper.clamp(v, min, max);
+            return Mth.clamp(v, min, max);
         }
 
         private static double toNorm(float v, float min, float max) {
@@ -851,15 +3308,15 @@ public class LatitudeHudStudioScreen extends Screen {
         }
     }
 
-    private static final class StepSlider extends SliderWidget {
-        private final Text label;
+    private static final class StepSlider extends AbstractSliderButton {
+        private final Component label;
         private final double min;
         private final double max;
         private final double step;
         private final DoubleConsumer onChange;
 
-        private StepSlider(int x, int y, int width, int height, Text label, double min, double max, double step, double initial, DoubleConsumer onChange) {
-            super(x, y, width, height, Text.empty(), toNorm(initial, min, max));
+        private StepSlider(int x, int y, int width, int height, Component label, double min, double max, double step, double initial, DoubleConsumer onChange) {
+            super(x, y, width, height, Component.empty(), toNorm(initial, min, max));
             this.label = label;
             this.min = min;
             this.max = max;
@@ -870,7 +3327,7 @@ public class LatitudeHudStudioScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            this.setMessage(Text.literal(label.getString() + ": " + format(getValue())));
+            this.setMessage(Component.literal(label.getString() + ": " + format(getValue())));
         }
 
         @Override
@@ -894,6 +3351,119 @@ public class LatitudeHudStudioScreen extends Screen {
 
         private static String format(double v) {
             return String.format(java.util.Locale.ROOT, "%.1f", v);
+        }
+    }
+
+    /**
+     * A speed slider whose DIRECTION is inverted from the raw value it persists (TEST 57: seconds-per-loop
+     * read backwards -- Peetsa: "lower should mean slower"). The knob's LEFT end is the slowest setting and
+     * the RIGHT end the fastest, matching the intuition "further right = faster" (and the rightward speed
+     * ripple + lightning glyph drawn on the track). It still stores seconds-per-loop -- {@code minSeconds} =
+     * fastest, {@code maxSeconds} = slowest -- so saved configs are byte-unchanged; only the knob mapping
+     * flips. The label shows a friendly 0-100% "quickness" (higher = faster) instead of the confusing raw
+     * seconds.
+     */
+    private static final class SpeedSlider extends AbstractSliderButton {
+        private final Component label;
+        private final float minSeconds; // fastest -> RIGHT end (value 1)
+        private final float maxSeconds; // slowest -> LEFT end (value 0)
+        private final FloatConsumer onChangeSeconds;
+
+        private SpeedSlider(int x, int y, int width, int height, Component label,
+                            float minSeconds, float maxSeconds, float initialSeconds, FloatConsumer onChangeSeconds) {
+            super(x, y, width, height, Component.empty(), toNorm(initialSeconds, minSeconds, maxSeconds));
+            this.label = label;
+            this.minSeconds = minSeconds;
+            this.maxSeconds = maxSeconds;
+            this.onChangeSeconds = onChangeSeconds;
+            updateMessage();
+        }
+
+        @Override
+        protected void updateMessage() {
+            int quickness = Mth.clamp((int) Math.round(this.value * 100.0), 0, 100);
+            this.setMessage(Component.literal(label.getString() + ": " + quickness + "%"));
+        }
+
+        @Override
+        protected void applyValue() {
+            onChangeSeconds.accept(getSeconds());
+        }
+
+        private float getSeconds() {
+            // value 0 (left) -> maxSeconds (slow); value 1 (right) -> minSeconds (fast).
+            float s = maxSeconds - (maxSeconds - minSeconds) * (float) this.value;
+            return Mth.clamp(s, minSeconds, maxSeconds);
+        }
+
+        // Inverse of getSeconds: seconds -> knob position (0 at slowest, 1 at fastest).
+        private static double toNorm(float seconds, float minSeconds, float maxSeconds) {
+            if (maxSeconds == minSeconds) return 0.0;
+            return Mth.clamp((maxSeconds - seconds) / (maxSeconds - minSeconds), 0.0f, 1.0f);
+        }
+    }
+
+    // Three stacked 0-255 IntSliders (R/G/B) that recombine into a packed 0xRRGGBB int on every change. Reuses
+    // IntSlider directly since this is a nested class of the same top-level type.
+    private static final class RgbPickerGroup {
+        private final IntSlider rSlider;
+        private final IntSlider gSlider;
+        private final IntSlider bSlider;
+        private int r;
+        private int g;
+        private int b;
+
+        private RgbPickerGroup(int x, int y, int width, int rowH, int rowGap, String label, int initialRgb, IntConsumer onChangeRgb) {
+            this.r = (initialRgb >> 16) & 0xFF;
+            this.g = (initialRgb >> 8) & 0xFF;
+            this.b = initialRgb & 0xFF;
+            this.rSlider = new IntSlider(x, y, width, rowH, Component.literal(label + " R"), 0, 255, r,
+                    v -> { this.r = v; onChangeRgb.accept(pack()); });
+            this.gSlider = new IntSlider(x, y + (rowH + rowGap), width, rowH, Component.literal(label + " G"), 0, 255, g,
+                    v -> { this.g = v; onChangeRgb.accept(pack()); });
+            this.bSlider = new IntSlider(x, y + 2 * (rowH + rowGap), width, rowH, Component.literal(label + " B"), 0, 255, b,
+                    v -> { this.b = v; onChangeRgb.accept(pack()); });
+        }
+
+        private int pack() {
+            return ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF);
+        }
+
+        private int color() {
+            return pack();
+        }
+
+        private AbstractWidget[] sliders() {
+            return new AbstractWidget[] { rSlider, gSlider, bSlider };
+        }
+    }
+
+    // A non-widget color-preview row drawn via ctx.fill each frame, scrolled/clipped the same way tracked
+    // widgets are (see drawSidebarSwatches). baseY matches the convention trackSidebarWidget() uses for widgets.
+    private static final class SwatchSlot {
+        private final int baseY;
+        private final int height;
+        private final IntSupplier color;
+
+        private SwatchSlot(int baseY, int height, IntSupplier color) {
+            this.baseY = baseY;
+            this.height = height;
+            this.color = color;
+        }
+    }
+
+    // A non-widget section header ("— Accessibility —") drawn via drawSidebarHeaders each frame, scrolled/clipped
+    // the same way SwatchSlots are. baseY follows the same convention trackSidebarWidget() uses for widgets, so a
+    // header can sit inline between tracked rows without joining the row-animation tracker.
+    private static final class HeaderSlot {
+        private final int baseY;
+        private final int height;
+        private final String text;
+
+        private HeaderSlot(int baseY, int height, String text) {
+            this.baseY = baseY;
+            this.height = height;
+            this.text = text;
         }
     }
 }

@@ -1,0 +1,54 @@
+Latitude 1.3.1 "Cohesive Horizons" tiny optional-tag pilot
+Date: 2026-05-03
+Mode: tag JSON pilot only, Nature's Spirit removed for 26.1.x because availability is not proven on this version line
+
+Repo state at start
+- Root: <home>/CascadeProjects/Latitude (Globe)
+- Branch: port/26.1-latitudebiomes-final
+- HEAD: 1b2c1c77f87e056155eb09f5fe288a6b4ec07042
+- Tags at HEAD: save/26-1-latitudebiomes-final
+- Tree at start: only ?? tmp/
+
+Files edited
+- src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_primary.json
+- src/main/resources/data/globe/tags/worldgen/biome/lat_subpolar_primary.json
+
+Optional biome IDs kept
+- lat_temperate_primary.json:
+  - { "id": "biomeswevegone:temperate_grove", "required": false }
+  - removed `natures_spirit:aspen_forest`
+- lat_subpolar_primary.json:
+  - { "id": "biomeswevegone:frosted_taiga", "required": false }
+  - removed `natures_spirit:boreal_taiga`
+
+Scope guard
+- No Java source edited.
+- No build metadata edited.
+- No ocean, river, frozen, polar-ocean, Terralith, BOP, or Regions Unexplored entries added.
+- Existing vanilla entries were preserved.
+- tmp/ was not staged or changed.
+
+Namespace/source basis
+- The saved Cohesive Horizons optional-tag safety audit identified direct BYG IDs under namespace biomeswevegone and Nature's Spirit IDs under namespace natures_spirit.
+- This 26.1.x pilot is BYG-only until Terralith IDs are separately audited.
+
+Compile proof
+- Command run: ./gradlew --no-daemon compileJava
+- Toolchain used: JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home
+- Toolchain check: `java -version` before rerun was OpenJDK 21.0.10; `/usr/libexec/java_home -V` showed Java 25.0.2 installed at `/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home`
+- Result: FAIL
+- Failure:
+  - Task :compileJava reached Java compilation and failed on wider 26.1 API drift.
+  - Representative errors include missing `RandomPatchFeature`, `GuiGraphics`, `LevelRenderState`, `WorldBorderRenderState`, and `KeyBindingHelper`, plus `ServerPlayer` / `WorldData` API mismatches.
+- Interpretation: the Java 25 toolchain is installed and selected correctly, but this branch still does not compile because of unrelated 26.1 source/API work outside the tag pilot.
+
+Validation proof
+- Not run.
+- Reason: compile failed, and the stop condition says to stop on any compile failure.
+
+Commit/tag readiness
+- Not safe to commit/tag under the requested gate because compile proof failed.
+- The tag edits remain narrow and reviewable, but they are unproven in this environment.
+
+Next single recommended slice
+- Resolve or select the Java 25-capable toolchain for this 26.1 branch, rerun ./gradlew --no-daemon compileJava unchanged, then run the lightest tag/resource validation if compile passes.

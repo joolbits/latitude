@@ -1,10 +1,34 @@
 plugins {
-    id 'fabric-loom' version '1.14.10'
+    id 'net.fabricmc.fabric-loom' version '1.17.13'
     id 'maven-publish'
 }
 
 version = project.mod_version
 group = project.maven_group
+
+def latitudeGitOutput = { String... args ->
+    try {
+        def process = new ProcessBuilder(['git'] + args.toList())
+                .directory(rootDir)
+                .redirectErrorStream(true)
+                .start()
+        def output = process.inputStream.getText('UTF-8').trim()
+        return process.waitFor() == 0 ? output : 'unknown'
+    } catch (Exception ignored) {
+        return 'unknown'
+    }
+}
+
+def latitudeBuildTimeUtc = {
+    def format = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
+    format.setTimeZone(TimeZone.getTimeZone('UTC'))
+    return format.format(new Date())
+}
+
+def latitudeGitCommit = latitudeGitOutput('rev-parse', 'HEAD')
+def latitudeGitBranch = latitudeGitOutput('branch', '--show-current')
+def latitudeGitDirty = latitudeGitOutput('status', '--porcelain') == '' ? 'false' : 'true'
+def latitudeBuildTime = latitudeBuildTimeUtc()
 
 def latitudeClientXms = (findProperty('latitudeClientXms') ?: System.getProperty('latitudeClientXms') ?: '1G').toString()
 def latitudeClientXmx = (findProperty('latitudeClientXmx') ?: System.getProperty('latitudeClientXmx') ?: '2G').toString()
@@ -24,10 +48,45 @@ loom {
             vmArg "-Dlatitude.fixSurfaceDripstone=true"
             vmArg "-Dlatitude.fogClampIndex=${System.getProperty('latitude.fogClampIndex', '-1')}"
             vmArg "-Dlatitude.fogClampValue=${System.getProperty('latitude.fogClampValue', '16.0')}"
+            // Solar Tilt + Seasons (P1). Master default OFF (byte-identical) + four live-tuning dials, ALL
+            // born WITH their forwarding line in the SAME pass as the flags (L17 discipline). Forwarded on the
+            // CLIENT run (not just biomePreview) because unlike the worldgen flags this feature runs live here
+            // — P2's sky visuals on the client, P1's mob rules on the integrated server in this same JVM — so
+            // a `-Dlatitude.solarTiltV2.enabled=true` dev client is how it gets flown for P2/P3.
+            vmArg "-Dlatitude.solarTiltV2.enabled=${System.getProperty('latitude.solarTiltV2.enabled', 'false')}"
+            vmArg "-Dlatitude.solarTilt.deltaMaxDeg=${System.getProperty('latitude.solarTilt.deltaMaxDeg', '30.0')}"
+            vmArg "-Dlatitude.solarTilt.yearLengthDays=${System.getProperty('latitude.solarTilt.yearLengthDays', '360.0')}"
+            vmArg "-Dlatitude.solarTilt.functionalMinDeg=${System.getProperty('latitude.solarTilt.functionalMinDeg', '74.5')}"
+            vmArg "-Dlatitude.solarTilt.frozenPhaseDeg=${System.getProperty('latitude.solarTilt.frozenPhaseDeg', '0.0')}"
+            // S13(a) AURORA BOREALIS (default TRUE, rides inside solarTiltV2). Born WITH its forwarding line in
+            // the SAME pass as the flag (L17 discipline) so a dev client agrees with a shipped jar the moment the
+            // aurora is toggled for a P2/P3 flight -- byte-identical when solar tilt OR this is off.
+            vmArg "-Dlatitude.aurora.enabled=${System.getProperty('latitude.aurora.enabled', 'true')}"
+            // S13(e) POLAR SURFACE ALLOWLIST (default TRUE). A server-side per-tick spawn rule that rides the
+            // integrated server in a dev client (like the solar mob rules), so forwarded on the CLIENT run in
+            // the SAME pass as the flag (L17 discipline) -- a dev can `-Dlatitude.polarSurfaceSpawns.enabled=false`
+            // to A/B it. onsetDeg mirrors PolarHazardWindow.AMBIENT_ONSET_DEG (the 80-deg storm onset).
+            vmArg "-Dlatitude.polarSurfaceSpawns.enabled=${System.getProperty('latitude.polarSurfaceSpawns.enabled', 'true')}"
+            vmArg "-Dlatitude.polarSurfaceSpawns.onsetDeg=${System.getProperty('latitude.polarSurfaceSpawns.onsetDeg', '80.0')}"
         }
         clientNoSurfaceDripstoneFix {
             inherit client
             vmArg "-Dlatitude.fixSurfaceDripstone=false"
+        }
+        clientSeamAudit {
+            inherit client
+            name "Seam Audit (Autonomous Client)"
+            programArg "--quickPlaySingleplayer"
+            programArg System.getProperty('latitude.audit.world', 'Latitude')
+            vmArg "-Dlatitude.audit.seam=true"
+            vmArg "-Dlatitude.audit.bandPair=${System.getProperty('latitude.audit.bandPair', 'temperate-subpolar')}"
+            vmArg "-Dlatitude.audit.edge=${System.getProperty('latitude.audit.edge', 'center')}"
+            vmArg "-Dlatitude.audit.exitWhenDone=${System.getProperty('latitude.audit.exitWhenDone', 'true')}"
+            vmArg "-Dlatitude.audit.alongSeamSpan=${System.getProperty('latitude.audit.alongSeamSpan', '256')}"
+            vmArg "-Dlatitude.audit.crossSeamHalfWidth=${System.getProperty('latitude.audit.crossSeamHalfWidth', '96')}"
+            vmArg "-Dlatitude.audit.chunksPerTick=${System.getProperty('latitude.audit.chunksPerTick', '6')}"
+            vmArg "-Dlatitude.audit.readinessTimeoutTicks=${System.getProperty('latitude.audit.readinessTimeoutTicks', '3600')}"
+            vmArg "-Dlatitude.audit.samples=${System.getProperty('latitude.audit.samples', '300')}"
         }
         biomePreview {
             server()
@@ -36,6 +95,119 @@ loom {
             vmArg "-Xms2G"
             vmArg "-Xmx8G"
             vmArg "-Dlatdev.biomePng=${System.getProperty('latdev.biomePng', 'enabled')}"
+            vmArg "-Dlatdev.locateBoundary=${System.getProperty('latdev.locateBoundary', '')}"
+            vmArg "-Dlatdev.alpineAudit=${System.getProperty('latdev.alpineAudit', '')}"
+            vmArg "-Dlatdev.probe=${System.getProperty('latdev.probe', '')}"
+            vmArg "-Dlatdev.probe.target=${System.getProperty('latdev.probe.target', '')}"
+            vmArg "-Dlatdev.probe.types=${System.getProperty('latdev.probe.types', '')}"
+            vmArg "-Dlatdev.probe.names=${System.getProperty('latdev.probe.names', '')}"
+            vmArg "-Dlatdev.probe.grid=${System.getProperty('latdev.probe.grid', '')}"
+            vmArg "-Dlatdev.probe.out=${System.getProperty('latdev.probe.out', '')}"
+            vmArg "-Dlatdev.probe.radius=${System.getProperty('latdev.probe.radius', '')}"
+            vmArg "-Dlatdev.probe.maxCombos=${System.getProperty('latdev.probe.maxCombos', '')}"
+            vmArg "-Dlatitude.debugWorldgenPath=${System.getProperty('latitude.debugWorldgenPath', 'false')}"
+            // Phase 4 terrain-wrapper mechanical proof harness (com.example.globe.dev.TerrainProofHarness).
+            // See docs/design/terrain-wrapper-design-20260705.md §6/§8 items 7-9.
+            vmArg "-Dlatdev.terrainProof=${System.getProperty('latdev.terrainProof', 'false')}"
+            vmArg "-Dlatdev.terrainProof.seed=${System.getProperty('latdev.terrainProof.seed', '')}"
+            vmArg "-Dlatdev.terrainProof.radius=${System.getProperty('latdev.terrainProof.radius', '')}"
+            vmArg "-Dlatdev.terrainProof.shape=${System.getProperty('latdev.terrainProof.shape', '')}"
+            vmArg "-Dlatdev.terrainProof.out=${System.getProperty('latdev.terrainProof.out', '')}"
+            vmArg "-Dlatdev.terrainProof.nonGlobe=${System.getProperty('latdev.terrainProof.nonGlobe', 'false')}"
+            vmArg "-Dlatdev.terrainProof.replayProbe=${System.getProperty('latdev.terrainProof.replayProbe', 'false')}"
+            vmArg "-Dlatdev.terrainProof.probes=${System.getProperty('latdev.terrainProof.probes', '')}"
+            vmArg "-Dlatdev.terrainProof.coherence=${System.getProperty('latdev.terrainProof.coherence', 'false')}"
+            // LatitudeV2Flags -- static final, read once at class-init, so these MUST reach the forked JVM
+            // as real -D launch args (see LatitudeV2Flags's own "Testing note" javadoc).
+            vmArg "-Dlatitude.terrainV2.enabled=${System.getProperty('latitude.terrainV2.enabled', 'false')}"
+            vmArg "-Dlatitude.terrainV2.strength=${System.getProperty('latitude.terrainV2.strength', '0.0')}"
+            vmArg "-Dlatitude.terrainV2.oceanStrengthRatio=${System.getProperty('latitude.terrainV2.oceanStrengthRatio', '1.0')}"
+            vmArg "-Dlatitude.terrainV2.gripWidth=${System.getProperty('latitude.terrainV2.gripWidth', '0.8')}"
+            // Phase 5 Slice B-2: Fix 2 floor-sighted live veto sub-flag + Fix 1 edge-ocean gate. Both
+            // default false (byte-identical flag-off); forwarded so a headless flag-on atlas is honest.
+            vmArg "-Dlatitude.terrainV2.floorSightedVeto=${System.getProperty('latitude.terrainV2.floorSightedVeto', 'false')}"
+            // Phase 5 carve-aware ocean labels (default false, byte-identical off).
+            vmArg "-Dlatitude.terrainV2.carveAwareLabels=${System.getProperty('latitude.terrainV2.carveAwareLabels', 'false')}"
+            // S36 void taming (born with its forwarding lines, L17 discipline). Default OFF/0.0 = never
+            // installed; the owner's tuning session passes these as real launch args.
+            vmArg "-Dlatitude.voidTaming.enabled=${System.getProperty('latitude.voidTaming.enabled', 'false')}"
+            vmArg "-Dlatitude.voidTaming.strength=${System.getProperty('latitude.voidTaming.strength', '0.0')}"
+            vmArg "-Dlatitude.voidTaming.onsetDeg=${System.getProperty('latitude.voidTaming.onsetDeg', '82.0')}"
+            vmArg "-Dlatitude.voidTaming.fullDeg=${System.getProperty('latitude.voidTaming.fullDeg', '85.0')}"
+            vmArg "-Dlatitude.voidTaming.protectFloorY=${System.getProperty('latitude.voidTaming.protectFloorY', '48')}"
+            vmArg "-Dlatitude.voidTaming.floorFeatherBlocks=${System.getProperty('latitude.voidTaming.floorFeatherBlocks', '10')}"
+            vmArg "-Dlatitude.boundaryV2.enabled=${System.getProperty('latitude.boundaryV2.enabled', 'false')}"
+            // Phase 5 B-5 Hemisphere Passage — DEFAULT ON since 2026-07-12 (Peetsa's post-P3 decision,
+            // matching LatitudeV2Flags; the flag is the kill switch, crossing is prompt-consensual).
+            vmArg "-Dlatitude.passageV2.enabled=${System.getProperty('latitude.passageV2.enabled', 'true')}"
+            // Phase 5 B-7 Pole Passage (default FALSE, byte-identical off). Born WITH its forwarding line in the
+            // SAME PASS as the flag (L17 discipline) so a dev client agrees with a shipped jar the moment the
+            // flag is flipped for a P2/P3 flight.
+            vmArg "-Dlatitude.polePassageV2.enabled=${System.getProperty('latitude.polePassageV2.enabled', 'false')}"
+            // Phase 5 B-5 edge structure veto (default TRUE, matching LatitudeV2Flags; byte-identical when
+            // explicitly set off). Born WITH its forwarding line in the SAME PASS as the flag (L17 discipline).
+            vmArg "-Dlatitude.edgeStructureVeto.enabled=${System.getProperty('latitude.edgeStructureVeto.enabled', 'true')}"
+            // Phase 5 B-10 Polar Outfitting master flag (default OFF, matching LatitudeV2Flags; legacy leather
+            // path when off = no protection gap). Born WITH its forwarding line in the SAME PASS (L17 discipline)
+            // so a dev client agrees with a shipped jar the moment the flag is flipped for the P2 flight.
+            vmArg "-Dlatitude.polarOutfitting.enabled=${System.getProperty('latitude.polarOutfitting.enabled', 'false')}"
+            // Polar small-vegetation fade (default TRUE since 2026-07-12, matching LatitudeV2Flags after
+            // the TEST 75 live look; byte-identical when explicitly set off). Forwarded so dev runs agree
+            // with shipped jars.
+            vmArg "-Dlatitude.polarVegetationFade.enabled=${System.getProperty('latitude.polarVegetationFade.enabled', 'true')}"
+            // The fade's ramp KNOBS (docs pass 2026-07-12 caught the THIRD instance of the L17
+            // forwarding gap: the javadoc advertises these as live-tunable, but only the enable flag
+            // was forwarded -- the degree dials silently never reached a gradle dev client).
+            vmArg "-Dlatitude.polarVegetationFade.onsetDeg=${System.getProperty('latitude.polarVegetationFade.onsetDeg', '72.0')}"
+            vmArg "-Dlatitude.polarVegetationFade.fullDeg=${System.getProperty('latitude.polarVegetationFade.fullDeg', '80.0')}"
+            // S11(c) firefly-specific ban dial (default 50 = the SUBPOLAR onset) -- forwarded in the SAME
+            // pass as the constant (L17 discipline), beside its veg-fade dial family.
+            vmArg "-Dlatitude.polarVegetationFade.fireflyBanDeg=${System.getProperty('latitude.polarVegetationFade.fireflyBanDeg', '50.0')}"
+            // Phase 5 B-8 Polar Barrens (default FALSE, byte-identical off). WORLDGEN change -- forwarded
+            // here in the SAME PASS as the flag (L17) so a headless flag-on atlas actually runs with the
+            // barrens on (the L17 forwarding gap has produced silent byte-identical false-greens before).
+            // The onset/full degree dials are advertised as live-tunable, so forward them too.
+            vmArg "-Dlatitude.polarBarrens.enabled=${System.getProperty('latitude.polarBarrens.enabled', 'false')}"
+            // S21c 2026-07-19: the veg-fade/Barrens COUPLING IS BROKEN (deliberately). The onset default used
+            // to NEST the veg-fade fullDeg sysprop (barrens began exactly where the grass died); the owner moved
+            // the veg fade's finish down to 80 ("veg to 80") but wants the Barrens BIOME to stay at 82, so the
+            // nested fallback is now a LITERAL 82.0, matching the decoupled Java default
+            // (LatitudeV2Flags.POLAR_BARRENS_ONSET_DEG). The 80-82 band is bare tundra before the barrens claim.
+            // An explicit -Dlatitude.polarBarrens.onsetDeg still wins; .fullDeg 84 holds the fray at +2 (82->84).
+            vmArg "-Dlatitude.polarBarrens.onsetDeg=${System.getProperty('latitude.polarBarrens.onsetDeg', '82.0')}"
+            vmArg "-Dlatitude.polarBarrens.fullDeg=${System.getProperty('latitude.polarBarrens.fullDeg', '84.0')}"
+            // Phase 5 B-9 Glacial Caves & Crevasses carver append (design default FALSE, byte-identical off;
+            // the Java constant is branch-locally staged ON for the flight -- REVISIT BEFORE MERGE lives
+            // there). Forwarded in the SAME pass as the flag (L17 discipline), default 'false' like the
+            // barrens precedent so headless/atlas runs stay on the design default unless explicitly armed
+            // (gate-1 cannot see the carver seam anyway -- the atlas never executes applyCarvers -- but the
+            // forwarding keeps a -D-armed dev run agreeing with a shipped jar).
+            vmArg "-Dlatitude.glacialCavesV1=${System.getProperty('latitude.glacialCavesV1', 'false')}"
+            // Polar water freeze (default TRUE, matching LatitudeV2Flags; byte-identical when explicitly
+            // set off). Forwarded on sight this round -- the L17 forwarding class has bitten this repo
+            // twice before (climateV2/biomeConsumerV2 2026-07-07); don't let a third flag go unforwarded.
+            vmArg "-Dlatitude.polarWaterFreeze.enabled=${System.getProperty('latitude.polarWaterFreeze.enabled', 'true')}"
+            vmArg "-Dlatitude.geoV2.enabled=${System.getProperty('latitude.geoV2.enabled', 'false')}"
+            // Slice C follow-up (the L17 forwarding class, caught a SECOND time 2026-07-07): climateV2 and
+            // biomeConsumerV2 were never forwarded, so a headless "consumer-on" atlas silently ran with the
+            // consumer OFF and produced a byte-identical map (0.00% diff was the tell). Forward every
+            // LatitudeV2Flags enable so a headless config claim can actually be true.
+            vmArg "-Dlatitude.climateV2.enabled=${System.getProperty('latitude.climateV2.enabled', 'false')}"
+            vmArg "-Dlatitude.biomeConsumerV2.enabled=${System.getProperty('latitude.biomeConsumerV2.enabled', 'false')}"
+            vmArg "-Dlatitude.biomeConsumerV2.oceanAuthority.enabled=${System.getProperty('latitude.biomeConsumerV2.oceanAuthority.enabled', 'false')}"
+            // Solar Tilt + Seasons (P1) — forwarded here too for sibling parity with every other LatitudeV2Flags
+            // enable (so a headless "flag-on" claim is honest), even though solar tilt does NOT touch worldgen
+            // and the real flight is on the client run above. Master default OFF (byte-identical); L17 same-pass.
+            vmArg "-Dlatitude.solarTiltV2.enabled=${System.getProperty('latitude.solarTiltV2.enabled', 'false')}"
+            vmArg "-Dlatitude.solarTilt.deltaMaxDeg=${System.getProperty('latitude.solarTilt.deltaMaxDeg', '30.0')}"
+            vmArg "-Dlatitude.solarTilt.yearLengthDays=${System.getProperty('latitude.solarTilt.yearLengthDays', '360.0')}"
+            vmArg "-Dlatitude.solarTilt.functionalMinDeg=${System.getProperty('latitude.solarTilt.functionalMinDeg', '74.5')}"
+            vmArg "-Dlatitude.solarTilt.frozenPhaseDeg=${System.getProperty('latitude.solarTilt.frozenPhaseDeg', '0.0')}"
+            // S13(e) POLAR SURFACE ALLOWLIST — forwarded here too for sibling parity with every other
+            // LatitudeV2Flags enable (a headless "flag-on" claim stays honest), even though this spawn rule
+            // does NOT touch worldgen and the real exercise is the client run above. Default TRUE; L17 same-pass.
+            vmArg "-Dlatitude.polarSurfaceSpawns.enabled=${System.getProperty('latitude.polarSurfaceSpawns.enabled', 'true')}"
+            vmArg "-Dlatitude.polarSurfaceSpawns.onsetDeg=${System.getProperty('latitude.polarSurfaceSpawns.onsetDeg', '80.0')}"
         }
         biomeSeedSearch {
             server()
@@ -70,24 +242,31 @@ repositories {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
     // CRITICAL FIX: Fabric API only needed at RUNTIME (not compile-time)
     // The Mixin approach doesn't import any Fabric API classes
-modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     // MixinExtras for descriptor-based injections
-    modImplementation "io.github.llamalad7:mixinextras-fabric:0.5.0"
+    implementation "io.github.llamalad7:mixinextras-fabric:0.5.0"
     include "io.github.llamalad7:mixinextras-fabric:0.5.0"
     compileOnly "io.github.llamalad7:mixinextras-common:0.5.0"
 // DISABLED (was crashing compile):     annotationProcessor "io.github.llamalad7:mixinextras-common:0.5.0"
     
-    // ModMenu API (compile-time only, optional at runtime)
-    modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
-    modLocalRuntime "com.terraformersmc:modmenu:${project.modmenu_version}"
+    compileOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
+    runtimeOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
 
-    modCompileOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
-    modLocalRuntime "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
+    // Pure-JVM unit tests for the Core Logic layer (no Minecraft imports, no Loom test-mod wiring).
+    testImplementation platform('org.junit:junit-bom:5.11.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // Gson for the pure-JVM config round-trip tests (main code gets gson from the Minecraft
+    // libraries, which are not on the test classpath).
+    testImplementation 'com.google.code.gson:gson:2.11.0'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 processResources {
@@ -99,20 +278,73 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 21
+    it.options.release = 25
 }
 
 java {
     withSourcesJar()
 
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+
+tasks.withType(Jar).configureEach {
+    manifest {
+        attributes(
+                'Implementation-Title': project.base.archivesName.get(),
+                'Implementation-Version': project.version,
+                'Minecraft-Version': project.minecraft_version,
+                'Git-Commit': latitudeGitCommit,
+                'Git-Branch': latitudeGitBranch,
+                'Build-Time': latitudeBuildTime,
+                'Build-Dirty': latitudeGitDirty
+        )
+    }
 }
 
 jar {
     from("LICENSE") {
         rename { "${it}_${project.base.archivesName.get()}"}
     }
+}
+
+def releaseArtifactExcludeSpec = { details ->
+    def path = details.path
+    if (path == null) {
+        return false
+    }
+
+    if (path == 'com/example/globe/dev' || path.startsWith('com/example/globe/dev/')) {
+        return true
+    }
+
+    if (path == 'com/example/globe/client/ClipboardImageWriter.class'
+            || path.startsWith('com/example/globe/client/ClipboardImageWriter$')) {
+        return true
+    }
+
+    return false
+}
+
+def releaseArtifactPatternExcludes = [
+        '**/*.sh',
+        '**/*.bat',
+        '**/*.exe',
+        '**/*.dll',
+        '**/*.dylib',
+        '**/*.so',
+        'tools/**',
+        'scripts/**'
+]
+
+tasks.named('jar', Jar).configure {
+    exclude(releaseArtifactExcludeSpec)
+    exclude(releaseArtifactPatternExcludes)
+}
+
+tasks.matching { it.name == 'remapJar' }.configureEach {
+    exclude(releaseArtifactExcludeSpec)
+    exclude(releaseArtifactPatternExcludes)
 }
 
 publishing {
@@ -125,6 +357,24 @@ publishing {
     repositories {
         
     }
+}
+
+// Phase 2 GeoAuthority offline proof tool (pure Java, no Minecraft server).
+tasks.register('geoAuthorityAtlas', JavaExec) {
+    group = 'verification'
+    description = 'Rasterize + measure GeoAuthority macro-geography (analyzer-compatible artifacts)'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.example.globe.dev.GeoAuthorityAtlas'
+    dependsOn classes
+}
+
+// Phase 3 ClimateAuthority offline proof tool (pure Java, no Minecraft server).
+tasks.register('climateAtlas', JavaExec) {
+    group = 'verification'
+    description = 'Rasterize + measure ClimateAuthority (temperature/precip/climateClass distribution)'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.example.globe.dev.ClimateAtlas'
+    dependsOn classes
 }
 
 // Invariant scan: ensure first-load messaging stays wired
@@ -161,11 +411,43 @@ max-players=1
 enable-command-block=false
 """
         }
+
+        def previewLevelName = (findProperty('latdev.preview.levelName') ?: System.getProperty('latdev.preview.levelName') ?: '').toString()
+        def previewLevelSeed = (findProperty('latdev.preview.levelSeed') ?: System.getProperty('latdev.preview.levelSeed') ?: '').toString()
+        def previewLevelType = (findProperty('latdev.preview.levelType') ?: System.getProperty('latdev.preview.levelType') ?: '').toString()
+        if (previewLevelName || previewLevelSeed || previewLevelType) {
+            def props = new Properties()
+            propsFile.withInputStream { props.load(it) }
+            if (previewLevelName) {
+                props.setProperty('level-name', previewLevelName)
+            }
+            if (previewLevelSeed) {
+                props.setProperty('level-seed', previewLevelSeed)
+            }
+            if (previewLevelType) {
+                props.setProperty('level-type', previewLevelType)
+            }
+            propsFile.withOutputStream { props.store(it, 'Minecraft server properties') }
+        }
     }
+}
+
+tasks.register('syncBiomePreviewMods', Copy) {
+    outputs.upToDateWhen { false }
+    doFirst {
+        delete file('run-headless/mods')
+    }
+    from(file('run/mods')) {
+        include '*.jar'
+    }
+    into file('run-headless/mods')
 }
 
 tasks.named('runBiomePreview').configure {
     dependsOn tasks.named('prepareBiomePreviewRunDir')
+    if (project.hasProperty('latdev.syncPreviewMods') && project.property('latdev.syncPreviewMods').toString().toBoolean()) {
+        dependsOn tasks.named('syncBiomePreviewMods')
+    }
     doFirst {
         def rawArgs = new ArrayList(args ?: [])
         def latdevOptions = [:]

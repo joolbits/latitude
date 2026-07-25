@@ -15,10 +15,8 @@
       "com.example.globe.GlobeMod"
     ],
     "client": [
-      "com.example.globe.GlobeModClient"
-    ],
-    "modmenu": [
-      "com.example.globe.client.GlobeModMenu"
+      "com.example.globe.GlobeModClient",
+      "com.example.globe.client.PolarMusicClient"
     ]
   },
   "mixins": [
@@ -26,14 +24,13 @@
   ],
   "depends": {
     "fabricloader": ">=0.17.3",
-    "minecraft": ">=1.21.10 <=1.21.11",
-    "java": ">=21",
+    "minecraft": ">=26.2",
+    "java": ">=25",
     "fabric-api": "*"
   },
   "suggests": {
     "tectonic": "*",
     "lithostitched": "*",
-    "modmenu": "*",
     "cloth-config": "*"
   }
 }
