@@ -782,15 +782,17 @@ public class GlobeModClient implements ClientModInitializer {
      *  snow-glint's sparseness, but that spawner samples a 2D snow SURFACE (near-100% hit rate) whereas this
      *  one samples a full 3D volume for an ice block WITH a lit exposed face -- most samples miss, so the
      *  effective on-screen density was a fraction of the ambient glint's. 12 samples restores a jewel-like
-     *  glitter on torch-lit ice walls without approaching a performance concern (12 O(1) blockstate+light
-     *  reads per spawn-tick, only poleward of 60 deg). */
-    private static final int TORCH_ICE_SPARKLE_PEAK_BUDGET = 12;
+     *  glitter on torch-lit ice walls without approaching a performance concern. S40 (owner: "the torch-lit
+     *  sparkle barely shows"): 12 -> 18, but the REAL fix is the ALL-FACES yield change below (a sampled ice
+     *  block now glitters on EVERY lit-air face, not one random face) -- the S39 budget bump underdelivered
+     *  because each sample rolled a single face and usually picked a solid or dark one. */
+    private static final int TORCH_ICE_SPARKLE_PEAK_BUDGET = 18;
     /** Horizontal+vertical radius (blocks) around the player sampled for a torch-lit ice face. */
     private static final double TORCH_ICE_SPARKLE_RADIUS = 8.0;
     /** Minimum BLOCK light (NOT sky light) the exposed air face must read for the ice to "catch" the light.
-     *  S39: 8 -> 6, widening the "bathed in torchlight" zone from ~6 to ~8 blocks around each torch (a torch
-     *  emits light 14 at source, falling ~1/block) so far more ice faces qualify to catch a glint. */
-    private static final int TORCH_ICE_SPARKLE_MIN_BLOCK_LIGHT = 6;
+     *  S39: 8 -> 6; S40: 6 -> 5 (owner "barely shows"), widening the torch-bathed zone to ~9 blocks per
+     *  torch (torch emits 14 at source, falls ~1/block) so far more ice faces glitter. */
+    private static final int TORCH_ICE_SPARKLE_MIN_BLOCK_LIGHT = 5;
     /** Latitude (deg) floor below which the sampling loop never runs -- KEEP-SHARED with
      *  {@code SnowSparkleLaw.FUNCTIONAL_EXTENDED_ONSET_DEG} (60): the same "polar country begins here" line
      *  the ambient glint's extended band already uses, so this cosmetic never fires equatorward of it. */
@@ -829,24 +831,28 @@ public class GlobeModClient implements ClientModInitializer {
                     && iceBlock != com.example.globe.world.IcicleBlocks.ICICLE) {
                 continue; // not an ice-family block -- skip (a sampled point costs a cluster; intended).
             }
-            // Pick one random exposed face; require AIR there (the "bathed in torchlight" exposed face) and
-            // BLOCK light (not sky light -- a lit cavern face, not a sunlit one) at/above the threshold.
-            net.minecraft.core.Direction face = faces[random.nextInt(faces.length)];
-            BlockPos facePos = icePos.relative(face);
-            if (!client.level.getBlockState(facePos).isAir()) {
-                continue;
+            // S40 ALL-FACES YIELD (owner "barely shows"): glitter on EVERY exposed face that is AIR and
+            // BLOCK-lit (not sky light -- a lit cavern face, not a sunlit one) at/above the threshold, instead
+            // of rolling a single random face per sample. A lit ice block on a cavern wall/floor typically has
+            // 1-3 such faces, so this multiplies the on-screen density several-fold per ice hit -- the change
+            // that actually makes torch-lit ice read as glittering rather than the odd stray twinkle.
+            var lightLayer = client.level.getLightEngine()
+                    .getLayerListener(net.minecraft.world.level.LightLayer.BLOCK);
+            for (net.minecraft.core.Direction face : faces) {
+                BlockPos facePos = icePos.relative(face);
+                if (!client.level.getBlockState(facePos).isAir()) {
+                    continue;
+                }
+                if (lightLayer.getLightValue(facePos) < TORCH_ICE_SPARKLE_MIN_BLOCK_LIGHT) {
+                    continue;
+                }
+                double gx = bx + 0.5 + face.getStepX() * 0.51;
+                double gy = by + 0.5 + face.getStepY() * 0.51;
+                double gz = bz + 0.5 + face.getStepZ() * 0.51;
+                // Zero incoming velocity -- the sparkle twinkles in place on the ice face, mirroring the
+                // ambient glint's own zero-drift spawn (SPARKLE_DRIFT_UP/SPARKLE_DRIFT_LATERAL are both 0.0).
+                client.particleEngine.createParticle(SPARKLE_PARTICLE, gx, gy, gz, 0.0, 0.0, 0.0);
             }
-            int blockLight = client.level.getLightEngine()
-                    .getLayerListener(net.minecraft.world.level.LightLayer.BLOCK).getLightValue(facePos);
-            if (blockLight < TORCH_ICE_SPARKLE_MIN_BLOCK_LIGHT) {
-                continue;
-            }
-            double gx = bx + 0.5 + face.getStepX() * 0.51;
-            double gy = by + 0.5 + face.getStepY() * 0.51;
-            double gz = bz + 0.5 + face.getStepZ() * 0.51;
-            // Zero incoming velocity -- the sparkle twinkles in place on the ice face, mirroring the ambient
-            // glint's own zero-drift spawn (SPARKLE_DRIFT_UP/SPARKLE_DRIFT_LATERAL are both 0.0 today).
-            client.particleEngine.createParticle(SPARKLE_PARTICLE, gx, gy, gz, 0.0, 0.0, 0.0);
         }
     }
 

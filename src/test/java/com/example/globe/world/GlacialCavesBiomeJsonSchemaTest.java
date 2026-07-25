@@ -109,12 +109,12 @@ class GlacialCavesBiomeJsonSchemaTest {
     @Test
     void dressingStepsCarryTheGlacialFeatures() {
         JsonObject caves = glacialCaves();
-        assertEquals(List.of("globe:glacial_snow_drift",
+        assertEquals(List.of("globe:hanging_icicles", "globe:glacial_snow_drift",
                         "globe:glacial_powder_pocket", "globe:glacial_frost_carpet", "globe:glacial_slush_floe"),
                 featureStep(caves, 7),
-                "underground_decoration (step 7) = the glacial floor/pool dressing, in authored order. "
-                        + "S40 (owner: \"remove ... icicles\") deleted BOTH icicle features (the plain-ice "
-                        + "hanging_icicles and the reshaded-dripstone icicle_cluster) from the head of this step)");
+                "underground_decoration (step 7): the plain-ice hanging_icicles (reinstated S40 per owner) "
+                        + "then the floor/pool dressing. S40 removed only the reshaded-DRIPSTONE icicle_cluster "
+                        + "(owner: \"they look like blue dripstone\"), keeping the plain-ice stalactites)");
         assertEquals(List.of("globe:glacial_glow_lichen"),
                 featureStep(caves, 9),
                 "vegetal step = the sparse glacial glow_lichen only (punctuation, not illumination). "
