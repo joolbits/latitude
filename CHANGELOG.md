@@ -54,8 +54,14 @@ Latitude 2.0 "Longitude" is a worldgen-quality and compatibility release. It mak
 ### Known limitations
 - **With several custom biome packs installed at once, not every biome will appear.** Each latitude band draws from a finite weighted pool, so the more biomes you add, the smaller each one's share — rarer/accent biomes from large stacks can fall below visible frequency. This is expected behavior, not a bug; you'll still get a coherent, climate-appropriate mix, just not 100% coverage of every biome in every installed pack. (Configurable per-pack representation weighting is on the roadmap.)
 
+## Latitude 1.4 status (MC 26.1.2 canonical)
+- Current 1.4 candidate truth lives in `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2/docs/release/checklist.md`.
+- The permanent live rerun checklist lives in `docs/release/scenic-drive-green-checklist.md`.
+- Public version naming, savepoint, and publication remain undecided until Maintainer approves the final candidate.
+- (Superseded by the Latitude 2.0 overhaul above; retained from `origin/main` for reference.)
+
 ## Historical released entries
-Entries below are retained for already-published or older-version lines. They are not the active `2.0-beta.1+26.1.2` candidate gate.
+Entries below are retained for already-published or older-version lines. They are not the active `2.0-beta.1+26.1.2` candidate gate (nor, before that, the Latitude 1.4 candidate source of truth).
 
 ## Latitude 1.3.0+1.20.1-r1 (MC 1.20.1)
 - Hotfix release for the 1.20.1 startup/refmap crash tracked in issue #5 and PR #6.
