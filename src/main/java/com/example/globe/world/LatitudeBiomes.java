@@ -7436,6 +7436,19 @@ public final class LatitudeBiomes {
         return latDeg >= EXTREME_POLAR_VILLAGE_VETO_MIN_DEG;
     }
 
+    /** S43 (Peetsa 2026-07-25, B-9 punchlist item 2: "there are currently mineshafts inside caves, which
+     *  doesn't make much sense"): is this block-Z inside the polar MINESHAFT veto band? Mineshafts stop at
+     *  the barrens onset ({@link com.example.globe.core.LatitudeV2Flags#POLAR_BARRENS_ONSET_DEG}, 82) — the
+     *  line where the glacial underground begins. No one dug timber mines through a living glacier; the
+     *  frozen expedition CACHE is the polar underground's human story, and it stays. Same radius-fallback
+     *  discipline as the village veto above. */
+    public static boolean isBlockInPolarMineshaftVetoBand(int blockZ, int borderRadiusFallback) {
+        int radius = getActiveRadiusBlocks();
+        if (radius <= 0) radius = borderRadiusFallback;
+        double latDeg = Math.abs((double) blockZ) * 90.0 / Math.max(1, radius);
+        return latDeg >= com.example.globe.core.LatitudeV2Flags.POLAR_BARRENS_ONSET_DEG;
+    }
+
     private static boolean isFlatPolarShelfBannedMountainPick(Holder<Biome> candidate) {
         return isBiomeId(candidate, "minecraft:jagged_peaks")
                 || isBiomeId(candidate, "minecraft:frozen_peaks")

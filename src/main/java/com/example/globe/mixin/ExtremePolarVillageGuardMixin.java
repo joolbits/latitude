@@ -32,6 +32,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * dedicated {@code isBlockInPolarVillageVetoBand}. The old 74.5 constant ALSO drives the deep-cap biome
  * monoculture and the tree/vegetation guards, so it stays at 74.5; only this village veto moved. Villages
  * therefore now generate in the 74.5-80 band (new chunks only).
+ *
+ * <p><b>S43 MINESHAFT VETO (Peetsa 2026-07-25, B-9 punchlist: "mineshafts inside caves doesn't make much
+ * sense"):</b> the same placeInChunk cancel now also gates structures whose id path starts with
+ * {@code "mineshaft"} (both vanilla variants + any pack mineshaft) at/beyond the BARRENS onset (82 deg,
+ * {@code isBlockInPolarMineshaftVetoBand}) -- the glacial underground line. Timber mines through a living
+ * glacier break the fiction; the frozen expedition cache remains the polar underground's human story.
+ * Same accepted trade as villages: the structure START still exists (locate finds it), no blocks stamp.
+ * Structure placement resolves biomes from the RAW multi_noise source (the carver dead-wiring class), so
+ * a biome-tag exclusion could never work here -- the code-side veto is the only real seam.
  */
 @Mixin(StructureStart.class)
 public abstract class ExtremePolarVillageGuardMixin {
@@ -52,14 +61,21 @@ public abstract class ExtremePolarVillageGuardMixin {
                                                     ChunkPos chunkPos,
                                                     CallbackInfo ci) {
         int blockZ = this.getChunkPos().getMiddleBlockZ();
-        if (!LatitudeBiomes.isBlockInPolarVillageVetoBand(blockZ, GlobeMod.BORDER_RADIUS)) {
+        boolean villageBand = LatitudeBiomes.isBlockInPolarVillageVetoBand(blockZ, GlobeMod.BORDER_RADIUS);
+        boolean mineshaftBand = LatitudeBiomes.isBlockInPolarMineshaftVetoBand(blockZ, GlobeMod.BORDER_RADIUS);
+        if (!villageBand && !mineshaftBand) {
             return;
         }
         Structure structure = this.getStructure();
         try {
             Registry<Structure> registry = world.registryAccess().lookupOrThrow(Registries.STRUCTURE);
             Identifier structureId = registry.getKey(structure);
-            if (structureId != null && structureId.getPath().startsWith("village")) {
+            if (structureId == null) {
+                return;
+            }
+            String path = structureId.getPath();
+            if ((villageBand && path.startsWith("village"))
+                    || (mineshaftBand && path.startsWith("mineshaft"))) {
                 ci.cancel();
             }
         } catch (Throwable ignored) {
