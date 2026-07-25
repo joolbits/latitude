@@ -61,11 +61,9 @@ class GlacialDressingJsonSchemaTest {
 
     /** Every dressing placement must end with the biome filter (so a feature never leaks outside its
      *  listed biomes) and must express its height range as a VerticalAnchor OBJECT (the grammar that
-     *  breaks world creation if written as a plain number). S38 (Peetsa 2026-07-23, TEST 128 "I don't
-     *  see any icicles or any variety at all"): the old &lt;48 ceiling cap is RETIRED — the dressing now
-     *  spans the FULL cavern column (the features are listed in BOTH glacial_caves and polar_barrens, so
-     *  the biome filter still bounds them to glacial country); the cap assertion flips to "must reach
-     *  ABOVE the glacial-caves ceiling and cover the p95 surface band". */
+     *  breaks world creation if written as a plain number). S38: the old &lt;48 ceiling cap is retired --
+     *  the floor/pool dressing spans the FULL cavern column (bounded to glacial country by the biome
+     *  filter), so the cap assertion is "must reach ABOVE the ceiling and cover the p95 surface band". */
     private static void assertCaveBandPlacement(String name, List<JsonObject> chain) {
         assertEquals("minecraft:biome", chain.get(chain.size() - 1).get("type").getAsString(),
                 name + ": the biome filter must be the LAST placement modifier");
@@ -75,17 +73,16 @@ class GlacialDressingJsonSchemaTest {
                 name + ": height-provider max_inclusive must be a VerticalAnchor OBJECT, not a number");
         int maxY = max.getAsJsonObject().get("absolute").getAsInt();
         assertTrue(maxY > LatitudeBiomes.GLACIAL_CAVES_CEILING_Y,
-                name + ": S38 — dressing must reach ABOVE the glacial-caves ceiling into the upper cavern "
+                name + ": S38 -- dressing must reach ABOVE the glacial-caves ceiling into the upper cavern "
                         + "country (" + maxY + " > 48)");
         assertTrue(maxY >= 110,
-                name + ": S38 — the range must cover the p95 surface band (~Y120), was " + maxY);
+                name + ": S38 -- the range must cover the p95 surface band (~Y120), was " + maxY);
         assertTrue(height.get("min_inclusive").getAsJsonObject().has("above_bottom"),
                 name + ": range must start at the world floor (above_bottom anchor)");
     }
 
     /** S38 exception: the two ICE BLOBS stay DEEP-band only (max &lt; 48). Above Y0 the S37 body is already
-     *  solid ice, so blobs would be invisible no-ops there — they exist to seam the remaining sub-Y48
-     *  stone country. The caves-only listing is also pinned by the biome-schema step-6 prefix law. */
+     *  solid ice, so blobs would be invisible no-ops there -- they seam the remaining sub-Y48 stone country. */
     private static void assertDeepCaveBandPlacement(String name, List<JsonObject> chain) {
         assertEquals("minecraft:biome", chain.get(chain.size() - 1).get("type").getAsString(),
                 name + ": the biome filter must be the LAST placement modifier");
@@ -98,155 +95,6 @@ class GlacialDressingJsonSchemaTest {
                 name + ": blobs stay below the glacial-caves ceiling (" + maxY + " < 48)");
         assertTrue(height.get("min_inclusive").getAsJsonObject().has("above_bottom"),
                 name + ": range must start at the world floor (above_bottom anchor)");
-    }
-
-    @Test
-    void hangingIciclesAreDownwardIceColumnsCeilingScanned() {
-        JsonObject config = configured("hanging_icicles");
-        assertEquals("minecraft:block_column", config.get("type").getAsString());
-        JsonObject c = config.getAsJsonObject("config");
-        assertEquals("down", c.get("direction").getAsString(), "icicles hang");
-        assertTrue(c.has("allowed_placement"), "block_column requires allowed_placement");
-        assertTrue(c.has("prioritize_tip"), "block_column requires prioritize_tip");
-        JsonArray layers = c.getAsJsonArray("layers");
-        assertEquals(1, layers.size());
-        JsonObject height = layers.get(0).getAsJsonObject().getAsJsonObject("height");
-        assertEquals("minecraft:uniform", height.get("type").getAsString());
-        // Int-provider bounds are PLAIN NUMBERS (the design length 1-5).
-        assertEquals(1, height.get("min_inclusive").getAsInt(), "icicle length floor");
-        assertEquals(5, height.get("max_inclusive").getAsInt(), "icicle length cap");
-        assertEquals("minecraft:ice",
-                layers.get(0).getAsJsonObject().getAsJsonObject("provider")
-                        .getAsJsonObject("state").get("Name").getAsString());
-
-        JsonObject placedJson = placed("hanging_icicles");
-        assertEquals("globe:hanging_icicles", placedJson.get("feature").getAsString());
-        List<JsonObject> chain = placementChain(placedJson);
-        assertCaveBandPlacement("hanging_icicles", chain);
-        JsonObject scan = modifier(chain, "minecraft:environment_scan");
-        assertEquals("up", scan.get("direction_of_search").getAsString(), "scan UP for the ceiling");
-        assertEquals("down", scan.getAsJsonObject("target_condition").get("direction").getAsString(),
-                "the ceiling block is the one with a sturdy DOWN face (cave_vines idiom)");
-        JsonObject offset = modifier(chain, "minecraft:random_offset");
-        assertEquals(-1, offset.get("y_spread").getAsInt(),
-                "step one below the matched ceiling block into the air cell (cave_vines idiom)");
-        // S24: icicles were invisible in the owner's TEST 115 frames -- density raised ~3.5x (64 -> 220)
-        // and the ceiling reach widened (12 -> 24 steps) so icicles are a regular sight in tall chambers.
-        assertTrue(modifier(chain, "minecraft:count").get("count").getAsInt() >= 200,
-                "S24 raised icicle density meaningfully (>= 200, was 64) -- a regular ceiling sight");
-        assertTrue(scan.get("max_steps").getAsInt() >= 24,
-                "S24 widened the ceiling reach so icicles hang in tall chambers, not just tight tunnels");
-    }
-
-    /** S37 (Dressing Crew): {@code globe:icicle_cluster} extends the SAME proven mechanism as {@code
-     *  hanging_icicles} (block_column, ceiling environment-scan) but places the reshaded {@code globe:icicle}
-     *  pointed-dripstone clone in four tapered layers (base/frustum/middle/tip, matching {@code
-     *  SpeleothemBlock}'s real thickness states) instead of a single plain-ice layer, at a copious ~3.6x
-     *  count over the S24 baseline (owner: "generate copious numbers of dripstone shaded to be icicles"). */
-    @Test
-    void icicleClusterIsATaperedDownwardIcicleColumnCeilingScanned() {
-        JsonObject config = configured("icicle_cluster");
-        assertEquals("minecraft:block_column", config.get("type").getAsString());
-        JsonObject c = config.getAsJsonObject("config");
-        assertEquals("down", c.get("direction").getAsString(), "icicles hang");
-        assertTrue(c.has("allowed_placement"), "block_column requires allowed_placement");
-        assertTrue(c.get("prioritize_tip").getAsBoolean(), "short rolls must still show a tip");
-        JsonArray layers = c.getAsJsonArray("layers");
-        assertEquals(4, layers.size(), "base/frustum/middle/tip -- the real SpeleothemBlock thickness chain");
-        List<String> thicknesses = new ArrayList<>();
-        for (var layer : layers) {
-            JsonObject state = layer.getAsJsonObject().getAsJsonObject("provider").getAsJsonObject("state");
-            assertEquals("globe:icicle", state.get("Name").getAsString());
-            JsonObject props = state.getAsJsonObject("Properties");
-            assertEquals("down", props.get("vertical_direction").getAsString());
-            assertEquals("false", props.get("waterlogged").getAsString());
-            thicknesses.add(props.get("thickness").getAsString());
-        }
-        assertEquals(List.of("base", "frustum", "middle", "tip"), thicknesses,
-                "layer order runs ceiling-attach (base, placed first/closest to origin) down to the tip "
-                        + "(placed last -- BlockColumnFeature builds outward from the origin in 'direction' "
-                        + "order, confirmed via javap on BlockColumnFeature.place)");
-        // The base and tip layers are fixed at exactly 1 block (always present); only the frustum/middle
-        // taper is randomized -- this guarantees every icicle has a real attach point and a real point.
-        JsonObject baseHeight = layers.get(0).getAsJsonObject().getAsJsonObject("height");
-        assertEquals(1, baseHeight.get("min_inclusive").getAsInt());
-        assertEquals(1, baseHeight.get("max_inclusive").getAsInt());
-        JsonObject tipHeight = layers.get(3).getAsJsonObject().getAsJsonObject("height");
-        assertEquals(1, tipHeight.get("min_inclusive").getAsInt());
-        assertEquals(1, tipHeight.get("max_inclusive").getAsInt());
-
-        JsonObject placedJson = placed("icicle_cluster");
-        assertEquals("globe:icicle_cluster", placedJson.get("feature").getAsString());
-        List<JsonObject> chain = placementChain(placedJson);
-        assertCaveBandPlacement("icicle_cluster", chain);
-        JsonObject scan = modifier(chain, "minecraft:environment_scan");
-        assertEquals("up", scan.get("direction_of_search").getAsString(), "scan UP for the ceiling "
-                + "(same idiom as hanging_icicles)");
-        assertEquals("down", scan.getAsJsonObject("target_condition").get("direction").getAsString());
-        assertEquals(-1, modifier(chain, "minecraft:random_offset").get("y_spread").getAsInt());
-        // "Copious" (owner verbatim) -- ~3.6x the S24 hanging_icicles count (220), and a wider ceiling
-        // reach for real coverage in tall chambers.
-        assertTrue(modifier(chain, "minecraft:count").get("count").getAsInt() >= 700,
-                "S37 owner ask: copious icicles, meaningfully above the S24 plain-ice baseline (220)");
-        assertTrue(scan.get("max_steps").getAsInt() >= 24, "ceiling coverage in tall chambers");
-    }
-
-    /** S37 pale-moss atmosphere: {@code globe:pale_cave_hanging_moss} reuses the icicle/hanging_icicles
-     *  block_column-plus-ceiling-scan idiom with vanilla {@code minecraft:pale_hanging_moss}'s real {@code
-     *  tip} boolean (strand segments then one terminal tip), and {@code globe:pale_cave_moss_patch} drops
-     *  single {@code minecraft:pale_moss_carpet} blocks onto scanned cave floors (the {@code
-     *  glacial_frost_carpet} floor-scan idiom) with vanilla's own default carpet properties (verbatim from
-     *  the 26.2 jar's {@code pale_moss_vegetation} configured feature). Both are sparse-to-moderate --
-     *  "in some areas", not everywhere (owner verbatim) -- and well under the icicle counts. */
-    @Test
-    void paleMossAtmosphereIsSparseHangingStrandsAndFloorPatches() {
-        JsonObject hangingConfig = configured("pale_cave_hanging_moss");
-        assertEquals("minecraft:block_column", hangingConfig.get("type").getAsString());
-        JsonObject hc = hangingConfig.getAsJsonObject("config");
-        assertEquals("down", hc.get("direction").getAsString());
-        JsonArray hangingLayers = hc.getAsJsonArray("layers");
-        assertEquals(2, hangingLayers.size(), "strand layer then one terminal tip layer");
-        JsonObject strand = hangingLayers.get(0).getAsJsonObject().getAsJsonObject("provider").getAsJsonObject("state");
-        assertEquals("minecraft:pale_hanging_moss", strand.get("Name").getAsString());
-        assertEquals("false", strand.getAsJsonObject("Properties").get("tip").getAsString());
-        JsonObject tip = hangingLayers.get(1).getAsJsonObject().getAsJsonObject("provider").getAsJsonObject("state");
-        assertEquals("minecraft:pale_hanging_moss", tip.get("Name").getAsString());
-        assertEquals("true", tip.getAsJsonObject("Properties").get("tip").getAsString());
-        JsonObject tipHeight = hangingLayers.get(1).getAsJsonObject().getAsJsonObject("height");
-        assertEquals(1, tipHeight.get("min_inclusive").getAsInt());
-        assertEquals(1, tipHeight.get("max_inclusive").getAsInt());
-
-        JsonObject hangingPlaced = placed("pale_cave_hanging_moss");
-        assertEquals("globe:pale_cave_hanging_moss", hangingPlaced.get("feature").getAsString());
-        List<JsonObject> hangingChain = placementChain(hangingPlaced);
-        assertCaveBandPlacement("pale_cave_hanging_moss", hangingChain);
-        JsonObject hangingScan = modifier(hangingChain, "minecraft:environment_scan");
-        assertEquals("up", hangingScan.get("direction_of_search").getAsString(), "moss hangs from ceilings too");
-        int hangingCount = modifier(hangingChain, "minecraft:count").get("count").getAsInt();
-        assertTrue(hangingCount > 0 && hangingCount < 200,
-                "sparse-to-moderate -- well under the S37 icicle count, never a wall-to-wall carpet");
-
-        JsonObject patchConfig = configured("pale_cave_moss_patch");
-        assertEquals("minecraft:simple_block", patchConfig.get("type").getAsString(),
-                "single-block placement, matching the slush-floe idiom for scattered floor cover");
-        JsonObject patchState = patchConfig.getAsJsonObject("config").getAsJsonObject("to_place")
-                .getAsJsonObject("state");
-        assertEquals("minecraft:pale_moss_carpet", patchState.get("Name").getAsString());
-        JsonObject patchProps = patchState.getAsJsonObject("Properties");
-        for (String side : new String[]{"north", "south", "east", "west"}) {
-            assertEquals("none", patchProps.get(side).getAsString(),
-                    "vanilla's own default carpet properties (pale_moss_vegetation, verbatim)");
-        }
-        assertEquals("true", patchProps.get("bottom").getAsString());
-
-        JsonObject patchPlaced = placed("pale_cave_moss_patch");
-        assertEquals("globe:pale_cave_moss_patch", patchPlaced.get("feature").getAsString());
-        List<JsonObject> patchChain = placementChain(patchPlaced);
-        assertCaveBandPlacement("pale_cave_moss_patch", patchChain);
-        assertEquals("down", modifier(patchChain, "minecraft:environment_scan")
-                .get("direction_of_search").getAsString(), "patches dust the FLOOR (scan down, frost_carpet idiom)");
-        int patchCount = modifier(patchChain, "minecraft:count").get("count").getAsInt();
-        assertTrue(patchCount > 0 && patchCount <= 20, "floor patches stay sparse -- in some areas, not everywhere");
     }
 
     @Test
@@ -365,8 +213,9 @@ class GlacialDressingJsonSchemaTest {
                         "placed feature " + featureId + " needs its configured_feature JSON");
             }
         }
-        assertEquals(11, globeFeatures, "the eleven globe features (4 dressing + frost carpet + 2 ice blobs "
-                + "+ S25 slush floe + S37 icicle_cluster + 2 pale-moss atmosphere features), no silent drops");
+        assertEquals(7, globeFeatures, "the seven globe features after S40 removed the 4 moss/icicle "
+                + "dressings (owner: \"remove pale moss, hanging moss, and icicles\"): snow_drift, "
+                + "powder_pocket, frost_carpet, slush_floe, glow_lichen + 2 ice blobs, no silent drops");
     }
 
     /** S25 SLUSH FLOES (owner TEST 117, 2026-07-20: "very small ice blocks clustered together in the water
