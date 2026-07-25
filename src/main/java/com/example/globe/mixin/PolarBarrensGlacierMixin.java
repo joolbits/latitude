@@ -84,6 +84,11 @@ public abstract class PolarBarrensGlacierMixin {
     private static final BlockState GLOBE_RIVER_SURFACE_ICE = Blocks.ICE.defaultBlockState();
     @Unique
     private static final BlockState GLOBE_GLACIER_BLUE_ICE = Blocks.BLUE_ICE.defaultBlockState();
+    /** S43b magma pockets: the quenched rim written where the melt pocket meets the ice body. */
+    @Unique
+    private static final BlockState GLOBE_MAGMA_QUENCH_OBSIDIAN = Blocks.OBSIDIAN.defaultBlockState();
+    @Unique
+    private static final BlockState GLOBE_MAGMA_POCKET_AIR = Blocks.AIR.defaultBlockState();
 
     @Inject(
             method = "buildSurface(Lnet/minecraft/server/level/WorldGenRegion;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/chunk/ChunkAccess;)V",
@@ -110,6 +115,9 @@ public abstract class PolarBarrensGlacierMixin {
 
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
         int minY = chunk.getMinY();
+        // S43b (Peetsa 2026-07-25): magma blocks seen by either pass are PRESERVED and collected; after the
+        // column loops they get their melt pocket + obsidian quench rim (post-pass below).
+        java.util.List<BlockPos> magmaSeen = new java.util.ArrayList<>();
         for (int lx = 0; lx < 16; lx++) {
             for (int lz = 0; lz < 16; lz++) {
                 int blockX = cp.getMinBlockX() + lx;
@@ -187,6 +195,10 @@ public abstract class PolarBarrensGlacierMixin {
                     if (block == Blocks.BEDROCK || block == Blocks.PACKED_ICE || block == Blocks.BLUE_ICE) {
                         continue;
                     }
+                    if (block == Blocks.MAGMA_BLOCK) {
+                        magmaSeen.add(cursor.immutable()); // S43b: heat survives the glacier; pocket post-pass
+                        continue;
+                    }
                     if (y > capBottomY) {
                         if (block == Blocks.SNOW_BLOCK || block == Blocks.POWDER_SNOW
                                 || block == Blocks.ICE || block == Blocks.SNOW) {
@@ -250,8 +262,54 @@ public abstract class PolarBarrensGlacierMixin {
                         if (current.isAir() || !current.getFluidState().isEmpty()) {
                             continue; // caves thread the diffusion; aquifer/reservoir water stays liquid
                         }
+                        if (current.getBlock() == Blocks.MAGMA_BLOCK) {
+                            magmaSeen.add(cursor.immutable()); // S43b: collect for the pocket post-pass
+                            continue;
+                        }
                         if (globe$isPermafrostReplaceable(current.getBlock())) {
                             chunk.setBlockState(cursor, GLOBE_GLACIER_PACKED_ICE);
+                        }
+                    }
+                }
+            }
+        }
+
+        // S43b MAGMA POCKETS (Peetsa 2026-07-25, mid-round ask): "Around magma blocks, clear out ice and
+        // maybe make the surrounding blocks obsidian." For every magma block either pass saw: face-adjacent
+        // ICE-FAMILY blocks melt to AIR (heat wins the touch fight), and the remaining 3x3x3 shell's
+        // ice-family becomes OBSIDIAN -- the quenched rim, ice-to-fire geology in one read. ICE-FAMILY ONLY
+        // (packed/blue/plain ice + the body's snow_block speckle): stone/deepslate around deep magma is
+        // untouched, so the effect self-scopes to the glacial body. Chunk-local writes only -- a neighbor
+        // outside this chunk belongs to that chunk's own pass (deterministic per chunk, no cross-chunk
+        // writes at the surface stage).
+        if (!magmaSeen.isEmpty()) {
+            int chunkMinX = cp.getMinBlockX();
+            int chunkMinZ = cp.getMinBlockZ();
+            int maxY = chunk.getMaxY() - 1;
+            for (BlockPos magma : magmaSeen) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dy = -1; dy <= 1; dy++) {
+                        for (int dz = -1; dz <= 1; dz++) {
+                            if (dx == 0 && dy == 0 && dz == 0) {
+                                continue;
+                            }
+                            int nx = magma.getX() + dx;
+                            int ny = magma.getY() + dy;
+                            int nz = magma.getZ() + dz;
+                            if (nx < chunkMinX || nx > chunkMinX + 15
+                                    || nz < chunkMinZ || nz > chunkMinZ + 15
+                                    || ny <= minY || ny > maxY) {
+                                continue;
+                            }
+                            cursor.set(nx, ny, nz);
+                            Block nb = chunk.getBlockState(cursor).getBlock();
+                            if (nb != Blocks.PACKED_ICE && nb != Blocks.BLUE_ICE
+                                    && nb != Blocks.ICE && nb != Blocks.SNOW_BLOCK) {
+                                continue;
+                            }
+                            boolean faceAdjacent = Math.abs(dx) + Math.abs(dy) + Math.abs(dz) == 1;
+                            chunk.setBlockState(cursor,
+                                    faceAdjacent ? GLOBE_MAGMA_POCKET_AIR : GLOBE_MAGMA_QUENCH_OBSIDIAN);
                         }
                     }
                 }
