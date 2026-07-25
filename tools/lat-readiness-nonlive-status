@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+set -u
+
+EXPECTED_ROOT="<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2"
+EXPECTED_BRANCH="feat/custom-biome-expansion-26.1.2"
+CANDIDATE_COMMIT="c9da0f93029f7f16c50a7bc89eb766c576a85b48"
+CANDIDATE_TAG="save/biome-tuning-followup-26.1.2"
+JAR_NAME="latitude-1.4.1-beta.2+26.1.2.jar"
+EXPECTED_SHA="1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477"
+PROFILE="${LATITUDE_PROFILE:-$HOME/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2}"
+
+REBUILD_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/closeout-1.4-20260621/rebuild-c9da0f93-175345"
+PROFILE_STAGE_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/closeout-1.4-20260621/profile-stage-c9da0f93-175416"
+BIOME_TUNING_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/biome-tuning-20260621/live-registry-locate-after-stage-20260621-1703"
+FINAL_LIVE_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/closeout-1.4-20260621/final-live-c9-192419"
+STONY_FOLLOWUP_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/closeout-1.4-20260621/stony-followup-c9-195009"
+HISTORICAL_E09_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/post-140-hardening-continuation-20260620-220852"
+
+CANONICAL_CHECKLIST="$EXPECTED_ROOT/docs/release/checklist.md"
+READINESS_AUDIT="$EXPECTED_ROOT/docs/release/current-readiness-audit.md"
+LIVE_RUNBOOK="$EXPECTED_ROOT/docs/release/live-proof-runbook.md"
+GATE_MANIFEST="$EXPECTED_ROOT/docs/release/current-gates.json"
+BINDER_INDEX="$EXPECTED_ROOT/docs/binder/index.md"
+BINDER_REGISTRY="$EXPECTED_ROOT/docs/binder/evidence-registry.md"
+
+errors=0
+warnings=0
+
+say() {
+  printf '%s\n' "$*"
+}
+
+pass() {
+  printf 'PASS: %s\n' "$*"
+}
+
+warn() {
+  warnings=$((warnings + 1))
+  printf 'WARN: %s\n' "$*"
+}
+
+fail() {
+  errors=$((errors + 1))
+  printf 'FAIL: %s\n' "$*"
+}
+
+sha256_file() {
+  shasum -a 256 "$1" | awk '{print $1}'
+}
+
+expect_equal() {
+  label="$1"
+  expected="$2"
+  actual="$3"
+  if [ "$actual" = "$expected" ]; then
+    pass "$label = $actual"
+  else
+    fail "$label expected $expected but found $actual"
+  fi
+}
+
+expect_file() {
+  label="$1"
+  path="$2"
+  if [ -f "$path" ]; then
+    pass "$label exists: $path"
+  else
+    fail "$label missing: $path"
+  fi
+}
+
+expect_dir() {
+  label="$1"
+  path="$2"
+  if [ -d "$path" ]; then
+    pass "$label exists: $path"
+  else
+    fail "$label missing: $path"
+  fi
+}
+
+expect_contains() {
+  label="$1"
+  path="$2"
+  needle="$3"
+  if [ -f "$path" ] && grep -Fq -- "$needle" "$path"; then
+    pass "$label"
+  else
+    fail "$label missing expected text: $needle"
+  fi
+}
+
+check_manifest() {
+  label="$1"
+  jar="$2"
+  manifest_tmp="$(mktemp "${TMPDIR:-/tmp}/lat-manifest.XXXXXX")"
+  if [ -f "$jar" ] && unzip -p "$jar" META-INF/MANIFEST.MF > "$manifest_tmp" 2>/dev/null; then
+    tr -d '\r' < "$manifest_tmp" > "$manifest_tmp.clean"
+    manifest="$manifest_tmp.clean"
+    for needle in \
+      "Implementation-Version: 1.4.1-beta.2+26.1.2" \
+      "Minecraft-Version: 26.1.2" \
+      "Git-Commit: $CANDIDATE_COMMIT" \
+      "Git-Branch: $EXPECTED_BRANCH" \
+      "Build-Dirty: true"; do
+      if grep -Fq "$needle" "$manifest"; then
+        pass "$label manifest contains $needle"
+      else
+        fail "$label manifest missing $needle"
+      fi
+    done
+  else
+    fail "could not read $label manifest"
+  fi
+  rm -f "$manifest_tmp" "$manifest_tmp.clean"
+}
+
+say "Latitude 1.4 current non-live readiness status"
+say "This read-only command verifies the c9da0f93 savepoint candidate, staged profile jar, release docs, green live state, and evidence folders."
+say ""
+
+actual_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+expect_equal "canonical root" "$EXPECTED_ROOT" "$actual_root"
+
+actual_branch="$(git branch --show-current 2>/dev/null || true)"
+expect_equal "branch" "$EXPECTED_BRANCH" "$actual_branch"
+
+actual_head="$(git rev-parse HEAD 2>/dev/null || true)"
+if git merge-base --is-ancestor "$CANDIDATE_COMMIT" HEAD 2>/dev/null; then
+  pass "branch HEAD contains candidate savepoint $CANDIDATE_COMMIT (current HEAD $actual_head)"
+else
+  fail "branch HEAD $actual_head does not contain candidate savepoint $CANDIDATE_COMMIT"
+fi
+
+tag_target="$(git rev-list -n 1 "$CANDIDATE_TAG" 2>/dev/null || true)"
+expect_equal "candidate tag $CANDIDATE_TAG target" "$CANDIDATE_COMMIT" "$tag_target"
+
+dirty_state="$(git status --porcelain 2>/dev/null || true)"
+if [ -n "$dirty_state" ]; then
+  warn "working tree is not clean; this is expected while release docs/evidence are being synced, but commit only after final proof is accepted"
+else
+  pass "working tree is clean"
+fi
+
+candidate_jar="$EXPECTED_ROOT/build/libs/$JAR_NAME"
+profile_jar="$PROFILE/mods/$JAR_NAME"
+
+expect_file "candidate jar" "$candidate_jar"
+if [ -f "$candidate_jar" ]; then
+  candidate_sha="$(sha256_file "$candidate_jar")"
+  expect_equal "candidate jar SHA-256" "$EXPECTED_SHA" "$candidate_sha"
+fi
+
+if [ -d "$PROFILE/mods" ]; then
+  jars=()
+  while IFS= read -r jar; do
+    jars+=("$jar")
+  done < <(find "$PROFILE/mods" -maxdepth 1 -type f -name 'latitude*.jar' ! -name '*.bak' ! -name '*.pre-*' -print)
+
+  expect_equal "active profile latitude jar count" "1" "${#jars[@]}"
+  if [ "${#jars[@]}" -eq 1 ]; then
+    expect_equal "active profile jar path" "$profile_jar" "${jars[0]}"
+  fi
+else
+  fail "profile mods directory missing: $PROFILE/mods"
+fi
+
+expect_file "profile jar" "$profile_jar"
+if [ -f "$profile_jar" ]; then
+  profile_sha="$(sha256_file "$profile_jar")"
+  expect_equal "profile jar SHA-256" "$EXPECTED_SHA" "$profile_sha"
+fi
+
+check_manifest "local build/libs jar" "$candidate_jar"
+check_manifest "profile jar" "$profile_jar"
+
+expect_dir "rebuild evidence folder" "$REBUILD_EVIDENCE_DIR"
+expect_file "rebuild clean-build log" "$REBUILD_EVIDENCE_DIR/clean-build.log"
+expect_file "rebuild manifest proof" "$REBUILD_EVIDENCE_DIR/build-manifest.txt"
+expect_file "rebuild SHA proof" "$REBUILD_EVIDENCE_DIR/build-jar.sha256"
+
+expect_dir "profile-stage evidence folder" "$PROFILE_STAGE_EVIDENCE_DIR"
+expect_file "profile-stage log" "$PROFILE_STAGE_EVIDENCE_DIR/profile-stage.log"
+
+expect_dir "biome-tuning live proof folder" "$BIOME_TUNING_EVIDENCE_DIR"
+expect_file "desert live proof summary" "$BIOME_TUNING_EVIDENCE_DIR/desert-live-proof-summary.md"
+expect_file "stony treeline proof summary" "$BIOME_TUNING_EVIDENCE_DIR/stony-treeline-proof-summary.md"
+expect_dir "final c9 live proof folder" "$FINAL_LIVE_EVIDENCE_DIR"
+expect_file "final c9 live summary" "$FINAL_LIVE_EVIDENCE_DIR/summary.md"
+expect_dir "stony follow-up proof folder" "$STONY_FOLLOWUP_EVIDENCE_DIR"
+expect_file "stony follow-up summary" "$STONY_FOLLOWUP_EVIDENCE_DIR/summary.md"
+
+expect_file "canonical release checklist" "$CANONICAL_CHECKLIST"
+expect_file "current readiness audit" "$READINESS_AUDIT"
+expect_file "live proof runbook" "$LIVE_RUNBOOK"
+expect_file "current gate manifest" "$GATE_MANIFEST"
+expect_file "binder index" "$BINDER_INDEX"
+expect_file "binder evidence registry" "$BINDER_REGISTRY"
+
+for doc in "$CANONICAL_CHECKLIST" "$READINESS_AUDIT" "$LIVE_RUNBOOK" "$GATE_MANIFEST" "$BINDER_INDEX" "$BINDER_REGISTRY"; do
+  expect_contains "$(basename "$doc") records c9 savepoint" "$doc" "$CANDIDATE_COMMIT"
+  expect_contains "$(basename "$doc") records staged SHA" "$doc" "$EXPECTED_SHA"
+done
+
+expect_contains "checklist records live proof green but release unauthorized" "$CANONICAL_CHECKLIST" "Status: live-proof green, not release-authorized."
+expect_contains "checklist records stony follow-up" "$CANONICAL_CHECKLIST" "stony follow-up"
+expect_contains "readiness audit records live proof green but release unauthorized" "$READINESS_AUDIT" "Latitude 1.4 is **live-proof green but not release-authorized**"
+expect_contains "gate manifest keeps release unauthorized" "$GATE_MANIFEST" '"releaseAuthorized": false'
+expect_contains "gate manifest records green live stony follow-up state" "$GATE_MANIFEST" '"finalLiveEvidence": "green_live_c9_stony_followup"'
+expect_contains "live runbook forbids launcher control" "$LIVE_RUNBOOK" "Do not use the vanilla Minecraft Launcher as a control surface."
+expect_contains "binder registry records green stony follow-up" "$BINDER_REGISTRY" "20260621-c9-stony-followup-live-green"
+
+if [ -d "$HISTORICAL_E09_EVIDENCE_DIR" ]; then
+  warn "historical e09 evidence exists and is retained as support, not final proof for current SHA $EXPECTED_SHA"
+fi
+
+warn "Public version name, filename, upload, publication, branch push, tag push, cleanup, and porting remain manual gates."
+
+say ""
+say "Manual gates this read-only helper intentionally does not close:"
+say "- Maintainer-owned public version name, final filename, final public release text"
+say "- Branch/tag push, upload, publication, cleanup, and porting"
+say ""
+
+if [ "$errors" -eq 0 ]; then
+  say "READINESS STATUS: PASS-PARTIAL (${warnings} warning(s)); c9/profile truth and live proof are green, with only Maintainer-owned release actions left open."
+  exit 0
+fi
+
+say "READINESS STATUS: FAIL (${errors} error(s), ${warnings} warning(s)); fix mismatched local truth before live proof or release work."
+exit 1

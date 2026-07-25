@@ -1,7 +1,7 @@
 package com.example.globe;
 
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.core.BlockPos;
+import net.minecraft.util.Mth;
 
 public final class GlobeRegions {
     private GlobeRegions() {
@@ -85,7 +85,7 @@ public final class GlobeRegions {
     }
 
     private static float ramp(int v, int start, int end) {
-        return MathHelper.clamp((v - start) / (float) (end - start), 0.0f, 1.0f);
+        return Mth.clamp((v - start) / (float) (end - start), 0.0f, 1.0f);
     }
 
     public static boolean nearPolarWarning(BlockPos pos) {

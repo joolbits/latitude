@@ -1,0 +1,155 @@
+# BOP temperate expansion visual review
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: feat/1.3.1-cohesive-horizons-26.1.2
+HEAD: 4c94abcf
+Tag: save/bop-temperate-tag-coverage
+
+Atlas folders reviewed:
+- run-headless/run/latdev/atlas/bop-audit-bop-small/seed_12345/Run_be5d593/R5000/step64
+- run-headless/run/latdev/atlas/bop-temperate-tag-expansion-small/seed_12345/Run_be5d593/R5000/step64
+- run-headless/run/latdev/atlas/bop-temperate-tag-expansion-tiny/seed_12345/Run_be5d593/R5000/step64
+
+Small verdict:
+- Readability stayed coherent. The SMALL map moved from 4 BOP biomes in the latitude tag to 12 BOP biomes, with no major structural jump in color-segment boundaries.
+- Main visible textures remain dominated by major land/sea biomes as expected for a coherent climate atlas.
+
+Tiny verdict:
+- Tiny map shows the same structural behavior as after-small and keeps large contiguous bands; no evidence of full-surface fragmentation from the new temperate list in coarse structural metrics.
+
+seasonal_forest dominance verdict:
+- Seasonal forest is not dominating. It remains below 3% of the recorded seasonal-in-temperate metric and is not marked dominant in audit output.
+
+Readability of added coverage:
+- Improvement exists: added temperate BOP candidates (pasture, meadow?), orchard, old_growth_woodland, woodland, mystic_grove, and mediterranean_forest are now present where before the map was mostly seasonal_forest/maple_woods.
+- The visible atlas structure still appears band-readable from structural metrics; added BOPs are not replacing macro-scale texture.
+
+Suspect accents:
+- mystic_grove: 6/24649 hits, very rare; likely accent behavior.
+- mediterranean_forest: 1/24649 hit, very rare and likely accent/gimmick-level unless one wants stronger prevalence.
+- lavender_field: not present in either temperate expansion run at this seed/scale.
+- Seasonal_forest no longer dominates, but remains present at low-to-mid visual prominence before and after.
+
+Confetti risk:
+- Boundary-transition rate: before 0.1978 vs after 0.2024 (small rise).
+- Color-component metrics show slight increase in small fragments for the key grey-green replacement palette (roughly +5 small components in after), but largest components remain large; no large confetti-like texture sweep detected from summary statistics.
+
+Recommended classification:
+- PARTIAL
+- Expansion improved biome variety versus the old narrow state while mostly preserving readability, but some additions are too rare (mediterranean/mystic) to materially improve texture; we should decide if this is intended "accent" behavior or if tuning for bigger presence is still needed.
+
+Recommended next band:
+- stop and rebalance
+
+Rebalance decision (bop-temperate-tag-rebalance):
+- Root: <home>/CascadeProjects/Latitude (Globe)
+- Branch: feat/1.3.1-cohesive-horizons-26.1.2
+- Head at decision: 4c94abcf
+- Decision: remove suspect accent candidates while keeping secondary climate-core expansion
+
+Exact entries kept:
+- sec: biomesoplenty:woodland
+- sec: biomesoplenty:old_growth_woodland
+- sec: biomesoplenty:field
+- sec: biomesoplenty:forested_field
+- sec: biomesoplenty:orchard
+- sec: biomesoplenty:pasture
+- acc: biomesoplenty:prairie
+- acc: biomesoplenty:lavender_field
+
+Exact entries removed:
+- acc: biomesoplenty:mediterranean_forest (removed because warm/minimal footprint risk)
+- acc: biomesoplenty:mystic_grove (removed because magical/gimmick-like low-frequency behavior)
+
+Why suspect accents were handled:
+- mediterranean_forest: remained 0/24649 selected in Small/Tiny and did not materially contribute to readable climate texture in the target size.
+- mystic_grove: previously appeared only in very small counts and was flagged in prior review as potentially noisy; removed to reduce risk on tiny stress-test readability.
+
+Evidence from this rebalance run:
+- BOP tagged set now excludes those two accents and keeps core temperate expansion path.
+- seasonal_forest still appears in temperate selections and is still not dominant (seasonal_forest_dominance=false).
+- Small and Tiny still preserve readable climate band behavior per atlas summary; no subpolar or tropical migration signals were introduced by this narrow removal.
+
+No picker/worldgen logic changed:
+- No edits to LatitudeBiomes.java, picker logic, non-temperate band tags, or runtime/tag weight systems.
+- This is tag-file scope only.
+
+Not every eligible BOP biome must appear in every world:
+- This rebalance accepts that some tagged biomes (e.g., field, lavender_field) remain eligible without guaranteed per-world visibility.
+
+## Rebalance visual re-review — HEAD 9f349859
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: feat/1.3.1-cohesive-horizons-26.1.2
+HEAD: 9f349859
+Tag: save/bop-temperate-accent-rebalance
+
+Atlas folders reviewed:
+- run-headless/run/latdev/atlas/bop-audit-bop-small/seed_12345/Run_be5d593/R5000/step64
+- run-headless/run/latdev/atlas/bop-temperate-tag-expansion-small/seed_12345/Run_be5d593/R5000/step64
+- run-headless/run/latdev/atlas/bop-temperate-tag-expansion-tiny/seed_12345/Run_be5d593/R5000/step64
+- run-headless/run/latdev/atlas/bop-temperate-rebalance-small/seed_12345/Run_4c94abcf/R5000/step64
+- run-headless/run/latdev/atlas/bop-temperate-rebalance-tiny/seed_12345/Run_4c94abcf/R5000/step64
+
+Small visual verdict:
+- Rebalance feels cleaner than the first expansion in terms of accent restraint; the two removed accents no longer introduce visible warm/specialized spikes in temperate texture.
+- Temperate remains coherent with broad, contiguous patches while preserving added secondary variation over the old bottleneck.
+
+Tiny visual verdict:
+- Tiny remains readable and climate-band-ordered.
+- No widespread speckling regime is indicated by the atlas structure, and band boundaries still appear intact.
+
+seasonal_forest dominance verdict:
+- seasonal_forest remains non-dominant.
+- Rebalance audit outputs keep seasonal_forest_dominance=false and seasonal_forest_in_temperate_count=218.
+
+Did removing mediterranean_forest and mystic_grove improve readability?
+- Yes, this is a net readability improvement for the same seed/size: both removed accents are absent from final picker lists in both Small and Tiny, which reduces risky low-frequency novelty pressure.
+
+Variety vs old 4-biome narrow state:
+- Improved remains true: selected temperate BOP now include forested_field, old_growth_woodland, orchard, pasture, prairie, maple_woods, woodland, seasonal_forest, rather than only the previous narrow core.
+
+lavender_field / prairie assessment:
+- Prairie is present and behaves like a mild open-land accent (not widespread), not a dense confetti feature.
+- Lavender_field is tagged in this rebalance but remains tagged-but-never-selected (no visible placement in this seed/scale), so it is currently an unforced accent candidate rather than an active texture contributor.
+
+Core temperate texture (woodland/old_growth_woodland/field/forested_field/orchard/pasture):
+- Healthy, readable, and useful for medium-scale variation in the temperate band.
+- field remains tagged-but-not-selected in Small/Tiny at this seed; not a failure, just a low-frequency core on this sample.
+
+Climate/order/readability check:
+- No evidence from atlas artifacts of tropical -> subtropical -> temperate -> subpolar -> polar order collapse.
+- No obvious checkerboard, ruler-seam, abrupt stripe inversion, or random confetti spread was observed from the small/tiny outputs at this seed.
+
+Final re-review classification:
+- PARTIAL
+
+Final recommendation:
+- one more targeted temperate tag review is needed to decide whether to keep, swap, or downscope lavender_field and field as optional active accents.
+
+## Final seed spot check — field/lavender_field
+
+- seeds checked: 24680 and 8675309
+- sizes checked: Small, Tiny
+- field selected: no (zero in all 4 Small/Tiny audit CSVs)
+- lavender_field selected: no (zero in all 4 Small/Tiny audit CSVs)
+- seasonal_forest_dominance: false in each run
+- per-seed results:
+  - 24680 Small: tagged but never selected: field, lavender_field
+  - 24680 Tiny: field/lavender_field were tagged but never selected; prairie was selected
+  - 8675309 Small: tagged but never selected: field, lavender_field, prairie
+  - 8675309 Tiny: tagged but never selected: field, lavender_field, prairie
+- decision: REMOVE — both field and lavender_field are ultra-rare at this seed set and show no visible selection evidence; recommend tiny-tag cleanup before further visual expansion
+- final decision: PARTIAL
+- final classification: PARTIAL
+- recommended next slice: hold temperate and run one more live runtime spot check or targeted cleanup pass
+
+## Final dead-entry cleanup
+
+- Decision: remove `biomesoplenty:field` from `lat_temperate_secondary.json` and `biomesoplenty:lavender_field` from `lat_temperate_accent.json`.
+- Evidence basis: repeated seed spot checks (12345, 24680, 8675309) on Small and Tiny found `selected_count=0` for both biomes, with no visible contribution in generated atlas layers.
+- Seasonal forest result remains stable: `seasonal_forest_dominance=false`.
+- Scope lock: this cleanup is tag-only within temperate BOP files; no picker logic, no `LatitudeBiomes.java`, and no band edits were changed.
+- Not every eligible BOP biome is required to appear in every world; these removals target non-contributing dead entries from repeated evidence.
+- Final temperate BOP status after cleanup: PASS if small/tiny reruns continue to preserve improved variety and coherence with no confetti artifacts.
+- Final classification: PASS.

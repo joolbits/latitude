@@ -1,0 +1,966 @@
+package com.example.globe.dev;
+
+import com.example.globe.GlobeMod;
+import com.example.globe.adapter.geo.GeoSummaryProvider;
+import com.example.globe.core.LatitudeV2Flags;
+import com.example.globe.core.geo.GeoAuthority;
+import com.example.globe.terrain.TerrainRouterWrapping;
+import com.example.globe.terrain.TerrainRouterWrapping.InstallResult;
+import com.example.globe.world.LatitudeBiomes;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.NoiseColumn;
+import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.levelgen.DensityFunction;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+import net.minecraft.world.level.levelgen.RandomState;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Phase 4 (Terrain Integration Spike) mechanical proof harness -- design §6.2's "small headless probe
+ * harness," plus the §6.1 byte-identity legs and the §6.4 vanilla-only leg. Design of record:
+ * {@code docs/design/terrain-wrapper-design-20260705.md}.
+ *
+ * <p><b>Why a dev headless tool, not a JUnit test.</b> This project's {@code src/test} suite is
+ * deliberately pure-JVM with no Minecraft imports (see {@code build.gradle}: "Pure-JVM unit tests for
+ * the Core Logic layer"). Building a real {@code RandomState} for {@code globe:overworld} requires a
+ * bootstrapped Minecraft registry environment (biomes, noise settings, density functions), which only
+ * exists inside a running (headless) server -- exactly the environment
+ * {@code com.example.globe.dev.BiomePreviewHeadlessRunner} already provides for the atlas tooling. This
+ * class follows that same established pattern: a dev-only class, registered reflectively in
+ * development environments only, dispatched from a system property checked in
+ * {@code BiomePreviewHeadlessRunner.onServerStarted}.
+ *
+ * <p><b>Why one JVM run answers only PART of the picture.</b> Every {@link LatitudeV2Flags} field is
+ * {@code static final}, read once from {@code System.getProperty} at class-init (see that class's own
+ * "Testing note" javadoc, sweeper audit #2 finding #27): a single running JVM can only ever exercise
+ * ONE flag configuration. So this harness does not itself compare "flag off" vs "flag on" -- each
+ * invocation writes a full raw-data JSON report reflecting whatever {@code -D} flags THIS JVM was
+ * launched with, and the actual byte-identity / shift-direction comparisons across configurations are
+ * done externally (a small Python diff script) by comparing two (or more) reports written by separate
+ * forked-JVM invocations -- mirroring exactly how the existing headless atlas byte-identity proofs work.
+ *
+ * <p>Trigger: {@code -Dlatdev.terrainProof=true}. Config (all via {@code -D} system properties):
+ * <ul>
+ *   <li>{@code latdev.terrainProof.seed} (default a fixed test seed)</li>
+ *   <li>{@code latdev.terrainProof.radius} (default 10000, "regular" globe size)</li>
+ *   <li>{@code latdev.terrainProof.shape} ({@code classic}|{@code mercator}, default {@code classic})</li>
+ *   <li>{@code latdev.terrainProof.out} (output JSON path; default {@code run-headless/latdev/terrain-proof-report.json})</li>
+ * </ul>
+ * All other configuration (whether the wrapper is armed at all) is via the actual
+ * {@link LatitudeV2Flags} JVM properties ({@code latitude.terrainV2.enabled},
+ * {@code latitude.terrainV2.strength}, {@code latitude.terrainV2.oceanStrengthRatio},
+ * {@code latitude.geoV2.enabled}) -- this harness does not re-invent flag plumbing, it reads the same
+ * flags the shipped code reads.
+ *
+ * <p><b>Honest coverage-gap statement (sweeper finding #10) -- CONFIRMED LIVE, 2026-07-06.</b> This harness
+ * calls {@link TerrainRouterWrapping#installIfArmed(RandomState, ServerLevel)} DIRECTLY (the same helper the
+ * dev/atlas {@code BiomePreviewExporter} path uses), so it proves the WRAPPER LOGIC end-to-end: the triple
+ * gate, the per-call NoOp-provider no-op in {@code GeoTerrainBiasFunction.compute()}, the 15-field router
+ * rebuild, the bias formula, structure-preserving {@code mapChildren}, and the byte-identity legs. It does
+ * **NOT** prove that the shipped REAL-GAMEPLAY {@code RandomStateRouterTerrainMixin} on {@code ChunkMap}
+ * fires with the SAME provider-readiness timing a live create-world flow has -- and this gap was not
+ * theoretical: it is exactly how a real ordering bug slipped through every headless proof gate here and
+ * only surfaced on Peetsa's first live create-world test. This harness's own dev/atlas {@code ServerLevel}
+ * always boots with a fully-initialized {@code GEO_V2_PROVIDER} already in place (the exporter runs well
+ * after world load completes), so it can never reproduce "install fires before the real provider exists" --
+ * only a genuine client/server create-world boot through {@code ChunkMap} construction can. That requires a
+ * real client/server world boot through {@code ChunkMap} construction, which is the live-pass
+ * territory, not a headless probe. (The two paths are additionally indistinguishable at the log level because
+ * the install log is a once-per-JVM latch.) The definitive {@code installResult}/{@code wrapperInstalled}
+ * fields this harness records are for the direct-helper call it makes; the ChunkMap-mixin firing is asserted
+ * separately by the live pass. This is a documented, accepted coverage boundary, not a hidden gap.
+ */
+public final class TerrainProofHarness {
+
+    private static final String TRIGGER_PROP = "latdev.terrainProof";
+    private static final String RADIUS_PROP = "latdev.terrainProof.radius";
+    private static final String SHAPE_PROP = "latdev.terrainProof.shape";
+    private static final String OUT_PROP = "latdev.terrainProof.out";
+    private static final String NONGLOBE_PROP = "latdev.terrainProof.nonGlobe";
+    /**
+     * Slice B (audit P1-1): opt-in stale-provider replay probe ({@code -Dlatdev.terrainProof.replayProbe=true}).
+     * After the normal probes complete, replays the exact world-load setter order a seed-0 world B would run
+     * after this (real-seed) world A -- {@code setGlobeShape}, {@code setRadius}, {@code setWorldSeed(0)} --
+     * and asserts the provider ends NoOp (the refutation-confirmed leak: the old decline path kept, and the
+     * shape/radius setters even re-seeded, world A's provider). Runs LAST because it deliberately mutates the
+     * V2 statics; the server halts immediately after the report is written.
+     */
+    private static final String REPLAY_PROP = "latdev.terrainProof.replayProbe";
+    /**
+     * Slice C (audit Lane 10 / live-diagnostics design §4): caller-specified probe columns,
+     * {@code -Dlatdev.terrainProof.probes=x1,z1;x2,z2;...} -- added to BOTH the density column probes and
+     * the structural block-stack probes, so a live-observed anomaly (or the pinned calibration coordinate)
+     * can be reproduced headlessly on demand instead of relying only on the three auto-selected columns.
+     */
+    private static final String PROBES_PROP = "latdev.terrainProof.probes";
+    /**
+     * Slice C (audit P2-1 / Lane 6's composed probe): opt-in composition-coherence grid,
+     * {@code -Dlatdev.terrainProof.coherence=true}. Samples an interior grid and records, per column, the
+     * FINAL Latitude-picked biome (terrain-aware pick, exporter-identical call), its ocean-family tag, and
+     * the biased baseHeight -- so an external comparator can assert the three tripwires across configs:
+     * no ocean-family biome stranded above the biased sea level, no land-family biome sunk below it, and
+     * no wrapper-caused warm-band snowcap (baseHeight crossing the alpine snow line only when armed).
+     */
+    private static final String COHERENCE_PROP = "latdev.terrainProof.coherence";
+
+    // NOTE (sweeper findings #14/#21): there is deliberately NO {@code latdev.terrainProof.seed} read here.
+    // The harness always uses the BOOTED world's own seed ({@code world.getSeed()}), because the shipped
+    // GEO_V2_PROVIDER / GeoAuthority are armed for THAT seed by GlobeMod.initLatitudeBiomesForWorld; re-driving
+    // a different requested seed here would test a GeoAuthority the shipped provider is NOT actually using
+    // (see runAll's own comment). The old dead {@code SEED_PROP}/{@code DEFAULT_SEED} constants were removed.
+    // {@code latdev.terrainProof.radius} is used ONLY as a fallback for CHOOSING probe columns on the
+    // non-globe leg (where the real radius is legitimately 0); it never overrides the booted world's radius.
+    private static final int DEFAULT_RADIUS = 10000;
+
+    private TerrainProofHarness() {
+    }
+
+    /**
+     * Parse an {@code int} system property that may arrive as an EMPTY STRING (not just absent). Sweeper
+     * finding #1: build.gradle forwards {@code -Dlatdev.terrainProof.radius=${System.getProperty(...,'')}} so
+     * an un-passed radius reaches the JVM as {@code -Dlatdev.terrainProof.radius=} (present-but-empty). The
+     * two-arg {@link System#getProperty(String, String)} default only fires when the property is ABSENT, so
+     * a naive {@code Integer.parseInt(getProperty(k,"10000").trim())} throws {@link NumberFormatException} on
+     * the empty string -- which is exactly the case for the non-globe/globe-gate-isolation leg (radius 0).
+     * This helper treats null-OR-blank (after trim) as "use the default".
+     */
+    private static int intPropOrDefault(String key, int fallback) {
+        String raw = System.getProperty(key);
+        if (raw == null) {
+            return fallback;
+        }
+        raw = raw.trim();
+        if (raw.isEmpty()) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    static boolean isTriggered() {
+        return Boolean.parseBoolean(System.getProperty(TRIGGER_PROP, "false"));
+    }
+
+    static void runAndStop(MinecraftServer server) {
+        ServerLevel world = server.overworld();
+        try {
+            if (world == null) {
+                GlobeMod.LOGGER.error("[latdev][terrainProof] no overworld available; stopping server");
+                return;
+            }
+            Report report = new Report();
+            try {
+                runAll(world, report);
+            } catch (Throwable t) {
+                report.harnessFailure = describeThrowable(t);
+                GlobeMod.LOGGER.error("[latdev][terrainProof] harness failed", t);
+            }
+            // Slice B stale-provider replay probe -- ALWAYS after runAll (it mutates the V2 statics).
+            if (Boolean.parseBoolean(System.getProperty(REPLAY_PROP, "false"))) {
+                try {
+                    report.replayProbe = runStaleProviderReplayProbe(world);
+                } catch (Throwable t) {
+                    ReplayProbe failed = new ReplayProbe();
+                    failed.pass = false;
+                    failed.detail = "replay probe threw: " + describeThrowable(t);
+                    report.replayProbe = failed;
+                    GlobeMod.LOGGER.error("[latdev][terrainProof] replay probe failed", t);
+                }
+            }
+            Path outPath = resolveOutPath(server);
+            Files.createDirectories(outPath.getParent());
+            Files.write(outPath, report.toJson().getBytes(StandardCharsets.UTF_8));
+            GlobeMod.LOGGER.info("[latdev][terrainProof] wrote report to {}", outPath);
+        } catch (IOException e) {
+            GlobeMod.LOGGER.error("[latdev][terrainProof] failed to write report", e);
+        } finally {
+            server.halt(false);
+        }
+    }
+
+    private static Path resolveOutPath(MinecraftServer server) {
+        String raw = System.getProperty(OUT_PROP, "").trim();
+        if (!raw.isEmpty()) {
+            return Path.of(raw);
+        }
+        return server.getServerDirectory().resolve("latdev").resolve("terrain-proof-report.json");
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // Report model
+    // ------------------------------------------------------------------------------------------------
+
+    /** Raw-data report for ONE JVM's flag configuration. External scripts diff two reports. */
+    static final class Report {
+        String harnessFailure;
+
+        // Echo of this JVM's flag configuration, so a comparison script can sanity-check it is
+        // diffing the runs it thinks it is.
+        boolean terrainV2Enabled = LatitudeV2Flags.TERRAIN_V2_ENABLED;
+        double terrainV2Strength = LatitudeV2Flags.TERRAIN_V2_STRENGTH;
+        double terrainV2OceanRatio = LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO;
+        boolean geoV2Enabled = LatitudeV2Flags.GEO_V2_ENABLED;
+        long seed;
+        int radius;
+        String shape;
+        boolean nonGlobeWorld;
+
+        // Definitive install-status (sweeper findings #2-6/#8): what the shipped install helper actually
+        // decided for THIS RandomState, asserted directly (not scraped from a once-per-JVM install log that
+        // cannot tell "did not install" from "already logged earlier in this JVM"). A comparator can assert
+        // e.g. wrapperInstalled==false on the non-globe leg and the geoV2-off leg, ==true on the armed legs.
+        String installResult;      // TerrainRouterWrapping.InstallResult name
+        boolean wrapperInstalled;  // installResult == INSTALLED
+        // The actual runtime provider class at report-write time (GeoAuthorityProvider vs
+        // NoOpGeoSummaryProvider). NOTE: since the 2026-07-06 live-ordering fix, wrapperInstalled==true is
+        // expected even on a NoOp-provider (e.g. seed-0) world -- the wrapper always installs structurally
+        // once the flag/globe gates pass; GeoTerrainBiasFunction.compute() is what no-ops per call when this
+        // field shows NoOpGeoSummaryProvider. Assert on ACTUAL DENSITY VALUES being unchanged for the seed-0
+        // no-op case, not on installResult/wrapperInstalled -- those no longer distinguish the NoOp case.
+        String geoProviderClass;
+        // Non-globe leg self-verification (sweeper findings #2-6/#17): whether the booted world was ACTUALLY
+        // a genuine non-globe world (radius never armed AND generator is not a globe preset). If the harness
+        // was told nonGlobe=true but the boot came up armed (stale server.properties), this is false and
+        // harnessFailure is set -- so the leg can NEVER pass for the wrong reason by testing an armed world.
+        boolean nonGlobeBootVerified;
+        int activeRadiusAtBoot;    // LatitudeBiomes.getActiveRadiusBlocks() as actually booted
+        boolean generatorIsGlobePreset;
+
+        // §6.2 direct density-output numeric probe: one entry per probed column.
+        final List<ColumnProbe> columnProbes = new ArrayList<>();
+
+        // §6.2 Lipschitz/smoothness probe: one entry per transect.
+        final List<TransectProbe> transects = new ArrayList<>();
+
+        // §6.2 land-fraction / veto-flip assertion.
+        LandFractionProbe landFraction;
+
+        // §6.1(b)(ii) structural NoiseChunk-build check (getBaseColumn), one per probed column.
+        final List<StructuralColumnProbe> structuralProbes = new ArrayList<>();
+
+        // Slice B stale-provider replay probe (null unless -Dlatdev.terrainProof.replayProbe=true).
+        ReplayProbe replayProbe;
+
+        // Slice C composition-coherence grid (empty unless -Dlatdev.terrainProof.coherence=true).
+        final List<CoherenceProbe> coherenceProbes = new ArrayList<>();
+        int coherenceSeaLevel;
+
+        String toJson() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\n");
+            sb.append("  \"harnessFailure\": ").append(jsonStringOrNull(harnessFailure)).append(",\n");
+            sb.append("  \"terrainV2Enabled\": ").append(terrainV2Enabled).append(",\n");
+            sb.append("  \"terrainV2Strength\": ").append(terrainV2Strength).append(",\n");
+            sb.append("  \"terrainV2OceanRatio\": ").append(terrainV2OceanRatio).append(",\n");
+            sb.append("  \"geoV2Enabled\": ").append(geoV2Enabled).append(",\n");
+            sb.append("  \"seed\": ").append(seed).append(",\n");
+            sb.append("  \"radius\": ").append(radius).append(",\n");
+            sb.append("  \"shape\": \"").append(shape).append("\",\n");
+            sb.append("  \"nonGlobeWorld\": ").append(nonGlobeWorld).append(",\n");
+            sb.append("  \"installResult\": ").append(jsonStringOrNull(installResult)).append(",\n");
+            sb.append("  \"wrapperInstalled\": ").append(wrapperInstalled).append(",\n");
+            sb.append("  \"geoProviderClass\": ").append(jsonStringOrNull(geoProviderClass)).append(",\n");
+            sb.append("  \"nonGlobeBootVerified\": ").append(nonGlobeBootVerified).append(",\n");
+            sb.append("  \"activeRadiusAtBoot\": ").append(activeRadiusAtBoot).append(",\n");
+            sb.append("  \"generatorIsGlobePreset\": ").append(generatorIsGlobePreset).append(",\n");
+            sb.append("  \"replayProbe\": ").append(replayProbe == null ? "null" : replayProbe.toJson()).append(",\n");
+            sb.append("  \"columnProbes\": [\n");
+            for (int i = 0; i < columnProbes.size(); i++) {
+                sb.append(columnProbes.get(i).toJson());
+                sb.append(i < columnProbes.size() - 1 ? ",\n" : "\n");
+            }
+            sb.append("  ],\n");
+            sb.append("  \"transects\": [\n");
+            for (int i = 0; i < transects.size(); i++) {
+                sb.append(transects.get(i).toJson());
+                sb.append(i < transects.size() - 1 ? ",\n" : "\n");
+            }
+            sb.append("  ],\n");
+            sb.append("  \"landFraction\": ").append(landFraction == null ? "null" : landFraction.toJson()).append(",\n");
+            sb.append("  \"structuralProbes\": [\n");
+            for (int i = 0; i < structuralProbes.size(); i++) {
+                sb.append(structuralProbes.get(i).toJson());
+                sb.append(i < structuralProbes.size() - 1 ? ",\n" : "\n");
+            }
+            sb.append("  ],\n");
+            sb.append("  \"coherenceSeaLevel\": ").append(coherenceSeaLevel).append(",\n");
+            sb.append("  \"coherenceProbes\": [\n");
+            for (int i = 0; i < coherenceProbes.size(); i++) {
+                sb.append(coherenceProbes.get(i).toJson());
+                sb.append(i < coherenceProbes.size() - 1 ? ",\n" : "\n");
+            }
+            sb.append("  ]\n");
+            sb.append("}\n");
+            return sb.toString();
+        }
+    }
+
+    static final class ColumnProbe {
+        String label;
+        int x;
+        int z;
+        double land01;
+        // Per-Y sampled finalDensity values (Y -> value), and the derived surface Y (highest Y whose
+        // density crosses from >=0 to <0 scanning downward), plus the vanilla getBaseHeight() at (x,z).
+        final List<double[]> samples = new ArrayList<>(); // {y, density}
+        int surfaceY;
+        int baseHeight;
+
+        String toJson() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("    {\"label\": \"").append(label).append("\", \"x\": ").append(x)
+                    .append(", \"z\": ").append(z).append(", \"land01\": ").append(land01)
+                    .append(", \"surfaceY\": ").append(surfaceY).append(", \"baseHeight\": ").append(baseHeight)
+                    .append(", \"samples\": [");
+            for (int i = 0; i < samples.size(); i++) {
+                double[] s = samples.get(i);
+                sb.append("[").append((int) s[0]).append(", ").append(s[1]).append("]");
+                sb.append(i < samples.size() - 1 ? ", " : "");
+            }
+            sb.append("]}");
+            return sb.toString();
+        }
+    }
+
+    static final class TransectProbe {
+        String label;
+        int fixedZ;
+        int xStart;
+        int xEnd;
+        int step;
+        int y;
+        double maxAbsFirstDifference;
+        // Full series kept for external diffing / debugging, but kept compact (density only).
+        final List<Double> densities = new ArrayList<>();
+
+        String toJson() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("    {\"label\": \"").append(label).append("\", \"fixedZ\": ").append(fixedZ)
+                    .append(", \"xStart\": ").append(xStart).append(", \"xEnd\": ").append(xEnd)
+                    .append(", \"step\": ").append(step).append(", \"y\": ").append(y)
+                    .append(", \"maxAbsFirstDifference\": ").append(maxAbsFirstDifference)
+                    .append(", \"densities\": [");
+            for (int i = 0; i < densities.size(); i++) {
+                sb.append(densities.get(i));
+                sb.append(i < densities.size() - 1 ? ", " : "");
+            }
+            sb.append("]}");
+            return sb.toString();
+        }
+    }
+
+    static final class LandFractionProbe {
+        int totalColumns;
+        int landColumns; // realHeight >= seaLevel
+        double landFraction;
+        // Columns sampled, with land01 and whether realHeight >= seaLevel, for external flip-comparison.
+        final List<double[]> columns = new ArrayList<>(); // {x, z, land01, isLandHeight(0/1)}
+
+        String toJson() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\"totalColumns\": ").append(totalColumns).append(", \"landColumns\": ").append(landColumns)
+                    .append(", \"landFraction\": ").append(landFraction).append(", \"columns\": [\n");
+            for (int i = 0; i < columns.size(); i++) {
+                double[] c = columns.get(i);
+                sb.append("      [").append((int) c[0]).append(", ").append((int) c[1]).append(", ")
+                        .append(c[2]).append(", ").append((int) c[3]).append("]");
+                sb.append(i < columns.size() - 1 ? ",\n" : "\n");
+            }
+            sb.append("    ]}");
+            return sb.toString();
+        }
+    }
+
+    static final class StructuralColumnProbe {
+        String label;
+        int x;
+        int z;
+        // Block state name (registry id string) per Y, from generator.getBaseColumn(...). Compact
+        // representation: only the range around the surface is recorded to keep reports small.
+        final List<String> blockNames = new ArrayList<>();
+        int minY;
+
+        /**
+         * Slice C-2 gap-delta tripwire (the TEST 27 lesson): comparators must assert the DELTA of interior
+         * hollowness vs a baseline run, not eyeball stack shapes -- the pre-C-2 gate had multi-range stacks
+         * in its data and misread bias-shattered columns as ordinary cave layering. Derived once at emit
+         * time: {@code gapBlocks} = non-solid cells strictly inside the solid envelope (first..last solid),
+         * {@code solidRanges} = count of contiguous solid runs (1 = monolithic).
+         */
+        int gapBlocks;
+        int solidRanges;
+
+        void computeGapMetrics() {
+            int first = -1;
+            int last = -1;
+            for (int i = 0; i < blockNames.size(); i++) {
+                String n = blockNames.get(i).toLowerCase(java.util.Locale.ROOT);
+                boolean solid = !n.contains("air") && !n.contains("water");
+                if (solid) {
+                    if (first < 0) {
+                        first = i;
+                    }
+                    last = i;
+                }
+            }
+            if (first < 0) {
+                gapBlocks = 0;
+                solidRanges = 0;
+                return;
+            }
+            int gaps = 0;
+            int ranges = 0;
+            boolean inSolid = false;
+            for (int i = first; i <= last; i++) {
+                String n = blockNames.get(i).toLowerCase(java.util.Locale.ROOT);
+                boolean solid = !n.contains("air") && !n.contains("water");
+                if (solid && !inSolid) {
+                    ranges++;
+                }
+                if (!solid) {
+                    gaps++;
+                }
+                inSolid = solid;
+            }
+            gapBlocks = gaps;
+            solidRanges = ranges;
+        }
+
+        String toJson() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("    {\"label\": \"").append(label).append("\", \"x\": ").append(x)
+                    .append(", \"z\": ").append(z).append(", \"minY\": ").append(minY)
+                    .append(", \"gapBlocks\": ").append(gapBlocks)
+                    .append(", \"solidRanges\": ").append(solidRanges)
+                    .append(", \"blockNames\": [");
+            for (int i = 0; i < blockNames.size(); i++) {
+                sb.append("\"").append(blockNames.get(i)).append("\"");
+                sb.append(i < blockNames.size() - 1 ? ", " : "");
+            }
+            sb.append("]}");
+            return sb.toString();
+        }
+    }
+
+    private static String jsonStringOrNull(String s) {
+        if (s == null) {
+            return "null";
+        }
+        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\"";
+    }
+
+    private static String describeThrowable(Throwable t) {
+        StringBuilder sb = new StringBuilder(t.toString());
+        for (StackTraceElement e : t.getStackTrace()) {
+            sb.append(" at ").append(e);
+            if (sb.length() > 2000) {
+                sb.append(" ...(truncated)");
+                break;
+            }
+        }
+        return sb.toString();
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // Core harness logic
+    // ------------------------------------------------------------------------------------------------
+
+    private static void runAll(ServerLevel world, Report report) throws Exception {
+        String shapeRaw = System.getProperty(SHAPE_PROP, "classic").trim();
+        boolean nonGlobe = Boolean.parseBoolean(System.getProperty(NONGLOBE_PROP, "false"));
+        LatitudeBiomes.GlobeShape shape = LatitudeBiomes.shapeFromString(shapeRaw);
+
+        // Use the REAL booted world's own seed/radius, already correctly armed by
+        // GlobeMod.initLatitudeBiomesForWorld (fires on ServerLevelEvents.LOAD, before SERVER_STARTED --
+        // see that method's own comment: "before Minecraft pre-generates spawn chunks"). Re-driving
+        // setWorldSeed/setActiveRadiusBlocks here from a hardcoded/requested value would FIGHT that real
+        // initialization (e.g. the "regular" preset's actual border radius is 7500, not a guessed
+        // round number) and risk silently testing against the wrong radius. Only GlobeShape is not
+        // stamped by a headless boot (that normally only happens via the create-world UI flow), so it is
+        // still set explicitly here for the Classic/Mercator comparison this task requires.
+        long seed = world.getSeed();
+        int radius = LatitudeBiomes.getActiveRadiusBlocks();
+
+        report.seed = seed;
+        report.nonGlobeWorld = nonGlobe;
+
+        ChunkGenerator genRaw = world.getChunkSource().getGenerator();
+        if (!(genRaw instanceof NoiseBasedChunkGenerator generator)) {
+            report.harnessFailure = "world generator is not a NoiseBasedChunkGenerator: " + genRaw;
+            return;
+        }
+
+        // Definitively classify the booted world (sweeper findings #2-6/#17). generatorIsGlobePreset is the
+        // real positive globe check the shipped mixin uses; activeRadiusAtBoot is the dev/atlas mechanism.
+        boolean generatorIsGlobePreset = GlobeMod.isGlobeNoiseGenerator(generator);
+        report.generatorIsGlobePreset = generatorIsGlobePreset;
+        report.activeRadiusAtBoot = radius;
+
+        if (nonGlobe) {
+            // Globe-gate-isolation leg: the world MUST have booted as a genuine non-globe world (plain
+            // minecraft:normal level-type -- driven by -Dlatdev.preview.levelType=minecraft:normal in the
+            // gradle invocation). A genuine non-globe boot leaves the radius unarmed (0) AND the generator is
+            // not one of the six globe:overworld* presets, so NEITHER half of the two-mechanism globe check
+            // can fire. We ASSERT that here rather than trusting the label: if the boot came up armed (e.g.
+            // stale run-headless/server.properties still on a globe level-type), the leg would test an armed
+            // world and pass for the wrong reason -- so instead we set harnessFailure, which a comparator is
+            // required to treat as INVALID data (finding #12). This closes findings #2-6/#17.
+            boolean bootIsGenuinelyNonGlobe = (radius <= 0) && !generatorIsGlobePreset && !GlobeMod.isGlobeOverworld(world);
+            report.nonGlobeBootVerified = bootIsGenuinelyNonGlobe;
+            report.radius = radius; // expected 0
+            report.shape = LatitudeBiomes.shapeToString(LatitudeBiomes.getGlobeShape());
+            GlobeMod.LOGGER.info(
+                    "[latdev][terrainProof] non-globe leg: activeRadius={} generatorIsGlobePreset={} isGlobeOverworld={} (all must be 0/false)",
+                    radius, generatorIsGlobePreset, GlobeMod.isGlobeOverworld(world));
+            if (!bootIsGenuinelyNonGlobe) {
+                report.harnessFailure = "non-globe leg booted an ARMED/globe world (radius=" + radius
+                        + ", generatorIsGlobePreset=" + generatorIsGlobePreset
+                        + ", isGlobeOverworld=" + GlobeMod.isGlobeOverworld(world)
+                        + "); this leg is INVALID -- boot a real minecraft:normal world "
+                        + "(-Dlatdev.preview.levelType=minecraft:normal) so the globe gate is genuinely exercised.";
+                GlobeMod.LOGGER.error("[latdev][terrainProof] {}", report.harnessFailure);
+                return;
+            }
+        } else {
+            // Armed leg: MUST have booted a real globe world, else the "armed" probes below would silently
+            // run against a non-globe world and prove nothing. Assert it (finding #2-6 for the positive side).
+            LatitudeBiomes.setGlobeShape(shape);
+            report.nonGlobeBootVerified = false; // n/a for the armed leg
+            report.radius = radius;
+            report.shape = LatitudeBiomes.shapeToString(shape);
+            if (!generatorIsGlobePreset && radius <= 0 && !GlobeMod.isGlobeOverworld(world)) {
+                report.harnessFailure = "armed leg expected a real globe world but booted a non-globe one "
+                        + "(radius=" + radius + ", generatorIsGlobePreset=false); boot a globe level-type "
+                        + "(-Dlatdev.preview.levelType=globe:globe_regular) so the wrapper can actually arm.";
+                GlobeMod.LOGGER.error("[latdev][terrainProof] {}", report.harnessFailure);
+                return;
+            }
+        }
+
+        RandomState randomState = RandomState.create(
+                generator.generatorSettings().value(),
+                world.registryAccess().lookupOrThrow(Registries.NOISE),
+                seed);
+
+        // Reuse the EXACT same install call the real dev/atlas tooling path uses (see
+        // com.example.globe.dev.BiomePreviewExporter) so this harness proves the actual shipped
+        // integration point, not a hand-rolled substitute -- and capture its DEFINITIVE result (findings
+        // #2-6/#8) so a comparator can assert wrapperInstalled directly, not scrape a once-per-JVM log.
+        InstallResult installResult = TerrainRouterWrapping.installIfArmed(randomState, world);
+        report.installResult = installResult.name();
+        report.wrapperInstalled = (installResult == InstallResult.INSTALLED);
+        GeoSummaryProvider bootProvider = LatitudeBiomes.geoProviderForTerrain();
+        report.geoProviderClass = (bootProvider == null) ? "null" : bootProvider.getClass().getSimpleName();
+        GlobeMod.LOGGER.info(
+                "[latdev][terrainProof] install result={} wrapperInstalled={} geoProvider={}",
+                installResult, report.wrapperInstalled, report.geoProviderClass);
+
+        DensityFunction finalDensity = randomState.router().finalDensity();
+
+        int xRadius = LatitudeBiomes.getActiveXRadiusBlocks();
+        int zRadius = LatitudeBiomes.getActiveRadiusBlocks();
+
+        // If this is the non-globe leg, LatitudeBiomes' own radius accessors report 0 (never armed, by
+        // design -- see above), so derive local xRadius/zRadius purely for CHOOSING probe columns from
+        // the requested config radius/shape instead (columns are otherwise picked the same way; the
+        // ASSERTION under test on the non-globe leg is simply "does finalDensity change AT ALL", so
+        // exact geography doesn't matter here -- it must NOT change, full stop).
+        if (zRadius <= 0) {
+            // Empty-string-safe parse (sweeper finding #1): the forwarded -D can be present-but-empty.
+            int fallbackRadius = intPropOrDefault(RADIUS_PROP, DEFAULT_RADIUS);
+            zRadius = fallbackRadius;
+            xRadius = shape == LatitudeBiomes.GlobeShape.MERCATOR
+                    ? (int) Math.round(fallbackRadius * LatitudeBiomes.MERCATOR_ASPECT)
+                    : fallbackRadius;
+        }
+
+        // A standalone GeoAuthority (pure Java, no Minecraft dependency) lets us pick columns spanning
+        // land01 by direct computation, independent of whether GEO_V2_ENABLED armed the shipped
+        // GEO_V2_PROVIDER for this run (needed for the geoV2-off and non-globe legs, where the shipped
+        // provider is intentionally the NEUTRAL no-op).
+        GeoAuthority referenceAuthority = new GeoAuthority(seed, zRadius, xRadius);
+
+        runColumnProbes(report, finalDensity, referenceAuthority, generator, randomState, world, zRadius, xRadius);
+        runTransectProbes(report, finalDensity, referenceAuthority, zRadius, xRadius);
+        runLandFractionProbe(report, generator, randomState, world, referenceAuthority, zRadius, xRadius);
+        runStructuralProbes(report, generator, randomState, world, referenceAuthority, zRadius, xRadius);
+        runCoherenceProbes(report, generator, randomState, world, referenceAuthority, zRadius, xRadius);
+    }
+
+    // --- Slice C composition-coherence tripwire grid (audit P2-1 / Lane 6's composed probe) -----------
+
+    static final class CoherenceProbe {
+        int x;
+        int z;
+        double latDeg;
+        double land01;
+        String biomeId;
+        boolean oceanFamily;
+        int baseHeight;
+        /**
+         * Slice C-2: the SOLID floor (OCEAN_FLOOR_WG), alongside the fluid-inclusive baseHeight
+         * (WORLD_SURFACE_WG). Post-bathymetry, carved columns read baseHeight == waterline (63), which
+         * blinded the drowned-land tripwire -- a land-family biome floating over deep carved water needs
+         * the solid floor to be visible to the comparator.
+         */
+        int floorHeight;
+
+        String toJson() {
+            return "    {\"x\": " + x + ", \"z\": " + z + ", \"latDeg\": " + latDeg
+                    + ", \"land01\": " + land01 + ", \"biomeId\": " + jsonStringOrNull(biomeId)
+                    + ", \"oceanFamily\": " + oceanFamily + ", \"baseHeight\": " + baseHeight
+                    + ", \"floorHeight\": " + floorHeight + "}";
+        }
+    }
+
+    /**
+     * Samples an interior grid and records, per column: the FINAL Latitude-picked biome (the exporter's own
+     * base-then-pick call, ALWAYS terrain-aware here -- coherence against the BIASED terrain is the entire
+     * point), its ocean-family tag membership, and the biased vanilla baseHeight. The three tripwire
+     * assertions themselves live in the external cross-config comparator (one JVM = one flag config):
+     * ocean-family biome above biased sea level, land-family biome below it, and warm-band columns whose
+     * baseHeight crosses the alpine snow line only in the armed run.
+     */
+    private static void runCoherenceProbes(Report report, NoiseBasedChunkGenerator generator, RandomState randomState,
+                                            ServerLevel world, GeoAuthority authority, int zRadius, int xRadius) {
+        if (!Boolean.parseBoolean(System.getProperty(COHERENCE_PROP, "false"))) {
+            return;
+        }
+        net.minecraft.core.Registry<net.minecraft.world.level.biome.Biome> biomeRegistry =
+                world.registryAccess().lookupOrThrow(Registries.BIOME);
+        net.minecraft.world.level.biome.BiomeSource biomeSource = generator.getBiomeSource();
+        net.minecraft.world.level.biome.BiomeSource baseSource =
+                biomeSource instanceof com.example.globe.world.LatitudeBiomeSource latitudeSource
+                        ? latitudeSource.original()
+                        : biomeSource;
+        net.minecraft.world.level.biome.Climate.Sampler sampler = randomState.sampler();
+        int seaLevel = generator.generatorSettings().value().seaLevel();
+        report.coherenceSeaLevel = seaLevel;
+
+        int y = 64;
+        int noiseY = Math.floorDiv(y, 4);
+        int limit = (int) (Math.min(zRadius, xRadius) * 0.55);
+        int step = Math.max(96, limit / 4);
+        for (int x = -limit; x <= limit; x += step) {
+            for (int z = -limit; z <= limit; z += step) {
+                CoherenceProbe probe = new CoherenceProbe();
+                probe.x = x;
+                probe.z = z;
+                probe.latDeg = Math.abs(z) * 90.0 / zRadius;
+                probe.land01 = authority.sample(x, z).land01();
+                net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> base =
+                        baseSource.getNoiseBiome(Math.floorDiv(x, 4), noiseY, Math.floorDiv(z, 4), sampler);
+                net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> picked = LatitudeBiomes.pick(
+                        biomeRegistry, base, x, z, y, zRadius, sampler,
+                        "TERRAIN_PROOF_COHERENCE", generator, randomState, world);
+                net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> out = picked != null ? picked : base;
+                var key = biomeRegistry.getKey(out.value());
+                probe.biomeId = key == null ? "unknown" : key.toString();
+                probe.oceanFamily = out.is(net.minecraft.tags.BiomeTags.IS_OCEAN);
+                probe.baseHeight = generator.getBaseHeight(x, z, Heightmap.Types.WORLD_SURFACE_WG, world, randomState);
+                probe.floorHeight = generator.getBaseHeight(x, z, Heightmap.Types.OCEAN_FLOOR_WG, world, randomState);
+                report.coherenceProbes.add(probe);
+            }
+        }
+        GlobeMod.LOGGER.info("[latdev][terrainProof] coherence grid: {} columns (seaLevel={})",
+                report.coherenceProbes.size(), seaLevel);
+    }
+
+    // --- §6.2 direct density-output numeric probe ----------------------------------------------------
+
+    private static void runColumnProbes(Report report, DensityFunction finalDensity, GeoAuthority authority,
+                                         NoiseBasedChunkGenerator generator, RandomState randomState, ServerLevel world,
+                                         int zRadius, int xRadius) {
+        // Slice C: the Y ladder now reaches the build ceiling. The audit's detached-slab finding (solid
+        // stone at Y256-319 from S=0.10) was invisible to the old {40..100} cap -- the flip altitude could
+        // not be seen in the density numbers at all, only inferred from getBaseHeight/structural stacks.
+        int[] ys = {40, 48, 56, 60, 62, 64, 66, 70, 80, 100, 140, 180, 220, 260, 300, 319};
+        for (ColumnPick pick : probeColumns(authority, zRadius, xRadius)) {
+            ColumnProbe probe = new ColumnProbe();
+            probe.label = pick.label;
+            probe.x = pick.x;
+            probe.z = pick.z;
+            probe.land01 = pick.land01;
+            int surfaceY = Integer.MIN_VALUE;
+            for (int y : ys) {
+                double d = finalDensity.compute(ctx(pick.x, y, pick.z));
+                probe.samples.add(new double[]{y, d});
+                if (d >= 0.0) {
+                    surfaceY = Math.max(surfaceY, y);
+                }
+            }
+            probe.surfaceY = surfaceY;
+            // The real "spawn/heightmap agrees with the rendered surface" evidence (design §6.2): both
+            // getBaseHeight() and the density-crossing surfaceY above resolve through the SAME field,
+            // finalDensity -- so they should track each other (getBaseHeight need not equal surfaceY
+            // exactly, since it walks the full interpolated column rather than this probe's coarse Y
+            // list, but the two must move in the same direction across configurations).
+            probe.baseHeight = generator.getBaseHeight(pick.x, pick.z, Heightmap.Types.WORLD_SURFACE_WG, world, randomState);
+            report.columnProbes.add(probe);
+        }
+    }
+
+    /** Finds representative columns for land01 near 1.0, near 0.0, and near 0.5, by direct search. */
+    private static List<ColumnPick> findColumnsByLand01(GeoAuthority authority, int zRadius, int xRadius) {
+        List<ColumnPick> picks = new ArrayList<>();
+        ColumnPick bestLand = null, bestOcean = null, bestNeutral = null;
+        double bestLandScore = -1, bestOceanScore = -1, bestNeutralScore = Double.MAX_VALUE;
+        // Interior-only search (well inside the edge/pole ramp) so these three reference columns are
+        // NOT contaminated by the edge/pole ocean ramp -- that is exercised deliberately by the
+        // transect probes instead.
+        int limit = (int) (Math.min(zRadius, xRadius) * 0.5);
+        int step = Math.max(32, limit / 60);
+        for (int x = -limit; x <= limit; x += step) {
+            for (int z = -limit; z <= limit; z += step) {
+                double land01 = authority.sample(x, z).land01();
+                if (land01 > bestLandScore) {
+                    bestLandScore = land01;
+                    bestLand = new ColumnPick("land(~1.0)", x, z, land01);
+                }
+                if (land01 < bestOceanScore || bestOceanScore < 0) {
+                    bestOceanScore = land01;
+                    bestOcean = new ColumnPick("ocean(~0.0)", x, z, land01);
+                }
+                double distFromHalf = Math.abs(land01 - 0.5);
+                if (distFromHalf < bestNeutralScore) {
+                    bestNeutralScore = distFromHalf;
+                    bestNeutral = new ColumnPick("neutral(~0.5)", x, z, land01);
+                }
+            }
+        }
+        if (bestLand != null) picks.add(bestLand);
+        if (bestOcean != null) picks.add(bestOcean);
+        if (bestNeutral != null) picks.add(bestNeutral);
+        return picks;
+    }
+
+    private record ColumnPick(String label, int x, int z, double land01) {
+    }
+
+    /**
+     * Slice C: the shared probe-column list -- the three auto-selected land01 representatives plus any
+     * caller-specified columns from {@code -Dlatdev.terrainProof.probes}. Used by BOTH the density column
+     * probes and the structural stack probes so caller columns get slab detection too.
+     */
+    private static List<ColumnPick> probeColumns(GeoAuthority authority, int zRadius, int xRadius) {
+        List<ColumnPick> picks = new ArrayList<>(findColumnsByLand01(authority, zRadius, xRadius));
+        String raw = System.getProperty(PROBES_PROP, "").trim();
+        if (!raw.isEmpty()) {
+            for (String pair : raw.split(";")) {
+                String[] xz = pair.trim().split(",");
+                if (xz.length != 2) {
+                    continue;
+                }
+                try {
+                    int px = Integer.parseInt(xz[0].trim());
+                    int pz = Integer.parseInt(xz[1].trim());
+                    picks.add(new ColumnPick("probe(" + px + "," + pz + ")", px, pz,
+                            authority.sample(px, pz).land01()));
+                } catch (NumberFormatException ignored) {
+                    // Malformed pair: skip it rather than fail the whole harness (the report will simply
+                    // lack that probe, which the external comparator will notice by its absence).
+                }
+            }
+        }
+        return picks;
+    }
+
+    // --- Slice B stale-provider replay probe (audit P1-1 / refute-A) --------------------------------
+
+    static final class ReplayProbe {
+        String beforeProviderClass;
+        boolean beforeWasReal;
+        String afterProviderClass;
+        boolean afterIsNoOp;
+        boolean sampledPostReset;
+        double postResetSample;
+        boolean pass;
+        String detail;
+
+        String toJson() {
+            return "{\"beforeProviderClass\": " + jsonStringOrNull(beforeProviderClass)
+                    + ", \"beforeWasReal\": " + beforeWasReal
+                    + ", \"afterProviderClass\": " + jsonStringOrNull(afterProviderClass)
+                    + ", \"afterIsNoOp\": " + afterIsNoOp
+                    + ", \"sampledPostReset\": " + sampledPostReset
+                    + ", \"postResetSample\": " + postResetSample
+                    + ", \"pass\": " + pass
+                    + ", \"detail\": " + jsonStringOrNull(detail) + "}";
+        }
+    }
+
+    /**
+     * Replays, inside this one JVM, the exact setter order {@code GlobeMod.initLatitudeBiomesForWorld} runs
+     * for a subsequent SEED-0 world B after this (real-seed) world A: shape, then radius, then
+     * {@code setWorldSeed(0)}. PASS = the provider was real before and is NoOp after (the audit's
+     * refutation-confirmed leak was exactly this sequence ending on world A's still-real provider). Also
+     * samples the booted world's own installed router once post-reset, which (a) proves the per-call check
+     * passes vanilla density through against a NoOp provider and (b) deliberately trips the
+     * installed-but-not-ready one-shot log so the warn is observable in this run's output. Restores the real
+     * seed/radius afterwards (the server halts right after, but the statics are left coherent).
+     */
+    private static ReplayProbe runStaleProviderReplayProbe(ServerLevel world) {
+        ReplayProbe rp = new ReplayProbe();
+        GeoSummaryProvider before = LatitudeBiomes.geoProviderForTerrain();
+        rp.beforeProviderClass = before == null ? "null" : before.getClass().getSimpleName();
+        rp.beforeWasReal = before instanceof com.example.globe.adapter.geo.GeoAuthorityProvider;
+
+        long realSeed = world.getSeed();
+        int realRadius = LatitudeBiomes.getActiveRadiusBlocks();
+        LatitudeBiomes.GlobeShape shape = LatitudeBiomes.getGlobeShape();
+
+        // World B's load order for a literal seed-0 globe world (GlobeMod.initLatitudeBiomesForWorld).
+        LatitudeBiomes.setGlobeShape(shape);
+        LatitudeBiomes.setRadius(realRadius > 0 ? realRadius : DEFAULT_RADIUS);
+        LatitudeBiomes.setWorldSeed(0L);
+
+        GeoSummaryProvider after = LatitudeBiomes.geoProviderForTerrain();
+        rp.afterProviderClass = after == null ? "null" : after.getClass().getSimpleName();
+        rp.afterIsNoOp = !(after instanceof com.example.globe.adapter.geo.GeoAuthorityProvider);
+
+        try {
+            DensityFunction installed = world.getChunkSource().randomState().router().finalDensity();
+            rp.postResetSample = installed.compute(ctx(0, 64, 0));
+            rp.sampledPostReset = true;
+        } catch (Throwable t) {
+            rp.sampledPostReset = false;
+        }
+
+        rp.pass = rp.beforeWasReal && rp.afterIsNoOp;
+        rp.detail = rp.pass
+                ? "provider correctly reset to NoOp by the seed-0 world-load replay"
+                : ("LEAK or invalid precondition: before=" + rp.beforeProviderClass + " after=" + rp.afterProviderClass);
+        GlobeMod.LOGGER.info("[latdev][terrainProof] replayProbe: before={} after={} pass={}",
+                rp.beforeProviderClass, rp.afterProviderClass, rp.pass);
+
+        // Restore the booted world's real arming.
+        LatitudeBiomes.setRadius(realRadius);
+        LatitudeBiomes.setWorldSeed(realSeed);
+        return rp;
+    }
+
+    // --- §6.2 three-transect Lipschitz / smoothness probe ---------------------------------------------
+
+    private static void runTransectProbes(Report report, DensityFunction finalDensity, GeoAuthority authority,
+                                           int zRadius, int xRadius) {
+        int y = 64;
+
+        // (i) an ordinary interior coast: sweep x through the interior at z=0, dense step.
+        addTransect(report, finalDensity, "interior-coast", 0, -(int) (xRadius * 0.4), (int) (xRadius * 0.4), 4, y);
+
+        // (ii) a transect through the EDGE_START..1.0 edge band (per §0: EDGE_START=0.80) and the POLE
+        // band (POLE_START=0.92) -- sweep x from just inside EDGE_START*xRadius out past the border, at
+        // a z near the pole band, so both ramps are exercised in one transect.
+        int edgeXStart = (int) (xRadius * 0.75);
+        int edgeXEnd = (int) (xRadius * 1.02);
+        int poleZ = (int) (zRadius * 0.94);
+        addTransect(report, finalDensity, "edge-pole-band", poleZ, edgeXStart, edgeXEnd, 4, y);
+
+        // (iii) a transect swept across several (int)Math.round domain-warp snap crossings: a fine
+        // single-block sweep over a modest span is enough to cross multiple integer-rounding snaps of
+        // the warp field (the warp amplitude/period are geometry constants scaled off zRadius, so a
+        // span on the order of a few hundred blocks at step=1 reliably crosses several).
+        addTransect(report, finalDensity, "warp-snap-crossings", 0, -400, 400, 1, y);
+    }
+
+    private static void addTransect(Report report, DensityFunction finalDensity, String label,
+                                     int fixedZ, int xStart, int xEnd, int step, int y) {
+        TransectProbe probe = new TransectProbe();
+        probe.label = label;
+        probe.fixedZ = fixedZ;
+        probe.xStart = xStart;
+        probe.xEnd = xEnd;
+        probe.step = step;
+        probe.y = y;
+        double prev = Double.NaN;
+        double maxAbsDiff = 0.0;
+        for (int x = xStart; x <= xEnd; x += step) {
+            double d = finalDensity.compute(ctx(x, y, fixedZ));
+            probe.densities.add(d);
+            if (!Double.isNaN(prev)) {
+                maxAbsDiff = Math.max(maxAbsDiff, Math.abs(d - prev));
+            }
+            prev = d;
+        }
+        probe.maxAbsFirstDifference = maxAbsDiff;
+        report.transects.add(probe);
+    }
+
+    // --- §6.2 / §6.3 land-fraction and ocean-authority-veto-flip assertion -----------------------------
+
+    private static void runLandFractionProbe(Report report, NoiseBasedChunkGenerator generator, RandomState randomState,
+                                              ServerLevel world, GeoAuthority authority, int zRadius, int xRadius) {
+        int seaLevel = generator.generatorSettings().value().seaLevel();
+        int limit = (int) (Math.min(zRadius, xRadius) * 0.6);
+        // Grid density kept modest (~21x21 ~ 441 columns): each getBaseHeight() call walks a real
+        // noise-interpolated column, and when the wrapper is armed each finalDensity sample additionally
+        // queries GeoAuthority -- a dense grid here dominates the harness's runtime. 441 columns is still
+        // a statistically meaningful land-fraction/monotonicity sample.
+        int step = Math.max(48, limit / 10);
+        LandFractionProbe probe = new LandFractionProbe();
+        int total = 0;
+        int land = 0;
+        for (int x = -limit; x <= limit; x += step) {
+            for (int z = -limit; z <= limit; z += step) {
+                double land01 = authority.sample(x, z).land01();
+                int realHeight = generator.getBaseHeight(x, z, Heightmap.Types.WORLD_SURFACE_WG, world, randomState);
+                boolean isLandHeight = realHeight >= seaLevel;
+                probe.columns.add(new double[]{x, z, land01, isLandHeight ? 1 : 0});
+                total++;
+                if (isLandHeight) {
+                    land++;
+                }
+            }
+        }
+        probe.totalColumns = total;
+        probe.landColumns = land;
+        probe.landFraction = total == 0 ? 0.0 : (double) land / total;
+        report.landFraction = probe;
+    }
+
+    // --- §6.1(b)(ii) structural NoiseChunk-build check -------------------------------------------------
+
+    private static void runStructuralProbes(Report report, NoiseBasedChunkGenerator generator, RandomState randomState,
+                                             ServerLevel world, GeoAuthority authority, int zRadius, int xRadius) {
+        for (ColumnPick pick : probeColumns(authority, zRadius, xRadius)) {
+            StructuralColumnProbe probe = new StructuralColumnProbe();
+            probe.label = pick.label;
+            probe.x = pick.x;
+            probe.z = pick.z;
+            NoiseColumn column = generator.getBaseColumn(pick.x, pick.z, world, randomState);
+            probe.minY = world.getMinY();
+            int minY = world.getMinY();
+            int maxY = world.getMaxY();
+            for (int y = minY; y <= maxY; y++) {
+                var state = column.getBlock(y);
+                if (state == null) {
+                    probe.blockNames.add("null");
+                    continue;
+                }
+                var key = state.getBlock().builtInRegistryHolder().unwrapKey();
+                probe.blockNames.add(key.isPresent() ? key.get().toString() : state.toString());
+            }
+            probe.computeGapMetrics();
+            report.structuralProbes.add(probe);
+        }
+    }
+
+    private static DensityFunction.FunctionContext ctx(int x, int y, int z) {
+        return new SimpleCtx(x, y, z);
+    }
+
+    private record SimpleCtx(int blockX, int blockY, int blockZ) implements DensityFunction.FunctionContext {
+    }
+}

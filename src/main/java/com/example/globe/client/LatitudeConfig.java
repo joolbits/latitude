@@ -1,6 +1,7 @@
 package com.example.globe.client;
 
 import com.example.globe.GlobeMod;
+import com.example.globe.core.config.LatitudeConfigData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import net.fabricmc.loader.api.FabricLoader;
@@ -10,135 +11,111 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+/**
+ * Static facade over {@link LatitudeConfigData} (globe_latitude.json). The statics are the runtime API the
+ * client code reads every frame; the data class is the single source of defaults, the persisted shape, and
+ * the pure-JVM-testable half (U-C config hygiene — this replaced a triple-mirrored layout where every field
+ * existed as a static, an instance {@code ...Value} twin, and three hand-maintained copy blocks, plus ten
+ * fields nothing read: the band-blend trio, storm wall, debug blend, two compass-degree flags, clipboard
+ * fallback, and the ZoneEntryNotifier pair).
+ */
 public final class LatitudeConfig {
-    public static boolean enableWarningParticles = true;
-    public static boolean showWarningMessages = true;
-    public static boolean enableEwStormWall = true;
 
-    public enum ZoneEntryNotifyMode { OFF, TOAST, TITLE }
-    public static ZoneEntryNotifyMode zoneEntryNotifyMode = ZoneEntryNotifyMode.TITLE;
-    public static boolean showLatitudeDegrees = true;
-    public static boolean latitudeDegreesOnCompass = true;
+    // ---- runtime API (assigned from LatitudeConfigData; defaults live THERE, not here) ----
+    public static boolean enableWarningParticles;
+    public static boolean showWarningMessages;
 
-    public static boolean zoneEnterTitleEnabled = true;
-    public static double zoneEnterTitleSeconds = 6.0;
-    public static double zoneEnterTitleScale = 1.8;
+    public static boolean zoneEnterTitleEnabled;
+    public static double zoneEnterTitleSeconds;
+    public static double zoneEnterTitleScale;
+    public static LatitudeConfigData.TitleColorPreset zoneEnterTitleColorPreset;
+    public static int zoneEnterTitleRgb;
+    public static LatitudeConfigData.TitleCaseMode zoneEnterTitleCase;
+    public static int zoneEnterTitleLetterSpacing;
 
-    public static int zoneEnterTitleOffsetX = 0;
-    public static int zoneEnterTitleOffsetY = -40;
-    public static boolean zoneEnterTitleDraggable = true;
+    public static boolean zoneEnterTitleOutline;
+    public static int zoneEnterTitleOutlineRgb;
+    public static int zoneEnterTitleOutlineThickness;
+    public static boolean zoneEnterTitleDropShadow;
+    public static boolean zoneEnterTitleGlow;
+    public static double zoneEnterTitleGlowIntensity;
+    public static boolean zoneEnterTitleGlimmer;
+    public static double zoneEnterTitleGlimmerIntensity;
 
-    public static boolean hudSnapEnabled = true;
-    public static int hudSnapPixels = 8;
+    public static int zoneEnterTitleOffsetX;
+    public static int zoneEnterTitleOffsetY;
+    public static boolean zoneEnterTitleDraggable;
 
-    public static boolean showLatitudeDegreesOnCompass = false;
-    public static boolean showZoneBaseDegreesOnTitle = true;
+    public static boolean reduceMotion;
 
-    public static boolean latitudeBandBlendingEnabled = true;
-    public static double latitudeBandBlendWidthFrac = 0.08;
-    public static double latitudeBandBoundaryWarpFrac = 0.06;
+    public static boolean borderRepromptGesture;
 
-    public static boolean debugLatitudeBlend = false;
-    public static boolean screenshotClipboardEnabled = true;
-    public static boolean screenshotClipboardFallbackToDisk = true;
-    public static boolean screenshotAlsoSaveToDisk = true;
-    public static boolean screenshotClipboardWindowsPowerShell = defaultWindowsClipboardEnabled();
-    public static boolean captureWriteCsv = false;
+    public static boolean hudSnapEnabled;
+    public static int hudSnapPixels;
 
-    private boolean enableWarningParticlesValue = true;
-    private boolean showWarningMessagesValue = true;
-    private boolean enableEwStormWallValue = true;
-    private ZoneEntryNotifyMode zoneEntryNotifyModeValue = ZoneEntryNotifyMode.TITLE;
-    private boolean showLatitudeDegreesValue = true;
-    private boolean latitudeDegreesOnCompassValue = true;
+    public static boolean showZoneBaseDegreesOnTitle;
 
-    private boolean zoneEnterTitleEnabledValue = true;
-    private double zoneEnterTitleSecondsValue = 6.0;
-    private double zoneEnterTitleScaleValue = 1.8;
+    public static boolean screenshotClipboardEnabled;
+    public static boolean screenshotAlsoSaveToDisk;
+    public static boolean screenshotClipboardWindowsPowerShell;
+    public static boolean captureWriteCsv;
 
-    private int zoneEnterTitleOffsetXValue = 0;
-    private int zoneEnterTitleOffsetYValue = -40;
-    private boolean zoneEnterTitleDraggableValue = true;
+    public static LatitudeConfigData.AccessibilityMode accessibilityMode;
 
-    private boolean hudSnapEnabledValue = true;
-    private int hudSnapPixelsValue = 8;
+    public static boolean reducePolarSnowParticles;
 
-    private boolean showLatitudeDegreesOnCompassValue = false;
-    private boolean showZoneBaseDegreesOnTitleValue = true;
-
-    private boolean latitudeBandBlendingEnabledValue = true;
-    private double latitudeBandBlendWidthFracValue = 0.08;
-    private double latitudeBandBoundaryWarpFracValue = 0.06;
-
-    private boolean debugLatitudeBlendValue = false;
-    private boolean screenshotClipboardEnabledValue = true;
-    private boolean screenshotClipboardFallbackToDiskValue = true;
-    private boolean screenshotAlsoSaveToDiskValue = true;
-    private boolean screenshotClipboardWindowsPowerShellValue = defaultWindowsClipboardEnabled();
-    private boolean captureWriteCsvValue = false;
+    static {
+        applyFrom(LatitudeConfigData.fresh()); // sane values even before load() runs
+    }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path PATH = FabricLoader.getInstance().getConfigDir().resolve("globe_latitude.json");
 
-    private static LatitudeConfig INSTANCE;
+    private static boolean loaded;
 
     private LatitudeConfig() {
     }
 
-    public static LatitudeConfig get() {
-        if (INSTANCE == null) {
-            INSTANCE = load();
+    /** Idempotent load-once; called at client init and lazily from saveCurrent()/reload(). */
+    public static void get() {
+        if (!loaded) {
+            load();
         }
-        return INSTANCE;
     }
 
     public static void reload() {
-        INSTANCE = load();
+        load();
     }
 
     public static void saveCurrent() {
-        save(get());
+        get();
+        save(captureTo());
     }
 
-    private static LatitudeConfig load() {
+    /** Clamp the LIVE static fields to their valid ranges, using {@link LatitudeConfigData#sanitize()} as
+     *  the single source of truth (captureTo() sanitizes then applyFrom() writes back). saveCurrent() only
+     *  sanitizes the on-disk copy, so any caller that sets live fields from an untrusted source -- a preset
+     *  import / hand-edited slot -- must call this to clamp what's actually on screen, not just what's saved. */
+    public static void sanitizeLive() {
+        get();
+        applyFrom(captureTo());
+    }
+
+    private static void load() {
+        loaded = true;
         try {
             if (Files.exists(PATH)) {
                 try (Reader r = Files.newBufferedReader(PATH)) {
-                    LatitudeConfig cfg = GSON.fromJson(r, LatitudeConfig.class);
-                    if (cfg != null) {
-                        cfg.sanitize();
-                        enableWarningParticles = cfg.enableWarningParticlesValue;
-                        showWarningMessages = cfg.showWarningMessagesValue;
-                        enableEwStormWall = cfg.enableEwStormWallValue;
-                        zoneEntryNotifyMode = cfg.zoneEntryNotifyModeValue;
-                        showLatitudeDegrees = cfg.showLatitudeDegreesValue;
-                        latitudeDegreesOnCompass = cfg.latitudeDegreesOnCompassValue;
-
-                        zoneEnterTitleEnabled = cfg.zoneEnterTitleEnabledValue;
-                        zoneEnterTitleSeconds = cfg.zoneEnterTitleSecondsValue;
-                        zoneEnterTitleScale = cfg.zoneEnterTitleScaleValue;
-
-                        zoneEnterTitleOffsetX = cfg.zoneEnterTitleOffsetXValue;
-                        zoneEnterTitleOffsetY = cfg.zoneEnterTitleOffsetYValue;
-                        zoneEnterTitleDraggable = cfg.zoneEnterTitleDraggableValue;
-
-                        hudSnapEnabled = cfg.hudSnapEnabledValue;
-                        hudSnapPixels = cfg.hudSnapPixelsValue;
-
-                        showLatitudeDegreesOnCompass = cfg.showLatitudeDegreesOnCompassValue;
-                        showZoneBaseDegreesOnTitle = cfg.showZoneBaseDegreesOnTitleValue;
-
-                        latitudeBandBlendingEnabled = cfg.latitudeBandBlendingEnabledValue;
-                        latitudeBandBlendWidthFrac = cfg.latitudeBandBlendWidthFracValue;
-                        latitudeBandBoundaryWarpFrac = cfg.latitudeBandBoundaryWarpFracValue;
-
-                        debugLatitudeBlend = cfg.debugLatitudeBlendValue;
-                        screenshotClipboardEnabled = cfg.screenshotClipboardEnabledValue;
-                        screenshotClipboardFallbackToDisk = cfg.screenshotClipboardFallbackToDiskValue;
-                        screenshotAlsoSaveToDisk = cfg.screenshotAlsoSaveToDiskValue;
-                        screenshotClipboardWindowsPowerShell = cfg.screenshotClipboardWindowsPowerShellValue;
-                        captureWriteCsv = cfg.captureWriteCsvValue;
-                        return cfg;
+                    LatitudeConfigData data = GSON.fromJson(r, LatitudeConfigData.class);
+                    if (data != null) {
+                        data.sanitize();
+                        boolean legacy = data.configVersion < LatitudeConfigData.CURRENT_CONFIG_VERSION;
+                        data.configVersion = LatitudeConfigData.CURRENT_CONFIG_VERSION;
+                        applyFrom(data);
+                        if (legacy) {
+                            save(data); // one-time rewrite: clean key names, dead keys dropped, version stamped
+                        }
+                        return;
                     }
                 }
             }
@@ -146,107 +123,121 @@ public final class LatitudeConfig {
             GlobeMod.LOGGER.warn("Failed to read latitude config; using defaults", e);
         }
 
-        LatitudeConfig fresh = new LatitudeConfig();
-        enableWarningParticles = fresh.enableWarningParticlesValue;
-        showWarningMessages = fresh.showWarningMessagesValue;
-        enableEwStormWall = fresh.enableEwStormWallValue;
-        zoneEntryNotifyMode = fresh.zoneEntryNotifyModeValue;
-        showLatitudeDegrees = fresh.showLatitudeDegreesValue;
-        latitudeDegreesOnCompass = fresh.latitudeDegreesOnCompassValue;
-
-        zoneEnterTitleEnabled = fresh.zoneEnterTitleEnabledValue;
-        zoneEnterTitleSeconds = fresh.zoneEnterTitleSecondsValue;
-        zoneEnterTitleScale = fresh.zoneEnterTitleScaleValue;
-
-        zoneEnterTitleOffsetX = fresh.zoneEnterTitleOffsetXValue;
-        zoneEnterTitleOffsetY = fresh.zoneEnterTitleOffsetYValue;
-        zoneEnterTitleDraggable = fresh.zoneEnterTitleDraggableValue;
-
-        hudSnapEnabled = fresh.hudSnapEnabledValue;
-        hudSnapPixels = fresh.hudSnapPixelsValue;
-
-        showLatitudeDegreesOnCompass = fresh.showLatitudeDegreesOnCompassValue;
-        showZoneBaseDegreesOnTitle = fresh.showZoneBaseDegreesOnTitleValue;
-
-        latitudeBandBlendingEnabled = fresh.latitudeBandBlendingEnabledValue;
-        latitudeBandBlendWidthFrac = fresh.latitudeBandBlendWidthFracValue;
-        latitudeBandBoundaryWarpFrac = fresh.latitudeBandBoundaryWarpFracValue;
-
-        debugLatitudeBlend = fresh.debugLatitudeBlendValue;
-        screenshotClipboardEnabled = fresh.screenshotClipboardEnabledValue;
-        screenshotClipboardFallbackToDisk = fresh.screenshotClipboardFallbackToDiskValue;
-        screenshotAlsoSaveToDisk = fresh.screenshotAlsoSaveToDiskValue;
-        screenshotClipboardWindowsPowerShell = fresh.screenshotClipboardWindowsPowerShellValue;
-        captureWriteCsv = fresh.captureWriteCsvValue;
+        LatitudeConfigData fresh = LatitudeConfigData.fresh();
+        applyFrom(fresh);
         save(fresh);
-        return fresh;
     }
 
-    private static void save(LatitudeConfig cfg) {
+    private static void applyFrom(LatitudeConfigData d) {
+        enableWarningParticles = d.enableWarningParticles;
+        showWarningMessages = d.showWarningMessages;
+
+        zoneEnterTitleEnabled = d.zoneEnterTitleEnabled;
+        zoneEnterTitleSeconds = d.zoneEnterTitleSeconds;
+        zoneEnterTitleScale = d.zoneEnterTitleScale;
+        zoneEnterTitleColorPreset = d.zoneEnterTitleColorPreset;
+        zoneEnterTitleRgb = d.zoneEnterTitleRgb;
+        zoneEnterTitleCase = d.zoneEnterTitleCase;
+        zoneEnterTitleLetterSpacing = d.zoneEnterTitleLetterSpacing;
+
+        zoneEnterTitleOutline = d.zoneEnterTitleOutline;
+        zoneEnterTitleOutlineRgb = d.zoneEnterTitleOutlineRgb;
+        zoneEnterTitleOutlineThickness = d.zoneEnterTitleOutlineThickness;
+        zoneEnterTitleDropShadow = d.zoneEnterTitleDropShadow;
+        zoneEnterTitleGlow = d.zoneEnterTitleGlow;
+        zoneEnterTitleGlowIntensity = d.zoneEnterTitleGlowIntensity;
+        zoneEnterTitleGlimmer = d.zoneEnterTitleGlimmer;
+        zoneEnterTitleGlimmerIntensity = d.zoneEnterTitleGlimmerIntensity;
+
+        zoneEnterTitleOffsetX = d.zoneEnterTitleOffsetX;
+        zoneEnterTitleOffsetY = d.zoneEnterTitleOffsetY;
+        zoneEnterTitleDraggable = d.zoneEnterTitleDraggable;
+
+        reduceMotion = d.reduceMotion;
+        borderRepromptGesture = d.borderRepromptGesture;
+
+        hudSnapEnabled = d.hudSnapEnabled;
+        hudSnapPixels = d.hudSnapPixels;
+
+        showZoneBaseDegreesOnTitle = d.showZoneBaseDegreesOnTitle;
+
+        screenshotClipboardEnabled = d.screenshotClipboardEnabled;
+        screenshotAlsoSaveToDisk = d.screenshotAlsoSaveToDisk;
+        screenshotClipboardWindowsPowerShell = d.screenshotClipboardWindowsPowerShell;
+        captureWriteCsv = d.captureWriteCsv;
+
+        accessibilityMode = d.accessibilityMode;
+
+        reducePolarSnowParticles = d.reducePolarSnowParticles;
+    }
+
+    /** Detached snapshot of the live static fields, for snapshot/restore (HUD Studio Cancel). Returns a
+     *  fresh, sanitized {@link LatitudeConfigData} the caller can hold and later hand back to
+     *  {@link #restore(LatitudeConfigData)}. */
+    public static LatitudeConfigData snapshot() {
+        get();
+        return captureTo();
+    }
+
+    /** Writes a previously-taken {@link #snapshot()} back onto the live static fields. Does not persist to
+     *  disk -- the caller decides whether to follow with {@link #saveCurrent()}. */
+    public static void restore(LatitudeConfigData snap) {
+        applyFrom(snap);
+    }
+
+    private static LatitudeConfigData captureTo() {
+        LatitudeConfigData d = LatitudeConfigData.fresh();
+        d.enableWarningParticles = enableWarningParticles;
+        d.showWarningMessages = showWarningMessages;
+
+        d.zoneEnterTitleEnabled = zoneEnterTitleEnabled;
+        d.zoneEnterTitleSeconds = zoneEnterTitleSeconds;
+        d.zoneEnterTitleScale = zoneEnterTitleScale;
+        d.zoneEnterTitleColorPreset = zoneEnterTitleColorPreset;
+        d.zoneEnterTitleRgb = zoneEnterTitleRgb;
+        d.zoneEnterTitleCase = zoneEnterTitleCase;
+        d.zoneEnterTitleLetterSpacing = zoneEnterTitleLetterSpacing;
+
+        d.zoneEnterTitleOutline = zoneEnterTitleOutline;
+        d.zoneEnterTitleOutlineRgb = zoneEnterTitleOutlineRgb;
+        d.zoneEnterTitleOutlineThickness = zoneEnterTitleOutlineThickness;
+        d.zoneEnterTitleDropShadow = zoneEnterTitleDropShadow;
+        d.zoneEnterTitleGlow = zoneEnterTitleGlow;
+        d.zoneEnterTitleGlowIntensity = zoneEnterTitleGlowIntensity;
+        d.zoneEnterTitleGlimmer = zoneEnterTitleGlimmer;
+        d.zoneEnterTitleGlimmerIntensity = zoneEnterTitleGlimmerIntensity;
+
+        d.zoneEnterTitleOffsetX = zoneEnterTitleOffsetX;
+        d.zoneEnterTitleOffsetY = zoneEnterTitleOffsetY;
+        d.zoneEnterTitleDraggable = zoneEnterTitleDraggable;
+
+        d.reduceMotion = reduceMotion;
+        d.borderRepromptGesture = borderRepromptGesture;
+
+        d.hudSnapEnabled = hudSnapEnabled;
+        d.hudSnapPixels = hudSnapPixels;
+
+        d.showZoneBaseDegreesOnTitle = showZoneBaseDegreesOnTitle;
+
+        d.screenshotClipboardEnabled = screenshotClipboardEnabled;
+        d.screenshotAlsoSaveToDisk = screenshotAlsoSaveToDisk;
+        d.screenshotClipboardWindowsPowerShell = screenshotClipboardWindowsPowerShell;
+        d.captureWriteCsv = captureWriteCsv;
+
+        d.accessibilityMode = accessibilityMode;
+        d.reducePolarSnowParticles = reducePolarSnowParticles;
+        d.sanitize();
+        return d;
+    }
+
+    private static void save(LatitudeConfigData d) {
         try {
-            cfg.enableWarningParticlesValue = enableWarningParticles;
-            cfg.showWarningMessagesValue = showWarningMessages;
-            cfg.enableEwStormWallValue = enableEwStormWall;
-            cfg.zoneEntryNotifyModeValue = zoneEntryNotifyMode;
-            cfg.showLatitudeDegreesValue = showLatitudeDegrees;
-            cfg.latitudeDegreesOnCompassValue = showLatitudeDegrees && latitudeDegreesOnCompass;
-
-            cfg.zoneEnterTitleEnabledValue = zoneEnterTitleEnabled;
-            cfg.zoneEnterTitleSecondsValue = zoneEnterTitleSeconds;
-            cfg.zoneEnterTitleScaleValue = zoneEnterTitleScale;
-
-            cfg.zoneEnterTitleOffsetXValue = zoneEnterTitleOffsetX;
-            cfg.zoneEnterTitleOffsetYValue = zoneEnterTitleOffsetY;
-            cfg.zoneEnterTitleDraggableValue = zoneEnterTitleDraggable;
-
-            cfg.hudSnapEnabledValue = hudSnapEnabled;
-            cfg.hudSnapPixelsValue = hudSnapPixels;
-
-            cfg.showLatitudeDegreesOnCompassValue = showLatitudeDegreesOnCompass;
-            cfg.showZoneBaseDegreesOnTitleValue = showZoneBaseDegreesOnTitle;
-
-            cfg.latitudeBandBlendingEnabledValue = latitudeBandBlendingEnabled;
-            cfg.latitudeBandBlendWidthFracValue = latitudeBandBlendWidthFrac;
-            cfg.latitudeBandBoundaryWarpFracValue = latitudeBandBoundaryWarpFrac;
-
-            cfg.debugLatitudeBlendValue = debugLatitudeBlend;
-            cfg.screenshotClipboardEnabledValue = screenshotClipboardEnabled;
-            cfg.screenshotClipboardFallbackToDiskValue = screenshotClipboardFallbackToDisk;
-            cfg.screenshotAlsoSaveToDiskValue = screenshotAlsoSaveToDisk;
-            cfg.screenshotClipboardWindowsPowerShellValue = screenshotClipboardWindowsPowerShell;
-            cfg.captureWriteCsvValue = captureWriteCsv;
             Files.createDirectories(PATH.getParent());
             try (Writer w = Files.newBufferedWriter(PATH)) {
-                GSON.toJson(cfg, w);
+                GSON.toJson(d, w);
             }
         } catch (Exception e) {
             GlobeMod.LOGGER.warn("Failed to write latitude config", e);
         }
-    }
-
-    private void sanitize() {
-        if (zoneEntryNotifyModeValue == null) zoneEntryNotifyModeValue = ZoneEntryNotifyMode.TITLE;
-        if (!showLatitudeDegreesValue) latitudeDegreesOnCompassValue = false;
-
-        zoneEnterTitleSecondsValue = clamp(zoneEnterTitleSecondsValue, 2.0, 10.0);
-        zoneEnterTitleScaleValue = clamp(zoneEnterTitleScaleValue, 1.0, 3.0);
-
-        hudSnapPixelsValue = clampInt(hudSnapPixelsValue, 1, 64);
-
-        latitudeBandBlendWidthFracValue = clamp(latitudeBandBlendWidthFracValue, 0.0, 1.0);
-        latitudeBandBoundaryWarpFracValue = clamp(latitudeBandBoundaryWarpFracValue, 0.0, 1.0);
-    }
-
-    private static double clamp(double v, double lo, double hi) {
-        return Math.max(lo, Math.min(hi, v));
-    }
-
-    private static int clampInt(int v, int lo, int hi) {
-        return Math.max(lo, Math.min(hi, v));
-    }
-
-    private static boolean defaultWindowsClipboardEnabled() {
-        String os = System.getProperty("os.name", "");
-        return os.toLowerCase(java.util.Locale.ROOT).contains("win");
     }
 }

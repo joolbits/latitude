@@ -1,0 +1,14 @@
+{
+  "layers": {
+    "humanoid": [
+      {
+        "texture": "globe:polar"
+      }
+    ],
+    "humanoid_leggings": [
+      {
+        "texture": "globe:polar"
+      }
+    ]
+  }
+}

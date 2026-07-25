@@ -1,0 +1,4 @@
+interface:
+  display_name: "Regression Triage"
+  short_description: "Read-only triage for worldgen and system regressions"
+  default_prompt: "Use this skill to map a regression symptom to the most likely pipeline stage, identify one primary failure mode, and recommend exactly one narrow next slice without mutating code or stacking fixes."

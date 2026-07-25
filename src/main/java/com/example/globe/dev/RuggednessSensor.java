@@ -1,8 +1,8 @@
 package com.example.globe.dev;
 
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.Heightmap;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.levelgen.Heightmap;
 
 /**
  * Ruggedness Sensor: samples the surface height around a point to estimate local relief.
@@ -12,7 +12,7 @@ public final class RuggednessSensor {
     private RuggednessSensor() {
     }
 
-    public static Measurement measure(ServerWorld world, BlockPos pos, int ringBlocks) {
+    public static Measurement measure(ServerLevel world, BlockPos pos, int ringBlocks) {
         // Snap to 4-block grid to avoid 1-block jitter
         int x = pos.getX() & ~3;
         int z = pos.getZ() & ~3;
@@ -45,9 +45,9 @@ public final class RuggednessSensor {
         return new Measurement(ringBlocks, c, n, s, e, w, ne, nw, se, sw, maxAbs, meanAbs, axisGradient, robustDelta);
     }
 
-    private static int surfaceY(ServerWorld world, int x, int z) {
+    private static int surfaceY(ServerLevel world, int x, int z) {
         // -1 so we report the topmost solid block position, matching surface usage elsewhere.
-        return world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+        return world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
     }
 
     public record Measurement(int ringBlocks,

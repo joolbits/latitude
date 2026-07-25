@@ -1,34 +1,41 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.create.LatitudeCreateWorldScreen;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.world.CreateWorldScreen;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.lang.reflect.Field;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 
 @Mixin(CreateWorldScreen.class)
 public abstract class CreateWorldScreenInitRedirectMixin {
+    private static final Logger LOGGER = LoggerFactory.getLogger("globe");
 
     @Inject(method = "init", at = @At("HEAD"), cancellable = true)
     private void globe$redirectRecreateSafely(CallbackInfo ci) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.currentScreen != (Object) this) {
+        LOGGER.info("[LAT][CWPATH] CreateWorldScreenInitRedirectMixin.init screen={}", this.getClass().getName());
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.gui.screen() != (Object) this) {
             return;
         }
 
         Screen parent = globe$getParentSafe((Object) this);
-        Runnable onClose = () -> client.setScreen(parent);
+        Runnable onClose = () -> client.setScreenAndShow(parent);
 
+        CreateWorldScreenMixin self = (CreateWorldScreenMixin) (Object) this;
         LatitudeCreateWorldScreen.openLoaded(
                 client,
                 onClose,
                 parent,
-                ((CreateWorldScreenMixin) (Object) this).getWorldCreator().getGeneratorOptionsHolder());
+                self.getUiState().getSettings(),
+                self.getUiState().getSeed(),
+                self.getUiState().getName());
         ci.cancel();
     }
 

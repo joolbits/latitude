@@ -63,7 +63,11 @@ final class BiomeBandPolicy {
             entry("minecraft:snowy_slopes", LatitudeBands.Band.SUBPOLAR, LatitudeBands.Band.POLAR),
             entry("minecraft:jagged_peaks", LatitudeBands.Band.SUBPOLAR, LatitudeBands.Band.POLAR),
             entry("minecraft:frozen_peaks", LatitudeBands.Band.SUBPOLAR, LatitudeBands.Band.POLAR),
-            entry("minecraft:ice_spikes", LatitudeBands.Band.SUBPOLAR, LatitudeBands.Band.POLAR)
+            entry("minecraft:ice_spikes", LatitudeBands.Band.SUBPOLAR, LatitudeBands.Band.POLAR),
+
+            // Phase 5 B-8: first-party frozen-waste biome, placed only in the deep polar cap (86->88 deg
+            // fray) by the consumer's final override. Polar-only -- it must never appear equatorward.
+            entry("globe:polar_barrens", LatitudeBands.Band.POLAR)
     );
 
     private BiomeBandPolicy() {

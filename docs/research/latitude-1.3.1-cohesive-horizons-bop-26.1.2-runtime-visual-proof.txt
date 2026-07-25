@@ -1,0 +1,460 @@
+Latitude 1.3.1 Cohesive Horizons BOP 26.1.2 runtime visual proof classification
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: feat/1.3.1-cohesive-horizons-26.1.2
+HEAD: 5c8ed3e
+Tag at HEAD: save/cohesive-horizons-bop-26-1-2-pilot
+Jar inspected: <home>/Downloads/BiomesOPlenty-fabric-26.1.2-26.1.2.0.2.jar
+
+Jar evidence found:
+- data/biomesoplenty/worldgen/biome/seasonal_forest.json exists.
+- seasonal_forest vegetation step references biomesoplenty:trees_seasonal_forest, biomesoplenty:flower_seasonal_forest, biomesoplenty:red_maple_leaf_litter, biomesoplenty:orange_maple_leaf_litter, and biomesoplenty:yellow_maple_leaf_litter.
+- configured_feature/trees_seasonal_forest.json is a random_selector whose default is biomesoplenty:orange_maple_tree_leaf_litter and whose alternatives include red/yellow/big maple tree leaf-litter variants.
+- configured maple tree leaf-litter JSONs use biomesoplenty:maple_log, biomesoplenty:red_maple_leaves / orange_maple_leaves / yellow_maple_leaves, and matching biomesoplenty:*_maple_leaf_litter decorators.
+- configured_feature/flower_seasonal_forest.json places biomesoplenty:marigold.
+- placed_feature/red_maple_leaf_litter.json, orange_maple_leaf_litter.json, and yellow_maple_leaf_litter.json each place count=2 with biome filtering.
+
+Runtime evidence from Maintainer:
+- Command: /latdev bopDecorProbe 256 8775 4687
+- Center biome: minecraft:flower_forest
+- Loaded evidence: chunksLoaded=1089, chunksUnloaded=0, loadedSamples=303861, skippedSamples=0.
+- Histogram includes biomesoplenty:seasonal_forest=101305 and first BOP samples at 8520,4697 through 8520,4702.
+- Decoration scan found vanilla-style top blocks only and bopBlocks=0/0, bopLeafLitter=0/0.
+
+Evidence table:
+| Category | Evidence | Classification |
+| --- | --- | --- |
+| BOP occupancy | 101305 loaded sampled columns of biomesoplenty:seasonal_forest, with first exact sample coordinates | Proven |
+| Center biome | minecraft:flower_forest at the requested center | Not blocking; nearby loaded histogram proves BOP occupancy away from center |
+| Expected seasonal_forest decoration | BOP JSON expects maple logs/leaves/leaf litter and marigold, not just vanilla oak/birch | BOP-specific decoration expected |
+| Runtime BOP blocks | bopBlocks=0/0 and bopLeafLitter=0/0 despite large BOP seasonal_forest sample | Suspicious |
+
+Classification: BOP_OCCUPANCY_PROVEN_DECOR_SUSPICIOUS
+
+Decision:
+Latitude's BOP pilot is proven enough for biome label/occupancy compatibility at this sampled site, but not proven enough for full biome compatibility. The local BOP jar makes seasonal_forest decoration JSON-defined and BOP-specific, so zero BOP namespace blocks is suspicious rather than acceptable vanilla-only seasonal_forest behavior. This is not classified as label-only yet because the next proof must sample a tight 3D cube inside a known BOP column and prove whether expected BOP blocks are absent there.
+
+Next single action:
+Run one narrow runtime proof at first BOP sample coordinate 8520 4697 that reports biome plus nearby namespace blocks in a small 3D cube; if no suitable dev probe exists, add one dev-only probe mode for that exact coordinate-targeted cube and no worldgen/tag/source behavior changes beyond the probe.
+
+Files changed in this audit:
+- docs/research/latitude-1.3.1-cohesive-horizons-bop-26.1.2-runtime-visual-proof.txt only.
+
+Source/build/metadata changes made by this audit: none.
+
+Mechanism audit: BOP identity present, BOP decoration absent
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: feat/1.3.1-cohesive-horizons-26.1.2
+HEAD: 5c8ed3e
+Tag at HEAD: save/cohesive-horizons-bop-26-1-2-pilot
+
+Files inspected:
+- src/main/java/com/example/globe/world/LatitudeBiomeSource.java
+- src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java
+- src/main/java/com/example/globe/mixin/ChunkGeneratorBiomeSourceMixin.java
+- src/main/resources/globe.mixins.json
+- this proof note
+
+No source/build/metadata edits were made in this mechanism audit.
+
+Known runtime proof:
+- /latdev bopDecorProbe 256 8775 4687: biomesoplenty:seasonal_forest=101305, bopBlocks=0/0, bopLeafLitter=0/0.
+- /latdev bopBlockProbe 8520 4697 24 48: biome=biomesoplenty:seasonal_forest, targetLoaded=true, loadedColumns=2401, bopUnique=0, bopTotal=0.
+- /latdev bopBlockProbe 8520 4702 32 64: biome=biomesoplenty:seasonal_forest, targetLoaded=true, loadedColumns=4225, bopUnique=0, bopTotal=0.
+
+Static hook evidence:
+- globe.mixins.json registers ChunkGeneratorBiomeSourceMixin and ChunkGeneratorPopulateBiomesMixin.
+- LatitudeBiomeSource#getNoiseBiome calls LatitudeBiomes.pick(..., "SOURCE", ...), so generator biome-source lookup can return Latitude-picked BOP biomes.
+- ChunkGeneratorPopulateBiomesMixin redirects NoiseBasedChunkGenerator#doCreateBiomes at ChunkAccess#fillBiomesFromNoise and wraps the BiomeResolver; inside that wrapper it calls LatitudeBiomes.pick(..., "MIXIN", generator, noiseConfig, chunk).
+- The mixin then calls chunk.fillBiomesFromNoise(wrapped, sampler), meaning the Latitude-picked biome identity is written during chunk biome population, not merely during a late display-only lookup.
+
+Hypotheses:
+| Hypothesis | Status | Evidence |
+| --- | --- | --- |
+| A. Latitude changes chunk biome identity after BOP decoration selection | Not proven / weaker | Static hook writes through doCreateBiomes -> fillBiomesFromNoise, which is the chunk-biome population path. |
+| B. Latitude only affects F3/runtime lookup, not feature-decoration biome | Disfavored | LatitudeBiomeSource wraps getBiomeSource and ChunkGeneratorPopulateBiomesMixin writes chunk biomes. Runtime probes also read loaded chunk biome identity, not just a visual hunch. |
+| C. Optional tag compatibility cannot make BOP features fire by design | Open, not proven | Tags only make the BOP biome selectable by Latitude; BOP biome JSON still owns its feature list. Static Latitude code does not prove whether TerraBlender/BOP feature integration consumes that selected biome in this setup. |
+| D. Chunks were generated before the BOP pilot/probe and are stale | Plausible / best next check | Both block probes target loaded existing coordinates. The proof does not show those chunks were freshly generated after the BOP pilot and feature stage. |
+| E. Biome array now says BOP but blocks were decorated before the change | Plausible | This exactly matches loaded BOP biome identity plus all-vanilla blocks; it requires fresh-coordinate proof or feature-stage logs to confirm. |
+
+Best-supported mechanism:
+The current static evidence does not prove a late-label-only hook bug. Latitude appears to assign biome identity through the chunk biome population path early enough in principle. The strongest remaining explanation from local evidence is a stale/predecorated loaded-area mismatch, or a still-unproven feature-stage integration gap where BOP features are not consumed even when the chunk biome holder is BOP.
+
+Exact next single slice:
+Run the same `/latdev bopBlockProbe` on a fresh, previously ungenerated coordinate that first proves `biomesoplenty:seasonal_forest` occupancy after generation. If fresh chunks still show `bopUnique=0`, add one gated dev-only feature-stage instrument around decoration/placed-feature biome selection before attempting any worldgen or tag fix.
+
+Feature-stage instrumentation slice
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: feat/1.3.1-cohesive-horizons-26.1.2
+HEAD: 5c8ed3e
+Tag at HEAD: save/cohesive-horizons-bop-26-1-2-pilot
+
+Known runtime input:
+- Fresh/mostly ungenerated broad probe found biomesoplenty:seasonal_forest=117366 and bopBlocks=0/0.
+- Exact probe at 8512 4647 found biome=biomesoplenty:seasonal_forest, targetLoaded=true, loadedColumns=4225, expected maple_log=false maple_leaves=false leaf_litter=false marigold=false, bopUnique=0, bopTotal=0.
+- Exact probe at 8512 4702 also found biomesoplenty:seasonal_forest with bopUnique=0 and bopTotal=0.
+
+Instrumentation added:
+- src/main/java/com/example/globe/mixin/PlacedFeatureBopDebugMixin.java
+- src/main/resources/globe.mixins.json registers PlacedFeatureBopDebugMixin
+
+Instrumentation behavior:
+- Gated by -Dlatitude.debugBopFeatures=true.
+- No return values, placement conditions, biome selection, tags, metadata, or packaging were changed.
+- Hooks PlacedFeature private placeWithContext at RETURN, which is reached by PlacedFeature.place and PlacedFeature.placeWithBiomeCheck in the mapped 26.1.2 class.
+- Near the configured target, logs [LAT][BOP_FEATURE] summary counters and capped detail rows for attempts where the feature placement origin biome is biomesoplenty:seasonal_forest or the configured feature id starts with biomesoplenty:.
+- Default target is x=8512 z=4647 radius=512. Tunable JVM properties: latitude.debugBopFeatures.x, latitude.debugBopFeatures.z, latitude.debugBopFeatures.radius, latitude.debugBopFeatures.detailLimit, latitude.debugBopFeatures.summaryEvery.
+
+Validation:
+- ./gradlew --no-daemon compileJava: BUILD SUCCESSFUL
+
+Runtime command:
+- JAVA_TOOL_OPTIONS="-Dlatitude.debugBopFeatures=true -Dlatitude.debugBopFeatures.x=8512 -Dlatitude.debugBopFeatures.z=4647 -Dlatitude.debugBopFeatures.radius=512" ./gradlew --no-daemon runClient
+- In-game: /latdev bopBlockProbe 8512 4647 32 64
+- Log grep: [LAT][BOP_FEATURE]
+
+Updated classification:
+BOP_OCCUPANCY_PROVEN_DECOR_MISMATCH_FEATURE_STAGE_INSTRUMENTED
+
+Feature scheduling audit: BOP biome visible, BOP features not scheduled
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: feat/1.3.1-cohesive-horizons-26.1.2
+HEAD: 5c8ed3e
+Tag at HEAD: save/cohesive-horizons-bop-26-1-2-pilot
+
+Current runtime proof:
+- bopBlockProbe 8512 4647 32 64: biome=biomesoplenty:seasonal_forest, bopUnique=0, bopTotal=0.
+- [LAT][BOP_FEATURE] near 8512,4647: attempts >71000, seasonalBiome >30000, placed >33000, bopConfigured=0, bopConfiguredInSeasonal=0.
+
+Files / local artifacts inspected:
+- src/main/java/com/example/globe/world/LatitudeBiomeSource.java
+- src/main/java/com/example/globe/mixin/ChunkGeneratorBiomeSourceMixin.java
+- Minecraft 26.1.2 mapped ChunkGenerator bytecode from minecraft-merged-deobf-26.1.2.jar
+- BOP 26.1.2 jar: BOPOverworldRegionPrimary signature and seasonal_forest biome JSON
+- this proof note
+
+No source, build, tag, metadata, or biome JSON edits were made in this audit.
+
+Evidence:
+- Minecraft ChunkGenerator stores final biomeSource and memoizes featuresPerStep in the constructor from that constructor biomeSource plus generationSettingsGetter.
+- ChunkGenerator.lambda$new$1 calls biomeSource.possibleBiomes(), List.copyOf(...), then FeatureSorter.buildFeaturesPerStep(...).
+- applyBiomeDecoration later places from the precomputed featuresPerStep list, then invokes PlacedFeature.placeWithBiomeCheck.
+- The default generationSettingsGetter uses Holder.value().getGenerationSettings(), so a real BOP biome holder would carry its BOP JSON features if that biome was included in the feature sorter input.
+- LatitudeBiomeSource.collectPossibleBiomes returns original.possibleBiomes().stream(), not an augmented list of dynamically selectable Latitude replacements.
+- ChunkGeneratorBiomeSourceMixin creates LatitudeBiomeSource from this.biomeSource.possibleBiomes() and only intercepts getBiomeSource(); it does not replace the constructor biomeSource field or rebuild ChunkGenerator.featuresPerStep.
+- BOPOverworldRegionPrimary extends terrablender.api.Region, and seasonal_forest.json includes BOP vegetal features such as biomesoplenty:trees_seasonal_forest, flower_seasonal_forest, and maple leaf-litter placed features.
+
+Audit answers:
+1. Feature scheduling uses real biome generation settings, but only after the global feature sorter has been built from the generator constructor source's possibleBiomes.
+2. Latitude is returning a real biomesoplenty:seasonal_forest holder for chunk biome identity; the mismatch is not just an ID/F3 illusion.
+3. LatitudeBiomeSource does not advertise an augmented possible-biome set; it delegates collectPossibleBiomes to the original source.
+4. BOP/TerraBlender provides seasonal_forest through Region integration and JSON features, but Latitude's tag-based replacement can return that biome outside the feature sorter's advertised source set.
+5. The local 26.1.2 ChunkGenerator evidence supports a possible-biomes requirement: featuresPerStep is built from possibleBiomes, so dynamically returned replacement biomes whose features were not in that set will not schedule their placed features.
+
+Best-supported mechanism:
+BOP features are absent because Latitude can return biomesoplenty:seasonal_forest dynamically during biome lookup/population, but the feature scheduler's memoized featuresPerStep was built from the original biome source possible-biomes set before Latitude's dynamic BOP replacement was advertised. Result: many feature attempts occur in seasonal_forest biome positions, but the scheduled configured/placed feature list contains zero BOP configured features.
+
+Updated classification:
+BOP_OCCUPANCY_PROVEN_DECOR_MISMATCH_FEATURES_NOT_SCHEDULED_BY_POSSIBLE_BIOMES
+
+Exact next single slice:
+Fix or first instrument the possible-biomes advertisement boundary only: ensure Latitude-selectable optional replacement biomes, starting with biomesoplenty:seasonal_forest, are included in the biome source possibleBiomes set before ChunkGenerator.featuresPerStep is memoized; then rerun [LAT][BOP_FEATURE] and bopBlockProbe near 8512,4647.
+
+Possible-biomes fix preflight: stopped before source edit
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: feat/1.3.1-cohesive-horizons-26.1.2
+HEAD: 5c8ed3e
+Tag at HEAD: save/cohesive-horizons-bop-26-1-2-pilot
+
+Requested fix:
+Advertise already-piloted optional BOP/BWG biome holders in possibleBiomes before ChunkGenerator.featuresPerStep is memoized.
+
+Files / evidence inspected:
+- src/main/java/com/example/globe/world/LatitudeBiomeSource.java
+- src/main/java/com/example/globe/mixin/ChunkGeneratorBiomeSourceMixin.java
+- src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_primary.json
+- src/main/resources/data/globe/tags/worldgen/biome/lat_subpolar_primary.json
+- src/main/java/com/example/globe/world/LatitudeBiomes.java exact tag-pick helpers
+- mapped HolderLookup / Registry bytecode surface for 26.1.2
+
+No source/build/tag/metadata edits were made in this attempted fix slice.
+
+Stop reason:
+LatitudeBiomeSource.collectPossibleBiomes can append only holders it already has. In the current construction path it receives original.possibleBiomes(), and it has no safe dynamic biome registry lookup that can resolve absent optional IDs such as biomesoplenty:seasonal_forest into real Holder<Biome> values. The existing ChunkGeneratorBiomeSourceMixin creates the LatitudeBiomeSource wrapper at constructor TAIL / getBiomeSource time, but ChunkGenerator.featuresPerStep captures the constructor biomeSource argument earlier. Therefore a one-file LatitudeBiomeSource change would either be unable to add real optional holders or would be too late to affect the memoized feature sorter.
+
+Narrow conclusion:
+The possible-biomes mechanism is still the right boundary, but the safe fix is not available inside LatitudeBiomeSource alone. The next viable slice must target construction-time feature-sorter input or explicitly rebuild/replace featuresPerStep after the registry is available, still limited to already-piloted optional IDs and without injecting features.
+
+Exact next single slice:
+Add one gated construction-timing/feature-sorter audit or a narrowly scoped ChunkGeneratorBiomeSourceMixin change that proves/replaces the featuresPerStep source before runtime proof. Stop if it requires editing LatitudeBiomes.java, biome tags, metadata, build files, or direct feature injection.
+
+Chunk-generation / quit-delay stall audit
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: feat/1.3.1-cohesive-horizons-26.1.2
+HEAD: 5c8ed3e
+Tag at HEAD: save/cohesive-horizons-bop-26-1-2-pilot
+
+Files / logs inspected:
+- run/logs/latest.log
+- src/main/java/com/example/globe/mixin/PlacedFeatureBopDebugMixin.java
+- src/main/java/com/example/globe/dev/LatitudeDevCommand.java around bopBlockProbe
+- this proof note
+
+Log findings:
+- Current latest.log contains 366 [LAT][BOP_FEATURE] lines.
+- [LAT][BOP_FEATURE] summary logs are emitted from Worker-Main threads while feature placement is active near 8512,4647.
+- The latest run reached attempts=71250, seasonalBiome=30591, bopConfigured=0, bopConfiguredInSeasonal=0, placed=33729 before quit.
+- Quit/shutdown in the captured log was not slow: Stopping at 19:52:03, Saving chunks at 19:52:05, all chunks saved at 19:52:05.
+- No Can't keep up, watchdog, feature exception, or repeated mixin failure appears in the relevant tail.
+- bopBlockProbe at 8512,4647 scanned loadedColumns=4225 with yRange=-1..127 and reported vanillaTop counts across a large 3D cube; this is server-thread proof work but it emitted only four log/chat lines.
+
+Best-supported stall cause:
+The captured evidence supports instrumentation/proof overhead, not a proven broader BOP/TerraBlender or Latitude chunk-generation regression. The feature debug mixin did useful proof work, but with the flag enabled it performed per-feature biome/feature-id inspection inside the target radius and emitted frequent Worker-Main summaries. The block probe is also intentionally heavy but bounded and only runs on command.
+
+Instrumentation throttle applied:
+- src/main/java/com/example/globe/mixin/PlacedFeatureBopDebugMixin.java only.
+- Detail limit default reduced from 80 to 20.
+- Summary interval default increased from 250 to 5000 attempts.
+- New default attempt cap: latitude.debugBopFeatures.attemptLimit=20000.
+- After the cap, the mixin returns before biome lookup / configured-feature id string work, preserving no-op behavior for worldgen return values.
+- Added one capped summary line: [LAT][BOP_FEATURE] capped ...
+
+Validation:
+- ./gradlew --no-daemon compileJava: BUILD SUCCESSFUL
+
+Updated runtime comparison:
+- Without -Dlatitude.debugBopFeatures=true: enter same world/area and quit; this should distinguish baseline chunk-gen/shutdown from instrumentation overhead.
+- With flag: JAVA_TOOL_OPTIONS="-Dlatitude.debugBopFeatures=true -Dlatitude.debugBopFeatures.x=8512 -Dlatitude.debugBopFeatures.z=4647 -Dlatitude.debugBopFeatures.radius=512" ./gradlew --no-daemon runClient
+- In-game: /latdev bopBlockProbe 8512 4647 32 64
+- Grep: grep -n "\\[LAT\\]\\[BOP_FEATURE\\]" run/logs/latest.log | tail -80
+
+Updated classification:
+BOP_DECOR_MISMATCH_FEATURES_NOT_SCHEDULED_INSTRUMENTATION_THROTTLED
+
+Exact next single slice:
+Run the A/B comparison. If quit is slow only with the flag, keep feature instrumentation capped or disabled by default. If quit is slow without the flag, audit chunk task/backlog timing separately before resuming the possible-biomes fix.
+
+Fresh-proof plan update:
+- Current classification stays `D/E` until a fresh, ungenerated-coordinate proof is collected.
+- Do not touch architecture, biome tags, build files, or feature-stage instrumentation yet.
+- Preferred proof method: create a brand-new world with BOP/GlitchCore/TerraBlender installed, then move to a new temperate candidate far from spawn and test a freshly generated BOP-labeled area.
+- Broad probe first: `/latdev bopDecorProbe 512 8775 4687`
+- If the broad probe reports BOP sample coordinates, run exact proof on the first reported BOP sample: `/latdev bopBlockProbe <firstBopX> <firstBopZ> 32 64`
+- If the fresh world cannot find BOP columns at that coordinate, widen search in the fresh world only; do not assume the old loaded-area mismatch is resolved.
+- Screenshot/paste the broad probe and exact probe outputs, especially the sampled-biome histogram, BOP sample coordinates, and `bopUnique`/`bopTotal` results.
+- Classification rules for Maintainer:
+  - Fresh-world BOP columns with expected BOP blocks: stale chunk mismatch confirmed; fresh support looks good.
+  - Fresh-world BOP columns still with `bopUnique=0 bopTotal=0`: feature-stage integration gap remains likely; next slice should add gated feature-stage instrumentation.
+  - No BOP columns found: inconclusive; find a better fresh candidate or broader scan.
+
+## 2026-05-11 (local) focused mechanism audit (no source edits)
+- current_classification: BOP_FEATURES_NOT_SCHEDULED_POSSIBLE_BIOMES_GAP
+- files/jar inspected: src/main/java/com/example/globe/world/LatitudeBiomeSource.java; src/main/java/com/example/globe/mixin/ChunkGeneratorBiomeSourceMixin.java; src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java; src/main/java/com/example/globe/mixin/PlacedFeatureBopDebugMixin.java; src/main/resources/globe.mixins.json; docs/research/latitude-1.3.1-cohesive-horizons-bop-26.1.2-runtime-visual-proof.txt; run/mods/BiomesOPlenty-fabric-26.1.2-26.1.2.0.2.jar (seasonal_forest + trees/flower configured features + BOPOverworldRegionPrimary signature)
+- mechanism found: Latitude writes BOP holder IDs into chunk biomes during fill stage via wrapped BiomeResolver, but feature scheduling is driven by ChunkGenerator-featuresPerStep built earlier from constructor biomeSource.possibleBiomes; LatitudeBiomes replacement does not add seasonal_forest into advertised possible-biomes, so no BOP configured/placed features are in the scheduled feature list.
+- hypotheses:
+  - supported: A,B,D,E are less likely under this evidence set.
+  - favored: question #2/#3/#5 path: not a scheduler-time biome-id-only mismatch, and seasonal_forest features are defined on BOP biome JSON and region integration (`BOPOverworldRegionPrimary extends terrablender.api.Region`) but they are not being reached because possible-biomes advertisement is incomplete.
+  - disfavored: TerraBlender region path can be the sole root cause; data and classes show BOP seasonal_forest owns standard feature IDs.
+- next single slice: confirm possible-biomes injection point by auditing/replacing the feature-sorter input at ChunkGenerator construction (or equivalent one-shot construction-timing hook) while keeping it read-only-instrumented until BOP holder presence in featuresPerStep is proven.
+- do-not-touch boundaries: no biome tag edits, no LatitudeBiomes.java changes, no generation setting rewrites, no build/tags/metadata edits, no worldgen behavior changes beyond this one audit/feature-sorter proof slice.
+
+## 2026-05-11 (local) possible-biomes scheduler fix compile proof
+- mechanism fixed: Latitude can populate chunks with `biomesoplenty:seasonal_forest`, but the chunk generator feature sorter was still using the unaugmented possible-biomes input, so BOP feature lists were not scheduled.
+- files changed: `src/main/java/com/example/globe/world/LatitudeBiomeSource.java`; `src/main/java/com/example/globe/mixin/ChunkGeneratorBiomeSourceMixin.java`; `src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java`; this proof note.
+- fix shape: `LatitudeBiomeSource.collectPossibleBiomes()` now advertises the wrapper holder collection; the existing chunk-generator mixin resolves optional `biomesoplenty:seasonal_forest` from the biome registry when present, avoids duplicates, installs an augmented wrapper, and rebuilds the vanilla `featuresPerStep` supplier from that augmented possible-biomes set.
+- boundaries preserved: no `LatitudeBiomes.java`, biome tags, weights, build metadata, BOP classes, packaging, or release files changed.
+- compile result: `./gradlew --no-daemon compileJava` BUILD SUCCESSFUL.
+- runtime proof status: not run in this slice.
+- classification: BOP_FEATURES_POSSIBLE_BIOMES_FIX_COMPILE_PROVEN_RUNTIME_PENDING
+- next step: Maintainer run the feature-debug client proof and `bopDecorProbe` / `bopBlockProbe` commands near fresh `biomesoplenty:seasonal_forest` coordinates.
+
+## 2026-05-11 (local) possible-biomes runtime-stall rollback
+- failed patch classification: `BOP_POSSIBLE_BIOMES_FIX_RUNTIME_STALL_REGRESSION_REVERT_RECOMMENDED`.
+- localized stall mechanism: `globe$augmentPossibleBiomes(...)` was called from per-chunk biome population and could repeatedly replace/rebuild `featuresPerStep` because the guard checked the original `biomeSource`.
+- files reverted: `src/main/java/com/example/globe/world/LatitudeBiomeSource.java`; `src/main/java/com/example/globe/mixin/ChunkGeneratorBiomeSourceMixin.java`; `src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java`; removed failed bridge file `src/main/java/com/example/globe/world/ChunkGeneratorPossibleBiomesBridge.java`.
+- preserved: `/latdev` BOP probes, gated `PlacedFeatureBopDebugMixin`, `globe.mixins.json` BOP debug registration, and `tmp/bop-possible-biomes-stall-5c8ed3e/**` evidence.
+- compile result: `bash gradlew --no-daemon compileJava -Dorg.gradle.java.home=$(/usr/libexec/java_home)` BUILD SUCCESSFUL.
+- runtime status: not run in this rollback slice.
+- classification after revert: `BOP_POSSIBLE_BIOMES_RUNTIME_STALL_PATCH_REVERTED_COMPILE_PROVEN`.
+- BOP status remains: `BOP_OCCUPANCY_PROVEN_DECOR_MISMATCH_FEATURES_NOT_SCHEDULED`.
+- next direction: future attempt must hook construction-time possible-biomes / feature-sorter input exactly once, not from per-chunk `populateBiomes` path.
+
+## 2026-05-11 (local) construction-time possible-biomes hook localization stop
+- hook target inspected: `_mcsrc_extract/net/minecraft/world/gen/chunk/ChunkGenerator.java` constructor builds `indexedFeaturesListSupplier = Suppliers.memoize(() -> PlacedFeatureIndexer.collectIndexedFeatures(List.copyOf(biomeSource.getBiomes()), ...))`; `initializeIndexedFeaturesList()` only calls that supplier.
+- related paths inspected: `_mcsrc_extract/net/minecraft/world/gen/chunk/NoiseChunkGenerator.java`; `_mcsrc_extract/net/minecraft/world/biome/source/BiomeSource.java`; `src/main/java/com/example/globe/mixin/ChunkGeneratorBiomeSourceMixin.java`; `src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java`; `src/main/java/com/example/globe/world/LatitudeBiomeSource.java`; `src/main/java/com/example/globe/mixin/PlacedFeatureBopDebugMixin.java`; `src/main/resources/globe.mixins.json`.
+- patch made: no.
+- exact stop reason: the proven constructor/supplier hook has the possible-biomes collection but no biome registry, so it cannot safely resolve an absent optional `biomesoplenty:seasonal_forest` holder; the observed registry-aware path is `doCreateBiomes` / `fillBiomesFromNoise`, which is per-chunk and forbidden after the stall regression.
+- files changed: this proof note only.
+- per-chunk path touched: no.
+- compile result: not run because no source patch was made.
+- runtime status: not run.
+- classification: `BOP_CONSTRUCTION_TIME_POSSIBLE_BIOMES_HOOK_NOT_FOUND`.
+- next step: find a non-chunk registry-aware initialization boundary for `ChunkGenerator` feature-sorter input, or stop before any rebuild/replace path that depends on `populateBiomes` / per-chunk generation.
+
+## 2026-05-11 (local) retainAll + indexed-features dual-dependency proof and diagnostic patch
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: feat/1.3.1-cohesive-horizons-26.1.2
+HEAD: 5c8ed3e
+Tag at HEAD: save/cohesive-horizons-bop-26-1-2-pilot
+
+Files inspected:
+- `_mcsrc_extract/net/minecraft/world/gen/chunk/ChunkGenerator.java` (yarn-mapped generateFeatures, full source)
+- `_mcsrc_extract/net/minecraft/world/gen/feature/util/PlacedFeatureIndexer.java` (yarn-mapped collectIndexedFeatures + IndexedFeatures record)
+- `_mcsrc_extract/net/minecraft/util/Util.java` lines 1295-1310 (lastIdentityIndexGetter implementation)
+- `/tmp/net/minecraft/world/level/chunk/ChunkGenerator.class` (mojang deobf bytecode — field names)
+- `/tmp/net/minecraft/world/level/biome/FeatureSorter$StepFeatureData.class` (mojang deobf — StepFeatureData methods)
+- `/tmp/net/minecraft/world/level/biome/BiomeGenerationSettings.class` (mojang deobf — features() signature)
+- `/tmp/net/minecraft/core/HolderSet.class` (mojang deobf — Iterable<Holder<T>>)
+- `/tmp/net/minecraft/resources/ResourceKey.class` (mojang deobf — identifier() method confirmed)
+- `src/main/java/com/example/globe/mixin/ChunkGeneratorGenerateFeaturesBiomeSetMixin.java`
+
+Files changed:
+- `src/main/java/com/example/globe/mixin/ChunkGeneratorGenerateFeaturesBiomeSetMixin.java` (diagnostic extended)
+- this proof note
+
+Mojang field/type name mapping confirmed:
+- yarn `indexedFeaturesListSupplier` = mojang `featuresPerStep` (Supplier<List<FeatureSorter.StepFeatureData>>)
+- yarn `generationSettingsGetter` = mojang `generationSettingsGetter` (Function<Holder<Biome>, BiomeGenerationSettings>)
+- yarn `PlacedFeatureIndexer.IndexedFeatures` = mojang `FeatureSorter.StepFeatureData`
+- methods `features()` and `indexMapping()` are the same in both mappings
+
+Dual-dependency proof (static):
+
+applyBiomeDecoration (mojang) / generateFeatures (yarn) does the following:
+1. Calls `featuresPerStep.get()` — retrieves the precomputed indexed feature list (memoized since constructor).
+2. Builds local biome set from chunk sections.
+3. Calls `set.retainAll(this.biomeSource.getBiomes())` — prunes dynamic BOP biomes.
+4. For each generation step k and each biome in `set`:
+   - Gets `biome.value().getGenerationSettings().features().get(k)`
+   - For each PlacedFeature pf in that step: calls `indexedFeatures.indexMapping().applyAsInt(pf)` to get its sort index
+   - Adds index to `intSet`
+5. For each index in sorted `intSet`: calls `indexedFeatures2.features().get(index)` and places it.
+
+Util.lastIdentityIndexGetter (the indexMapping supplier):
+- For lists with ≥8 features: Reference2IntOpenHashMap with defaultReturnValue(-1).
+- Returns -1 for any PlacedFeature not in the map.
+
+Consequence of retaining seasonal_forest without fixing featuresPerStep:
+- seasonal_forest is in `set`, so step k iterates its features.
+- BOP PlacedFeatures were not included in the featuresPerStep input (possible-biomes gap).
+- `indexMapping.applyAsInt(bopFeature)` returns -1.
+- `intSet.add(-1)` is called.
+- `features.get(-1)` throws IndexOutOfBoundsException → chunk generation crash.
+
+Current behavior (retainAll prunes seasonal_forest) is therefore NOT crashing only because seasonal_forest is absent from `set` and its features are never looked up. The existing retainAll "fix" accidentally masks a deeper crash that would occur if retainAll were bypassed without also fixing the indexed feature list.
+
+Answers to pre-patch questions:
+1. If seasonal_forest is kept in set, will BOP features be in indexedFeaturesListSupplier.get()?
+   NO — featuresPerStep is built from possibleBiomes at construction time, before Latitude injects seasonal_forest. BOP features are absent from the index.
+2. Can the current instrumentation count whether BOP seasonal_forest's placed features are missing from the indexed feature mapping without changing behavior?
+   YES — new sfIndexAudit diagnostic does exactly this.
+3. Is the safest first fix to replace retainAll with a widened predicate?
+   NO — this would immediately crash with IndexOutOfBoundsException (list.get(-1)) on any chunk that contains seasonal_forest.
+4. Does the fix require BOTH retaining dynamic BOP biomes AND fixing the indexed feature list?
+   YES — both are required. The retainAll bypass is unsafe until featuresPerStep includes BOP placed features.
+
+Diagnostic patch added:
+- @Shadow @Final Supplier<List<FeatureSorter.StepFeatureData>> featuresPerStep
+- @Shadow @Final Function<Holder<Biome>, BiomeGenerationSettings> generationSettingsGetter
+- One-shot audit method latitude$auditSfIndexedFeatures:
+  - Captures seasonal_forest Holder before retainAll (holder is gone after)
+  - Calls featuresPerStep.get() (safe: already memoized earlier in applyBiomeDecoration)
+  - Iterates seasonal_forest's BiomeGenerationSettings.features() across all steps
+  - For each PlacedFeature, checks indexMapping.applyAsInt(pf) >= 0
+  - Logs: [LAT][BOP_RETAINALL] sfIndexAudit sfTotal=N sfInIndex=M sfSteps=S indexedSteps=I retainAloneSafe=false/true
+- Fires at most once per session (AtomicBoolean gate), gated by -Dlatitude.debugBopRetainAll=true
+
+Compile result: ./gradlew --no-daemon compileJava BUILD SUCCESSFUL
+
+Runtime proof command:
+JAVA_TOOL_OPTIONS="-Dlatitude.debug.autoCreateWorldProbe.disable=true -Dlatitude.debugBopRetainAll=true -Dlatitude.debugBopRetainAll.logLimit=20 -Dlatitude.debugBopFeatures=true -Dlatitude.debugBopFeatures.x=-1452 -Dlatitude.debugBopFeatures.z=4651 -Dlatitude.debugBopFeatures.radius=512" ./gradlew --no-daemon runClient
+
+Expected log lines to grep:
+grep -n "\[LAT\]\[BOP_RETAINALL\]" run/logs/latest.log | tail -30
+
+Expected new diagnostic line:
+[LAT][BOP_RETAINALL] sfIndexAudit sfTotal=N sfInIndex=M sfSteps=S indexedSteps=I retainAloneSafe=false
+
+Expected outcome:
+- sfInIndex=0 (no BOP placed features in featuresPerStep) → retainAloneSafe=false → confirms dual-dependency
+- OR sfInIndex=sfTotal → retainAloneSafe=true → retainAll bypass alone is sufficient (unexpected)
+
+Classification: BOP_RETAINALL_PRUNE_CONFIRMED_FIX_PENDING
+
+Next single slice:
+Run the runtime proof to collect sfIndexAudit output. If retainAloneSafe=false (expected), the next fix must address featuresPerStep expansion at a non-per-chunk, registry-aware boundary. If retainAloneSafe=true (unexpected), add only the retainAll bypass and collect bopBlockProbe proof.
+
+Stop reason: behavior patch requires both retainAll bypass and featuresPerStep expansion; the latter cannot safely use the per-chunk path (prior stall regression); no registry-free construction-time hook found; stopping before any unsafe change.
+
+## 2026-05-11 (local) retainAll/index audit follow-up
+
+- root/branch/head: `<home>/CascadeProjects/Latitude (Globe)` / `feat/1.3.1-cohesive-horizons-26.1.2` / `5c8ed3e` (`save/cohesive-horizons-bop-26-1-2-pilot`).
+- files inspected: `ChunkGeneratorGenerateFeaturesBiomeSetMixin.java`; `_mcsrc_extract/net/minecraft/world/gen/chunk/ChunkGenerator.java`; `_mcsrc_extract/net/minecraft/world/gen/feature/util/PlacedFeatureIndexer.java`; `_mcsrc_extract/net/minecraft/util/Util.java`; this proof note; `run/logs/latest.log` BOP lines only.
+- current diagnostic answer: latest log has `sfIndexAudit sfTotal=51 sfInIndex=43 sfSteps=11 indexedSteps=11 retainAloneSafe=false`, so seasonal_forest placed features are partially absent from the current index.
+- retainAll-only remains forbidden: retaining seasonal_forest while 8 of 51 placed features are missing can still add `-1` to the feature index set and crash at `features.get(-1)`.
+- one-time hook shape found: inject at `applyBiomeDecoration` HEAD, before the method local captures `featuresPerStep.get()`, resolve only `biomesoplenty:seasonal_forest` from the world biome registry, and replace/expand `featuresPerStep` once per `ChunkGenerator` instance behind an object field guard.
+- unsafe hook shape rejected: expanding from the existing retainAll redirect is too late for that chunk because the local feature list was already captured before `retainAll`; per-chunk rebuild remains forbidden.
+- behavior patch made: no. Existing allowed behavior file list does not cover changing the current retainAll redirect, and both gates must change together.
+- compile/runtime: not run; proof-note-only audit update.
+- classification: `BOP_INDEXED_FEATURES_ONE_TIME_HOOK_FOUND`.
+- next single slice: implement the one-time HEAD hook plus conditional seasonal_forest retention in one narrow behavior slice, then compile and run the existing BOP retain/index proof.
+
+## 2026-05-11 (local) seasonal_forest two-gate pilot patch
+
+- files changed: `src/main/java/com/example/globe/mixin/ChunkGeneratorGenerateFeaturesBiomeSetMixin.java`; this proof note.
+- fix shape: at `applyBiomeDecoration` HEAD, resolve only `biomesoplenty:seasonal_forest`, rebuild `featuresPerStep` once per `ChunkGenerator` instance from current possible biomes plus seasonal_forest, then preserve seasonal_forest through retainAll only when `globe$bopSeasonalForestIndexSafe=true`.
+- one-time guard: `globe$bopSeasonalForestFeaturesIndexed` plus synchronized per-generator lock; no per-chunk biome-population bridge or repeated sorter rebuild path.
+- retain gate: seasonal_forest is re-added after vanilla `retainAll` only if the one-time index check is safe; BOP-absent path leaves vanilla behavior unchanged.
+- compile result: `./gradlew --no-daemon compileJava` BUILD SUCCESSFUL.
+- runtime command: Java client launched with `latitude.debugBopRetainAll=true` and `latitude.debugBopFeatures=true`; playable state reached without severe stall.
+- index/runtime proof: `[LAT][BOP_RETAINALL] sfIndexExpansion result=expanded_once expanded=true sfTotal=51 sfInIndex=51 retainAloneSafe=true indexSafe=true`.
+- retain proof: `[LAT][BOP_RETAINALL] ... beforeSeasonalForest=true afterSeasonalForest=true ... preservedSeasonalForest=true indexSafe=true sfTotal=51 sfInIndex=51`.
+- scheduling proof: `[LAT][BOP_FEATURE] summary ... bopConfigured=634 bopConfiguredInSeasonal=298 placed=7297`.
+- block probe: `/latdev bopBlockProbe -1452 4651 32 64` ran in the Java window; target biome loaded as seasonal_forest, but `bopUnique=0 bopTotal=0`.
+- classification: `BOP_RETAINALL_AND_INDEX_FIX_FEATURES_SCHEDULED`.
+- next step: inspect why scheduled BOP placements at/near the target are not producing BOP namespace blocks in the exact block-probe radius, without widening biome selection or tags.
+
+## 2026-05-11 (local) scheduled-feature slowdown triage
+
+- extract written: `tmp/bop-seasonal-feature-scheduled-slowdown-5c8ed3e/extract.txt`.
+- feature scheduling remains proven: latest log has `sfIndexExpansion result=expanded_once ... sfTotal=51 sfInIndex=51`, retain survival with `preservedSeasonalForest=true`, and `[LAT][BOP_FEATURE] summary ... bopConfigured=634 bopConfiguredInSeasonal=298 placed=7297`.
+- one-time guard status: object-field guard (`globe$bopSeasonalForestFeaturesIndexed`) plus per-generator lock; extract shows one `sfIndexExpansion` and one `sfIndexAudit`, so no repeat expansion is proven.
+- log volume in latest extract: BOP_RETAINALL=31 total (`classification`=29, expansion=1, audit=1); BOP_FEATURE=23 total (`detail`=20, `summary`=3).
+- timing signal: spawn prep reached `Time elapsed: 1380 ms` and player joined at 19:01:51; no `Can't keep up` line in the extract. The visible slowness is post-join chunk streaming/generation, not initial spawn proof.
+- debug-off state: unproven in this extract; current run used both BOP retain and BOP feature debug flags.
+- block-probe mismatch: user visual proof says BOP seasonal decorations exist, while exact `/latdev bopBlockProbe -1452 4651 32 64` still returned `bopUnique=0 bopTotal=0`; treat the probe as possibly undercounting/mislocalized until a separate probe slice checks actual visual coordinates or a surface-relative decorative band.
+- classification: `BOP_SEASONAL_FOREST_DECORATION_PROVEN_PERFORMANCE_OPEN`.
+- next action: run the requested A/B runtime comparison with debug OFF versus limited debug ON; if debug OFF is still slow, isolate BOP feature placement cost, otherwise throttle/disable instrumentation.
+
+## 2026-05-11 (local) seasonal_forest performance A/B
+
+- evidence folders: `tmp/bop-seasonal-perf-ab-5c8ed3e/debug-off/` and `tmp/bop-seasonal-perf-ab-5c8ed3e/debug-limited/`.
+- Run A debug OFF command: `JAVA_TOOL_OPTIONS="-Dlatitude.debug.autoCreateWorldProbe.disable=true" ./gradlew --no-daemon runClient`.
+- Run A result: spawn `Time elapsed: 824 ms`; player joined at 19:13:54; no `[LAT][BOP_RETAINALL]` or `[LAT][BOP_FEATURE]` lines in extract; no `Can't keep up` line.
+- Run A probe: `/latdev bopBlockProbe -1452 4651 32 64` returned `targetLoaded=false loadedColumns=405 skippedColumns=3820 bopUnique=0 bopTotal=0`.
+- Run B limited debug command: retainAll log limit 5 plus BOP feature debug radius 256.
+- Run B result: spawn `Time elapsed: 23282 ms`; player joined at 19:15:26; extract has `BOP_RETAINALL=6` and `BOP_FEATURE=24`; no `Can't keep up` line.
+- Run B scheduling still works: `sfIndexExpansion result=expanded_once ... sfTotal=51 sfInIndex=51`, `preservedSeasonalForest=true`, and later `bopConfigured=1169 bopConfiguredInSeasonal=546 placed=10264`.
+- Run B probe: same command returned `targetLoaded=false loadedColumns=0 skippedColumns=4225 bopUnique=0 bopTotal=0`.
+- classification: `BOP_FEATURES_SCHEDULED_DEBUG_LOGGING_TOO_EXPENSIVE`.
+- secondary note: exact `bopBlockProbe` at `-1452,4651` is not a valid decoration proof in these two runs because the target area was not loaded; keep probe improvement separate.
+- next action: disable or sharply narrow `[LAT][BOP_FEATURE]` instrumentation for normal proof runs; keep the successful scheduling patch intact.
+
+## 2026-05-11 (local) BOP feature debug cleanup
+
+- debug overhead confirmed by A/B: debug OFF spawn was 824 ms, limited BOP feature debug spawn was 23282 ms.
+- cleanup performed: `PlacedFeatureBopDebugMixin` now requires `-Dlatitude.debugBopFeatures.expensive=true` before per-feature biome/configured-feature inspection, counters, detail rows, or expensive summaries run.
+- retained behavior: the seasonal_forest two-gate scheduling patch in `ChunkGeneratorGenerateFeaturesBiomeSetMixin` was not changed.
+- default proof behavior: `-Dlatitude.debugBopFeatures=true` without the expensive gate is cheap and can emit at most one disabled-summary line near the configured target.
+- compile result: `./gradlew --no-daemon compileJava` BUILD SUCCESSFUL.
+- debug OFF smoke: runClient reached playable; spawn `Time elapsed: 984 ms`; no `[LAT][BOP_FEATURE]` spam observed.
+- proof-limited smoke: runClient with retainAll debug plus `debugBopFeatures=true` reached playable; spawn `Time elapsed: 649 ms`; retain/index proof still logged `sfTotal=51 sfInIndex=51 preservedSeasonalForest=true`; no `[LAT][BOP_FEATURE]` detail/summary spam observed.
+- evidence extract: `tmp/bop-debug-cleanup-5c8ed3e/extract.txt`.
+- classification: `BOP_SEASONAL_FOREST_DECORATION_PROVEN_DEBUG_CLEANUP_RUNTIME_PROVEN`.
+- savepoint recommendation: yes, after a final status/scope check, because the scheduling fix plus debug cleanup is compile- and runtime-proven.

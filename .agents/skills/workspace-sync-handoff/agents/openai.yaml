@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workspace Sync Handoff"
+  short_description: "Safe Git handoff between Mac and laptop"
+  default_prompt: "Use this skill to safely sync a Git workspace between devices. Detect repo status, branch, HEAD, and ahead/behind state, then guide a safe leave or arrive handoff without force-pushing or hard-resetting."

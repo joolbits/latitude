@@ -41,15 +41,15 @@ Legend: check a box once coverage is verified in a new world.
 | [ ] | minecraft:badlands | band tag: `lat_tropical`, `lat_arid`, `lat_trans_arid_tropics_1` |
 | [ ] | minecraft:wooded_badlands | band tag: `lat_tropical`, `lat_arid`, `lat_trans_arid_tropics_1` |
 | [ ] | minecraft:eroded_badlands | band tag: `lat_arid`, `lat_trans_arid_tropics_1` |
-| [ ] | minecraft:snowy_plains | band tag: `lat_subpolar` |
+| [ ] | minecraft:snowy_plains | band tag: `lat_subpolar`, `lat_polar` (added to `lat_polar_primary` in 1.4.1) |
 | [ ] | minecraft:ice_spikes | band tag: `lat_polar` |
 | [ ] | minecraft:meadow | band tag: `lat_temperate` |
-| [ ] | minecraft:grove | band tag: `lat_temperate`, `lat_subpolar` |
+| [ ] | minecraft:grove | band tag: `lat_temperate`, `lat_subpolar`, `lat_polar` (added to `lat_polar_primary` in 1.4.1) |
 | [ ] | minecraft:snowy_slopes | band tag: `lat_subpolar`, `lat_polar` |
 | [ ] | minecraft:stony_peaks | rare override from meadow/windswept_hills in `LatitudeBiomes` |
 | [ ] | minecraft:jagged_peaks | band tag: `lat_polar` |
 | [ ] | minecraft:frozen_peaks | band tag: `lat_subpolar`, `lat_polar` |
-| [ ] | minecraft:mushroom_fields | special-case deep-ocean override (rare) |
+| [ ] | minecraft:mushroom_fields | special-case override, genuine open ocean only (rare; 1.4.1 gates out inland deep-water) |
 
 ## shores_edges_only
 

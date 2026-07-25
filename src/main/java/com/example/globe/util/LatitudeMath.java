@@ -1,7 +1,7 @@
 package com.example.globe.util;
 
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.world.border.WorldBorder;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.border.WorldBorder;
 
 public final class LatitudeMath {
     private LatitudeMath() {
@@ -33,12 +33,18 @@ public final class LatitudeMath {
     public static final double POLAR_START_FRAC = SUBPOLAR_MAX_FRAC;
     public static final int POLAR_START_DEG = (int) Math.floor(POLAR_START_FRAC * 90.0);
 
-    public static final double POLAR_STAGE_1_PROGRESS = 0.940;
-    public static final double POLAR_STAGE_2_PROGRESS = 0.970;
-    public static final double POLAR_STAGE_3_PROGRESS = 0.990;
-    public static final double POLAR_STAGE_LETHAL_PROGRESS = 0.995;
+    // Polar WARNING-ladder thresholds (progress = |z|/latitudeRadius = deg/90). Re-anchored (B-3-P3)
+    // to the polar-experience milestones so each warning fires at or just before the mechanic it warns
+    // about: snow onset 85, blizzard visuals build from 87, player-affecting hazard onset 87.5 (slowness),
+    // freeze DAMAGE from ~88 intensifying to a lethal pole. The ladder DEGREE constants STAY PUT -- they are
+    // SHARED with the EW storm axis (B-3-P3 KEEP-SHARED coupling), so moving the hazard onset (88.5 -> 87.5
+    // on 2026-07-12, TEST 76) does NOT move them; only the warning COPY was retuned (see GlobeWarningOverlay).
+    public static final double POLAR_STAGE_1_PROGRESS = 0.9444;      // 85.0 deg -- snow onset (ambient window opens)
+    public static final double POLAR_STAGE_2_PROGRESS = 0.9667;      // 87.0 deg -- blizzard worsening; slowness begins just ahead at 87.5
+    public static final double POLAR_STAGE_3_PROGRESS = 0.9889;      // 89.0 deg -- deep hazard (Slowness III + freeze damage building)
+    public static final double POLAR_STAGE_LETHAL_PROGRESS = 0.9967; // 89.7 deg -- near-lethal freeze (death at 90.0)
 
-    /** WorldBorder#getSize() is DIAMETER. Half-size is radius in blocks. */
+    /** WorldBorder#getSize() is DIAMETER. Half-size is radius in blocks. This is the X (border) radius. */
     public static double halfSize(WorldBorder border) {
         if (border == null) return 1.0;
         double size = border.getSize();
@@ -46,11 +52,65 @@ public final class LatitudeMath {
         return size * 0.5;
     }
 
-    /** Returns normalized latitude in [-1..1] from Z using border half-size. */
+    // --- Mercator latitude radius override (Phase 1) ---
+    // In a Mercator world the square WorldBorder is sized to the WIDER (X) axis, so halfSize(border) is the
+    // X radius, NOT the latitude (Z) radius. Latitude/pole math must divide Z by the Z radius. Both server
+    // (GlobeMod.setGlobeBorder) and client (GlobeStatePayload handler) push the Z radius here. 0 = use the
+    // border half-size (Classic: Z radius == border half, so latitudeRadius == halfSize → byte-identical).
+    private static volatile int latitudeZRadiusOverride = 0;
+
+    public static void setLatitudeZRadius(int zRadius) {
+        latitudeZRadiusOverride = Math.max(0, zRadius);
+    }
+
+    public static int getLatitudeZRadiusOverride() {
+        return latitudeZRadiusOverride;
+    }
+
+    // --- Intended X (longitude) radius override (Phase 5 B-5 edge-geometry redesign) ---
+    // The mod's OWN intended E/W radius: zRadius in Classic, zRadius * MERCATOR_ASPECT in Wide/Mercator (the
+    // exact value GlobeMod.setGlobeBorder sizes the square border to). The SERVER sets it in setGlobeBorder;
+    // the CLIENT sets it from the GlobeStatePayload handshake. ALL E/W-edge FEATURE geometry (fog onset,
+    // crossing prompt, arm re-arm, warning banner, EW particles, mirror-teleport arrival) reads THIS instead
+    // of the live border half-size, so a mid-lerp or /worldborder-vandalized border can never slide those
+    // lines (TEST 86 finding). 0 = fall back to the live border half (byte-identical Classic default / before
+    // the handshake arrives). The vanilla border stays the physical wall; only our feature lines move here.
+    private static volatile int intendedXRadiusOverride = 0;
+
+    public static void setIntendedXRadius(int xRadius) {
+        intendedXRadiusOverride = Math.max(0, xRadius);
+    }
+
+    public static int getIntendedXRadiusOverride() {
+        return intendedXRadiusOverride;
+    }
+
+    /** The intended X (longitude) radius: the override if set (server/client synced), else the live border
+     *  half-size. On a stable world these are identical (the border is snapped to the intended size), so this
+     *  only diverges while a stale/vandalized lerp is in flight -- exactly the case it protects against. */
+    public static double intendedXRadius(WorldBorder border) {
+        int o = intendedXRadiusOverride;
+        return o > 0 ? o : halfSize(border);
+    }
+
+    /** Distance (blocks, {@code >= 0}) to the nearest E/W edge, measured against the INTENDED X radius (immune
+     *  to a lerping/vandalized live border). The one quantity every edge feature -- client and server -- reads. */
+    public static double distanceToEwEdgeIntended(WorldBorder border, double x) {
+        double centerX = border != null ? border.getCenterX() : 0.0;
+        return Math.max(0.0, intendedXRadius(border) - Math.abs(x - centerX));
+    }
+
+    /** The latitude (Z) radius: the override if set (Mercator), else the border half-size (Classic). */
+    public static double latitudeRadius(WorldBorder border) {
+        int o = latitudeZRadiusOverride;
+        return o > 0 ? o : halfSize(border);
+    }
+
+    /** Returns normalized latitude in [-1..1] from Z using the latitude (Z) radius. */
     public static double latNormFromZ(WorldBorder border, double z) {
-        double half = halfSize(border);
+        double half = latitudeRadius(border);
         double norm = z / half;
-        return MathHelper.clamp(norm, -1.0, 1.0);
+        return Mth.clamp(norm, -1.0, 1.0);
     }
 
     /** Returns degrees latitude in [-90..90]. */
@@ -70,25 +130,34 @@ public final class LatitudeMath {
         return absLatFraction(border, z) * 90.0;
     }
 
-    /** Returns remaining distance to the N/S border in blocks (>= 0). */
+    /** Returns remaining distance to the N/S pole in blocks (>= 0), measured against the latitude radius. */
     public static double poleRemainingBlocks(WorldBorder border, double z) {
-        double half = halfSize(border);
+        double half = latitudeRadius(border);
         double remaining = half - Math.abs(z);
         return Math.max(0.0, remaining);
     }
 
-    /** Returns remaining distance to the N/S border as a fraction of half-size. */
+    /** Returns remaining distance to the N/S pole as a fraction of the latitude radius. */
     public static double poleRemainingFrac(WorldBorder border, double z) {
-        double half = halfSize(border);
+        double half = latitudeRadius(border);
         if (half <= 0.0) return 0.0;
         return poleRemainingBlocks(border, z) / half;
     }
 
-    /** Returns normalized progress to border in [0..1] for the given coordinate. */
+    /** Returns normalized progress to the X (E-W) border in [0..1]. Use for east-west storm hazards. */
     public static double hazardProgress(WorldBorder border, double coord) {
         double half = halfSize(border);
         if (half <= 0.0) return 1.0;
-        return MathHelper.clamp(Math.abs(coord) / half, 0.0, 1.0);
+        return Mth.clamp(Math.abs(coord) / half, 0.0, 1.0);
+    }
+
+    /** Returns normalized progress to the N/S pole in [0..1], measured against the latitude (Z) radius.
+     *  Use for pole hazards: in Mercator the pole is interior to the (X-sized) border, so this differs
+     *  from {@link #hazardProgress} which would only reach 1.0 at the far X border. */
+    public static double hazardProgressZ(WorldBorder border, double z) {
+        double half = latitudeRadius(border);
+        if (half <= 0.0) return 1.0;
+        return Mth.clamp(Math.abs(z) / half, 0.0, 1.0);
     }
 
     /** Returns hazard stage index (0..4) based on normalized progress. */
@@ -113,16 +182,16 @@ public final class LatitudeMath {
 
     public static int latitudeDegrees(WorldBorder border, double z) {
         int deg = (int) Math.round(Math.abs(degreesFromZ(border, z)));
-        return MathHelper.clamp(deg, 0, 90);
+        return Mth.clamp(deg, 0, 90);
     }
 
     /** Returns |z| in blocks for a target absolute latitude degree [0..90]. */
     public static int zForLatitudeDeg(double deg, int radiusBlocks) {
         if (radiusBlocks <= 0) return 0;
-        double clampedDeg = MathHelper.clamp(Math.abs(deg), 0.0, 90.0);
+        double clampedDeg = Mth.clamp(Math.abs(deg), 0.0, 90.0);
         double t = clampedDeg / 90.0;
         int z = (int) Math.round(t * radiusBlocks);
-        return MathHelper.clamp(z, 0, radiusBlocks);
+        return Mth.clamp(z, 0, radiusBlocks);
     }
 
     public static char hemisphere(WorldBorder border, double z) {
@@ -134,6 +203,31 @@ public final class LatitudeMath {
         int deg = latitudeDegrees(border, z);
         if (deg == 0) return "0\u00b0";
         char hemi = hemisphere(border, z);
+        return deg + "\u00b0" + hemi;
+    }
+
+    // --- Longitude (2.0 "Longitude" release) ---
+    // West = negative X, East = positive X (matches vanilla F3's "Towards negative X (West)" convention and
+    // the existing /latdev tpedge west/east mapping). Measured against halfSize(border) \u2014 the X/border
+    // radius \u2014 which is ALREADY the correct radius on both Classic (== Z radius) and Mercator (== 2x Z
+    // radius) worlds, so this needs no shape branching. 0 at the world's center X, 180 at the E/W border.
+    public static char hemisphereEW(WorldBorder border, double x) {
+        double centerX = border != null ? border.getCenterX() : 0.0;
+        return x < centerX ? 'W' : 'E';
+    }
+
+    public static int longitudeDegrees(WorldBorder border, double x) {
+        double half = halfSize(border);
+        if (half <= 0.0) return 0;
+        double norm = Mth.clamp(Math.abs(x) / half, 0.0, 1.0);
+        int deg = (int) Math.round(norm * 180.0);
+        return Mth.clamp(deg, 0, 180);
+    }
+
+    public static String formatLongitudeDeg(WorldBorder border, double x) {
+        int deg = longitudeDegrees(border, x);
+        if (deg == 0) return "0\u00b0";
+        char hemi = hemisphereEW(border, x);
         return deg + "\u00b0" + hemi;
     }
 
@@ -159,7 +253,7 @@ public final class LatitudeMath {
     public static LatitudeZone zoneForRadius(int radiusBlocks, double z) {
         if (radiusBlocks <= 0) return LatitudeZone.EQUATOR;
         double t = Math.abs(z) / (double) radiusBlocks;
-        t = MathHelper.clamp(t, 0.0, 1.0);
+        t = Mth.clamp(t, 0.0, 1.0);
         if (t < EQUATOR_MAX_FRAC) return LatitudeZone.EQUATOR;
         if (t < TROPICAL_MAX_FRAC) return LatitudeZone.TROPICAL;
         if (t < SUBTROPICAL_MAX_FRAC) return LatitudeZone.SUBTROPICAL;

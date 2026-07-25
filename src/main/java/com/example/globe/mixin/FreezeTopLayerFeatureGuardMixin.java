@@ -3,22 +3,16 @@ package com.example.globe.mixin;
 import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.gen.feature.DefaultFeatureConfig;
-import net.minecraft.world.gen.feature.FreezeTopLayerFeature;
-import net.minecraft.world.gen.feature.util.FeatureContext;
+import net.minecraft.world.level.levelgen.feature.SnowAndFreezeFeature;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Prevents FreezeTopLayerFeature from placing snow layers and ice in warm
  * latitude bands. This feature runs AFTER surface building and carving,
  * which is why earlier guards (ProtoChunk, surface rules) could not catch it.
  */
-@Mixin(FreezeTopLayerFeature.class)
+@Mixin(SnowAndFreezeFeature.class)
 public class FreezeTopLayerFeatureGuardMixin {
 
     @Unique
@@ -38,19 +32,4 @@ public class FreezeTopLayerFeatureGuardMixin {
                 || band == LatitudeBands.Band.TEMPERATE;
     }
 
-    @Inject(method = "generate", at = @At("HEAD"), cancellable = true)
-    private void globe$blockFreezeInWarmBands(FeatureContext<DefaultFeatureConfig> context, CallbackInfoReturnable<Boolean> cir) {
-        BlockPos origin = context.getOrigin();
-        if (globe$isWarmBand(origin.getZ())) {
-            if (GUARD_LOG_COUNT.incrementAndGet() <= 10) {
-                LOGGER.warn("[FREEZE_GUARD] Blocked FreezeTopLayer at chunk origin x={} z={} band={}",
-                        origin.getX(), origin.getZ(),
-                        LatitudeBands.fromAbsoluteLatitudeDeg(
-                                Math.abs((double) origin.getZ()) * 90.0
-                                        / Math.max(1, LatitudeBiomes.getActiveRadiusBlocks() > 0 ? LatitudeBiomes.getActiveRadiusBlocks() : GlobeMod.BORDER_RADIUS)
-                        ).id());
-            }
-            cir.setReturnValue(false);
-        }
-    }
 }

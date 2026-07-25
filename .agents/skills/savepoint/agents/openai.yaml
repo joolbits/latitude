@@ -1,0 +1,4 @@
+interface:
+  display_name: "Savepoint"
+  short_description: "Create Git savepoint commits and tags for quick rollbacks"
+  default_prompt: "Follow savepoint skill to stage intended hunks, commit the completed slice, tag save/<slug>, push commit+tag, and report branch+hash+tag."

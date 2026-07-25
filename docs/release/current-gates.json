@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "updated": "2026-06-21",
+  "releaseReadiness": "partial",
+  "releaseAuthorized": false,
+  "minecraftVersion": "26.1.2",
+  "modVersion": "1.4.1-beta.2+26.1.2",
+  "canonicalRoot": "<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2",
+  "canonicalBranch": "feat/custom-biome-expansion-26.1.2",
+  "candidateSourceCommit": "c9da0f93029f7f16c50a7bc89eb766c576a85b48",
+  "candidateTag": "save/biome-tuning-followup-26.1.2",
+  "candidateJar": "<home>/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2/mods/latitude-1.4.1-beta.2+26.1.2.jar",
+  "candidateSha256": "1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477",
+  "latestLocalBuildJar": "build/libs/latitude-1.4.1-beta.2+26.1.2.jar",
+  "latestLocalBuildSha256": "1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477",
+  "latestLocalBuildStaged": true,
+  "profile": "<home>/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2",
+  "profileJar": "<home>/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2/mods/latitude-1.4.1-beta.2+26.1.2.jar",
+  "profileJarSha256": "1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477",
+  "finalLiveEvidence": "green_live_c9_stony_followup",
+  "activeBlocker": "2026-06-21: c9/profile non-live truth is consistent and the staged profile jar SHA is 1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477. The earlier Modrinth windowless launcher blocker is superseded by a later successful launch. Final live evidence in tmp/closeout-1.4-20260621/final-live-c9-192419 proves exact Java-owned Minecraft window, c9 build line, existing Globe load, isGlobe=true, 20000-block border, command control, desert locate/HUD, short non-teleport soak with zero new warnings, and clean save/quit. The narrow stony follow-up in tmp/closeout-1.4-20260621/stony-followup-c9-195009 resolved the remaining caveat: fresh /locate biome minecraft:stony_peaks returned [1452,170,4201], HUD at that coordinate read minecraft:stony_peaks, and /execute if biome ~ ~ ~ minecraft:stony_peaks run say stony_peaks_here passed. No known live blocker remains. Do not push, publish, upload, clean proof clutter, or port until Maintainer authorizes the release closeout actions.",
+  "publicVersionName": {
+    "status": "manual",
+    "owner": "Maintainer",
+    "value": "undecided",
+    "recommended": "1.4.1+26.1.2 unless Maintainer chooses beta wording"
+  },
+  "gates": [
+    {
+      "id": "source_truth",
+      "status": "green",
+      "evidence": "Branch feat/custom-biome-expansion-26.1.2 at c9da0f93029f7f16c50a7bc89eb766c576a85b48; tag save/biome-tuning-followup-26.1.2; docs/release/checklist.md"
+    },
+    {
+      "id": "savepoint_local",
+      "status": "green_local",
+      "evidence": "Local commit c9da0f93 and tag save/biome-tuning-followup-26.1.2 exist; branch/tag push remains pending the maintainer's release authorization"
+    },
+    {
+      "id": "non_live_build_provenance_profile",
+      "status": "green",
+      "evidence": "tmp/closeout-1.4-20260621/rebuild-c9da0f93-175345; build/libs/latitude-1.4.1-beta.2+26.1.2.jar SHA 1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477; manifest Git-Commit=c9da0f93029f7f16c50a7bc89eb766c576a85b48, Build-Time=2026-06-21T21:53:47Z, Build-Dirty=true; tools/lat-readiness-nonlive-status returns PASS-PARTIAL for c9/profile truth and green live proof"
+    },
+    {
+      "id": "profile_stage_c9_candidate",
+      "status": "green",
+      "evidence": "tmp/closeout-1.4-20260621/profile-stage-c9da0f93-175416/profile-stage.log; active profile jar SHA 1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477; prior af1579b2 jar preserved as latitude-1.4.1-beta.2+26.1.2.jar.pre-c9da0f93-20260621-175417"
+    },
+    {
+      "id": "launcher_startup_current_sha",
+      "status": "superseded_by_successful_launch",
+      "evidence": "tmp/closeout-1.4-20260621/final-live-launch-blocker-181416/summary.md retained as historical evidence; superseded by successful live launch evidence in tmp/closeout-1.4-20260621/final-live-c9-192419"
+    },
+    {
+      "id": "desert_locate",
+      "status": "green",
+      "evidence": "tmp/biome-tuning-20260621/desert-locate-proof-live-start-after-registry-locate-20260621-1658; tmp/biome-tuning-20260621/live-registry-locate-after-stage-20260621-1703/desert-live-proof-summary.md; included in savepoint c9da0f93"
+    },
+    {
+      "id": "stony_peaks_treeline",
+      "status": "green",
+      "evidence": "tmp/biome-tuning-20260621/live-registry-locate-after-stage-20260621-1703/stony-treeline-proof-summary.md; Maintainer accepted stony-peaks visual; treeline constants TREE_LINE_Y=168 and TREE_LINE_FADE_BAND=28 included in savepoint c9da0f93"
+    },
+    {
+      "id": "fresh_existing_load_sanity_current_sha",
+      "status": "green_existing_load_only",
+      "evidence": "tmp/closeout-1.4-20260621/final-live-c9-192419/summary.md; existing New World loaded as Globe with isGlobe=true, radius 10000, border 20000, first safe playable tick, and clean overlay close; fresh new-world creation was not rerun"
+    },
+    {
+      "id": "scenic_palm_decoration_current_sha",
+      "status": "green_with_stony_followup",
+      "evidence": "tmp/closeout-1.4-20260621/final-live-c9-192419/summary.md; tmp/closeout-1.4-20260621/stony-followup-c9-195009/summary.md; desert locate/HUD and tropics/decor visuals are supportive; current-world stony locate/HUD/server predicate are green after follow-up"
+    },
+    {
+      "id": "stony_locate_hud_current_sha",
+      "status": "green",
+      "evidence": "tmp/closeout-1.4-20260621/stony-followup-c9-195009/commands/013-locate-stony-peaks.txt; tmp/closeout-1.4-20260621/stony-followup-c9-195009/commands/014-tp-stony-locate-exact.txt; tmp/closeout-1.4-20260621/stony-followup-c9-195009/screens/014-stony-locate-exact-settled.png; tmp/closeout-1.4-20260621/stony-followup-c9-195009/commands/015-execute-if-biome-stony.txt; locate returned [1452,170,4201], HUD read minecraft:stony_peaks, and server-side biome predicate emitted stony_peaks_here"
+    },
+    {
+      "id": "non_teleport_soak_perf",
+      "status": "green_with_prior_chunkload_warnings",
+      "evidence": "tmp/closeout-1.4-20260621/final-live-c9-192419/logs/026-nonteleport-soak-summary.txt; 20s W-key movement soak produced zero new WARN/ERROR/crash lines; prior locate/teleport chunk-load warnings retained as caveat"
+    },
+    {
+      "id": "savequit_shutdown",
+      "status": "green",
+      "evidence": "tmp/closeout-1.4-20260621/final-live-c9-192419/logs/029-savequit-new-log.txt; server stopped, chunks saved, all dimensions saved; title screenshot in tmp/closeout-1.4-20260621/final-live-c9-192419/screens/029-after-save-and-quit-click.png"
+    },
+    {
+      "id": "public_release_identity",
+      "status": "manual",
+      "owner": "Maintainer",
+      "evidence": "Recommended public identity is 1.4.1+26.1.2 unless Maintainer chooses beta wording"
+    },
+    {
+      "id": "savepoint_tag_push_upload_release",
+      "status": "manual_after_live_green",
+      "owner": "Maintainer"
+    }
+  ],
+  "forbiddenWithoutAuthorization": [
+    "vanilla Minecraft Launcher control",
+    "jar/profile mutation after the c9 stage",
+    "push",
+    "upload",
+    "publication",
+    "porting",
+    "proof-clutter cleanup"
+  ]
+}

@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROFILE="${MC_PROFILE:-"$HOME/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2"}"
+LOG="${MC_LOG:-"$PROFILE/logs/latest.log"}"
+SINCE_LINE=""
+SINCE_FILE=""
+MODE="auto"
+WRITE_BASELINE=""
+PATTERN='\[LAT\]\[BUILD\]|S2C globe state|WorldBorder set|Worldgen path active|The world border|LatitudeWorldLauncher.beginExpedition|\[LAT\]\[LOADUI\]'
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: tools/lat-cruise-gate [options]
+
+Checks only the relevant latest.log slice before allowing a Latitude cruise.
+By default, it scopes to the most recent Latitude world beginExpedition line,
+falling back to the most recent BUILD line when no world-create line exists.
+
+Options:
+  --since-line N       Check log lines after N.
+  --since-file PATH    Read baseline line number from PATH and check after it.
+  --from-last-build    Check from the latest [LAT][BUILD] line.
+  --from-last-begin    Check from the latest LatitudeWorldLauncher.beginExpedition line.
+  --write-baseline P   Write the current latest.log line count to P and exit.
+  --log PATH           Override latest.log path.
+  --profile PATH       Override Modrinth profile path.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --since-line)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      SINCE_LINE="$2"
+      MODE="explicit"
+      shift 2
+      ;;
+    --since-file)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      SINCE_FILE="$2"
+      MODE="explicit"
+      shift 2
+      ;;
+    --from-last-build)
+      MODE="last-build"
+      shift
+      ;;
+    --from-last-begin)
+      MODE="last-begin"
+      shift
+      ;;
+    --write-baseline)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      WRITE_BASELINE="$2"
+      shift 2
+      ;;
+    --log)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      LOG="$2"
+      shift 2
+      ;;
+    --profile)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      PROFILE="$2"
+      LOG="$PROFILE/logs/latest.log"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "lat-cruise-gate: unknown option $1" >&2
+      usage
+      exit 2
+      ;;
+  esac
+done
+
+[[ -f "$LOG" ]] || { echo "lat-cruise-gate: log not found: $LOG" >&2; exit 2; }
+
+line_count="$(wc -l < "$LOG" | tr -d ' ')"
+
+if [[ -n "$WRITE_BASELINE" ]]; then
+  mkdir -p "$(dirname "$WRITE_BASELINE")"
+  printf '%s\n' "$line_count" > "$WRITE_BASELINE"
+  printf 'baseline=%s line=%s\n' "$WRITE_BASELINE" "$line_count"
+  exit 0
+fi
+
+last_line_for() {
+  local regex="$1"
+  rg -n "$regex" "$LOG" | tail -1 | cut -d: -f1 || true
+}
+
+if [[ -n "$SINCE_FILE" ]]; then
+  [[ -f "$SINCE_FILE" ]] || { echo "lat-cruise-gate: since file not found: $SINCE_FILE" >&2; exit 2; }
+  SINCE_LINE="$(head -1 "$SINCE_FILE" | tr -dc '0-9')"
+fi
+
+scope_reason=""
+start_line=0
+case "$MODE" in
+  explicit)
+    [[ "$SINCE_LINE" =~ ^[0-9]+$ ]] || { echo "lat-cruise-gate: invalid --since-line: $SINCE_LINE" >&2; exit 2; }
+    start_line="$SINCE_LINE"
+    scope_reason="explicit baseline"
+    ;;
+  last-build)
+    last="$(last_line_for '\[LAT\]\[BUILD\]')"
+    [[ -n "$last" ]] || { echo "PENDING: no Latitude build line yet." >&2; exit 5; }
+    start_line=$((last - 1))
+    scope_reason="latest build"
+    ;;
+  last-begin)
+    last="$(last_line_for 'LatitudeWorldLauncher.beginExpedition')"
+    [[ -n "$last" ]] || { echo "PENDING: no Latitude beginExpedition line yet." >&2; exit 6; }
+    start_line=$((last - 1))
+    scope_reason="latest beginExpedition"
+    ;;
+  auto)
+    last="$(last_line_for 'LatitudeWorldLauncher.beginExpedition')"
+    if [[ -n "$last" ]]; then
+      start_line=$((last - 1))
+      scope_reason="auto latest beginExpedition"
+    else
+      last="$(last_line_for '\[LAT\]\[BUILD\]')"
+      if [[ -n "$last" ]]; then
+        start_line=$((last - 1))
+        scope_reason="auto latest build"
+      else
+        start_line=0
+        scope_reason="whole log; no build/begin marker yet"
+      fi
+    fi
+    ;;
+esac
+
+if (( start_line < 0 )); then
+  start_line=0
+fi
+
+slice() {
+  awk -v start="$start_line" 'NR > start { print }' "$LOG"
+}
+
+slice_numbered() {
+  awk -v start="$start_line" 'NR > start { print NR ":" $0 }' "$LOG"
+}
+
+echo "== Latitude cruise hard gate =="
+echo "log: $LOG"
+echo "scope: after line $start_line ($scope_reason)"
+echo
+echo "-- latest build --"
+rg -n '\[LAT\]\[BUILD\]' "$LOG" | tail -1 || true
+echo
+echo "-- scoped evidence --"
+slice_numbered | rg "$PATTERN" || true
+echo
+
+if slice | rg -q 'S2C globe state: isGlobe=false'; then
+  echo "FAIL: scoped runtime reported isGlobe=false. Do not cruise this world." >&2
+  exit 3
+fi
+
+if slice | rg -q 'The world border is currently 59999968 block\(s\) wide'; then
+  echo "FAIL: scoped vanilla/default world border observed. Do not use this as Latitude border proof." >&2
+  exit 4
+fi
+
+if ! rg -q '\[LAT\]\[BUILD\]' "$LOG"; then
+  echo "PENDING: no Latitude build line yet." >&2
+  exit 5
+fi
+
+if ! slice | rg -q 'S2C globe state: isGlobe=true'; then
+  echo "PENDING: scoped log has no isGlobe=true line yet." >&2
+  exit 6
+fi
+
+if ! slice | rg -q 'WorldBorder set'; then
+  echo "PENDING: scoped log has no WorldBorder set line yet." >&2
+  exit 7
+fi
+
+if ! slice | rg -q 'Worldgen path active'; then
+  echo "PENDING: scoped log has no worldgen path active line yet." >&2
+  exit 8
+fi
+
+echo "PASS: latest build exists, and scoped log has isGlobe=true, border setup, and worldgen path."

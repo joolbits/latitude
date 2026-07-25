@@ -1,12 +1,12 @@
 package com.example.globe.client;
 
 import com.example.globe.GlobeMod;
-import net.minecraft.world.border.WorldBorder;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.border.WorldBorder;
 
 public final class GlobeClientState {
     public static boolean DEBUG_EW_WALL = true;
@@ -63,13 +63,13 @@ public final class GlobeClientState {
         public static final WarningState NONE = new WarningState(WarningType.NONE, PolarStage.NONE, 0);
     }
 
-    private static double axisDistanceInsideBorder(net.minecraft.world.border.WorldBorder border, double coord, boolean isX) {
+    private static double axisDistanceInsideBorder(net.minecraft.world.level.border.WorldBorder border, double coord, boolean isX) {
         double center = isX ? border.getCenterX() : border.getCenterZ();
         double radius = com.example.globe.util.LatitudeMath.halfSize(border);
         return radius - Math.abs(coord - center);
     }
 
-    private static int borderRadiusBlocks(ClientWorld world) {
+    private static int borderRadiusBlocks(ClientLevel world) {
         return (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(world.getWorldBorder()));
     }
 
@@ -96,18 +96,18 @@ public final class GlobeClientState {
             return;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.level == null) {
             return;
         }
 
-        long time = client.world.getTime();
+        long time = client.level.getGameTime();
         if (time - lastEwFogLogTick < 20L) {
             return;
         }
 
         lastEwFogLogTick = time;
-        var border = client.world.getWorldBorder();
+        var border = client.level.getWorldBorder();
         double progress = com.example.globe.util.LatitudeMath.hazardProgress(border, camX);
         EwStormStage stage = ewStageForProgress(progress);
         GlobeMod.LOGGER.info("[LAT_EW_FOG] hook={} camX={} stage={} progress={} ewEnd={}",
@@ -119,22 +119,22 @@ public final class GlobeClientState {
             return;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.level == null) {
             return;
         }
 
-        if (!client.world.getRegistryKey().getValue().equals(World.OVERWORLD.getValue())) {
+        if (!client.level.dimension().identifier().equals(Level.OVERWORLD.identifier())) {
             return;
         }
 
-        long time = client.world.getTime();
+        long time = client.level.getGameTime();
         if (time - lastEwStateLogTick < 20L) {
             return;
         }
         lastEwStateLogTick = time;
 
-        var border = client.world.getWorldBorder();
+        var border = client.level.getWorldBorder();
         double half = com.example.globe.util.LatitudeMath.halfSize(border);
         double dist = half - Math.abs(camX);
         double progress = com.example.globe.util.LatitudeMath.hazardProgress(border, camX);
@@ -147,7 +147,7 @@ public final class GlobeClientState {
     /**
      * Clamp client-side view distance during EW storms (Sodium-proof). Only tightens; restores when inactive.
      */
-    public static void clampEwViewDistance(MinecraftClient client) {
+    public static void clampEwViewDistance(Minecraft client) {
         // Tripwire: no view-distance mutations allowed. Enable with -Dlatitude.debugEwClampTripwire=true if needed.
         if (Boolean.getBoolean("latitude.debugEwClampTripwire")) {
             GlobeMod.LOGGER.error("EW DISTANCE MUTATION PATH HIT");
@@ -164,103 +164,34 @@ public final class GlobeClientState {
         };
     }
 
-    private static int ewRank(EwStormStage stage) {
-        return switch (stage) {
-            case NONE -> 0;
-            case LEVEL_1 -> 1;
-            case LEVEL_2 -> 2;
-        };
-    }
-
-    public static WarningState computeWarningState(ClientWorld world, PlayerEntity player) {
-        if (DEBUG_DISABLE_WARNINGS) {
-            return WarningState.NONE;
-        }
-
-        var border = world.getWorldBorder();
-
-        double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
-        PolarStage polar = polarStageForProgress(border, player.getZ(), progressZ);
-
-        double distToBorder = Math.min(Math.abs(player.getX() - border.getBoundWest()), Math.abs(border.getBoundEast() - player.getX()));
-
-        // Debug print every 10s to verify thresholds (opt-in)
-        if (Boolean.getBoolean("latitude.debugEwWarn")) {
-            long now = System.currentTimeMillis();
-            if (now - globe$ewLastLogMs >= 10_000L) {
-                globe$ewLastLogMs = now;
-                GlobeMod.LOGGER.info("[Latitude EW] distToBorder={} x={} west={} east={} L1=500 L2=100",
-                        distToBorder, player.getX(), border.getBoundWest(), border.getBoundEast());
-            }
-        }
-
-        boolean ewTextWarn = distToBorder <= 500.0;
-        boolean ewTextDanger = distToBorder <= 100.0;
-        EwStormStage ewTextStage = ewTextDanger ? EwStormStage.LEVEL_2 : (ewTextWarn ? EwStormStage.LEVEL_1 : EwStormStage.NONE);
-
-        // Visual stage (fog/particles) mirrors text stage for now
-        EwStormStage ewVisual = ewTextStage;
-
-        int pr = polarRank(polar);
-        int er = ewRank(ewTextStage);
-
-        if (pr <= 0 && er <= 0) {
-            return WarningState.NONE;
-        }
-
-        // Corner precedence (stable):
-        // 1) polar lethal
-        // 2) ew level 2
-        // 3) polar warn/danger
-        // 4) ew level 1
-        if (polar == PolarStage.LETHAL) {
-            return new WarningState(WarningType.POLAR, polar, pr);
-        }
-        if (ewTextDanger) {
-            return new WarningState(WarningType.STORM, ewTextStage, er);
-        }
-        if (polar != PolarStage.NONE) {
-            return new WarningState(WarningType.POLAR, polar, pr);
-        }
-
-        if (ewTextWarn) {
-            return new WarningState(WarningType.STORM, ewTextStage, er);
-        }
-
-        return new WarningState(WarningType.STORM, ewTextStage, er);
-    }
-
-    public static PolarStage computePolarStage(ClientWorld world, PlayerEntity player) {
-        var border = world.getWorldBorder();
-        double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
-        return polarStageForProgress(border, player.getZ(), progressZ);
-    }
-
-    public static EwStormStage computeEwStormStage(ClientWorld world, PlayerEntity player) {
-        var border = world.getWorldBorder();
-        double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getX());
-        return ewStageForProgress(progressX);
-    }
-
     private static double distanceToEwBorderBlocks(WorldBorder border, double camX) {
-        double center = border.getCenterX();
-        double radius = border.getSize() * 0.5;
-        return Math.max(0.0, radius - Math.abs(camX - center));
+        // Anchored to the mod's INTENDED X radius (synced from the server), NOT the live border half -- so a
+        // lerping / vandalized border can never slide the fog/prompt/re-arm/banner lines that read this (TEST
+        // 86 finding). Falls back to the live half only before the handshake arrives (byte-identical Classic).
+        return com.example.globe.util.LatitudeMath.distanceToEwEdgeIntended(border, camX);
+    }
+
+    /** The resolved per-world E/W-edge block geometry for the CURRENT client world (fog onset, prompt, re-arm,
+     *  the advisory banner) -- all degree-anchored to the intended X radius. The one place the client
+     *  turns "which world am I in" into the block distances every edge feature reads. */
+    public static com.example.globe.core.EdgeGeometry.Resolved edgeGeometry(WorldBorder border) {
+        return com.example.globe.core.EdgeGeometry.resolve(
+                com.example.globe.util.LatitudeMath.intendedXRadius(border));
     }
 
     public static double ewWestX() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.world == null) return Double.POSITIVE_INFINITY;
-        var border = mc.world.getWorldBorder();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.level == null) return Double.POSITIVE_INFINITY;
+        var border = mc.level.getWorldBorder();
         double center = border.getCenterX();
         double radius = com.example.globe.util.LatitudeMath.halfSize(border);
         return center - radius;
     }
 
     public static double ewEastX() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.world == null) return Double.POSITIVE_INFINITY;
-        var border = mc.world.getWorldBorder();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.level == null) return Double.POSITIVE_INFINITY;
+        var border = mc.level.getWorldBorder();
         double center = border.getCenterX();
         double radius = com.example.globe.util.LatitudeMath.halfSize(border);
         return center + radius;
@@ -276,9 +207,69 @@ public final class GlobeClientState {
     }
 
     public static double distanceToEwBorderBlocks(double x) {
-        var client = MinecraftClient.getInstance();
-        if (client == null || client.world == null) return Double.POSITIVE_INFINITY;
-        return distanceToEwBorderBlocks(client.world.getWorldBorder(), x);
+        var client = Minecraft.getInstance();
+        if (client == null || client.level == null) return Double.POSITIVE_INFINITY;
+        return distanceToEwBorderBlocks(client.level.getWorldBorder(), x);
+    }
+
+    /** B-7: blocks from the player to the nearest N/S pole, the Z sibling of {@link #distanceToEwBorderBlocks}.
+     *  Anchored to the mod's synced latitude (Z) radius ({@code LatitudeMath.latitudeRadius}, never the
+     *  X-sized live border half), so it is lerp-immune for free (the pole line inherits the TEST-86 protection
+     *  with no new handshake field). Shrinks to 0 AT the pole and clamps to 0 beyond it (Wide worlds), so a
+     *  beyond-the-line survivor at the hard-stop clamp is still eligible for the prompt. */
+    public static double distanceToPoleBlocks(double z) {
+        var client = Minecraft.getInstance();
+        if (client == null || client.level == null) return Double.POSITIVE_INFINITY;
+        var border = client.level.getWorldBorder();
+        double zRadius = com.example.globe.util.LatitudeMath.latitudeRadius(border);
+        return com.example.globe.core.PoleGeometry.distanceToPole(zRadius, border.getCenterZ(), z);
+    }
+
+    /**
+     * S14(c) — the single client-side applicator of the night/dusk atmosphere tint
+     * ({@link com.example.globe.core.SolarSkyMood#atmosphereTint}). Resolves the solar context from the level +
+     * player Z — the (effective) solar elevation (the tilt's (φ,δ) when {@code SOLAR_TILT_V2_ENABLED}, else the
+     * plain vanilla clock arc so ordinary night still darkens), the midnight-sun band, the storm damp and the
+     * global time-of-day — and pulls {@code baseRgb} toward the SAME night/dusk sky the sky-dome mood paints.
+     * Used by BOTH polar renderers (the depth fog {@code FogRendererPolarSetupMixin} and the whiteout top-coat
+     * {@code PolarWhiteoutOverlayHud}) so distant terrain and the engulfment veil dissolve into the sky's own
+     * colour at every hour — no white wall on a dark night. {@code baseRgb} is a packed {@code 0xRRGGBB}; the
+     * returned int is the tinted {@code 0xRRGGBB} (day / sun-up ⇒ unchanged).
+     */
+    public static int polarSkyTint(int baseRgb, Level level, double playerZ) {
+        long clock = level.getOverworldClockTime();
+        double frac = com.example.globe.core.SolarTilt.timeOfDayFrac(clock);
+        double hourAngle = com.example.globe.core.SolarTilt.hourAngleRadians(frac);
+        double elevation;
+        boolean midnightSun;
+        float storm;
+        if (com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_V2_ENABLED) {
+            double phi = -com.example.globe.util.LatitudeMath.degreesFromZ(level.getWorldBorder(), playerZ);
+            double delta = com.example.globe.core.SolarTilt.deltaDeg(
+                    com.example.globe.core.SolarTilt.dayCount(clock),
+                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_DELTA_MAX_DEG,
+                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_YEAR_LENGTH_DAYS,
+                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_FROZEN_PHASE_DEG);
+            elevation = com.example.globe.core.SolarTilt.solarElevationDeg(phi, delta, hourAngle);
+            midnightSun = com.example.globe.core.SolarTilt.isMidnightSun(phi, delta);
+            storm = com.example.globe.core.PolarHazardWindow.stormLevel(Math.abs(phi));
+        } else {
+            // Solar tilt OFF: the plain vanilla clock arc (φ=0, δ=0) — an ordinary night still darkens the polar
+            // whiteout; no bands exist, so no dusk hold. Elevation is even in H, so H's sign convention is moot.
+            elevation = com.example.globe.core.SolarTilt.solarElevationDeg(0.0, 0.0, hourAngle);
+            midnightSun = false;
+            double absLat = com.example.globe.util.LatitudeMath.absLatDegExact(level.getWorldBorder(), playerZ);
+            storm = com.example.globe.core.PolarHazardWindow.stormLevel(absLat);
+        }
+        return com.example.globe.core.SolarSkyMood.atmosphereTint(baseRgb, midnightSun, elevation, frac, storm);
+    }
+
+    /** B-7: the resolved per-world POLE block geometry (prompt / re-arm / arrival / edge-re-prompt distances),
+     *  degree-anchored to the synced latitude (Z) radius -- the pole sibling of {@link #edgeGeometry}. The SAME
+     *  {@code resolve()} the server uses to re-validate a pole cross, so client and server can never disagree. */
+    public static com.example.globe.core.PoleGeometry.Resolved poleGeometry(WorldBorder border) {
+        return com.example.globe.core.PoleGeometry.resolve(
+                com.example.globe.util.LatitudeMath.latitudeRadius(border));
     }
 
     public static int ewWarningStage(double x) {
@@ -299,14 +290,22 @@ public final class GlobeClientState {
     }
 
     public static float ewIntensity01(double x) {
-        double d = distanceToEwBorderBlocks(x);
-        if (d > 500.0) return 0.0f;
+        var client = Minecraft.getInstance();
+        if (client == null || client.level == null) return 0.0f;
+        var border = client.level.getWorldBorder();
+        // Redesign 2026-07-12: the EW haze intensity (drives the render-distance reduction near the edge) now
+        // ramps over the degree-anchored fog band -- onset at rampStartDist (~177.5 deg), full at the prompt
+        // line -- instead of the old fixed 500->100 blocks. One geometry for fog, the advisory banner and this.
+        com.example.globe.core.EdgeGeometry.Resolved g = edgeGeometry(border);
+        double d = distanceToEwBorderBlocks(border, x);
+        double span = g.rampStartDist() - g.fogClimaxDist();
+        if (!(span > 0.0) || d > g.rampStartDist()) return 0.0f;
 
-        float t = (float) ((500.0 - d) / 500.0); // 0..1
+        float t = (float) ((g.rampStartDist() - d) / span); // 0..1
         if (t < 0f) t = 0f;
         if (t > 1f) t = 1f;
 
-        // steeper right after level-1 threshold
+        // steeper right after the onset
         return (float) Math.pow(t, 0.55);
     }
 
@@ -319,22 +318,7 @@ public final class GlobeClientState {
         return Math.max(minChunks, Math.min(originalChunks, target));
     }
 
-    public static double getDistanceToNearestEWBorder() {
-        var mc = net.minecraft.client.MinecraftClient.getInstance();
-        if (mc == null || mc.gameRenderer == null) return Double.NaN;
-
-        var cam = mc.gameRenderer.getCamera();
-        if (cam == null) return Double.NaN;
-
-        double x = cam.getCameraPos().x;
-
-        double eastX = 3750.0;
-        double westX = -3750.0;
-
-        return Math.min(Math.abs(eastX - x), Math.abs(x - westX));
-    }
-
-    public static float computeEwFogEnd(double camX) {
+        public static float computeEwFogEnd(double camX) {
         if (DEBUG_DISABLE_WARNINGS) {
             return -1.0f;
         }
@@ -346,24 +330,15 @@ public final class GlobeClientState {
         return endFar + (endNear - endFar) * a;
     }
 
-    private static float polarWhiteoutIntensity(ClientWorld world, PlayerEntity player) {
+    private static float polarWhiteoutIntensity(ClientLevel world, Player player) {
+        // B-3b: fog/whiteout intensity ramps CONTINUOUSLY over the ambient window -- the same progress the
+        // ambient snow budget uses. S10b (TEST 99) NOTE: BOTH remaining consumers are now legacy --
+        // PolarWhiteoutOverlayHud repointed to core.PolarFogLaw (the unified fog law v2) and
+        // computePoleFogEnd was already UNCONSUMED -- so this chain is kept only until a hygiene pass
+        // retires it (PolarHazardWindow is shared with the server crew's in-flight round; not touched now).
         var border = world.getWorldBorder();
-        double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
-        PolarStage stage = polarStageForProgress(border, player.getZ(), progressZ);
-
-        if (stage == PolarStage.NONE) {
-            return 0.0f;
-        }
-        if (stage == PolarStage.WARN_1) {
-            return 0.2f;
-        }
-        if (stage == PolarStage.WARN_2) {
-            return 0.5f;
-        }
-        if (stage == PolarStage.DANGER) {
-            return 1.0f;
-        }
-        return 1.0f;
+        double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, player.getZ());
+        return com.example.globe.core.PolarHazardWindow.fogIntensity(absLatDeg);
     }
 
     private GlobeClientState() {
@@ -384,33 +359,52 @@ public final class GlobeClientState {
     public record Eval(boolean active, boolean surfaceOk, int absX, int absZ,
                       float polarFogSeverity, float polarWhiteoutSeverity,
                       float stormFogSeverity, float stormSevereSeverity, float stormOpaqueSeverity,
-                      boolean poleCritical, boolean stormCritical) {
-        public static final Eval INACTIVE = new Eval(false, false, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false);
+                      boolean poleCritical, boolean stormCritical, float exposure01) {
+        public static final Eval INACTIVE = new Eval(false, false, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false, 0.0f);
     }
 
-    public static Eval evaluate(MinecraftClient client) {
-        if (client.player == null || client.world == null) {
+    // --- TEST 78: continuous enclosure estimate (exposure01) cache ---
+    // exposure01 replaces the binary surfaceOk bit for PRESENTATION systems (wind muffle, whiteout alpha,
+    // ambient particle budget). canSeeSky is a cheap heightmap lookup, but 13 of them every tick is wasteful,
+    // so this recomputes only when the player's block position changes OR every EXPOSURE_RECOMPUTE_TICKS ticks.
+    private static long cachedExposureTick = Long.MIN_VALUE;
+    private static long cachedExposurePos = Long.MIN_VALUE;
+    private static float cachedExposure01;
+    private static final int EXPOSURE_RECOMPUTE_TICKS = 5;
+    // 13 sky samples around the player's head: the center column + a ring at radius 3 (8 points) + the 4
+    // cardinals at radius 5. Under a small overhead (Peetsa's flat lintel) the center is blocked but the ring
+    // sees sky -> exposure ~0.9; in a sealed room all 13 are blocked -> 0; at a doorway some see sky -> partial.
+    private static final int[][] EXPOSURE_OFFSETS = {
+        {0, 0},
+        {3, 0}, {-3, 0}, {0, 3}, {0, -3},
+        {3, 3}, {3, -3}, {-3, 3}, {-3, -3},
+        {5, 0}, {-5, 0}, {0, 5}, {0, -5}
+    };
+
+    public static Eval evaluate(Minecraft client) {
+        if (client.player == null || client.level == null) {
             cachedEvalWorldTime = Long.MIN_VALUE;
             cachedEval = null;
             return Eval.INACTIVE;
         }
 
-        long worldTime = client.world.getTime();
+        long worldTime = client.level.getGameTime();
         if (cachedEval != null && cachedEvalWorldTime == worldTime) {
             return cachedEval;
         }
 
         cachedEvalWorldTime = worldTime;
 
-        BlockPos pos = client.player.getBlockPos();
+        BlockPos pos = client.player.blockPosition();
         int absX = (int) Math.floor(Math.abs(client.player.getX()));
         int absZ = (int) Math.floor(Math.abs(client.player.getZ()));
 
         boolean surfaceOk = isSurfaceOk(client, pos);
+        float exposure01 = computeExposure01(client, pos);
 
         boolean active = globeWorld;
         if (!active) {
-            double half = com.example.globe.util.LatitudeMath.halfSize(client.world.getWorldBorder());
+            double half = com.example.globe.util.LatitudeMath.halfSize(client.level.getWorldBorder());
             active = Math.abs(half - 3750.0) < 1.0
                     || Math.abs(half - 5000.0) < 1.0
                     || Math.abs(half - 7500.0) < 1.0
@@ -420,16 +414,16 @@ public final class GlobeClientState {
         }
 
         // If server says it's a globe world, trust it explicitly and ignore client-side registry key quirks.
-        if (!globeWorld && !client.world.getRegistryKey().getValue().equals(World.OVERWORLD.getValue())) {
+        if (!globeWorld && !client.level.dimension().identifier().equals(Level.OVERWORLD.identifier())) {
             active = false;
         }
 
         if (!active) {
-            cachedEval = new Eval(false, surfaceOk, absX, absZ, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false);
+            cachedEval = new Eval(false, surfaceOk, absX, absZ, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false, exposure01);
             return cachedEval;
         }
 
-        var world = client.world;
+        var world = client.level;
         var player = client.player;
         if (world == null || player == null) {
             return Eval.INACTIVE;
@@ -441,7 +435,7 @@ public final class GlobeClientState {
         double z = player.getZ();
 
         double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, x);
-        double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, z);
+        double progressZ = com.example.globe.util.LatitudeMath.hazardProgressZ(border, z);
 
         PolarStage polarStage = polarStageForProgress(border, z, progressZ);
         EwStormStage stormStage = ewStageForProgress(progressX);
@@ -453,7 +447,7 @@ public final class GlobeClientState {
         boolean stormCritical = com.example.globe.util.LatitudeMath.hazardStageIndexEW(progressX) >= 4;
 
         if (DEBUG_DISABLE_WARNINGS) {
-            cachedEval = new Eval(true, surfaceOk, absX, absZ, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false);
+            cachedEval = new Eval(true, surfaceOk, absX, absZ, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false, exposure01);
             return cachedEval;
         }
 
@@ -464,12 +458,34 @@ public final class GlobeClientState {
         float stormSevere = stormSeverity;
         float stormOpaque = stormSeverity;
 
-        cachedEval = new Eval(true, surfaceOk, absX, absZ, polarFog, polarWhiteout, stormFog, stormSevere, stormOpaque, poleCritical, stormCritical);
+        cachedEval = new Eval(true, surfaceOk, absX, absZ, polarFog, polarWhiteout, stormFog, stormSevere, stormOpaque, poleCritical, stormCritical, exposure01);
         return cachedEval;
     }
 
-    private static boolean isSurfaceOk(MinecraftClient client, BlockPos pos) {
-        var world = client.world;
+    /**
+     * B-5 item 2 (surface-only passage) + item 3 (no storm banners in a cave): is the player GENUINELY
+     * underground -- below the surface layer AND with no sky overhead? Reuses the EXACT two ingredients the
+     * enclosure sampler already keys on: {@link com.example.globe.core.PolarExposure#isBelowSurface} (the same
+     * {@code seaLevel - 2} depth cut {@code sampleExposure01}/{@code isSurfaceOk} use) AND a sky check
+     * ({@code canSeeSky(pos.above())}, the sampler's center sample). AND-ed so open low-lying terrain a couple
+     * blocks under sea level (a shore, a shallow dip) is NOT mistaken for a cave -- only a genuinely roofed,
+     * below-surface column counts. Under a tree/arch at the edge the player is at the surface (Y not below
+     * sea-2) so this is false -- still the full experience, exactly as Peetsa asked.
+     */
+    public static boolean isDeepUnderground(Minecraft client) {
+        if (client == null || client.player == null || client.level == null) {
+            return false;
+        }
+        var world = client.level;
+        BlockPos pos = client.player.blockPosition();
+        if (!com.example.globe.core.PolarExposure.isBelowSurface(pos.getY(), world.getSeaLevel())) {
+            return false;
+        }
+        return !world.canSeeSky(pos.above());
+    }
+
+    private static boolean isSurfaceOk(Minecraft client, BlockPos pos) {
+        var world = client.level;
         if (world == null) {
             return false;
         }
@@ -481,19 +497,67 @@ public final class GlobeClientState {
 
         // Reliable surface check: must be exposed to the sky.
         // Using sky visibility avoids false-negatives from nearby blocks and is stable across time-of-day.
-        return world.isSkyVisible(pos.up());
+        return world.canSeeSky(pos.above());
+    }
+
+    /**
+     * TEST 78: graded enclosure estimate in {@code [0,1]} for the PRESENTATION systems (wind muffle, whiteout
+     * alpha, ambient particle budget) -- NOT the server hazard mechanics, which are untouched. Replaces the
+     * binary {@code surfaceOk} single-column check so Peetsa's open freestanding arch (a flat lintel over open
+     * terrain) reads as ~outdoors instead of fully "inside". Cached: recomputed only when the player's block
+     * position changes or every {@link #EXPOSURE_RECOMPUTE_TICKS} ticks (13 cheap heightmap lookups, but not
+     * every frame).
+     */
+    private static float computeExposure01(Minecraft client, BlockPos pos) {
+        var world = client.level;
+        if (world == null) {
+            return 0.0f;
+        }
+        long now = world.getGameTime();
+        long packed = pos.asLong();
+        if (cachedExposureTick != Long.MIN_VALUE
+                && packed == cachedExposurePos
+                && (now - cachedExposureTick) < EXPOSURE_RECOMPUTE_TICKS) {
+            return cachedExposure01;
+        }
+        cachedExposureTick = now;
+        cachedExposurePos = packed;
+        cachedExposure01 = sampleExposure01(client, pos);
+        return cachedExposure01;
+    }
+
+    private static float sampleExposure01(Minecraft client, BlockPos pos) {
+        var world = client.level;
+        if (world == null) {
+            return 0.0f;
+        }
+        // Deep underground: no surface storm presentation (mirrors isSurfaceOk's sea-level guard). All samples
+        // would fail anyway, but this short-circuits the 13 lookups and keeps a lit near-surface cave shaft
+        // from leaking a partial exposure.
+        int sea = world.getSeaLevel();
+        if (pos.getY() < sea - 2) {
+            return 0.0f;
+        }
+        BlockPos head = pos.above();
+        int seen = 0;
+        for (int[] o : EXPOSURE_OFFSETS) {
+            if (world.canSeeSky(head.offset(o[0], 0, o[1]))) {
+                seen++;
+            }
+        }
+        return com.example.globe.core.PolarExposure.fraction(seen, EXPOSURE_OFFSETS.length);
     }
 
     public static float computePoleFogEnd(double z) {
         if (DEBUG_DISABLE_WARNINGS) {
             return -1.0f;
         }
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.level == null) {
             return -1.0f;
         }
 
-        float intensity = polarWhiteoutIntensity(client.world, client.player);
+        float intensity = polarWhiteoutIntensity(client.level, client.player);
         intensity = Math.max(0.0f, Math.min(1.0f, intensity));
         if (intensity <= 0.001f) {
             return -1.0f;
@@ -510,12 +574,12 @@ public final class GlobeClientState {
         if (DEBUG_DISABLE_WARNINGS) {
             return -1.0f;
         }
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.level == null) {
             return -1.0f;
         }
 
-        var border = client.world.getWorldBorder();
+        var border = client.level.getWorldBorder();
         double radius = com.example.globe.util.LatitudeMath.halfSize(border);
         double warnStart = Math.min(1500.0, Math.max(300.0, radius / 8.0));
 
@@ -541,12 +605,12 @@ public final class GlobeClientState {
         if (DEBUG_DISABLE_WARNINGS) {
             return 0.0f;
         }
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.level == null) {
             return 0.0f;
         }
 
-        float intensity = polarWhiteoutIntensity(client.world, client.player);
+        float intensity = polarWhiteoutIntensity(client.level, client.player);
         intensity = Math.max(0.0f, Math.min(1.0f, intensity));
         if (intensity <= 0.001f) {
             return 0.0f;

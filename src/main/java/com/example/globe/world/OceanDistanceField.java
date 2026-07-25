@@ -2,10 +2,9 @@ package com.example.globe.world;
 
 import it.unimi.dsi.fastutil.longs.Long2BooleanOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
-import net.minecraft.world.biome.source.util.MultiNoiseUtil;
-
 import java.util.ArrayDeque;
 import java.util.Queue;
+import net.minecraft.world.level.biome.Climate;
 
 /**
  * Coarse, deterministic ocean-distance approximation.
@@ -32,7 +31,7 @@ public final class OceanDistanceField {
         oceanFlagCache.defaultReturnValue(false);
     }
 
-    public int oceanDistanceBlocks(int blockX, int blockZ, MultiNoiseUtil.MultiNoiseSampler sampler) {
+    public int oceanDistanceBlocks(int blockX, int blockZ, Climate.Sampler sampler) {
         if (sampler == null) {
             return Integer.MAX_VALUE;
         }
@@ -55,7 +54,7 @@ public final class OceanDistanceField {
         return (int) Math.round(interp * CELL_SIZE);
     }
 
-    private synchronized int cellDistance(int cx, int cz, MultiNoiseUtil.MultiNoiseSampler sampler) {
+    private synchronized int cellDistance(int cx, int cz, Climate.Sampler sampler) {
         long key = cellKey(cx, cz);
         int cached = distanceCache.get(key);
         if (cached != Integer.MIN_VALUE) {
@@ -95,7 +94,7 @@ public final class OceanDistanceField {
         return best;
     }
 
-    private boolean isOceanCell(int cx, int cz, MultiNoiseUtil.MultiNoiseSampler sampler) {
+    private boolean isOceanCell(int cx, int cz, Climate.Sampler sampler) {
         long key = cellKey(cx, cz);
         if (oceanFlagCache.containsKey(key)) {
             return oceanFlagCache.get(key);
@@ -104,8 +103,8 @@ public final class OceanDistanceField {
         int sampleZ = cz * CELL_SIZE + CELL_SIZE / 2;
         int nx = sampleX >> 2;
         int nz = sampleZ >> 2;
-        MultiNoiseUtil.NoiseValuePoint p = sampler.sample(nx, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, nz);
-        double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
+        Climate.TargetPoint p = sampler.sample(nx, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, nz);
+        double cont = Climate.unquantizeCoord(p.continentalness());
         boolean ocean = cont < OCEAN_LIKE_THRESHOLD;
         oceanFlagCache.put(key, ocean);
         return ocean;

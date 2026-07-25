@@ -1,0 +1,29 @@
+26.1 release provenance audit
+Date: 2026-05-03
+
+Repo state
+- Root: <home>/CascadeProjects/Latitude (Globe)
+- Branch: port/26.1-latitudebiomes-final
+- HEAD: 1b2c1c77f87e056155eb09f5fe288a6b4ec07042
+- Tags at HEAD: save/26-1-latitudebiomes-final
+- Tree: dirty with existing compile-drift edits, BYG-only pilot tags, docs/research/, docs/porting/, and tmp/
+
+Likely released 26.1 artifact source
+- Strongest candidate: 36abd39ed0c9061fcdb898450a91063f2be1298c
+- Tag: release/1.3.0+26.1-r2
+- Source branch at that commit: port/26.1-fog-mixin-bucket
+- Evidence: commit message says "fix(release): exclude dev tooling from public jar"; MEMORY.md records this as the successful 26.1 release-artifact purity publish for release/1.3.0+26.1-r2
+
+Secondary 26.1 tag
+- 5800a99cc84b57ca331600edf9624edd9795144b
+- Tag: release/1.3.0+26.1
+- Evidence: "release: promote Latitude 1.3.0 for Minecraft 26.1" with runtime smoke passed, but it predates the artifact-purity fix
+
+Comparison to current branch
+- Current HEAD is a descendant of the release artifact tag commit; `git merge-base 36abd39 HEAD` equals current HEAD
+- `git diff --stat 36abd39..HEAD` shows extensive later port/compile-drift work, so the current branch is not the release baseline
+
+Conclusion
+- Current branch should not be treated as the released 26.1 baseline
+- For Cohesive Horizons provenance, move to `release/1.3.0+26.1-r2` / `36abd39...` if the goal is the shipped 26.1 artifact
+- Release provenance is confirmed by git history; no local 26.1 jar artifact was found in `build/libs`

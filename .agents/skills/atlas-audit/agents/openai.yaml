@@ -1,0 +1,4 @@
+interface:
+  display_name: "Atlas Audit"
+  short_description: "Read-only analyzer for atlas and headless proof artifacts"
+  default_prompt: "Use this skill to inspect atlas and proof artifacts, summarize suspicious findings in plain English, classify the likely locus, and recommend exactly one next slice without rerunning jobs or modifying files."

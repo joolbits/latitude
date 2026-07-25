@@ -1,10 +1,9 @@
 package com.example.globe.util;
 
-import net.minecraft.util.math.MathHelper;
-
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import net.minecraft.util.Mth;
 
 public final class LatitudeBands {
     private static final List<String> CANONICAL_IDS = List.of(
@@ -56,7 +55,7 @@ public final class LatitudeBands {
     }
 
     public static Band fromAbsoluteLatitudeDeg(double absLatDeg) {
-        double clamped = MathHelper.clamp(absLatDeg, 0.0, 90.0);
+        double clamped = Mth.clamp(absLatDeg, 0.0, 90.0);
         if (clamped < Band.SUBTROPICAL.lowDeg()) return Band.TROPICAL;
         if (clamped < Band.TEMPERATE.lowDeg()) return Band.SUBTROPICAL;
         if (clamped < Band.SUBPOLAR.lowDeg()) return Band.TEMPERATE;
@@ -86,5 +85,33 @@ public final class LatitudeBands {
 
     public static List<String> canonicalIds() {
         return CANONICAL_IDS;
+    }
+
+    /**
+     * SINGLE canonical source for the player-facing zone word, shared by every surface that shows a zone
+     * name (zone-enter title, persistent compass HUD, HUD Studio preview, etc). Before this existed, the
+     * title path (GlobeWarningOverlay) and the compass HUD (CompassHud) each hardcoded their own word list
+     * and had drifted apart ("Tropical"/"Subtropical" on the title vs "Tropics"/"Subtropics" on the HUD,
+     * confirmed live via screenshot -- e.g. the zone-enter title reads "Subpolar 50°S" and the
+     * compass HUD reads "50°S, 164°E Subpolar", so those two already agreed; only TROPICAL and
+     * SUBTROPICAL had diverged). The title's vocabulary wins: Tropical / Subtropical / Temperate /
+     * Subpolar / Polar -- i.e. exactly {@link Band#displayName()}.
+     *
+     * <p>Accepts the raw canonical zone key as used across the codebase: a {@link Band} enum name
+     * ("TROPICAL", "SUBTROPICAL", ...), OR the display-only "EQUATOR" sub-zone (a live/HUD-only refinement
+     * of Tropical that worldgen and the zone-enter title never distinguish from Tropical -- see
+     * {@code LatitudeMath.LatitudeZone}). Unknown/null keys fall back to Temperate, matching prior
+     * behavior of both duplicated switches this replaces.
+     */
+    public static String displayNameForZoneKey(String canonicalKey) {
+        if (canonicalKey == null) {
+            return Band.TEMPERATE.displayName();
+        }
+        String normalized = "EQUATOR".equals(canonicalKey) ? Band.TROPICAL.name() : canonicalKey;
+        try {
+            return Band.valueOf(normalized).displayName();
+        } catch (IllegalArgumentException e) {
+            return canonicalKey;
+        }
     }
 }
