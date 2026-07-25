@@ -16,7 +16,6 @@
     "NoiseChunkGeneratorWorldgenAuthorityMixin",
     "MinecraftServerInitialSpawnMixin",
     "ProtoChunkSnowBlockGuardMixin",
-    "FreezeTopLayerFeatureGuardMixin",
     "ChunkRegionWarmSnowTrapMixin",
     "TreeLineVegetationGuardMixin",
     "AlpineSurfaceMixin",
