@@ -114,6 +114,7 @@ def generate_run(*, step: int, seed: int, size: str, aspect: float = 2.0,
         size=size_key,
         radius=radius,
         step=step,
+        aspect=aspect,
         sysprops=sysprops,
     )
     validate_bundle(target_run_dir, step, radius)
@@ -128,6 +129,13 @@ def generate_ruggedness(*, run_id: str, step: int) -> None:
     manifest = read_json(run_dir / "run_manifest.json")
     seed = int(manifest.get("seed", DEFAULT_SEED))
     size = normalize_size(str(manifest.get("size", DEFAULT_SIZE)))
+    # Older run manifests predate the aspect field and recorded no sysprops. Their original aspect cannot
+    # be reconstructed, so use the canonical 2:1 shape while replaying complete newer manifests exactly.
+    aspect = float(manifest.get("aspect", 2.0))
+    manifest_sysprops = manifest.get("sysprops", {})
+    if not isinstance(manifest_sysprops, dict):
+        raise ValueError(f"Invalid sysprops in run manifest: expected object, got {type(manifest_sysprops).__name__}")
+    sysprops = [f"{key}={value}" for key, value in manifest_sysprops.items()]
 
     started_at = time.time()
     run_gradle_preview(
@@ -135,6 +143,8 @@ def generate_ruggedness(*, run_id: str, step: int) -> None:
         size=size,
         step=step,
         layers="ruggedness",
+        aspect=aspect,
+        sysprops=sysprops,
     )
     source_step_dir = find_fresh_step_dir(seed=seed, step=step, started_at=started_at)
     ruggedness_path = source_step_dir / "ruggedness.png"
@@ -211,7 +221,7 @@ def find_fresh_step_dir(*, seed: int, step: int, started_at: float) -> Path:
     return candidates[-1]
 
 
-def write_manifest(path: Path, *, run_id: str, seed: int, size: str, radius: int, step: int,
+def write_manifest(path: Path, *, run_id: str, seed: int, size: str, radius: int, step: int, aspect: float,
                    sysprops: list[str] | None = None) -> None:
     # Slice D (Fable audit P1-5): the manifest used to HARDCODE "emitHeight": False and record no -D
     # config at all, so a bundle could not prove which flags produced it (a real run dir was found with
@@ -228,6 +238,7 @@ def write_manifest(path: Path, *, run_id: str, seed: int, size: str, radius: int
         "commit": git_text("rev-parse", "--short", "HEAD"),
         "seed": str(seed),
         "size": size,
+        "aspect": aspect,
         "radiusBlocks": radius,
         "step": step,
         "emitBiomeIndex": True,
