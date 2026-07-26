@@ -549,16 +549,11 @@ public class LatitudeHudStudioScreen extends Screen {
             return true;
         }
 
-        if (activeTab == TAB_SETTINGS) {
-            return false;
-        }
-
         double mx = click.x();
         double my = click.y();
 
         if (click.button() == 0) {
-            if (activeTab == TAB_TITLE
-                    && LatitudeConfig.zoneEnterTitleDraggable
+            if (LatitudeConfig.zoneEnterTitleDraggable
                     && isMouseOverTitle(mx, my)) {
                 dragElement = DragElement.TITLE;
                 int cx = (this.width / 2) + LatitudeConfig.zoneEnterTitleOffsetX;
@@ -570,12 +565,12 @@ public class LatitudeHudStudioScreen extends Screen {
                 return true;
             }
 
-            if (activeTab == TAB_COMPASS && isMouseOverCompass(mx, my)) {
+            if (isMouseOverCompass(mx, my)) {
                 dragElement = DragElement.COMPASS;
                 return true;
             }
 
-            if (activeTab == TAB_COMPASS && isMouseOverLocationDetail(mx, my)) {
+            if (isMouseOverLocationDetail(mx, my)) {
                 dragElement = DragElement.LOCATION_DETAIL;
                 return true;
             }

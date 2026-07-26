@@ -41,7 +41,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique private static final int GRID_COLOR = 0x14504840;
     @Unique private static final int GRID_STEP = 16;
     @Unique private static final float globe$VERSION_LABEL_SCALE = 0.67f;
-    @Unique private static final int globe$VERSION_LABEL_GAP = 2;
+    @Unique private static final int globe$VERSION_LABEL_GAP = 4;
     @Unique private static final int globe$VERSION_LABEL_SCREEN_MARGIN = 2;
     @Unique private static final String globe$VERSION_LABEL = FabricLoader.getInstance()
             .getModContainer(GlobeMod.MOD_ID)

@@ -1,11 +1,35 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 8 PASSED LOCALLY; post-TEST 9 polish is source/model green and rendered acceptance remains pending; release actions remain unauthorized` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-26`
+`status: Phase 8 PASSED LOCALLY; post-TEST 10 UI feedback is source/model green and rendered acceptance remains pending; release actions remain unauthorized` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-26`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
 
 `<home>/CascadeProjects/Latitude (Globe)/docs/LATITUDE_1_5_PRE_2_0_POLISH_ROADMAP.md`
+
+## Post-TEST 10 HUD canvas and loading-label feedback
+
+HUD Studio tabs now organize controls without restricting the preview canvas.
+The title, unattached compass, and detached biome/zone detail remain draggable
+from Compass, Title, and Settings. Existing attachment, follow, snap/free,
+clamping, and persistence rules remain authoritative.
+
+The small loading version label keeps its accepted scale, muted presentation,
+right alignment, and compact-screen clamp. Its gap below the bespoke pane is
+increased from 2 px to 4 px.
+
+Both strengthened structural verifiers reproduced the old behavior as RED and
+then passed. The loading check includes 26 hostile negative controls and an
+immutable source hash independently reviewed before rebinding. The Java 25
+22-task clean build/check/invariant gate also passed.
+
+This is source/model proof only. TEST 10 remains the currently staged artifact
+and predates these two changes. A separately authorized next numbered TEST is
+required for rendered acceptance.
+
+Canonical evidence:
+
+`docs/binder/latitude-1-5-test10-ui-feedback-20260726.md`
 
 ## Post-TEST 9 annotated polish
 

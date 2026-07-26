@@ -127,6 +127,24 @@ def main() -> int:
         "the sidebar scroll viewport must reserve a footer lane above the L-key helper",
         failures,
     )
+    mouse_clicked = re.search(
+        r"public boolean mouseClicked\(MouseButtonEvent click, boolean doubleClick\)"
+        r"\s*\{(?P<body>.*?)\n\s*\}\n\n\s*@Override\n\s*public boolean mouseDragged",
+        studio,
+        re.DOTALL,
+    )
+    mouse_clicked_body = mouse_clicked.group("body") if mouse_clicked else ""
+    require(
+        mouse_clicked is not None
+        and "activeTab == TAB_SETTINGS" not in mouse_clicked_body
+        and "activeTab == TAB_TITLE" not in mouse_clicked_body
+        and "activeTab == TAB_COMPASS" not in mouse_clicked_body
+        and "isMouseOverTitle(mx, my)" in mouse_clicked_body
+        and "isMouseOverCompass(mx, my)" in mouse_clicked_body
+        and "isMouseOverLocationDetail(mx, my)" in mouse_clicked_body,
+        "every visible HUD preview element must be draggable from every Studio tab",
+        failures,
+    )
 
     require(
         'Component.literal("Face Opacity")' in studio,
@@ -224,6 +242,7 @@ def main() -> int:
     print("- legacy settings are folded without duplicate or semantically reactivated controls")
     print("- hidden and clipped controls release keyboard focus")
     print("- selected tab has a persistent visual marker")
+    print("- title, compass, and detached location detail remain draggable from every tab")
     print("- L-key helper is muted and bottom-aligned")
     print("- sidebar scrolling reserves a non-overlapping helper footer")
     print("- Face Opacity uses percentage copy and a hover/drag-only checkerboard")
