@@ -139,7 +139,8 @@ public final class LatitudeV2Flags {
             Boolean.parseBoolean(System.getProperty("latitude.boundaryV2.enabled", "false"));
 
     /**
-     * Phase 5 Slice B-5 (Hemisphere Passage). Default false. Gates the whole opt-in E/W-edge crossing
+     * Phase 5 Slice B-5 (Hemisphere Passage). Ships enabled, while the prompt keeps each E/W-edge crossing
+     * opt-in. The flag remains the kill switch and gates the whole crossing
      * experience -- the approach fog, the two-button "pass through?" prompt, the mirror-X teleport, the
      * arrival title, and the turn-back push. NOTE (2026-07-12, degree-geometry slice): the EW edge
      * PRESENTATION (storm onset / haze ramp / banner at ~177.5-179 deg, anchored to the intended
@@ -157,7 +158,8 @@ public final class LatitudeV2Flags {
             Boolean.parseBoolean(System.getProperty("latitude.passageV2.enabled", "true")); // DEFAULT ON since 2026-07-12: Peetsa live-approved the passage at P3 ("everything felt good") and it is consensual by design (prompt-gated); the flag remains the kill switch.
 
     /**
-     * Phase 5 Slice B-7 (Pole Passage). Default false. Gates the opt-in N/S pole CROSSING surface -- the (P2)
+     * Phase 5 Slice B-7 (Pole Passage). Ships enabled, while the prompt keeps each N/S pole crossing opt-in.
+     * The flag remains the kill switch and gates the pole-crossing surface -- the (P2)
      * approach prompt at 89.2 deg, the two-button "pass through?" screen, the over-the-pole teleport to the
      * ANTIPODAL meridian (longitude L -> L+180 via {@code PoleArrivalSearch.antipodalX} + yaw+180 -- [P3 fix
      * 2026-07-14: antipodal meridian, not mirrorX]), the deep 89.5-deg arrival (S5) with its post-crossing cold
@@ -465,14 +467,14 @@ public final class LatitudeV2Flags {
     // --- Solar Tilt + Seasons (Phase 5B-adjacent, P1) ---------------------------------------------------
     // ONE master kill-switch (visual + functional + seasons together — the functional layer is DERIVED from
     // the same SolarTilt evaluator that drives the visuals, so a split flag would let the sky and the mobs
-    // disagree; §2/§8 one-evaluator law) plus four live-tuning dials. Master default OFF (byte-identical
-    // flag-off: every solar mixin's first line is gated on SOLAR_TILT_V2_ENABLED). The doubles are parsed
-    // defensively (malformed -D degrades to the shipped default rather than throwing at class-init). All are
-    // forwarded in build.gradle in the SAME pass (L17 discipline) so a dev run agrees with a shipped jar the
-    // moment the flag is flipped for a P2/P3 flight. Design: docs/binder/solar-tilt-design-20260716.md.
+    // disagree; §2/§8 one-evaluator law) plus four live-tuning dials. The owner chose the master default ON;
+    // explicit false remains the byte-identical control because every solar mixin is gated on it. The doubles
+    // are parsed defensively (malformed -D degrades to the shipped default rather than throwing at class-init).
+    // All are forwarded in build.gradle so a dev run agrees with a shipped jar. Design:
+    // docs/binder/solar-tilt-design-20260716.md.
 
-    /** Master kill-switch for Solar Tilt (sky path tilt + seasons + the effective-sun mob rules). Default
-     *  false → byte-identical flag-off. */
+    /** Master switch for Solar Tilt (sky path tilt + seasons + the effective-sun mob rules). Ships enabled;
+     *  explicit false → byte-identical control. */
     public static final boolean SOLAR_TILT_V2_ENABLED =
             Boolean.parseBoolean(System.getProperty("latitude.solarTiltV2.enabled", "true")); // SHIP DEFAULT ON — Peetsa decided 2026-07-25 ("ship the polar features on by default"); the REVISIT gate is CLOSED, this is the intended shipped default.
 
