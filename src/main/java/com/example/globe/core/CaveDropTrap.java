@@ -31,20 +31,24 @@ public final class CaveDropTrap {
      *  a THIN false floor. Thicker floors are honest ground -- the trap never mines real mass. */
     public static final int MAX_SHELL_THICKNESS = 3;
 
-    /** Minimum air run BELOW the shell for the drop to be a real between-layers fall ("drop the player
-     *  down to a deeper layer" -- not a crawlspace). 8 blocks ~= 3 hearts uncushioned; the cushion
-     *  forgives it, the displacement is the price. */
-    public static final int MIN_DROP_AIR = 8;
+    /** Minimum air run BELOW the shell for the drop to be a real between-layers fall. S50 (owner, TEST
+     *  138 flight): "falling through down like at least 10 blocks down" -- raised 8 -> 10 to her spec. */
+    public static final int MIN_DROP_AIR = 10;
 
-    /** Maximum patch area (cells) a single drop trap may cover -- a floor panel, not a floor deletion.
-     *  Smaller than the surface traps' 48: in-cave galleries are tighter spaces. */
-    public static final int PATCH_MAX_AREA = 12;
+    /** S50 CARPET REDESIGN (owner, TEST 138 flight: the in-cave traps read as "just single blocks right
+     *  now. make it more like a carpet of powder/regular to stumble into"): a trap is a broad powder
+     *  CARPET now, surface-class. Minimum area kills the single-block lies outright -- a patch smaller
+     *  than this never traps; maximum approaches the surface traps' 48. */
+    public static final int MIN_PATCH_AREA = 6;
+
+    /** Maximum patch area (cells) a single drop carpet may cover -- broad, but never a floor deletion. */
+    public static final int PATCH_MAX_AREA = 40;
 
     /** Deterministic fraction of eligible patches that become traps (per-patch roll {@code <} this).
-     *  Census-calibrated (rig 2026-07-25): the ice cathedrals are so layered that 0.35 produced 1341
-     *  covers/256 chunks (~5 per chunk -- every floor a lie). 0.10 with the one-patch-per-chunk cap lands
-     *  the density at a lurking occasional hazard instead of a minefield. */
-    public static final float TRAP_FRACTION = 0.10f;
+     *  S44 census-calibrated 0.10 at patch-min 1; S50 raised to 0.30: the MIN_PATCH_AREA floor discards
+     *  most former candidates (the scattered singles), so the roll runs hotter over the few genuine
+     *  carpet-scale panels. Re-censused on the rig at the S50 geometry (see the S50-built binder entry). */
+    public static final float TRAP_FRACTION = 0.30f;
 
     /** At most this many patches fire per chunk (the census cap): a chunk may HIDE one false floor; a
      *  chunk riddled with them reads as broken terrain, not danger. */

@@ -123,14 +123,14 @@ class GlacialCavesBiomeJsonSchemaTest {
         assertEquals(List.of("globe:hanging_icicles", "globe:glacial_snow_drift",
                         "globe:glacial_powder_pocket", "globe:glacial_frost_carpet", "globe:glacial_slush_floe",
                         "globe:cave_drop_trap", "globe:ice_spire_cluster", "globe:ice_spire",
-                        "globe:icicle_cluster", "globe:ice_spear_patch"),
+                        "globe:icicle_cluster", "globe:ice_spear_patch", "globe:magma_quench_sweep"),
                 featureStep(caves, 7),
                 "underground_decoration (step 7): the plain-ice hanging_icicles (reinstated S40 per owner), "
                         + "the floor/pool dressing, the S44 drop trap, the S45 ice spires (cluster before "
                         + "single, vanilla sulfur order; floor forms, not the rejected speleothem silhouette), "
                         + "then the S46 icicle revival: needle clusters (owner GO 2026-07-26, \"really love\") "
                         + "and the LOW-rate floor spear patch (PROVISIONAL -- owner is \"a tad less sold\" on "
-                        + "floor ones and judges them live; count stays low until her final call)");
+                        + "floor ones and judges them live; count stays low until her final call), then the S50 magma quench sweep LAST -- it must run after underwater_magma and every other magma source, or flooded pockets go bare again (the TEST 138 regression)");
         assertEquals(List.of("globe:glacial_glow_lichen"),
                 featureStep(caves, 9),
                 "vegetal step = the sparse glacial glow_lichen only (punctuation, not illumination). "

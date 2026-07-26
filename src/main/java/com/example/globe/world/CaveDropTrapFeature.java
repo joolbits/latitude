@@ -183,6 +183,9 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                         }
                     }
                 }
+                if (patch.size() < CaveDropTrap.MIN_PATCH_AREA) {
+                    continue; // S50: single blocks and slivers never trap -- carpets only
+                }
                 if (patches >= CaveDropTrap.MAX_PATCHES_PER_CHUNK) {
                     continue; // census cap: one hidden false floor per chunk at most
                 }

@@ -225,7 +225,7 @@ class GlacialDressingJsonSchemaTest {
                         "placed feature " + featureId + " needs its configured_feature JSON");
             }
         }
-        assertEquals(18, globeFeatures, "eighteen globe features after S48 cut the three bare-ice ore veins (owner call) from the S46 twenty-one: "
+        assertEquals(19, globeFeatures, "nineteen globe features after S50 added the magma quench sweep to the S48 eighteen: "
                 + "(icicle_cluster needles + the PROVISIONAL low-rate ice_spear_patch) onto the S45 nineteen: the S44 nine "
                 + "(hanging_icicles, snow_drift, powder_pocket, frost_carpet, slush_floe, cave_drop_trap, "
                 + "glow_lichen + 2 ice blobs) + frost_bloom, brine_pool (lakes), ice_geode (step 2), "
