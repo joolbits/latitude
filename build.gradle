@@ -48,15 +48,13 @@ loom {
             vmArg "-Dlatitude.fixSurfaceDripstone=true"
             vmArg "-Dlatitude.fogClampIndex=${System.getProperty('latitude.fogClampIndex', '-1')}"
             vmArg "-Dlatitude.fogClampValue=${System.getProperty('latitude.fogClampValue', '16.0')}"
-            // Solar Tilt + Seasons (P1). Master default OFF (byte-identical) + four live-tuning dials, ALL
-            // born WITH their forwarding line in the SAME pass as the flags (L17 discipline). Forwarded on the
-            // CLIENT run (not just biomePreview) because unlike the worldgen flags this feature runs live here
-            // — P2's sky visuals on the client, P1's mob rules on the integrated server in this same JVM — so
-            // a `-Dlatitude.solarTiltV2.enabled=true` dev client is how it gets flown for P2/P3.
-            vmArg "-Dlatitude.solarTiltV2.enabled=${System.getProperty('latitude.solarTiltV2.enabled', 'false')}"
+            // Solar Tilt + Seasons (P1). The shipping defaults are ON / 60°, with four live-tuning dials.
+            // Forwarded on the CLIENT run (not just biomePreview) because P2's sky visuals and P1's mob rules
+            // run here too. Explicit -D values still provide the opt-out and tuning path.
+            vmArg "-Dlatitude.solarTiltV2.enabled=${System.getProperty('latitude.solarTiltV2.enabled', 'true')}"
             vmArg "-Dlatitude.solarTilt.deltaMaxDeg=${System.getProperty('latitude.solarTilt.deltaMaxDeg', '30.0')}"
             vmArg "-Dlatitude.solarTilt.yearLengthDays=${System.getProperty('latitude.solarTilt.yearLengthDays', '360.0')}"
-            vmArg "-Dlatitude.solarTilt.functionalMinDeg=${System.getProperty('latitude.solarTilt.functionalMinDeg', '74.5')}"
+            vmArg "-Dlatitude.solarTilt.functionalMinDeg=${System.getProperty('latitude.solarTilt.functionalMinDeg', '60.0')}"
             vmArg "-Dlatitude.solarTilt.frozenPhaseDeg=${System.getProperty('latitude.solarTilt.frozenPhaseDeg', '0.0')}"
             // S13(a) AURORA BOREALIS (default TRUE, rides inside solarTiltV2). Born WITH its forwarding line in
             // the SAME pass as the flag (L17 discipline) so a dev client agrees with a shipped jar the moment the
@@ -140,10 +138,9 @@ loom {
             // Phase 5 B-5 Hemisphere Passage — DEFAULT ON since 2026-07-12 (Peetsa's post-P3 decision,
             // matching LatitudeV2Flags; the flag is the kill switch, crossing is prompt-consensual).
             vmArg "-Dlatitude.passageV2.enabled=${System.getProperty('latitude.passageV2.enabled', 'true')}"
-            // Phase 5 B-7 Pole Passage (default FALSE, byte-identical off). Born WITH its forwarding line in the
-            // SAME PASS as the flag (L17 discipline) so a dev client agrees with a shipped jar the moment the
-            // flag is flipped for a P2/P3 flight.
-            vmArg "-Dlatitude.polePassageV2.enabled=${System.getProperty('latitude.polePassageV2.enabled', 'false')}"
+            // Phase 5 B-7 Pole Passage ships ON, matching LatitudeV2Flags. Explicit -D false remains the
+            // byte-identical opt-out for a control run.
+            vmArg "-Dlatitude.polePassageV2.enabled=${System.getProperty('latitude.polePassageV2.enabled', 'true')}"
             // Phase 5 B-5 edge structure veto (default TRUE, matching LatitudeV2Flags; byte-identical when
             // explicitly set off). Born WITH its forwarding line in the SAME PASS as the flag (L17 discipline).
             vmArg "-Dlatitude.edgeStructureVeto.enabled=${System.getProperty('latitude.edgeStructureVeto.enabled', 'true')}"
@@ -163,11 +160,10 @@ loom {
             // S11(c) firefly-specific ban dial (default 50 = the SUBPOLAR onset) -- forwarded in the SAME
             // pass as the constant (L17 discipline), beside its veg-fade dial family.
             vmArg "-Dlatitude.polarVegetationFade.fireflyBanDeg=${System.getProperty('latitude.polarVegetationFade.fireflyBanDeg', '50.0')}"
-            // Phase 5 B-8 Polar Barrens (default FALSE, byte-identical off). WORLDGEN change -- forwarded
-            // here in the SAME PASS as the flag (L17) so a headless flag-on atlas actually runs with the
-            // barrens on (the L17 forwarding gap has produced silent byte-identical false-greens before).
+            // Phase 5 B-8 Polar Barrens ships ON. Forwarded here so the ordinary headless atlas and the
+            // shipping jar agree; explicit -D false remains the byte-identical control.
             // The onset/full degree dials are advertised as live-tunable, so forward them too.
-            vmArg "-Dlatitude.polarBarrens.enabled=${System.getProperty('latitude.polarBarrens.enabled', 'false')}"
+            vmArg "-Dlatitude.polarBarrens.enabled=${System.getProperty('latitude.polarBarrens.enabled', 'true')}"
             // S21c 2026-07-19: the veg-fade/Barrens COUPLING IS BROKEN (deliberately). The onset default used
             // to NEST the veg-fade fullDeg sysprop (barrens began exactly where the grass died); the owner moved
             // the veg fade's finish down to 80 ("veg to 80") but wants the Barrens BIOME to stay at 82, so the
@@ -176,13 +172,9 @@ loom {
             // An explicit -Dlatitude.polarBarrens.onsetDeg still wins; .fullDeg 84 holds the fray at +2 (82->84).
             vmArg "-Dlatitude.polarBarrens.onsetDeg=${System.getProperty('latitude.polarBarrens.onsetDeg', '82.0')}"
             vmArg "-Dlatitude.polarBarrens.fullDeg=${System.getProperty('latitude.polarBarrens.fullDeg', '84.0')}"
-            // Phase 5 B-9 Glacial Caves & Crevasses carver append (design default FALSE, byte-identical off;
-            // the Java constant is branch-locally staged ON for the flight -- REVISIT BEFORE MERGE lives
-            // there). Forwarded in the SAME pass as the flag (L17 discipline), default 'false' like the
-            // barrens precedent so headless/atlas runs stay on the design default unless explicitly armed
-            // (gate-1 cannot see the carver seam anyway -- the atlas never executes applyCarvers -- but the
-            // forwarding keeps a -D-armed dev run agreeing with a shipped jar).
-            vmArg "-Dlatitude.glacialCavesV1=${System.getProperty('latitude.glacialCavesV1', 'false')}"
+            // Phase 5 B-9 Glacial Caves & Crevasses ships ON. The atlas does not exercise carvers, but its
+            // JVM configuration still mirrors shipping; explicit -D false remains the control.
+            vmArg "-Dlatitude.glacialCavesV1=${System.getProperty('latitude.glacialCavesV1', 'true')}"
             // Polar water freeze (default TRUE, matching LatitudeV2Flags; byte-identical when explicitly
             // set off). Forwarded on sight this round -- the L17 forwarding class has bitten this repo
             // twice before (climateV2/biomeConsumerV2 2026-07-07); don't let a third flag go unforwarded.
@@ -195,13 +187,12 @@ loom {
             vmArg "-Dlatitude.climateV2.enabled=${System.getProperty('latitude.climateV2.enabled', 'false')}"
             vmArg "-Dlatitude.biomeConsumerV2.enabled=${System.getProperty('latitude.biomeConsumerV2.enabled', 'false')}"
             vmArg "-Dlatitude.biomeConsumerV2.oceanAuthority.enabled=${System.getProperty('latitude.biomeConsumerV2.oceanAuthority.enabled', 'false')}"
-            // Solar Tilt + Seasons (P1) — forwarded here too for sibling parity with every other LatitudeV2Flags
-            // enable (so a headless "flag-on" claim is honest), even though solar tilt does NOT touch worldgen
-            // and the real flight is on the client run above. Master default OFF (byte-identical); L17 same-pass.
-            vmArg "-Dlatitude.solarTiltV2.enabled=${System.getProperty('latitude.solarTiltV2.enabled', 'false')}"
+            // Solar Tilt + Seasons (P1) — forwarded here too for configuration parity with the client and
+            // shipping jar, even though its real flight is on the client run above.
+            vmArg "-Dlatitude.solarTiltV2.enabled=${System.getProperty('latitude.solarTiltV2.enabled', 'true')}"
             vmArg "-Dlatitude.solarTilt.deltaMaxDeg=${System.getProperty('latitude.solarTilt.deltaMaxDeg', '30.0')}"
             vmArg "-Dlatitude.solarTilt.yearLengthDays=${System.getProperty('latitude.solarTilt.yearLengthDays', '360.0')}"
-            vmArg "-Dlatitude.solarTilt.functionalMinDeg=${System.getProperty('latitude.solarTilt.functionalMinDeg', '74.5')}"
+            vmArg "-Dlatitude.solarTilt.functionalMinDeg=${System.getProperty('latitude.solarTilt.functionalMinDeg', '60.0')}"
             vmArg "-Dlatitude.solarTilt.frozenPhaseDeg=${System.getProperty('latitude.solarTilt.frozenPhaseDeg', '0.0')}"
             // S13(e) POLAR SURFACE ALLOWLIST — forwarded here too for sibling parity with every other
             // LatitudeV2Flags enable (a headless "flag-on" claim stays honest), even though this spawn rule
