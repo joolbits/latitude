@@ -10,6 +10,7 @@ public final class LocationDetailPolicyTest {
         persistedFlagsCoverAllModesAndLegacyValues();
         compositionCoversAllModesInBiomeThenZoneOrder();
         biomeIdsBecomePlayerFacingTitleCase();
+        customBiomeSourcesAreOptionalAndPlayerFacing();
         defaultDetachedBoundsStayReachableAtAcceptedGuiSize();
         staticIntegrationProofsHold();
         System.out.println("LOCATION_DETAIL_POLICY_TEST_PASS");
@@ -94,6 +95,25 @@ public final class LocationDetailPolicyTest {
                 "multi-word biome path is title-cased");
     }
 
+    private static void customBiomeSourcesAreOptionalAndPlayerFacing() {
+        assertEquals(
+                "Snowy Shield",
+                LocationDetailPolicy.biomeLabel("biomesoplenty:snowy_shield", false),
+                "source toggle off preserves the compact biome-only label");
+        assertEquals(
+                "Snowy Shield \u00b7 BIOMES O' PLENTY",
+                LocationDetailPolicy.biomeLabel("biomesoplenty:snowy_shield", true),
+                "known custom provider is named when the toggle is on");
+        assertEquals(
+                "Plains",
+                LocationDetailPolicy.biomeLabel("minecraft:plains", true),
+                "vanilla biomes stay unlabelled");
+        assertEquals(
+                "Pale Garden \u00b7 REGIONS UNEXPLORED",
+                LocationDetailPolicy.biomeLabel("regions_unexplored:pale_garden", true),
+                "generic custom-provider formatting is deterministic");
+    }
+
     private static void defaultDetachedBoundsStayReachableAtAcceptedGuiSize() {
         int screenW = 427;
         int screenH = 240;
@@ -135,7 +155,8 @@ public final class LocationDetailPolicyTest {
         String config = normalize(read("src/main/java/com/example/globe/client/CompassHudConfig.java"));
         assertTrue(
                 config.contains("public boolean displayBiomeInHud = false;")
-                        && config.contains("public boolean displayZoneInHud = false;"),
+                        && config.contains("public boolean displayZoneInHud = false;")
+                        && config.contains("public boolean showCustomBiomeSource = false;"),
                 "config persists two default-false booleans");
         assertTrue(
                 config.contains("LocationDetailPolicy.fromPersistedFlags(displayBiomeInHud, displayZoneInHud)"),
@@ -155,11 +176,12 @@ public final class LocationDetailPolicyTest {
                         < hud.indexOf("drawText(ctx, client, cfg, locationDetailText"),
                 "digital and analog layouts both place location detail after latitude");
         assertTrue(
-                hud.contains("LocationDetailPolicy.compose( cfg.locationDetailMode(), biomeLabel(client), displayZoneName(zoneKey))"),
+                hud.contains("LocationDetailPolicy.compose( cfg.locationDetailMode(), biomeLabel(client, cfg), displayZoneName(zoneKey))"),
                 "live biome and zone labels compose through the shared policy");
         assertTrue(
-                hud.contains("LocationDetailPolicy.titleCaseBiomeId(key.identifier().toString())"),
-                "runtime biome id uses the deterministic title-case helper");
+                hud.contains("LocationDetailPolicy.biomeLabel(")
+                        && hud.contains("cfg.showCustomBiomeSource"),
+                "runtime biome id uses the optional provider-aware label helper");
         assertTrue(
                 occurrences(hud, "sampleLocationDetail(cfg, true)") >= 5
                         && hud.contains("computeAnalogBounds")
@@ -197,6 +219,16 @@ public final class LocationDetailPolicyTest {
                         && studio.contains(".withValues(LocationDetailPolicy.Mode.values())")
                         && studio.contains("Component.literal(\"Location Detail\")"),
                 "HUD Studio exposes the exact policy cycle");
+        assertTrue(
+                studio.contains("Component.literal(\"Show Biome Source\")")
+                        && studio.contains("cfg.showCustomBiomeSource = value")
+                        && studio.contains("locationDetailMode().includesBiome()"),
+                "HUD Studio exposes the optional custom-biome provider label only for biome modes");
+        assertTrue(
+                studio.contains("Component.literal(\"HUD Placement\")")
+                        && studio.contains("LatitudeConfig.hudSnapEnabled = value")
+                        && studio.contains("v ? \"SNAP\" : \"FREE\""),
+                "HUD Studio exposes the existing grid/free placement policy");
         assertTrue(
                 studio.contains("cfg.setLocationDetailMode(value)")
                         && studio.contains("CompassHud.computeLocationDetailBounds(mc, cfg)")

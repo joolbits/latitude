@@ -57,6 +57,7 @@ public final class CompassHudConfig {
     // representing Off / Biome / Zone / Biome + Zone without a config migration.
     public boolean displayBiomeInHud = false;
     public boolean displayZoneInHud = false;
+    public boolean showCustomBiomeSource = false;
     public boolean zoneFollowsCompass = true;
     public HAnchor zoneHAnchor = HAnchor.CENTER;
     public VAnchor zoneVAnchor = VAnchor.TOP;
@@ -141,6 +142,7 @@ public final class CompassHudConfig {
         analogSize = DEFAULT_ANALOG_SIZE;
         analogInnerAlpha = 0.65f;
         setLocationDetailMode(LocationDetailPolicy.DEFAULT_MODE);
+        showCustomBiomeSource = false;
         zoneFollowsCompass = true;
         zoneHAnchor = HAnchor.CENTER;
         zoneVAnchor = VAnchor.TOP;

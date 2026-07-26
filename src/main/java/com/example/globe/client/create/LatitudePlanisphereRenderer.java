@@ -32,6 +32,8 @@ public final class LatitudePlanisphereRenderer {
     private static final int GOLD = 0xFFD4A74A;
     private static final int MUTED = 0xFF8C8078;
     private static final int GRID_COLOR = 0x60FFFFFF; // semi-transparent white for latitude lines
+    private static final int COMPACT_GRID_COLOR = 0x36D9E2E8;
+    private static final int COMPACT_RING_COLOR = 0xB0D4A74A;
     private static final float DISC_SCALE_BOOST = 1.15f;
     private static final float LABEL_BASE_SCALE = 0.90f;
     private static final float LABEL_MAX_SCALE = 1.10f;
@@ -303,12 +305,37 @@ public final class LatitudePlanisphereRenderer {
             fillBandStrip(context, cx, cy, radius, -yHigh, -yLow, fillColor);
         }
 
-        // ── Gold ring outline on selected band edges ──
+        // ── Quiet geographic framework ──
+        for (double deg : new double[]{0.0, 23.5, 35.0, 50.0, 66.5}) {
+            int yOff = (int) Math.round(radius * deg / 90.0);
+            drawLatitudeLine(context, cx, cy, radius, yOff, COMPACT_GRID_COLOR);
+            if (deg > 0.0) {
+                drawLatitudeLine(context, cx, cy, radius, -yOff, COMPACT_GRID_COLOR);
+            }
+        }
+        drawCircleOutline(context, cx, cy, radius, COMPACT_RING_COLOR);
+
+        // ── Gold emphasis on selected band edges ──
         int selLow  = (int) (radius * selectedBand.lowDeg()  / 90.0);
         int selHigh = (int) (radius * selectedBand.highDeg() / 90.0);
         drawLatitudeLine(context, cx, cy, radius,  selLow,  GOLD);
         drawLatitudeLine(context, cx, cy, radius,  selHigh, GOLD);
         drawLatitudeLine(context, cx, cy, radius, -selLow,  GOLD);
         drawLatitudeLine(context, cx, cy, radius, -selHigh, GOLD);
+    }
+
+    private static void drawCircleOutline(
+            GuiGraphicsExtractor context,
+            int cx,
+            int cy,
+            int radius,
+            int color) {
+        for (int dy = -radius; dy <= radius; dy++) {
+            float frac = 1.0f - (float) (dy * dy) / (float) (radius * radius);
+            if (frac < 0) continue;
+            int halfW = Math.round((float) Math.sqrt(frac) * radius);
+            context.fill(cx - halfW, cy + dy, cx - halfW + 1, cy + dy + 1, color);
+            context.fill(cx + halfW - 1, cy + dy, cx + halfW, cy + dy + 1, color);
+        }
     }
 }

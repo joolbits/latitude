@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java"
 POLICY_SOURCE = ROOT / "src/main/java/com/example/globe/client/create/ViewportClipPolicy.java"
 POLICY_TEST = ROOT / "src/clipPolicyTest/java/com/example/globe/client/create/ViewportClipPolicyTest.java"
+PLANISPHERE = ROOT / "src/main/java/com/example/globe/client/create/LatitudePlanisphereRenderer.java"
 
 
 def intersects(top: int, bottom: int, clip_top: int, clip_bottom: int) -> bool:
@@ -47,6 +48,7 @@ def main() -> int:
     source = SOURCE.read_text(encoding="utf-8")
     policy_source = POLICY_SOURCE.read_text(encoding="utf-8")
     policy_test = POLICY_TEST.read_text(encoding="utf-8")
+    planisphere = PLANISPHERE.read_text(encoding="utf-8")
     failures: list[str] = []
 
     geometry_cases = {
@@ -177,6 +179,19 @@ def main() -> int:
         if fragment not in policy_test:
             failures.append(f"missing {label}")
 
+    planisphere_fragments = {
+        "COMPACT_GRID_COLOR": "quiet compact latitude framework",
+        "COMPACT_RING_COLOR": "compact disc outline",
+        "drawCircleOutline(context, cx, cy, radius, COMPACT_RING_COLOR)": "balanced compact disc perimeter",
+        "case REGULAR -> 0.84f": "regular-world preview fill",
+        "case LARGE -> 0.91f": "large-world preview fill",
+        "case MASSIVE -> 0.96f": "massive-world preview fill",
+    }
+    for fragment, label in planisphere_fragments.items():
+        haystack = planisphere if "COMPACT_" in fragment or "drawCircleOutline" in fragment else source
+        if fragment not in haystack:
+            failures.append(f"missing {label}")
+
     if failures:
         print("CREATE_SCREEN_ANTI_POPPING: FAIL")
         for failure in failures:
@@ -191,6 +206,7 @@ def main() -> int:
     print("- Rules layout runs once per frame; re-init clears the private widget registry")
     print("- high GUI scale and cramped viewports use two tabs: World plus Rules")
     print("- compact World places Spawn Zone beside the planisphere; compact Rules uses two columns")
+    print("- planisphere uses a centered larger disc, quiet latitude framework, and restrained gold perimeter")
     print("- roomy low-scale mode keeps all three fixed wide panels; tabbed panes reserve no redundant heading shelf")
     return 0
 

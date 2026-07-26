@@ -53,9 +53,21 @@ public class ExtremePolarSimpleFoliageGuardMixin {
         boolean beyondLimit = LatitudeBiomes.isBlockBeyondPolarFoliageLimit(
                 context.origin().getZ(),
                 GlobeMod.BORDER_RADIUS);
+        boolean fireflyBush = sampledState.is(Blocks.FIREFLY_BUSH);
+        boolean snowySubpolarOrPolar = fireflyBush
+                && PolarFoliagePolicy.isSubpolarOrPolar(
+                        context.origin().getZ(),
+                        LatitudeBiomes.getActiveRadiusBlocks(),
+                        GlobeMod.BORDER_RADIUS)
+                && context.level()
+                        .getBiome(context.origin())
+                        .value()
+                        .coldEnoughToSnow(context.origin(), noise.getSeaLevel());
         boolean foliage = sampledState.is(POLAR_FOLIAGE);
         return PolarFoliagePolicy.shouldSuppressSimpleBlock(
                 beyondLimit,
+                snowySubpolarOrPolar,
+                fireflyBush,
                 foliage,
                 sweetBerryBush)
                 ? null
