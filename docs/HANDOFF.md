@@ -8,6 +8,15 @@
 
 ## 2.0 line — resume on the 26.2 pivot (updated 2026-07-06; the 2026-07-01 banner below-referenced line is itself now historical)
 
+## 2026-07-26 — PR #10 proof-parity follow-up (source/configuration proof only)
+
+The current-main follow-up candidate aligns ordinary client and headless-atlas defaults with the already
+settled shipping defaults for Solar Tilt, Pole Passage, Polar Barrens, and Glacial Caves. It also records an
+atlas run's aspect and explicit `--sysprop` values, so a later ruggedness rerun can replay the same
+configuration. Automated source/configuration proof is green; no live Minecraft, profile, artifact staging,
+commit, push, pull request, merge, or release action was performed. See
+`docs/binder/pr10-proof-parity-20260726.md` for the exact scope and verification.
+
 > **This file is the `main`/history pointer, and it is a pre-2.0 lineage.** Active development is the
 > **Latitude 2.0 overhaul on the 26.2 pivot root**:
 > `<home>/CascadeProjects/Latitude-2.0-26.2-pivot`, branch `port/canonical-26.2-pivot`

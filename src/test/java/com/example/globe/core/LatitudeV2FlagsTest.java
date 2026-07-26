@@ -51,25 +51,21 @@ class LatitudeV2FlagsTest {
     }
 
     @Test
-    void polarBarrensBranchLocalFlightStaging() {
-        // P3 LIVE-TEST STAGING (branch-local, B-6/B-7 precedent): default ON for the TEST 99 flight.
-        // REVISIT BEFORE MERGE — shipped default is Peetsa's call after the live look; the pre-flight
-        // law was default-OFF byte-identical (atlas gate 1 proved it).
+    void polarBarrensShipsEnabled() {
+        // Owner decision 2026-07-25: Polar Barrens now ships enabled. Explicit false remains the
+        // byte-identical worldgen control for a comparison run.
         assertTrue(LatitudeV2Flags.POLAR_BARRENS_ENABLED,
-                "Branch-local flight staging: Polar Barrens ON for TEST 99; revisit before merge");
+                "Polar Barrens ships enabled per the owner decision");
     }
 
     @Test
-    void glacialCavesV1BranchLocalFlightStaging() {
-        // P3 LIVE-TEST STAGING (branch-local, B-6/B-7/B-8 precedent): default ON for the first B-9
-        // glacial-caves flight so a FRESH world carves the crevasses. REVISIT BEFORE MERGE — the
-        // DESIGN default is OFF (byte-identical: no append, no strip change, vanilla's own carver
-        // Iterable returned untouched -- pinned by GlacialCarverLawTest); the shipped default is
-        // Peetsa's call after the flight. Static-init capture guard per the degree-defaults law below.
+    void glacialCavesV1ShipsEnabled() {
+        // Owner decision 2026-07-25: Glacial Caves now ships enabled. Explicit false leaves vanilla's
+        // carver iterable untouched, as pinned by GlacialCarverLawTest.
         assertNull(System.getProperty("latitude.glacialCavesV1"),
-                "suite JVM must not carry -Dlatitude.glacialCavesV1 (static-init capture: staging law)");
+                "suite JVM must not carry -Dlatitude.glacialCavesV1 (static-init capture: defaults law)");
         assertTrue(LatitudeV2Flags.GLACIAL_CAVES_V1_ENABLED,
-                "Branch-local flight staging: B-9 Glacial Caves ON for the first flight; revisit before merge");
+                "Glacial Caves ships enabled per the owner decision");
     }
 
     @Test
@@ -101,12 +97,11 @@ class LatitudeV2FlagsTest {
     }
 
     @Test
-    void solarTiltBranchLocalFlightStaging() {
-        // P3 LIVE-TEST STAGING (branch-local): default ON for the TEST 101 first sun flight.
-        // REVISIT BEFORE MERGE — ship default is the owner's post-flight call; pre-flight law was
-        // default-OFF byte-identical (sweep #8 verified all three injection surfaces gated).
+    void solarTiltShipsEnabled() {
+        // Owner decision 2026-07-25: Solar Tilt now ships enabled. Explicit false remains the
+        // byte-identical control (all three injection surfaces are gated).
         assertTrue(LatitudeV2Flags.SOLAR_TILT_V2_ENABLED,
-                "Branch-local flight staging: Solar Tilt ON for TEST 101; revisit before merge");
+                "Solar Tilt ships enabled per the owner decision");
     }
 
     @Test
@@ -137,12 +132,10 @@ class LatitudeV2FlagsTest {
     }
 
     @Test
-    void polePassageV2BranchLocalFlightStaging() {
-        // P3 LIVE-TEST STAGING (branch-local, B-6 precedent): default ON so the TEST 97 maiden pole flight
-        // exercises the crossing without profile JVM args. REVISIT BEFORE MERGE -- the shipped default
-        // (and this test's direction) is Peetsa's call after P3; the pre-flight law was default-OFF
-        // byte-identical (including NO Wide-world pole hard-stop clamp).
+    void polePassageV2ShipsEnabled() {
+        // Owner decision 2026-07-25: Pole Passage now ships enabled. Explicit false remains the
+        // byte-identical control, including no Wide-world pole hard-stop clamp.
         assertTrue(LatitudeV2Flags.POLE_PASSAGE_V2_ENABLED,
-                "Branch-local flight staging: pole passage ON for TEST 97; revisit before merge");
+                "Pole Passage ships enabled per the owner decision");
     }
 }
