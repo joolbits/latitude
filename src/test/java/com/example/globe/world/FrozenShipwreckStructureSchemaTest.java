@@ -66,7 +66,10 @@ class FrozenShipwreckStructureSchemaTest {
         int spacing = placement.get("spacing").getAsInt();
         int separation = placement.get("separation").getAsInt();
         assertTrue(spacing > separation, "codec law: spacing must exceed separation");
-        assertTrue(spacing >= 48, "a wreck is a FIND -- rarer than the frozen caches (48)");
+        assertTrue(spacing >= 40 && spacing <= 48,
+                "S51: spacing 44 -- the S48 'rarer than caches' law bent after the owner crossed two flights "
+                        + "without meeting one (\"i didnt see any wrecks\"); discoverable-but-special, "
+                        + "never common");
         JsonObject st = load("/data/globe/worldgen/structure/frozen_shipwreck.json");
         JsonObject height = st.getAsJsonObject("start_height");
         assertEquals(18, height.getAsJsonObject("min_inclusive").get("absolute").getAsInt());

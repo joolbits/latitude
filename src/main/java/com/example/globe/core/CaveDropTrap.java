@@ -45,14 +45,14 @@ public final class CaveDropTrap {
     public static final int PATCH_MAX_AREA = 40;
 
     /** Deterministic fraction of eligible patches that become traps (per-patch roll {@code <} this).
-     *  S44 census-calibrated 0.10 at patch-min 1; S50 raised to 0.30: the MIN_PATCH_AREA floor discards
-     *  most former candidates (the scattered singles), so the roll runs hotter over the few genuine
-     *  carpet-scale panels. Re-censused on the rig at the S50 geometry (see the S50-built binder entry). */
-    public static final float TRAP_FRACTION = 0.30f;
+     *  S44 census-calibrated 0.10 at patch-min 1; S50's 0.30 landed 1 carpet per ~10 chunks -- survey-proof
+     *  rarity (owner TEST 139: "nowhere to be found...easily"). S51 runs 0.50 with the per-chunk cap at 2:
+     *  a carpet every few chunks, still hidden, no minefield (min-size + cap keep the ceiling). */
+    public static final float TRAP_FRACTION = 0.50f;
 
-    /** At most this many patches fire per chunk (the census cap): a chunk may HIDE one false floor; a
-     *  chunk riddled with them reads as broken terrain, not danger. */
-    public static final int MAX_PATCHES_PER_CHUNK = 1;
+    /** At most this many patches fire per chunk (the census cap): a chunk may hide a couple of false
+     *  floors; a chunk riddled with them reads as broken terrain, not danger. S51: 1 -> 2. */
+    public static final int MAX_PATCHES_PER_CHUNK = 2;
 
     /**
      * Does a column's vertical profile qualify for a drop cell? All inputs are counts measured by the

@@ -35,9 +35,11 @@ import net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConf
  *
  * <p>The S48 mixin post-pass stays: it still handles surface-stage magma early, and this sweep is
  * idempotent over its output (obsidian and air match neither ice nor water, so already-quenched pockets
- * are skipped). Chunk-local writes only, same as the mixin: a neighbor across the chunk border belongs
- * to that chunk's own sweep. Scan band Y0..{@link #SCAN_TOP_Y}: the ice country -- sub-Y0 stone-cellar
- * magma is the deepslate world's own business (the S49 cellar ruling).
+ * are skipped). S51: the sweep reads AND writes across chunk borders -- a decoration feature owns its
+ * full region, and a border magma must neither classify dry because its water sits one chunk over nor
+ * keep a half-open shell (scans stay anchored to this chunk's 16x16 columns, so no double-processing:
+ * each magma is swept exactly once, by its own chunk). Scan band Y0..{@link #SCAN_TOP_Y}: the ice
+ * country -- sub-Y0 stone-cellar magma is the deepslate world's own business (the S49 cellar ruling).
  *
  * <p>Census line under {@code -Dlatitude.debugCollapse}: {@code [LAT][QUENCH] chunk=... magma=N
  * flooded=F dry=D} for rig calibration/audit.
@@ -95,14 +97,17 @@ public final class MagmaQuenchSweepFeature extends Feature<NoneFeatureConfigurat
                     }
                     magma++;
                     // Classify: flooded beats dry; neither = leave alone (bare stone country).
+                    // S51: cross-chunk faces are CHECKED and shells WRITTEN whole -- the chunk-local
+                    // discipline was inherited from the surface-stage mixin, but a decoration feature
+                    // legally owns its full region; a border magma must not classify dry because its
+                    // only water sits one chunk over (the TEST 139 flight's suspected miss class).
                     boolean isFlooded = false;
                     boolean touchesIce = false;
                     for (int f = 0; f < 6; f++) {
                         int fx = wx + (f == 0 ? 1 : f == 1 ? -1 : 0);
                         int fy = y + (f == 2 ? 1 : f == 3 ? -1 : 0);
                         int fz = wz + (f == 4 ? 1 : f == 5 ? -1 : 0);
-                        if (fx < baseX || fx > baseX + 15 || fz < baseZ || fz > baseZ + 15
-                                || fy <= level.getMinY() || fy >= level.getMaxY()) {
+                        if (fy <= level.getMinY() || fy >= level.getMaxY()) {
                             continue;
                         }
                         cursor.set(fx, fy, fz);
@@ -131,8 +136,7 @@ public final class MagmaQuenchSweepFeature extends Feature<NoneFeatureConfigurat
                                 int nx = wx + dx;
                                 int ny = y + dy;
                                 int nz = wz + dz;
-                                if (nx < baseX || nx > baseX + 15 || nz < baseZ || nz > baseZ + 15
-                                        || ny <= level.getMinY() || ny >= level.getMaxY()) {
+                                if (ny <= level.getMinY() || ny >= level.getMaxY()) {
                                     continue;
                                 }
                                 cursor.set(nx, ny, nz);

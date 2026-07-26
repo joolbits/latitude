@@ -38,12 +38,12 @@ class CaveDropTrapTest {
 
     @Test
     void fractionGateIsHalfOpenAndSafeOutOfRange() {
-        assertEquals(0.30f, CaveDropTrap.TRAP_FRACTION, 1e-6f,
-                "S50: hotter roll over the few carpet-scale panels the MIN_PATCH_AREA floor leaves eligible");
-        assertEquals(1, CaveDropTrap.MAX_PATCHES_PER_CHUNK, "one hidden false floor per chunk at most");
+        assertEquals(0.50f, CaveDropTrap.TRAP_FRACTION, 1e-6f,
+                "S51: 0.30 was survey-proof rarity (owner: \"nowhere to be found...easily\")");
+        assertEquals(2, CaveDropTrap.MAX_PATCHES_PER_CHUNK, "a couple of hidden false floors per chunk at most");
         assertTrue(CaveDropTrap.shouldTrapPatch(0.0f));
-        assertTrue(CaveDropTrap.shouldTrapPatch(0.29f));
-        assertFalse(CaveDropTrap.shouldTrapPatch(0.30f), "exactly the fraction does NOT trap (half-open)");
+        assertTrue(CaveDropTrap.shouldTrapPatch(0.49f));
+        assertFalse(CaveDropTrap.shouldTrapPatch(0.50f), "exactly the fraction does NOT trap (half-open)");
         assertFalse(CaveDropTrap.shouldTrapPatch(-0.01f), "out-of-range never traps (floors stay honest)");
         assertFalse(CaveDropTrap.shouldTrapPatch(1.5f));
     }
