@@ -77,8 +77,10 @@ class GlacialDressingJsonSchemaTest {
                         + "country (" + maxY + " > 48)");
         assertTrue(maxY >= 110,
                 name + ": S38 -- the range must cover the p95 surface band (~Y120), was " + maxY);
-        assertTrue(height.get("min_inclusive").getAsJsonObject().has("above_bottom"),
-                name + ": range must start at the world floor (above_bottom anchor)");
+        assertEquals(0, height.get("min_inclusive").getAsJsonObject().get("absolute").getAsInt(),
+                name + ": S49 (owner, 84N deepslate screenshot: \"Remove icicles and ice/snow from the "
+                        + "deepslate layers, deep dark\") -- ice dressing floors at ABSOLUTE Y0, the S37 ice "
+                        + "country's own floor; the stone/deepslate/deep-dark cellar keeps its own story");
     }
 
     /** S38 exception: the two ICE BLOBS stay DEEP-band only (max &lt; 48). Above Y0 the S37 body is already
@@ -93,8 +95,9 @@ class GlacialDressingJsonSchemaTest {
         int maxY = max.getAsJsonObject().get("absolute").getAsInt();
         assertTrue(maxY < LatitudeBiomes.GLACIAL_CAVES_CEILING_Y,
                 name + ": blobs stay below the glacial-caves ceiling (" + maxY + " < 48)");
-        assertTrue(height.get("min_inclusive").getAsJsonObject().has("above_bottom"),
-                name + ": range must start at the world floor (above_bottom anchor)");
+        assertEquals(0, height.get("min_inclusive").getAsJsonObject().get("absolute").getAsInt(),
+                name + ": S49 -- the blobs seam the Y0..48 stone country ONLY; below Y0 the cellar is the "
+                        + "deepslate/deep-dark's own (owner: no ice in the deepslate layers)");
     }
 
     @Test
@@ -181,7 +184,16 @@ class GlacialDressingJsonSchemaTest {
         JsonObject placedJson = placed("glacial_glow_lichen");
         assertEquals("globe:glacial_glow_lichen", placedJson.get("feature").getAsString());
         List<JsonObject> chain = placementChain(placedJson);
-        assertCaveBandPlacement("glacial_glow_lichen", chain);
+        // S49 exception: lichen is STONE-legal (not ice-family), so it alone keeps the full column --
+        // sub-Y0 lichen on deepslate is vanilla's own look, and the owner's "no ice in the deepslate
+        // layers" ruling names icicles/ice/snow, not glow lichen.
+        assertEquals("minecraft:biome", chain.get(chain.size() - 1).get("type").getAsString(),
+                "glacial_glow_lichen: the biome filter must be the LAST placement modifier");
+        JsonObject lichenHeight = modifier(chain, "minecraft:height_range").getAsJsonObject("height");
+        assertTrue(lichenHeight.getAsJsonObject("max_inclusive").get("absolute").getAsInt() >= 110,
+                "glacial_glow_lichen: S38 -- the range must still cover the p95 surface band");
+        assertTrue(lichenHeight.getAsJsonObject("min_inclusive").has("above_bottom"),
+                "glacial_glow_lichen: full column (the one S49 exception, stone-legal)");
         JsonObject count = modifier(chain, "minecraft:count").getAsJsonObject("count");
         assertTrue(count.get("max_inclusive").getAsInt() <= 8,
                 "LOW count -- punctuation, not illumination (vanilla glow_lichen runs 104-157)");
@@ -213,7 +225,7 @@ class GlacialDressingJsonSchemaTest {
                         "placed feature " + featureId + " needs its configured_feature JSON");
             }
         }
-        assertEquals(21, globeFeatures, "twenty-one globe features after S46 wired the icicle revival "
+        assertEquals(18, globeFeatures, "eighteen globe features after S48 cut the three bare-ice ore veins (owner call) from the S46 twenty-one: "
                 + "(icicle_cluster needles + the PROVISIONAL low-rate ice_spear_patch) onto the S45 nineteen: the S44 nine "
                 + "(hanging_icicles, snow_drift, powder_pocket, frost_carpet, slush_floe, cave_drop_trap, "
                 + "glow_lichen + 2 ice blobs) + frost_bloom, brine_pool (lakes), ice_geode (step 2), "

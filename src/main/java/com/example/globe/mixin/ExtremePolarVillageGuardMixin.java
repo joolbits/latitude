@@ -41,6 +41,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Same accepted trade as villages: the structure START still exists (locate finds it), no blocks stamp.
  * Structure placement resolves biomes from the RAW multi_noise source (the carver dead-wiring class), so
  * a biome-tag exclusion could never work here -- the code-side veto is the only real seam.
+ *
+ * <p><b>S48 GLACIAL-STRUCTURE BAND GATE (the S43 finding, mirrored):</b> the raw-source rule cuts the
+ * OTHER way too -- a {@code has_structure} tag listing only the mod's OVERLAY-injected biomes
+ * ({@code globe:glacial_caves}/{@code polar_barrens}) matches nothing in the raw source, so
+ * {@code globe:frozen_cache} had NEVER actually generated (rig-proven: locate finds none on a fresh
+ * world), and {@code globe:frozen_shipwreck} would have inherited the same dead wiring. Fix, two
+ * halves: the tags now list the RAW vanilla frozen-family biomes (candidates appear wherever raw noise
+ * says frozen), and THIS mixin adds the inverse gate -- {@code globe:} glacial structures CANCEL unless
+ * inside the barrens band (82 deg) -- so raw-frozen pockets at lower latitudes (subpolar mountain snow,
+ * temperate frozen rivers) never grow a glacier wreck. Same seam, opposite polarity: vetoes keep
+ * things out of the band; this keeps OUR things in it.
  */
 @Mixin(StructureStart.class)
 public abstract class ExtremePolarVillageGuardMixin {
@@ -63,9 +74,6 @@ public abstract class ExtremePolarVillageGuardMixin {
         int blockZ = this.getChunkPos().getMiddleBlockZ();
         boolean villageBand = LatitudeBiomes.isBlockInPolarVillageVetoBand(blockZ, GlobeMod.BORDER_RADIUS);
         boolean mineshaftBand = LatitudeBiomes.isBlockInPolarMineshaftVetoBand(blockZ, GlobeMod.BORDER_RADIUS);
-        if (!villageBand && !mineshaftBand) {
-            return;
-        }
         Structure structure = this.getStructure();
         try {
             Registry<Structure> registry = world.registryAccess().lookupOrThrow(Registries.STRUCTURE);
@@ -74,6 +82,15 @@ public abstract class ExtremePolarVillageGuardMixin {
                 return;
             }
             String path = structureId.getPath();
+            // S48 inverse gate: globe glacial structures exist ONLY inside the barrens band. Their
+            // has_structure tags list raw vanilla frozen biomes (the only thing raw placement can see),
+            // so this is the half that pins them to actual glacier country.
+            if ("globe".equals(structureId.getNamespace())
+                    && (path.equals("frozen_cache") || path.equals("frozen_shipwreck"))
+                    && !mineshaftBand) {
+                ci.cancel();
+                return;
+            }
             if ((villageBand && path.startsWith("village"))
                     || (mineshaftBand && path.startsWith("mineshaft"))) {
                 ci.cancel();

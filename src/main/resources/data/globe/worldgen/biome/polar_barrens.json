@@ -62,10 +62,7 @@
       "minecraft:disk_clay",
       "minecraft:disk_gravel",
       "globe:glacial_moraine_stone",
-      "globe:glacial_moraine_gravel",
-      "globe:ice_ore_coal",
-      "globe:ice_ore_iron",
-      "globe:ice_ore_copper"
+      "globe:glacial_moraine_gravel"
     ],
     [
       "globe:hanging_icicles",

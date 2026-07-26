@@ -99,8 +99,9 @@ class GlacialCavesBiomeJsonSchemaTest {
         // moraine lens -- and the S45 five run LAST: moraine lenses drop stone/gravel debris into the
         // finished ice body, then the ice-targeted veins seed coal/iron/copper into ice and lenses alike
         // (the owner's "TOO much ice without enough ores" rebalance: inclusions, never less ice).
-        List<String> s45Ores = List.of("globe:glacial_moraine_stone", "globe:glacial_moraine_gravel",
-                "globe:ice_ore_coal", "globe:ice_ore_iron", "globe:ice_ore_copper");
+        // S48 (owner 2026-07-26: "yep i agree w/ cut ore veins"): the three bare-ice veins are GONE --
+        // rock carries the ore (moraine lenses), ice stays ice, the caves run less forgiving. Geodes stay.
+        List<String> s45Ores = List.of("globe:glacial_moraine_stone", "globe:glacial_moraine_gravel");
         List<String> barrensOres = featureStep(barrens, 6);
         List<String> cavesOres = featureStep(caves, 6);
         List<String> vanillaRun = barrensOres.subList(0, barrensOres.size() - s45Ores.size());

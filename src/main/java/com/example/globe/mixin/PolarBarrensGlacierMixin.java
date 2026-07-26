@@ -287,6 +287,27 @@ public abstract class PolarBarrensGlacierMixin {
             int chunkMinZ = cp.getMinBlockZ();
             int maxY = chunk.getMaxY() - 1;
             for (BlockPos magma : magmaSeen) {
+                // S48 (Peetsa 2026-07-26: "the magma blocks inside flooded caves are still just inside an
+                // icy zone without being surrounded by obsidian like I asked"): the S43b pass was ice-family-
+                // only, so magma in WATER-flooded pockets matched nothing and got no shell. FLOODED MODE:
+                // any face-adjacent water => the full 3x3x3's ice-family AND water neighbors quench to
+                // OBSIDIAN -- a sealed shell, no air melt-pocket (gen-time air under water is a broken
+                // bubble, and "surrounded by obsidian" is her exact ask). Dry magma keeps the shipped S43b
+                // read (face ice melts to air, diagonal shell to obsidian).
+                boolean flooded = false;
+                for (int f = 0; f < 6 && !flooded; f++) {
+                    int fx = magma.getX() + (f == 0 ? 1 : f == 1 ? -1 : 0);
+                    int fy = magma.getY() + (f == 2 ? 1 : f == 3 ? -1 : 0);
+                    int fz = magma.getZ() + (f == 4 ? 1 : f == 5 ? -1 : 0);
+                    if (fx < chunkMinX || fx > chunkMinX + 15
+                            || fz < chunkMinZ || fz > chunkMinZ + 15 || fy <= minY || fy > maxY) {
+                        continue;
+                    }
+                    cursor.set(fx, fy, fz);
+                    if (!chunk.getBlockState(cursor).getFluidState().isEmpty()) {
+                        flooded = true;
+                    }
+                }
                 for (int dx = -1; dx <= 1; dx++) {
                     for (int dy = -1; dy <= 1; dy++) {
                         for (int dz = -1; dz <= 1; dz++) {
@@ -302,14 +323,24 @@ public abstract class PolarBarrensGlacierMixin {
                                 continue;
                             }
                             cursor.set(nx, ny, nz);
-                            Block nb = chunk.getBlockState(cursor).getBlock();
-                            if (nb != Blocks.PACKED_ICE && nb != Blocks.BLUE_ICE
-                                    && nb != Blocks.ICE && nb != Blocks.SNOW_BLOCK) {
-                                continue;
+                            BlockState ns = chunk.getBlockState(cursor);
+                            Block nb = ns.getBlock();
+                            boolean iceFamily = nb == Blocks.PACKED_ICE || nb == Blocks.BLUE_ICE
+                                    || nb == Blocks.ICE || nb == Blocks.SNOW_BLOCK;
+                            if (flooded) {
+                                // Flooded: quench ice AND water alike into the sealed shell.
+                                if (!iceFamily && ns.getFluidState().isEmpty()) {
+                                    continue;
+                                }
+                                chunk.setBlockState(cursor, GLOBE_MAGMA_QUENCH_OBSIDIAN);
+                            } else {
+                                if (!iceFamily) {
+                                    continue;
+                                }
+                                boolean faceAdjacent = Math.abs(dx) + Math.abs(dy) + Math.abs(dz) == 1;
+                                chunk.setBlockState(cursor,
+                                        faceAdjacent ? GLOBE_MAGMA_POCKET_AIR : GLOBE_MAGMA_QUENCH_OBSIDIAN);
                             }
-                            boolean faceAdjacent = Math.abs(dx) + Math.abs(dy) + Math.abs(dz) == 1;
-                            chunk.setBlockState(cursor,
-                                    faceAdjacent ? GLOBE_MAGMA_POCKET_AIR : GLOBE_MAGMA_QUENCH_OBSIDIAN);
                         }
                     }
                 }

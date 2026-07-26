@@ -77,10 +77,7 @@
       "globe:glacial_ice_blob",
       "globe:glacial_blue_ice_blob",
       "globe:glacial_moraine_stone",
-      "globe:glacial_moraine_gravel",
-      "globe:ice_ore_coal",
-      "globe:ice_ore_iron",
-      "globe:ice_ore_copper"
+      "globe:glacial_moraine_gravel"
     ],
     [
       "globe:hanging_icicles",
