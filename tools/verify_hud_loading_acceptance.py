@@ -23,7 +23,7 @@ FABRIC_METADATA = ROOT / "src/main/resources/fabric.mod.json"
 LOADING_MIXIN = "client.LevelLoadingScreenLatitudeOverlayMixin"
 MIXIN_CONFIG_NAME = "globe.mixins.json"
 IMMUTABLE_LOADING_CANDIDATE_SHA256 = (
-    "20e2f8fcdc7a111609eb9c043b1379bb269b44d7f1f0c595692356149684fe6a"
+    "64e419bb8f8243fdd1dd04d40e8282f7a48ab2c842a17328b64b54eec57436b5"
 )
 
 IMMUTABLE_CANDIDATE_FAILURE = (
@@ -1074,8 +1074,8 @@ def main() -> int:
     version_gap = int(gap_match.group(1)) if gap_match else None
     screen_margin = int(margin_match.group(1)) if margin_match else None
     require(
-        version_gap is not None and 1 <= version_gap <= 3,
-        "loading version label must sit immediately below the pane with a 1–3 px gap",
+        version_gap == 4,
+        "loading version label must sit below the pane with the approved 4 px gap",
         failures,
     )
     require(
