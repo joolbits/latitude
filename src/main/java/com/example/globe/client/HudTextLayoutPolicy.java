@@ -5,8 +5,8 @@ package com.example.globe.client;
  */
 public final class HudTextLayoutPolicy {
     public static final float DEFAULT_LOCATION_TEXT_SCALE = 1.0f;
-    public static final float LOCATION_TEXT_SCALE_MIN = 0.75f;
-    public static final float LOCATION_TEXT_SCALE_MAX = 2.0f;
+    public static final float LOCATION_TEXT_SCALE_MIN = 0.50f;
+    public static final float LOCATION_TEXT_SCALE_MAX = 1.25f;
 
     private HudTextLayoutPolicy() {
     }
