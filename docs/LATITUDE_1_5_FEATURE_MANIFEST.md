@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 8 PASSED LOCALLY; post-TEST 10 UI feedback is source/model green and rendered acceptance remains pending; release actions remain unauthorized` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-26`
+`status: Phase 8 PASSED LOCALLY; post-TEST 11 title-snap/location-text feedback is source/model green and rendered acceptance remains pending; release actions remain unauthorized` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-26`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -30,6 +30,41 @@ required for rendered acceptance.
 Canonical evidence:
 
 `docs/binder/latitude-1-5-test10-ui-feedback-20260726.md`
+
+## Post-TEST 11 title snapping and location text scale
+
+HUD Studio title dragging now uses the selected placement mode while the
+pointer is moving. SNAP visibly quantizes to the existing eight-pixel grid;
+FREE remains pixel-by-pixel. Release, screen re-initialization, reopening, and
+configuration reload preserve the same stored coordinates without a final
+jump.
+
+`Location Text Size` is a separate persisted 75%–200% control, defaulting to
+100%. It scales latitude plus biome/zone detail in analog and digital HUDs,
+including detached detail, without resizing the analog disc and north marker
+or the digital direction. One shared production layout policy owns scale
+sanitization, measured geometry, bounds, hit-testing, clamping, preview, and
+title snap/free coordinates.
+
+Normal gameplay bounds use the current rendered direction, latitude, and
+provider-aware biome/zone text. HUD Studio alone retains deliberate sample
+content. This keeps default detached-detail overlap avoidance exact even for a
+long custom-provider label at 200%.
+
+Focused numeric policy proof, the strengthened HUD Studio verifier, the Java
+25 22-task clean build/check/invariant gate, exact diff review, UIX review, and
+a fresh adversarial review pass. The first adversarial pass rejected
+direction-only layout movement and test-only formula duplication; both were
+corrected before this savepoint.
+
+This manifest-bearing commit is the designated source for TEST 12. Rendered
+SNAP/FREE drag feel and the 75%/100%/200% location-text matrix remain the
+player-visible acceptance gate; no Minecraft launch, push, or release is
+implied.
+
+Canonical evidence:
+
+`docs/binder/latitude-1-5-test11-title-snap-location-text-20260726.md`
 
 ## Post-TEST 9 annotated polish
 
