@@ -75,7 +75,9 @@
       "globe:glacial_slush_floe",
       "globe:cave_drop_trap",
       "globe:ice_spire_cluster",
-      "globe:ice_spire"
+      "globe:ice_spire",
+      "globe:icicle_cluster",
+      "globe:ice_spear_patch"
     ],
     [
       "minecraft:spring_water",

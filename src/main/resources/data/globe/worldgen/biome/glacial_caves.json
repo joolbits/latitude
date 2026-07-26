@@ -90,7 +90,9 @@
       "globe:glacial_slush_floe",
       "globe:cave_drop_trap",
       "globe:ice_spire_cluster",
-      "globe:ice_spire"
+      "globe:ice_spire",
+      "globe:icicle_cluster",
+      "globe:ice_spear_patch"
     ],
     [
       "minecraft:spring_water",
@@ -142,6 +144,18 @@
         "maxCount": 2,
         "minCount": 1,
         "weight": 50
+      },
+      {
+        "type": "minecraft:drowned",
+        "maxCount": 2,
+        "minCount": 1,
+        "weight": 10
+      },
+      {
+        "type": "minecraft:silverfish",
+        "maxCount": 3,
+        "minCount": 1,
+        "weight": 5
       }
     ],
     "underground_water_creature": [

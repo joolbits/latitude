@@ -852,9 +852,16 @@ public class GlobeModClient implements ClientModInitializer {
                 if (lightLayer.getLightValue(facePos) < TORCH_ICE_SPARKLE_MIN_BLOCK_LIGHT) {
                     continue;
                 }
-                double gx = bx + 0.5 + face.getStepX() * 0.51;
-                double gy = by + 0.5 + face.getStepY() * 0.51;
-                double gz = bz + 0.5 + face.getStepZ() * 0.51;
+                // S46 (owner, TEST 135 era: sparkles "clip into the ice model. layer the sparkle particles
+                // always on top so that they aren't clipped in"): 0.51 put the spawn point a hair off the
+                // face, so the camera-facing billboard (glow-star quad, ~0.1+ half-size) sank halfway into
+                // the block whenever the view wasn't face-on. 0.66 floats the whole quad clear of the face
+                // plane at any viewing angle -- the sparkle now sits ON the ice, never IN it. (If she still
+                // reports clips, the escalation is a depth-biased render pass, not more offset -- beyond
+                // ~0.7 the glint visibly detaches and reads as floating dust.)
+                double gx = bx + 0.5 + face.getStepX() * 0.66;
+                double gy = by + 0.5 + face.getStepY() * 0.66;
+                double gz = bz + 0.5 + face.getStepZ() * 0.66;
                 // Zero incoming velocity -- the sparkle twinkles in place on the ice face, mirroring the
                 // ambient glint's own zero-drift spawn (SPARKLE_DRIFT_UP/SPARKLE_DRIFT_LATERAL are both 0.0).
                 client.particleEngine.createParticle(SPARKLE_PARTICLE, gx, gy, gz, 0.0, 0.0, 0.0);

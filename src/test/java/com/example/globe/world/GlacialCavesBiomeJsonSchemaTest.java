@@ -121,12 +121,15 @@ class GlacialCavesBiomeJsonSchemaTest {
         JsonObject caves = glacialCaves();
         assertEquals(List.of("globe:hanging_icicles", "globe:glacial_snow_drift",
                         "globe:glacial_powder_pocket", "globe:glacial_frost_carpet", "globe:glacial_slush_floe",
-                        "globe:cave_drop_trap", "globe:ice_spire_cluster", "globe:ice_spire"),
+                        "globe:cave_drop_trap", "globe:ice_spire_cluster", "globe:ice_spire",
+                        "globe:icicle_cluster", "globe:ice_spear_patch"),
                 featureStep(caves, 7),
                 "underground_decoration (step 7): the plain-ice hanging_icicles (reinstated S40 per owner), "
-                        + "the floor/pool dressing, the S44 drop trap, then the S45 ice spires (cluster before "
-                        + "single, mirroring the vanilla sulfur_caves order; FLOOR forms on the 26.2 spike "
-                        + "type -- deliberately not the rejected hanging-speleothem silhouette)");
+                        + "the floor/pool dressing, the S44 drop trap, the S45 ice spires (cluster before "
+                        + "single, vanilla sulfur order; floor forms, not the rejected speleothem silhouette), "
+                        + "then the S46 icicle revival: needle clusters (owner GO 2026-07-26, \"really love\") "
+                        + "and the LOW-rate floor spear patch (PROVISIONAL -- owner is \"a tad less sold\" on "
+                        + "floor ones and judges them live; count stays low until her final call)");
         assertEquals(List.of("globe:glacial_glow_lichen"),
                 featureStep(caves, 9),
                 "vegetal step = the sparse glacial glow_lichen only (punctuation, not illumination). "
@@ -154,21 +157,39 @@ class GlacialCavesBiomeJsonSchemaTest {
             }
         }
         // S25b owner override (TEST 117): "Monsters inside glacial caves should be strays." The frozen-dead
-        // roster is strays + skeletons ONLY -- nothing warm-blooded underground. S45 (2026-07-26) kept the
-        // SPECIES law but flipped the WEIGHTS: 26.2 strays require canSeeSky (verified in the jar), so the
-        // old 85/15 split voided 85% of every roofed-cave spawn roll -- the owner's "caves a bit sparse" was
-        // this table, not a perception. Skeletons (cave-legal, frozen-dead on fiction) now carry the roofed
-        // deep; the residual stray weight serves the sky-breached shafts ("the ones that got in from above").
-        assertEquals(List.of("minecraft:stray", "minecraft:skeleton"), types,
-                "the glacial-caves monster list is exactly [stray, skeleton], in that order");
+        // roster was strays + skeletons ONLY. S45 (2026-07-26) kept the SPECIES law but flipped the WEIGHTS:
+        // 26.2 strays require canSeeSky (verified in the jar), so the old 85/15 split voided 85% of every
+        // roofed-cave spawn roll -- the owner's "caves a bit sparse" was this table, not a perception.
+        // Skeletons (cave-legal, frozen-dead on fiction) carry the roofed deep; the residual stray weight
+        // serves the sky-breached shafts ("the ones that got in from above"). S46 (owner, 2026-07-26: "yeah
+        // add the drowned and silverfish") widens her own species ceiling: DROWNED self-select into the
+        // ponded pools (drowned spawn rules require water -- dry rolls fail free), SILVERFISH lurk as ice
+        // vermin at token weight. Both stay cold-fiction; the warm-blooded ban below still binds.
+        assertEquals(List.of("minecraft:stray", "minecraft:skeleton", "minecraft:drowned",
+                        "minecraft:silverfish"), types,
+                "the glacial-caves monster list is [stray, skeleton, drowned, silverfish], in that order");
         assertEquals(12, strayWeight, "residual strays for sky-breached shafts only (weight 12, S45)");
         assertEquals(50, skeletonWeight, "skeletons carry the roofed deep (weight 50, S45 canSeeSky fix)");
         assertTrue(skeletonWeight > strayWeight,
                 "the cave-legal skeleton must dominate, or the roofed deep goes silent again (S45)");
+        int drownedWeight = -1;
+        int silverfishWeight = -1;
+        for (var e : monsters) {
+            JsonObject entry = e.getAsJsonObject();
+            if ("minecraft:drowned".equals(entry.get("type").getAsString())) {
+                drownedWeight = entry.get("weight").getAsInt();
+            }
+            if ("minecraft:silverfish".equals(entry.get("type").getAsString())) {
+                silverfishWeight = entry.get("weight").getAsInt();
+            }
+        }
+        assertEquals(10, drownedWeight, "S46 drowned: pool-bound accent (water-gated spawn rules), never lead");
+        assertEquals(5, silverfishWeight, "S46 silverfish: token ice-vermin weight");
+        assertTrue(skeletonWeight > drownedWeight + silverfishWeight,
+                "the skeleton lead outweighs both S46 additions combined -- accents, not a new register");
         // Nothing warm-blooded (or otherwise off-fiction) may appear underground.
         for (String banned : new String[]{"minecraft:zombie", "minecraft:zombie_villager", "minecraft:spider",
-                "minecraft:creeper", "minecraft:slime", "minecraft:enderman", "minecraft:witch",
-                "minecraft:drowned"}) {
+                "minecraft:creeper", "minecraft:slime", "minecraft:enderman", "minecraft:witch"}) {
             assertFalse(types.contains(banned),
                     "the frozen-dead roster excludes warm-blooded/off-fiction mob " + banned);
         }

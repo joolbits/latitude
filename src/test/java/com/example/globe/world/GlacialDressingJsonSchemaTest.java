@@ -213,7 +213,8 @@ class GlacialDressingJsonSchemaTest {
                         "placed feature " + featureId + " needs its configured_feature JSON");
             }
         }
-        assertEquals(19, globeFeatures, "nineteen globe features after the S45 Round-1 wiring: the S44 nine "
+        assertEquals(21, globeFeatures, "twenty-one globe features after S46 wired the icicle revival "
+                + "(icicle_cluster needles + the PROVISIONAL low-rate ice_spear_patch) onto the S45 nineteen: the S44 nine "
                 + "(hanging_icicles, snow_drift, powder_pocket, frost_carpet, slush_floe, cave_drop_trap, "
                 + "glow_lichen + 2 ice blobs) + frost_bloom, brine_pool (lakes), ice_geode (step 2), "
                 + "moraine stone/gravel + ice-ore coal/iron/copper (step 6), ice_spire_cluster, ice_spire "
