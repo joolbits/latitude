@@ -244,13 +244,13 @@ def main() -> int:
     )
     require(
         "DEFAULT_LOCATION_TEXT_SCALE = 1.0f" in numeric_policy
-        and "LOCATION_TEXT_SCALE_MIN = 0.75f" in numeric_policy
-        and "LOCATION_TEXT_SCALE_MAX = 2.0f" in numeric_policy
+        and "LOCATION_TEXT_SCALE_MIN = 0.50f" in numeric_policy
+        and "LOCATION_TEXT_SCALE_MAX = 1.25f" in numeric_policy
         and "public float locationTextScale = DEFAULT_LOCATION_TEXT_SCALE;" in config
         and "HudTextLayoutPolicy.sanitizeLocationTextScale(locationTextScale)" in config
         and "Float.isFinite(value)" in numeric_policy
         and "Math.round(value * 20.0f) / 20.0f" in numeric_policy,
-        "location text size must default safely and sanitize to 75%-200% in five-percent steps",
+        "location text size must default safely and sanitize to 50%-125% in five-percent steps",
         failures,
     )
     require(

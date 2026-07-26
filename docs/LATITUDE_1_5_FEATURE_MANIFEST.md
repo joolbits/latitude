@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 8 PASSED LOCALLY; TEST 12 is rendered green and its biome-source preview follow-up is source/model green; release actions remain unauthorized` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-26`
+`status: Phase 8 PASSED LOCALLY; TEST 13 is rendered green and its compact location-text range follow-up is source/model green; release actions remain unauthorized` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-26`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -39,7 +39,7 @@ FREE remains pixel-by-pixel. Release, screen re-initialization, reopening, and
 configuration reload preserve the same stored coordinates without a final
 jump.
 
-`Location Text Size` is a separate persisted 75%–200% control, defaulting to
+`Location Text Size` is a separate persisted 50%–125% control, defaulting to
 100%. It scales latitude plus biome/zone detail in analog and digital HUDs,
 including detached detail, without resizing the analog disc and north marker
 or the digital direction. One shared production layout policy owns scale
@@ -49,7 +49,7 @@ title snap/free coordinates.
 Normal gameplay bounds use the current rendered direction, latitude, and
 provider-aware biome/zone text. HUD Studio alone retains deliberate sample
 content. This keeps default detached-detail overlap avoidance exact even for a
-long custom-provider label at 200%.
+long custom-provider label at 125%.
 
 Focused numeric policy proof, the strengthened HUD Studio verifier, the Java
 25 22-task clean build/check/invariant gate, exact diff review, UIX review, and
@@ -58,7 +58,7 @@ direction-only layout movement and test-only formula duplication; both were
 corrected before this savepoint.
 
 This manifest-bearing commit is the designated source for TEST 12. Rendered
-SNAP/FREE drag feel and the 75%/100%/200% location-text matrix remain the
+SNAP/FREE drag feel and the 50%/100%/125% location-text matrix remain the
 player-visible acceptance gate; no Minecraft launch, push, or release is
 implied.
 
@@ -86,6 +86,25 @@ rendered ON/OFF preview transition remains for human confirmation.
 Canonical evidence:
 
 `docs/binder/latitude-1-5-test12-biome-source-preview-20260726.md`
+
+## Post-TEST 13 compact location-text range
+
+Maintainer confirmed the TEST 13 biome-source preview, then found the independent
+location-text slider too lopsided: its 75% floor was not compact enough while
+its 200% ceiling was impractically large. The default remains 100%, but the
+persisted slider and its shared geometry policy now use 50%–125% in five-percent
+steps. Existing saved values are safely clamped into that compact range.
+
+Focused policy proof checks the new 50% and 125% boundaries, retains the
+independent compass-size invariant, and verifies long provider labels against
+the same current-content bounds used by runtime rendering. The structural HUD
+Studio verifier and Java 25 build pass. This manifest-bearing commit is the
+designated source for TEST 14; a short rendered slider-range check remains the
+player-visible gate.
+
+Canonical evidence:
+
+`docs/binder/latitude-1-5-test13-location-text-range-20260726.md`
 
 ## Post-TEST 9 annotated polish
 
