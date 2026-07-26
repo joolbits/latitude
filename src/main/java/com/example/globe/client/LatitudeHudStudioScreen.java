@@ -59,6 +59,7 @@ public class LatitudeHudStudioScreen extends Screen {
     private AbstractWidget wCompassTextColor;
     private AbstractWidget wCompassShowLatitude;
     private AbstractWidget wCompassAnalogShowLatitude;
+    private AbstractWidget wLocationTextScale;
     private AbstractWidget wCompassCompact;
     private AbstractWidget wCompassAttachHotbar;
     private AbstractWidget wLocationDetail;
@@ -121,6 +122,7 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wCompassTextColor = null;
         this.wCompassShowLatitude = null;
         this.wCompassAnalogShowLatitude = null;
+        this.wLocationTextScale = null;
         this.wCompassCompact = null;
         this.wCompassAttachHotbar = null;
         this.wLocationDetail = null;
@@ -261,6 +263,24 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wCompassCompact, y);
             y += rowH + rowGap;
         }
+
+        this.wLocationTextScale = this.addRenderableWidget(new IntSlider(
+                panelX,
+                y,
+                widgetW,
+                rowH,
+                Component.literal("Location Text Size"),
+                Math.round(CompassHudConfig.LOCATION_TEXT_SCALE_MIN * 100.0f),
+                Math.round(CompassHudConfig.LOCATION_TEXT_SCALE_MAX * 100.0f),
+                Math.round(cfg.locationTextScale * 100.0f),
+                "%",
+                5,
+                v -> cfg.locationTextScale = v / 100.0f));
+        tooltip(
+                this.wLocationTextScale,
+                "Changes latitude and biome/zone text without changing the compass itself.");
+        trackSidebarWidget(this.wLocationTextScale, y);
+        y += rowH + rowGap;
 
         this.wCompassAttachHotbar = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.attachToHotbarCompass)
                 .withValues(true, false)
@@ -597,6 +617,14 @@ public class LatitudeHudStudioScreen extends Screen {
             double newCy = my - titleGrabDy;
             titleOffsetXf = newCx - (this.width / 2.0);
             titleOffsetYf = newCy - (this.height / 2.0);
+            titleOffsetXf = HudTextLayoutPolicy.titleDragCoordinate(
+                    titleOffsetXf,
+                    LatitudeConfig.hudSnapEnabled,
+                    LatitudeConfig.hudSnapPixels);
+            titleOffsetYf = HudTextLayoutPolicy.titleDragCoordinate(
+                    titleOffsetYf,
+                    LatitudeConfig.hudSnapEnabled,
+                    LatitudeConfig.hudSnapPixels);
             return true;
         }
 
@@ -818,6 +846,7 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wCompassTextColor, showCompassControls);
         setVisible(wCompassShowLatitude, showCompassControls && !analog);
         setVisible(wCompassAnalogShowLatitude, showCompassControls && analog);
+        setVisible(wLocationTextScale, showCompassControls);
         setVisible(wCompassCompact, showCompassControls && !analog);
         setVisible(wCompassAttachHotbar, showCompassControls && !analog);
         setVisible(wLocationDetail, showCompassControls);
@@ -1019,20 +1048,26 @@ public class LatitudeHudStudioScreen extends Screen {
         private final Component label;
         private final int min;
         private final int max;
+        private final int step;
         private final String suffix;
         private final IntConsumer onChange;
         private Integer legacyDisplayValue;
 
         private IntSlider(int x, int y, int width, int height, Component label, int min, int max, int initial, IntConsumer onChange) {
-            this(x, y, width, height, label, min, max, initial, "", onChange);
+            this(x, y, width, height, label, min, max, initial, "", 1, onChange);
         }
 
         private IntSlider(int x, int y, int width, int height, Component label, int min, int max, int initial, String suffix, IntConsumer onChange) {
+            this(x, y, width, height, label, min, max, initial, suffix, 1, onChange);
+        }
+
+        private IntSlider(int x, int y, int width, int height, Component label, int min, int max, int initial, String suffix, int step, IntConsumer onChange) {
             super(x, y, width, height, Component.empty(), toNorm(initial, min, max));
             this.label = label;
             this.min = min;
             this.max = max;
             this.suffix = suffix;
+            this.step = Math.max(1, step);
             this.onChange = onChange;
             this.legacyDisplayValue = initial > max ? initial : null;
             updateMessage();
@@ -1052,7 +1087,9 @@ public class LatitudeHudStudioScreen extends Screen {
         }
 
         private int getValue() {
-            return Mth.clamp((int) Math.round(min + (max - min) * this.value), min, max);
+            int raw = (int) Math.round(min + (max - min) * this.value);
+            int stepped = min + Math.round((raw - min) / (float) step) * step;
+            return Mth.clamp(stepped, min, max);
         }
 
         private static double toNorm(int v, int min, int max) {

@@ -12,6 +12,7 @@ public final class LocationDetailPolicyTest {
         biomeIdsBecomePlayerFacingTitleCase();
         customBiomeSourcesAreOptionalAndPlayerFacing();
         defaultDetachedBoundsStayReachableAtAcceptedGuiSize();
+        locationTextScalePolicyIsBoundedAndIndependent();
         staticIntegrationProofsHold();
         System.out.println("LOCATION_DETAIL_POLICY_TEST_PASS");
     }
@@ -153,6 +154,7 @@ public final class LocationDetailPolicyTest {
 
     private static void staticIntegrationProofsHold() throws IOException {
         String config = normalize(read("src/main/java/com/example/globe/client/CompassHudConfig.java"));
+        String numericPolicy = normalize(read("src/main/java/com/example/globe/client/HudTextLayoutPolicy.java"));
         assertTrue(
                 config.contains("public boolean displayBiomeInHud = false;")
                         && config.contains("public boolean displayZoneInHud = false;")
@@ -165,15 +167,37 @@ public final class LocationDetailPolicyTest {
                 config.contains("displayBiomeInHud = selected.includesBiome();")
                         && config.contains("displayZoneInHud = selected.includesZone();"),
                 "mode selection writes both persisted booleans");
+        assertTrue(
+                numericPolicy.contains("DEFAULT_LOCATION_TEXT_SCALE = 1.0f")
+                        && numericPolicy.contains("LOCATION_TEXT_SCALE_MIN = 0.75f")
+                        && numericPolicy.contains("LOCATION_TEXT_SCALE_MAX = 2.0f")
+                        && config.contains("public float locationTextScale = DEFAULT_LOCATION_TEXT_SCALE;"),
+                "location text scale has a backward-safe 100% default and bounded Studio range");
+        assertTrue(
+                occurrences(config, "locationTextScale = DEFAULT_LOCATION_TEXT_SCALE;") >= 2
+                        && config.contains("HudTextLayoutPolicy.sanitizeLocationTextScale(locationTextScale)")
+                        && numericPolicy.contains("Float.isFinite(value)")
+                        && numericPolicy.contains("Math.round(value * 20.0f) / 20.0f"),
+                "missing, reset, non-finite, and non-step-aligned values sanitize safely");
 
         String hud = normalize(read("src/main/java/com/example/globe/client/CompassHud.java"));
+        String currentDigitalContentBody = slice(
+                hud,
+                "private static DigitalContent currentDigitalContent(",
+                "private static String currentDirectionText(");
+        String computeBoundsBody = slice(
+                hud,
+                "public static HudBounds computeBounds(Minecraft client, CompassHudConfig cfg)",
+                "public static HudPoint computeBasePosition(");
         assertTrue(
                 occurrences(hud, "locationDetailLabel(client, cfg, true)") >= 2,
                 "analog and digital runtime paths consume the same location-detail policy");
         assertTrue(
                 hud.contains("latitudeText(client, cfg), locationDetailLabel(client, cfg, true)")
-                        && hud.indexOf("drawText(ctx, client, cfg, latText")
-                        < hud.indexOf("drawText(ctx, client, cfg, locationDetailText"),
+                        && hud.indexOf("content.latitudeSegment()")
+                        < hud.indexOf("content.detailSegment()")
+                        && hud.indexOf("drawScaledText(ctx, client, cfg, latText")
+                        < hud.indexOf("drawScaledText(ctx, client, cfg, locationDetailText"),
                 "digital and analog layouts both place location detail after latitude");
         assertTrue(
                 hud.contains("LocationDetailPolicy.compose( cfg.locationDetailMode(), biomeLabel(client, cfg), displayZoneName(zoneKey))"),
@@ -183,10 +207,26 @@ public final class LocationDetailPolicyTest {
                         && hud.contains("cfg.showCustomBiomeSource"),
                 "runtime biome id uses the optional provider-aware label helper");
         assertTrue(
-                occurrences(hud, "sampleLocationDetail(cfg, true)") >= 5
+                occurrences(hud, "sampleLocationDetail(cfg, true)") >= 3
                         && hud.contains("computeAnalogBounds")
-                        && hud.contains("sampleLines(cfg)"),
+                        && hud.contains("sampleDigitalContent(cfg)"),
                 "analog and digital preview/bounds consume the combined sample unit");
+        assertTrue(
+                hud.contains("scaledTextWidth(client, content.direction(), cfg.scale)")
+                        && hud.contains("scaledTextWidth(client, content.latitudeSegment(), cfg.locationTextScale)")
+                        && hud.contains("scaledTextWidth(client, content.detailSegment(), cfg.locationTextScale)")
+                        && hud.contains("content.latitudeSegment() != null || content.detailSegment() != null")
+                        && hud.contains("HudTextLayoutPolicy.combinedTextHeight(")
+                        && hud.contains("drawScaledText(ctx, client, cfg, content.direction()")
+                        && occurrences(hud, "cfg.locationTextScale") >= 20,
+                "digital direction retains compass scale while latitude/detail share an independent scale");
+        assertTrue(
+                occurrences(hud, "scaledTextWidth(client, latText, cfg.locationTextScale)") >= 3
+                        && occurrences(hud, "scaledTextWidth(client, locationDetailText, cfg.locationTextScale)") >= 3
+                        && occurrences(hud, "drawScaledText(") >= 7
+                        && hud.contains("detailBounds.x,")
+                        && hud.contains("detailBounds.y,"),
+                "analog FOLLOW and detached detail render/bounds use the same independent scale");
         assertTrue(
                 occurrences(hud, "analogLocationGap(cfg, latText)") == 3,
                 "analog render, base position, and bounds use one gap calculation");
@@ -196,6 +236,24 @@ public final class LocationDetailPolicyTest {
                         && hud.contains("cfg.zoneOffsetX")
                         && hud.contains("cfg.zoneOffsetY"),
                 "the whole selected unit reuses legacy detach anchors and offsets");
+        assertTrue(
+                currentDigitalContentBody.contains("currentDirectionText(client, cfg)")
+                        && currentDigitalContentBody.contains("latitudeText(client, cfg)")
+                        && currentDigitalContentBody.contains("locationDetailLabel(client, cfg, true)")
+                        && !currentDigitalContentBody.contains("sampleLocationDetail")
+                        && !currentDigitalContentBody.contains("sampleDigitalContent"),
+                "runtime digital content is locally wired to live provider-aware content with no sample substitution");
+        assertTrue(
+                computeBoundsBody.contains(
+                        "studioPreview ? sampleDigitalContent(cfg) : currentDigitalContent(client, cfg)")
+                        && computeBoundsBody.indexOf("sampleDigitalContent(cfg)")
+                        < computeBoundsBody.indexOf("currentDigitalContent(client, cfg)")
+                        && hud.contains("HudBounds compassBounds = computeBounds(client, cfg);"),
+                "computeBounds permits samples only on the Studio branch and live content on runtime");
+        assertTrue(
+                hud.contains("HudTextLayoutPolicy.digitalBoxWidth(")
+                        && hud.contains("HudTextLayoutPolicy.movePristineDetachedY("),
+                "rendered width and pristine overlap use the production numeric policy");
         assertTrue(
                 hud.contains("DEFAULT_DETACHED_DETAIL_GAP = 4")
                         && hud.contains("isPristineDefaultDetachedPlacement(cfg)")
@@ -242,6 +300,18 @@ public final class LocationDetailPolicyTest {
         assertTrue(
                 studio.contains("cfg.setLocationDetailMode(LocationDetailPolicy.DEFAULT_MODE)"),
                 "HUD Studio reset returns location detail to Off");
+        assertTrue(
+                studio.contains("Component.literal(\"Location Text Size\")")
+                        && studio.contains("CompassHudConfig.LOCATION_TEXT_SCALE_MIN * 100.0f")
+                        && studio.contains("CompassHudConfig.LOCATION_TEXT_SCALE_MAX * 100.0f")
+                        && studio.contains("Math.round(cfg.locationTextScale * 100.0f)")
+                        && studio.contains("\"%\", 5, v -> cfg.locationTextScale = v / 100.0f"),
+                "Compass tab exposes one 75%-200% location-text slider in five-percent steps");
+        assertTrue(
+                occurrences(studio, "HudTextLayoutPolicy.titleDragCoordinate(") == 2
+                        && studio.contains("LatitudeConfig.hudSnapEnabled")
+                        && studio.contains("LatitudeConfig.hudSnapPixels"),
+                "title drag preview quantizes in SNAP while the unguarded assignments preserve FREE movement");
 
         assertTrue(
                 studio.contains("TAB_NAMES = {\"Compass\", \"Title\", \"Settings\"}")
@@ -258,12 +328,68 @@ public final class LocationDetailPolicyTest {
                 "location-detail policy proof is automatically wired into Gradle check/build");
     }
 
+    private static void locationTextScalePolicyIsBoundedAndIndependent() {
+        assertEquals(1.0f, HudTextLayoutPolicy.sanitizeLocationTextScale(Float.NaN), "NaN restores default");
+        assertEquals(1.0f, HudTextLayoutPolicy.sanitizeLocationTextScale(Float.POSITIVE_INFINITY), "infinity restores default");
+        assertEquals(1.0f, HudTextLayoutPolicy.sanitizeLocationTextScale(0.0f), "missing primitive JSON value restores default");
+        assertEquals(0.75f, HudTextLayoutPolicy.sanitizeLocationTextScale(0.74f), "low values clamp to 75%");
+        assertEquals(2.0f, HudTextLayoutPolicy.sanitizeLocationTextScale(2.01f), "high values clamp to 200%");
+        assertEquals(1.05f, HudTextLayoutPolicy.sanitizeLocationTextScale(1.03f), "saved values quantize to five-percent steps");
+
+        int directionWidth = HudTextLayoutPolicy.scaledPixels(20, 1.25f);
+        int smallLocationWidth = HudTextLayoutPolicy.scaledPixels(30, 0.75f);
+        int largeLocationWidth = HudTextLayoutPolicy.scaledPixels(30, 2.0f);
+        assertEquals(25, directionWidth, "digital direction uses compass scale");
+        assertEquals(23, smallLocationWidth, "small location text uses its own scale");
+        assertEquals(60, largeLocationWidth, "large location text uses its own scale");
+        assertEquals(directionWidth, HudTextLayoutPolicy.scaledPixels(20, 1.25f),
+                "changing location text size cannot change direction or compass size");
+
+        int directionOnlySmall = HudTextLayoutPolicy.combinedTextHeight(9, 1.0f, 0.75f, false);
+        int directionOnlyLarge = HudTextLayoutPolicy.combinedTextHeight(9, 1.0f, 2.0f, false);
+        assertEquals(directionOnlySmall, directionOnlyLarge,
+                "direction-only digital bounds ignore location text size");
+        assertEquals(18, HudTextLayoutPolicy.combinedTextHeight(9, 1.0f, 2.0f, true),
+                "location text contributes height only when it is present");
+
+        int longProviderWidth = HudTextLayoutPolicy.digitalBoxWidth(
+                3, 1.0f, 8, 20, 150, 2.0f);
+        int sampleSubstitutionWidth = HudTextLayoutPolicy.digitalBoxWidth(
+                3, 1.0f, 8, 20, 20, 2.0f);
+        assertEquals(354, longProviderWidth,
+                "200% custom-biome/provider content produces exact rendered compass width");
+        assertTrue(longProviderWidth > sampleSubstitutionWidth,
+                "live long provider content cannot be substituted by the short Studio sample");
+
+        var longCompass = centeredTop(427, longProviderWidth, 24);
+        var longDetail = centeredTop(427, 300, 18);
+        var movedLongDetail = moveDetachedDetail(longDetail, longCompass, 240, true);
+        assertEquals(32, movedLongDetail.y,
+                "pristine detached detail moves below the exact long rendered compass");
+        assertTrue(!intersects(longCompass, movedLongDetail),
+                "long provider detail cannot overlap its exact runtime compass bounds");
+
+        assertEquals(16.0, HudTextLayoutPolicy.titleDragCoordinate(13.0, true, 8),
+                "SNAP title coordinate rounds to the grid");
+        assertEquals(13.25, HudTextLayoutPolicy.titleDragCoordinate(13.25, false, 8),
+                "FREE title coordinate remains unquantized");
+    }
+
     private static String read(String relativePath) throws IOException {
         return Files.readString(Path.of(relativePath));
     }
 
     private static String normalize(String value) {
         return value.replaceAll("\\s+", " ");
+    }
+
+    private static String slice(String value, String start, String end) {
+        int from = value.indexOf(start);
+        int to = from < 0 ? -1 : value.indexOf(end, from + start.length());
+        if (from < 0 || to < 0) {
+            throw new AssertionError("missing source slice: " + start + " ... " + end);
+        }
+        return value.substring(from, to);
     }
 
     private static int occurrences(String value, String target) {
@@ -295,18 +421,20 @@ public final class LocationDetailPolicyTest {
         if (!pristineDefaultPlacement || !intersects(detail, compass)) {
             return detail;
         }
-        int belowY = clamp(compass.y + compass.h + 4, 0, Math.max(0, screenH - detail.h));
-        var below = new Rect(detail.x, belowY, detail.w, detail.h);
-        if (!intersects(below, compass)) {
-            return below;
-        }
-        int aboveY = clamp(compass.y - detail.h - 4, 0, Math.max(0, screenH - detail.h));
-        var above = new Rect(detail.x, aboveY, detail.w, detail.h);
-        return intersects(above, compass) ? detail : above;
-    }
-
-    private static int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
+        int movedY = HudTextLayoutPolicy.movePristineDetachedY(
+                detail.x,
+                detail.y,
+                detail.w,
+                detail.h,
+                compass.x,
+                compass.y,
+                compass.w,
+                compass.h,
+                screenH,
+                4);
+        return movedY == detail.y
+                ? detail
+                : new Rect(detail.x, movedY, detail.w, detail.h);
     }
 
     private record Rect(int x, int y, int w, int h) {

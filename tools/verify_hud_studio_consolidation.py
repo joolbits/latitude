@@ -11,6 +11,7 @@ CLIENT = ROOT / "src/main/java/com/example/globe/GlobeModClient.java"
 CONFIG = ROOT / "src/main/java/com/example/globe/client/CompassHudConfig.java"
 HUD = ROOT / "src/main/java/com/example/globe/client/CompassHud.java"
 STUDIO = ROOT / "src/main/java/com/example/globe/client/LatitudeHudStudioScreen.java"
+NUMERIC_POLICY = ROOT / "src/main/java/com/example/globe/client/HudTextLayoutPolicy.java"
 LEGACY_SETTINGS = ROOT / "src/main/java/com/example/globe/client/LatitudeSettingsScreen.java"
 
 
@@ -19,11 +20,30 @@ def require(condition: bool, message: str, failures: list[str]) -> None:
         failures.append(message)
 
 
+def source_slice(source: str, start: str, end: str) -> str:
+    start_index = source.find(start)
+    end_index = source.find(end, start_index + len(start)) if start_index >= 0 else -1
+    if start_index < 0 or end_index < 0:
+        return ""
+    return source[start_index:end_index]
+
+
 def main() -> int:
     client = CLIENT.read_text()
     config = CONFIG.read_text()
     hud = HUD.read_text()
     studio = STUDIO.read_text()
+    numeric_policy = NUMERIC_POLICY.read_text()
+    current_digital_content = source_slice(
+        hud,
+        "private static DigitalContent currentDigitalContent(",
+        "private static String currentDirectionText(",
+    )
+    compute_bounds = source_slice(
+        hud,
+        "public static HudBounds computeBounds(Minecraft client, CompassHudConfig cfg)",
+        "public static HudPoint computeBasePosition(",
+    )
     failures: list[str] = []
 
     require(
@@ -145,6 +165,20 @@ def main() -> int:
         "every visible HUD preview element must be draggable from every Studio tab",
         failures,
     )
+    title_dragged = re.search(
+        r"if \(dragElement == DragElement\.TITLE\)\s*\{(?P<body>.*?)"
+        r"\n\s*return true;\n\s*\}",
+        studio,
+        re.DOTALL,
+    )
+    title_dragged_body = title_dragged.group("body") if title_dragged else ""
+    require(
+        title_dragged is not None
+        and title_dragged_body.count("HudTextLayoutPolicy.titleDragCoordinate(") == 2
+        and "LatitudeConfig.hudSnapEnabled" in title_dragged_body,
+        "SNAP mode must visibly constrain title movement during the drag, not only on release",
+        failures,
+    )
 
     require(
         'Component.literal("Face Opacity")' in studio,
@@ -207,6 +241,52 @@ def main() -> int:
         failures,
     )
     require(
+        "DEFAULT_LOCATION_TEXT_SCALE = 1.0f" in numeric_policy
+        and "LOCATION_TEXT_SCALE_MIN = 0.75f" in numeric_policy
+        and "LOCATION_TEXT_SCALE_MAX = 2.0f" in numeric_policy
+        and "public float locationTextScale = DEFAULT_LOCATION_TEXT_SCALE;" in config
+        and "HudTextLayoutPolicy.sanitizeLocationTextScale(locationTextScale)" in config
+        and "Float.isFinite(value)" in numeric_policy
+        and "Math.round(value * 20.0f) / 20.0f" in numeric_policy,
+        "location text size must default safely and sanitize to 75%-200% in five-percent steps",
+        failures,
+    )
+    require(
+        'Component.literal("Location Text Size")' in studio
+        and "CompassHudConfig.LOCATION_TEXT_SCALE_MIN * 100.0f" in studio
+        and "CompassHudConfig.LOCATION_TEXT_SCALE_MAX * 100.0f" in studio
+        and '\"%\",' in studio
+        and "v -> cfg.locationTextScale = v / 100.0f" in studio
+        and "setVisible(wLocationTextScale, showCompassControls);" in studio,
+        "Compass tab must expose the independent location-text percentage slider in both styles",
+        failures,
+    )
+    require(
+        "scaledTextWidth(client, content.direction(), cfg.scale)" in hud
+        and "scaledTextWidth(client, content.latitudeSegment(), cfg.locationTextScale)" in hud
+        and "scaledTextWidth(client, content.detailSegment(), cfg.locationTextScale)" in hud
+        and "content.latitudeSegment() != null || content.detailSegment() != null" in hud
+        and "HudTextLayoutPolicy.combinedTextHeight(" in hud
+        and "content.direction()," in hud
+        and "detailBounds.x," in hud
+        and hud.count("drawScaledText(") >= 7,
+        "direction must keep compass scale while FOLLOW/DETACH latitude and detail use location text scale",
+        failures,
+    )
+    require(
+        "currentDirectionText(client, cfg)" in current_digital_content
+        and "latitudeText(client, cfg)" in current_digital_content
+        and "locationDetailLabel(client, cfg, true)" in current_digital_content
+        and "sampleLocationDetail" not in current_digital_content
+        and "sampleDigitalContent" not in current_digital_content
+        and "studioPreview ? sampleDigitalContent(cfg) : currentDigitalContent(client, cfg)" in compute_bounds
+        and "HudBounds compassBounds = computeBounds(client, cfg);" in hud
+        and "HudTextLayoutPolicy.digitalBoxWidth(" in hud
+        and "HudTextLayoutPolicy.movePristineDetachedY(" in hud,
+        "runtime overlap must use live rendered compass content while Studio alone keeps samples",
+        failures,
+    )
+    require(
         re.search(
             r"resetToDefaults\(\).*?style\s*=\s*DEFAULT_COMPASS_STYLE;.*?"
             r"analogSize\s*=\s*DEFAULT_ANALOG_SIZE;",
@@ -247,6 +327,8 @@ def main() -> int:
     print("- sidebar scrolling reserves a non-overlapping helper footer")
     print("- Face Opacity uses percentage copy and a hover/drag-only checkerboard")
     print("- analog north label scales with the dial")
+    print("- location text size is independent across analog/digital and FOLLOW/DETACH")
+    print("- runtime detached overlap uses live content; Studio preview retains samples")
     print("- Done and Esc share the same save-and-return path")
     print("- fresh/reset analog baseline: 32 px; legacy null fallback preserved")
     return 0

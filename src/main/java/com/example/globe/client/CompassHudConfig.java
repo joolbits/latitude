@@ -28,6 +28,12 @@ public final class CompassHudConfig {
     public static final int ANALOG_SIZE_STUDIO_MIN = 16;
     public static final int ANALOG_SIZE_STUDIO_MAX = 72;
     public static final float ANALOG_SIZE_SAVED_MAX = 128.0f;
+    public static final float DEFAULT_LOCATION_TEXT_SCALE =
+            HudTextLayoutPolicy.DEFAULT_LOCATION_TEXT_SCALE;
+    public static final float LOCATION_TEXT_SCALE_MIN =
+            HudTextLayoutPolicy.LOCATION_TEXT_SCALE_MIN;
+    public static final float LOCATION_TEXT_SCALE_MAX =
+            HudTextLayoutPolicy.LOCATION_TEXT_SCALE_MAX;
 
     // Master toggle
     public boolean enabled = true;
@@ -45,6 +51,7 @@ public final class CompassHudConfig {
 
     // Sizing (digital text)
     public float scale = 1.0f; // 0.5 .. 3.0 recommended
+    public float locationTextScale = DEFAULT_LOCATION_TEXT_SCALE;
     public int padding = 3;
 
     // Sizing (analog disc diameter, unscaled)
@@ -138,6 +145,7 @@ public final class CompassHudConfig {
         offsetX = 0;
         offsetY = 0;
         scale = 1.0f;
+        locationTextScale = DEFAULT_LOCATION_TEXT_SCALE;
         padding = 3;
         analogSize = DEFAULT_ANALOG_SIZE;
         analogInnerAlpha = 0.65f;
@@ -206,6 +214,7 @@ public final class CompassHudConfig {
         if (latitudeDecimals > 3) latitudeDecimals = 3;
         if (scale < 0.25f) scale = 0.25f;
         if (scale > 4.0f) scale = 4.0f;
+        locationTextScale = HudTextLayoutPolicy.sanitizeLocationTextScale(locationTextScale);
         if (analogSize < ANALOG_SIZE_STUDIO_MIN) analogSize = ANALOG_SIZE_STUDIO_MIN;
         if (analogSize > ANALOG_SIZE_SAVED_MAX) analogSize = ANALOG_SIZE_SAVED_MAX;
         if (analogInnerAlpha < 0.0f) analogInnerAlpha = 0.0f;
