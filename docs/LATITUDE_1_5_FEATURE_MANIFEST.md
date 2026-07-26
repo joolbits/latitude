@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 8 PASSED LOCALLY; post-TEST 11 title-snap/location-text feedback is source/model green and rendered acceptance remains pending; release actions remain unauthorized` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-26`
+`status: Phase 8 PASSED LOCALLY; TEST 12 is rendered green and its biome-source preview follow-up is source/model green; release actions remain unauthorized` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-26`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -65,6 +65,27 @@ implied.
 Canonical evidence:
 
 `docs/binder/latitude-1-5-test11-title-snap-location-text-20260726.md`
+
+## Post-TEST 12 biome-source preview example
+
+Maintainer accepted TEST 12's title SNAP and independent location-text behavior.
+Its remaining HUD Studio issue was demonstrability: turning `Show Biome Source`
+ON did not change the deliberate vanilla `Plains` preview, even though the
+option worked for custom runtime biomes.
+
+The Studio-only preview now reads `Plains · VANILLA` while the toggle is ON and
+returns to `Plains` while it is OFF. Normal runtime semantics remain unchanged:
+vanilla biomes stay compact and unlabelled, while custom biomes show their real
+provider when the option is enabled.
+
+The focused policy test reproduced the missing preview owner as RED and now
+passes. The structural HUD Studio verifier and Java compilation also pass.
+This manifest-bearing commit is the designated source for TEST 13; only the
+rendered ON/OFF preview transition remains for human confirmation.
+
+Canonical evidence:
+
+`docs/binder/latitude-1-5-test12-biome-source-preview-20260726.md`
 
 ## Post-TEST 9 annotated polish
 

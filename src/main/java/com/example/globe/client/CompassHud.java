@@ -631,7 +631,10 @@ public final class CompassHud {
         if (respectFollow && !cfg.zoneFollowsCompass) {
             return null;
         }
-        return LocationDetailPolicy.compose(cfg.locationDetailMode(), "Plains", "Tropics");
+        String previewBiome = LocationDetailPolicy.studioPreviewBiomeLabel(
+                "minecraft:plains",
+                cfg.showCustomBiomeSource);
+        return LocationDetailPolicy.compose(cfg.locationDetailMode(), previewBiome, "Tropics");
     }
 
     private static String analogLatitudeText(Minecraft client, CompassHudConfig cfg) {
