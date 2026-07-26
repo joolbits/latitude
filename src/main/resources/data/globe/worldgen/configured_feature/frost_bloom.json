@@ -1,0 +1,156 @@
+{
+  "type": "minecraft:root_system",
+  "config": {
+    "allowed_tree_position": {
+      "type": "minecraft:matching_block_tag",
+      "tag": "minecraft:air"
+    },
+    "allowed_vertical_water_for_tree": 1,
+    "feature": {
+      "feature": {
+        "type": "minecraft:sequence",
+        "config": {
+          "features": [
+            {
+              "feature": {
+                "type": "minecraft:simple_block",
+                "config": {
+                  "to_place": {
+                    "type": "minecraft:weighted_state_provider",
+                    "entries": [
+                      {
+                        "data": {
+                          "Name": "minecraft:packed_ice"
+                        },
+                        "weight": 4
+                      },
+                      {
+                        "data": {
+                          "Name": "minecraft:blue_ice"
+                        },
+                        "weight": 1
+                      }
+                    ]
+                  }
+                }
+              },
+              "placement": [
+                {
+                  "type": "minecraft:count",
+                  "count": 64
+                },
+                {
+                  "type": "minecraft:random_offset",
+                  "xz_spread": {
+                    "type": "minecraft:trapezoid",
+                    "max": 7,
+                    "min": -7,
+                    "plateau": 0
+                  },
+                  "y_spread": {
+                    "type": "minecraft:trapezoid",
+                    "max": 3,
+                    "min": -3,
+                    "plateau": 0
+                  }
+                },
+                {
+                  "type": "minecraft:environment_scan",
+                  "direction_of_search": "down",
+                  "max_steps": 4,
+                  "target_condition": {
+                    "type": "minecraft:solid"
+                  }
+                },
+                {
+                  "type": "minecraft:block_predicate_filter",
+                  "predicate": {
+                    "type": "minecraft:solid"
+                  }
+                }
+              ]
+            },
+            {
+              "feature": {
+                "type": "minecraft:spring_feature",
+                "config": {
+                  "state": {
+                    "Name": "minecraft:water",
+                    "Properties": {
+                      "falling": "true"
+                    }
+                  },
+                  "valid_blocks": [
+                    "minecraft:packed_ice",
+                    "minecraft:blue_ice",
+                    "minecraft:ice",
+                    "minecraft:snow_block",
+                    "minecraft:powder_snow",
+                    "minecraft:stone",
+                    "minecraft:deepslate"
+                  ]
+                }
+              },
+              "placement": []
+            }
+          ]
+        }
+      },
+      "placement": []
+    },
+    "hanging_root_placement_attempts": 1,
+    "hanging_root_radius": 1,
+    "hanging_root_state_provider": {
+      "type": "minecraft:weighted_state_provider",
+      "entries": [
+        {
+          "data": {
+            "Name": "minecraft:packed_ice"
+          },
+          "weight": 3
+        },
+        {
+          "data": {
+            "Name": "minecraft:blue_ice"
+          },
+          "weight": 1
+        }
+      ]
+    },
+    "hanging_roots_vertical_span": 1,
+    "level_test_distance": 8,
+    "max_level_deviation": 2,
+    "required_vertical_space_for_tree": 5,
+    "root_column_max_height": 184,
+    "root_placement_attempts": 20,
+    "root_radius": 3,
+    "root_replaceable": [
+      "minecraft:packed_ice",
+      "minecraft:blue_ice",
+      "minecraft:ice",
+      "minecraft:snow_block",
+      "minecraft:powder_snow",
+      "minecraft:stone",
+      "minecraft:deepslate",
+      "minecraft:gravel",
+      "minecraft:dirt"
+    ],
+    "root_state_provider": {
+      "type": "minecraft:weighted_state_provider",
+      "entries": [
+        {
+          "data": {
+            "Name": "minecraft:packed_ice"
+          },
+          "weight": 7
+        },
+        {
+          "data": {
+            "Name": "minecraft:blue_ice"
+          },
+          "weight": 1
+        }
+      ]
+    }
+  }
+}

@@ -26,8 +26,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <h2>The owner laws this file must keep (pinned below)</h2>
  * <ul>
- *   <li><b>Underground stays alive</b> (reskin-plus, never a strip): the lake/geode/monster-room/ore/
- *       spring steps are EXACTLY polar_barrens' (which are exactly snowy_plains' underground subset).</li>
+ *   <li><b>Underground stays alive</b> (reskin-plus, never a strip): the lake/geode/ore/spring steps are
+ *       EXACTLY polar_barrens' (which are exactly snowy_plains' underground subset). S45 carve-out: the
+ *       vanilla monster rooms are EVICTED from both biomes (mossy-cobble palette violation, owner's
+ *       mineshaft logic) -- the step-3 equality law still binds, both biomes stripped identically.</li>
  *   <li><b>S25b frozen-dead roster</b> (owner TEST 117 override, 2026-07-20: "Monsters inside glacial
  *       caves should be strays"): the underground monster list is strays + a few skeletons ONLY -- nothing
  *       warm-blooded (the frozen-dead fiction + the doomed-expedition register). This SUPERSEDES the earlier
@@ -90,18 +92,26 @@ class GlacialCavesBiomeJsonSchemaTest {
                 "glacial_caves top-layer step stays the bare freeze pass (the surface trap is barrens-only)");
         assertEquals("minecraft:freeze_top_layer", featureStep(barrens, 10).get(0),
                 "barrens top-layer step still leads with the freeze pass, then the surface trap");
-        // Step 6 (underground_ores): S24 APPENDS the two glacial ice BLOBS after the barrens ore run so the
-        // deep caverns read glacial in every wall. The "underground stays alive" law still binds: the barrens
-        // ore run must be present, IN ORDER, as the exact PREFIX (no ore dropped or reordered) -- and because
-        // packed_ice/blue_ice are not #base_stone_overworld and the blobs run LAST, they cement leftover base
-        // stone without ever eating an ore. The only allowed addition is those two globe blobs, appended.
+        // Step 6 (underground_ores) is now a three-course SANDWICH (S45 extends the S24 law):
+        //   [vanilla ore run] + [the two S24 ice blobs, caves only] + [the five S45 ore-in-ice features]
+        // The vanilla run stays the exact ordered head in BOTH biomes (no ore dropped or reordered). The
+        // blobs still run before anything that puts stone back INTO the ice -- so they can never eat a
+        // moraine lens -- and the S45 five run LAST: moraine lenses drop stone/gravel debris into the
+        // finished ice body, then the ice-targeted veins seed coal/iron/copper into ice and lenses alike
+        // (the owner's "TOO much ice without enough ores" rebalance: inclusions, never less ice).
+        List<String> s45Ores = List.of("globe:glacial_moraine_stone", "globe:glacial_moraine_gravel",
+                "globe:ice_ore_coal", "globe:ice_ore_iron", "globe:ice_ore_copper");
         List<String> barrensOres = featureStep(barrens, 6);
         List<String> cavesOres = featureStep(caves, 6);
-        assertEquals(barrensOres, cavesOres.subList(0, barrensOres.size()),
-                "the barrens ore run must be the exact ordered PREFIX of the caves ore step");
-        assertEquals(List.of("globe:glacial_ice_blob", "globe:glacial_blue_ice_blob"),
-                cavesOres.subList(barrensOres.size(), cavesOres.size()),
-                "only the two S24 glacial ice blobs may be appended, packed then blue, after the ores");
+        List<String> vanillaRun = barrensOres.subList(0, barrensOres.size() - s45Ores.size());
+        assertEquals(s45Ores, barrensOres.subList(vanillaRun.size(), barrensOres.size()),
+                "the barrens ore step ends with the five S45 ore-in-ice features, in order");
+        assertEquals(vanillaRun, cavesOres.subList(0, vanillaRun.size()),
+                "the vanilla ore run must be the exact ordered HEAD of the caves ore step");
+        List<String> cavesTail = new ArrayList<>(List.of("globe:glacial_ice_blob", "globe:glacial_blue_ice_blob"));
+        cavesTail.addAll(s45Ores);
+        assertEquals(cavesTail, cavesOres.subList(vanillaRun.size(), cavesOres.size()),
+                "caves after the vanilla run: the two S24 ice blobs (packed then blue), then the S45 five");
         assertTrue(cavesOres.contains("minecraft:ore_diamond"),
                 "sanity: the ore step really is the full ore run");
     }
@@ -111,11 +121,12 @@ class GlacialCavesBiomeJsonSchemaTest {
         JsonObject caves = glacialCaves();
         assertEquals(List.of("globe:hanging_icicles", "globe:glacial_snow_drift",
                         "globe:glacial_powder_pocket", "globe:glacial_frost_carpet", "globe:glacial_slush_floe",
-                        "globe:cave_drop_trap"),
+                        "globe:cave_drop_trap", "globe:ice_spire_cluster", "globe:ice_spire"),
                 featureStep(caves, 7),
-                "underground_decoration (step 7): the plain-ice hanging_icicles (reinstated S40 per owner) "
-                        + "then the floor/pool dressing. S40 removed only the reshaded-DRIPSTONE icicle_cluster "
-                        + "(owner: \"they look like blue dripstone\"), keeping the plain-ice stalactites)");
+                "underground_decoration (step 7): the plain-ice hanging_icicles (reinstated S40 per owner), "
+                        + "the floor/pool dressing, the S44 drop trap, then the S45 ice spires (cluster before "
+                        + "single, mirroring the vanilla sulfur_caves order; FLOOR forms on the 26.2 spike "
+                        + "type -- deliberately not the rejected hanging-speleothem silhouette)");
         assertEquals(List.of("globe:glacial_glow_lichen"),
                 featureStep(caves, 9),
                 "vegetal step = the sparse glacial glow_lichen only (punctuation, not illumination). "
@@ -143,18 +154,75 @@ class GlacialCavesBiomeJsonSchemaTest {
             }
         }
         // S25b owner override (TEST 117): "Monsters inside glacial caves should be strays." The frozen-dead
-        // roster is strays + a few skeletons ONLY -- nothing warm-blooded underground.
+        // roster is strays + skeletons ONLY -- nothing warm-blooded underground. S45 (2026-07-26) kept the
+        // SPECIES law but flipped the WEIGHTS: 26.2 strays require canSeeSky (verified in the jar), so the
+        // old 85/15 split voided 85% of every roofed-cave spawn roll -- the owner's "caves a bit sparse" was
+        // this table, not a perception. Skeletons (cave-legal, frozen-dead on fiction) now carry the roofed
+        // deep; the residual stray weight serves the sky-breached shafts ("the ones that got in from above").
         assertEquals(List.of("minecraft:stray", "minecraft:skeleton"), types,
                 "the glacial-caves monster list is exactly [stray, skeleton], in that order");
-        assertEquals(85, strayWeight, "strays dominate the frozen-dead roster (weight 85)");
-        assertEquals(15, skeletonWeight, "a few skeletons join at low weight (15)");
-        assertTrue(strayWeight > skeletonWeight, "strays are the dominant undead in the ice");
+        assertEquals(12, strayWeight, "residual strays for sky-breached shafts only (weight 12, S45)");
+        assertEquals(50, skeletonWeight, "skeletons carry the roofed deep (weight 50, S45 canSeeSky fix)");
+        assertTrue(skeletonWeight > strayWeight,
+                "the cave-legal skeleton must dominate, or the roofed deep goes silent again (S45)");
         // Nothing warm-blooded (or otherwise off-fiction) may appear underground.
         for (String banned : new String[]{"minecraft:zombie", "minecraft:zombie_villager", "minecraft:spider",
                 "minecraft:creeper", "minecraft:slime", "minecraft:enderman", "minecraft:witch",
                 "minecraft:drowned"}) {
             assertFalse(types.contains(banned),
                     "the frozen-dead roster excludes warm-blooded/off-fiction mob " + banned);
+        }
+    }
+
+    @Test
+    void barrensRosterKeepsTheStrayCutAndGainsCavernSkeletons() {
+        JsonObject barrens = polarBarrens();
+        JsonArray monsters = barrens.getAsJsonObject("spawners").getAsJsonArray("monster");
+        List<String> types = new ArrayList<>();
+        int strayWeight = -1;
+        int skeletonWeight = -1;
+        for (var e : monsters) {
+            JsonObject entry = e.getAsJsonObject();
+            String type = entry.get("type").getAsString();
+            types.add(type);
+            if ("minecraft:stray".equals(type)) {
+                strayWeight = entry.get("weight").getAsInt();
+            }
+            if ("minecraft:skeleton".equals(type)) {
+                skeletonWeight = entry.get("weight").getAsInt();
+            }
+        }
+        // The SURFACE strays-only law (TEST 103/104) is enforced at RUNTIME by the S13e sky veto
+        // (PolarSurfaceSpawns via SpawnPlacementsPolarSurfaceMixin, default ON): any non-stray monster
+        // spawning SKY-EXPOSED in the polar band is vetoed. So the skeleton entry here (S45) populates
+        // ONLY the roofed Y48+ cavern country -- which, strays being canSeeSky-bound in 26.2, previously
+        // had ZERO natural hostiles. The two laws compose; neither bends.
+        assertEquals(List.of("minecraft:stray", "minecraft:skeleton"), types,
+                "barrens monsters: the S13d stray entry then the S45 cavern skeleton entry");
+        assertEquals(27, strayWeight,
+                "the S13d barrens stray cut (85 -> 27) is a standing law; S45 must not touch it");
+        assertEquals(40, skeletonWeight,
+                "S45 cavern skeletons (sky-vetoed on the surface, so cavern-only in practice)");
+        JsonArray ambient = barrens.getAsJsonObject("spawners").getAsJsonArray("ambient");
+        assertEquals(1, ambient.size(), "S45: bats join the barrens cavern country");
+        assertEquals("minecraft:bat", ambient.get(0).getAsJsonObject().get("type").getAsString(),
+                "the one barrens ambient entry is the bat (mirrors the glacial_caves entry)");
+    }
+
+    @Test
+    void monsterRoomsAreEvictedFromBothGlacialBiomes() {
+        // S45 palette law: vanilla monster_room / monster_room_deep build COBBLESTONE + MOSSY-cobble
+        // dungeons -- green moss in the all-ice underground, the same category of error as the S43
+        // mineshafts ("doesn't make much sense") and the S40 moss removals. Both biomes must list neither.
+        for (JsonObject biome : new JsonObject[]{glacialCaves(), polarBarrens()}) {
+            JsonArray features = biome.getAsJsonArray("features");
+            for (var step : features) {
+                for (var f : step.getAsJsonArray()) {
+                    String id = f.getAsString();
+                    assertFalse(id.equals("minecraft:monster_room") || id.equals("minecraft:monster_room_deep"),
+                            "monster rooms are evicted from the glacial underground (S45): found " + id);
+                }
+            }
         }
     }
 

@@ -213,9 +213,11 @@ class GlacialDressingJsonSchemaTest {
                         "placed feature " + featureId + " needs its configured_feature JSON");
             }
         }
-        assertEquals(9, globeFeatures, "nine globe features after S44 added the in-cave drop trap: "
-                + "hanging_icicles, snow_drift, powder_pocket, frost_carpet, slush_floe, cave_drop_trap, "
-                + "glow_lichen + 2 ice blobs, no silent drops");
+        assertEquals(19, globeFeatures, "nineteen globe features after the S45 Round-1 wiring: the S44 nine "
+                + "(hanging_icicles, snow_drift, powder_pocket, frost_carpet, slush_floe, cave_drop_trap, "
+                + "glow_lichen + 2 ice blobs) + frost_bloom, brine_pool (lakes), ice_geode (step 2), "
+                + "moraine stone/gravel + ice-ore coal/iron/copper (step 6), ice_spire_cluster, ice_spire "
+                + "(step 7), no silent drops");
     }
 
     /** S25 SLUSH FLOES (owner TEST 117, 2026-07-20: "very small ice blocks clustered together in the water

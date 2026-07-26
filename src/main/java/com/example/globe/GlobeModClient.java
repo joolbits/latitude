@@ -84,6 +84,12 @@ public class GlobeModClient implements ClientModInitializer {
         net.fabricmc.fabric.api.client.particle.v1.ParticleProviderRegistry.getInstance().register(
                 com.example.globe.content.GlobeParticles.FROST_GLINT,
                 com.example.globe.client.FrostGlintParticle.Provider::new);
+        // S45 icicle art revival note (no code needed, verified in the 26.2 client jar): chunk render
+        // layers are now DERIVED FROM TEXTURE PIXELS -- SpriteContents.computeTransparency() analyzes each
+        // sprite's alpha and ChunkSectionLayer.byTransparency() routes the quads, which is also why the old
+        // BlockRenderLayerMap API is gone from fabric-api 0.154.0+26.2. The redrawn icicle needle textures
+        // carry partial alpha, so globe:icicle renders TRANSLUCENT automatically (vanilla ice works the
+        // same way); the S40 "blue dripstone" read came from the opaque dripstone drawing, not the layer.
         if (GlobeClientState.DEBUG_EW_FOG) {
             GlobeMod.LOGGER.info("[Latitude] debugEwFog=true");
         }
