@@ -113,6 +113,14 @@ public final class LocationDetailPolicyTest {
                 "Pale Garden \u00b7 REGIONS UNEXPLORED",
                 LocationDetailPolicy.biomeLabel("regions_unexplored:pale_garden", true),
                 "generic custom-provider formatting is deterministic");
+        assertEquals(
+                "Plains \u00b7 VANILLA",
+                LocationDetailPolicy.studioPreviewBiomeLabel("minecraft:plains", true),
+                "Studio demonstrates the source toggle even when its coherent sample biome is vanilla");
+        assertEquals(
+                "Plains",
+                LocationDetailPolicy.studioPreviewBiomeLabel("minecraft:plains", false),
+                "Studio source example disappears when the toggle is off");
     }
 
     private static void defaultDetachedBoundsStayReachableAtAcceptedGuiSize() {

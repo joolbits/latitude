@@ -12,6 +12,7 @@ CONFIG = ROOT / "src/main/java/com/example/globe/client/CompassHudConfig.java"
 HUD = ROOT / "src/main/java/com/example/globe/client/CompassHud.java"
 STUDIO = ROOT / "src/main/java/com/example/globe/client/LatitudeHudStudioScreen.java"
 NUMERIC_POLICY = ROOT / "src/main/java/com/example/globe/client/HudTextLayoutPolicy.java"
+DETAIL_POLICY = ROOT / "src/main/java/com/example/globe/client/LocationDetailPolicy.java"
 LEGACY_SETTINGS = ROOT / "src/main/java/com/example/globe/client/LatitudeSettingsScreen.java"
 
 
@@ -34,6 +35,7 @@ def main() -> int:
     hud = HUD.read_text()
     studio = STUDIO.read_text()
     numeric_policy = NUMERIC_POLICY.read_text()
+    detail_policy = DETAIL_POLICY.read_text()
     current_digital_content = source_slice(
         hud,
         "private static DigitalContent currentDigitalContent(",
@@ -284,6 +286,20 @@ def main() -> int:
         and "HudTextLayoutPolicy.digitalBoxWidth(" in hud
         and "HudTextLayoutPolicy.movePristineDetachedY(" in hud,
         "runtime overlap must use live rendered compass content while Studio alone keeps samples",
+        failures,
+    )
+    sample_location_detail = source_slice(
+        hud,
+        "private static String sampleLocationDetail(",
+        "private static String analogLatitudeText(",
+    )
+    require(
+        'LocationDetailPolicy.studioPreviewBiomeLabel(' in sample_location_detail
+        and '"minecraft:plains"' in sample_location_detail
+        and "cfg.showCustomBiomeSource" in sample_location_detail
+        and "public static String studioPreviewBiomeLabel(" in detail_policy
+        and 'COMBINED_SEPARATOR + "VANILLA"' in detail_policy,
+        "HUD Studio preview must visibly demonstrate the biome-source toggle with its vanilla sample",
         failures,
     )
     require(

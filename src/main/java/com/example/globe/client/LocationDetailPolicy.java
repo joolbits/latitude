@@ -112,6 +112,25 @@ public final class LocationDetailPolicy {
         return provider == null ? biome : biome + COMBINED_SEPARATOR + provider;
     }
 
+    /**
+     * Makes the Studio's coherent vanilla sample demonstrate the source toggle without changing
+     * normal runtime labels, where vanilla remains intentionally compact and unlabelled.
+     */
+    public static String studioPreviewBiomeLabel(String biomeId, boolean showSource) {
+        String biome = biomeLabel(biomeId, showSource);
+        if (!showSource || biomeId == null) {
+            return biome;
+        }
+        String trimmed = biomeId.trim();
+        int separator = trimmed.indexOf(':');
+        String namespace = separator <= 0
+                ? ""
+                : trimmed.substring(0, separator).toLowerCase(Locale.ROOT);
+        return "minecraft".equals(namespace)
+                ? biome + COMBINED_SEPARATOR + "VANILLA"
+                : biome;
+    }
+
     public static String customProviderLabel(String biomeId) {
         if (biomeId == null || biomeId.isBlank()) {
             return null;
