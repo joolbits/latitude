@@ -258,4 +258,28 @@ class SnowSparkleLawTest {
         // WAX_OFF -> bright white FIREWORK + twin cluster retired, so the peak halves -- ~10 sparks/s, not ~40).
         assertEquals(2, SnowSparkleLaw.DEFAULT_PEAK_BUDGET, "GLINT v5 de-purple peak");
     }
+
+    // ---- S46/S47 owner-locked sparkle geometry (Peetsa 2026-07-26: "absolutely GORGEOUS. Keep it,
+    // lock it in, it's a keeper.") -- these are LAW pins, not tunables. ----------------------------
+
+    @Test
+    void torchIceFaceOffsetIsOwnerLocked() {
+        assertEquals(0.66, SnowSparkleLaw.TORCH_ICE_FACE_OFFSET, 1e-9,
+                "OWNER-LOCKED (2026-07-26 \"lock it in\"): 0.66 floats the glint quad clear of the ice "
+                        + "face at any view angle; clipping fixes escalate to a render pass, never a retune");
+        assertTrue(SnowSparkleLaw.TORCH_ICE_FACE_OFFSET > 0.5,
+                "must sit OUTSIDE the face plane (0.5), or the billboard clips into the block");
+        assertTrue(SnowSparkleLaw.TORCH_ICE_FACE_OFFSET < 0.75,
+                "must stay near the face, or the glint detaches into the rejected S14(d) air-mote read");
+    }
+
+    @Test
+    void surfaceGlintWindowClearsTheSurfaceButStillHugsIt() {
+        assertTrue(SnowSparkleLaw.SURFACE_GLINT_Y_MIN >= 0.15,
+                "S47: the quad's bottom edge (center - ~0.1 half-size) must clear the snow surface plane");
+        assertTrue(SnowSparkleLaw.SURFACE_GLINT_Y_MAX <= 0.35,
+                "TEST 107 law: the cloud hugs the ground -- the S14(d) 0.5-1.5 float band was REJECTED");
+        assertTrue(SnowSparkleLaw.SURFACE_GLINT_Y_MIN < SnowSparkleLaw.SURFACE_GLINT_Y_MAX,
+                "a real window");
+    }
 }

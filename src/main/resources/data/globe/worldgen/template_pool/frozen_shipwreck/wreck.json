@@ -1,0 +1,32 @@
+{
+  "elements": [
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "globe:frozen_shipwreck/with_mast",
+        "processors": "globe:frozen_wreck",
+        "projection": "rigid"
+      },
+      "weight": 3
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "globe:frozen_shipwreck/sideways_full",
+        "processors": "globe:frozen_wreck",
+        "projection": "rigid"
+      },
+      "weight": 2
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "globe:frozen_shipwreck/upsidedown_full",
+        "processors": "globe:frozen_wreck",
+        "projection": "rigid"
+      },
+      "weight": 1
+    }
+  ],
+  "fallback": "minecraft:empty"
+}

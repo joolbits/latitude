@@ -525,8 +525,8 @@ public class GlobeModClient implements ClientModInitializer {
     /** Min/max height (blocks) ABOVE the sampled snow surface a glint spawns -- hugging the ground so it reads as
      *  the snow itself catching the light, not a mote hanging in the air (the S14(d) "floating" look this fixes).
      *  0.05 keeps it clear of z-fighting with the surface; 0.3 keeps the whole cloud at snow-glint height. */
-    private static final double SPARKLE_Y_MIN = 0.05;
-    private static final double SPARKLE_Y_MAX = 0.3;
+    private static final double SPARKLE_Y_MIN = com.example.globe.core.SnowSparkleLaw.SURFACE_GLINT_Y_MIN;
+    private static final double SPARKLE_Y_MAX = com.example.globe.core.SnowSparkleLaw.SURFACE_GLINT_Y_MAX;
     /** S17(c)(ii): a glint SITS, it does not wander (owner). The drift is removed -- the particle spawns with
      *  zero incoming velocity so it twinkles in place on the snow (the spark's own flicker + short life carry
      *  the shimmer; GLINT v5 note -- this zero-drift spawn is exactly what makes the FIREWORK spark safe from
@@ -859,9 +859,9 @@ public class GlobeModClient implements ClientModInitializer {
                 // plane at any viewing angle -- the sparkle now sits ON the ice, never IN it. (If she still
                 // reports clips, the escalation is a depth-biased render pass, not more offset -- beyond
                 // ~0.7 the glint visibly detaches and reads as floating dust.)
-                double gx = bx + 0.5 + face.getStepX() * 0.66;
-                double gy = by + 0.5 + face.getStepY() * 0.66;
-                double gz = bz + 0.5 + face.getStepZ() * 0.66;
+                double gx = bx + 0.5 + face.getStepX() * com.example.globe.core.SnowSparkleLaw.TORCH_ICE_FACE_OFFSET;
+                double gy = by + 0.5 + face.getStepY() * com.example.globe.core.SnowSparkleLaw.TORCH_ICE_FACE_OFFSET;
+                double gz = bz + 0.5 + face.getStepZ() * com.example.globe.core.SnowSparkleLaw.TORCH_ICE_FACE_OFFSET;
                 // Zero incoming velocity -- the sparkle twinkles in place on the ice face, mirroring the
                 // ambient glint's own zero-drift spawn (SPARKLE_DRIFT_UP/SPARKLE_DRIFT_LATERAL are both 0.0).
                 client.particleEngine.createParticle(SPARKLE_PARTICLE, gx, gy, gz, 0.0, 0.0, 0.0);

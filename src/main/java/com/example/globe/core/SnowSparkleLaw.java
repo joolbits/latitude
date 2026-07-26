@@ -283,4 +283,26 @@ public final class SnowSparkleLaw {
     private static double clamp01(double v) {
         return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
     }
+
+    // ---- S46/S47 OWNER-LOCKED sparkle geometry (Peetsa 2026-07-26: "The sparkle from test 135 is
+    // absolutely GORGEOUS. Keep it, lock it in, it's a keeper.") ------------------------------------
+    // The clip problem, once: a frost-glint is a CAMERA-FACING billboard quad (~0.1+ half-size). Spawn
+    // its CENTER too close to a block surface and, at any oblique view, part of the quad crosses the
+    // surface plane and is depth-clipped INTO the block -- her live report on TEST 135's predecessors.
+    // The locked fix is pure spawn geometry, no render-pass changes.
+
+    /** S46 torch-lit ICE sparkle: spawn distance from the ice block's CENTER along the lit face's normal.
+     *  0.5 is the face plane itself; 0.66 floats the whole quad clear of the face at any viewing angle.
+     *  OWNER-LOCKED at 0.66 ("lock it in") -- do not retune for density/brightness reasons; if clipping
+     *  ever reappears the escalation is a depth-biased render pass, never a bigger offset (beyond ~0.7
+     *  the glint visibly detaches and reads as floating dust, the S14(d) failure). */
+    public static final double TORCH_ICE_FACE_OFFSET = 0.66;
+
+    /** S47 surface (polar-noon snowfield) glint: min/max spawn height ABOVE the sampled snow surface.
+     *  Owner (2026-07-26): the surface glints must ALSO never clip into the blocks -- but the TEST 107
+     *  law still binds ("so you can tell it's the snow, not like it's floating in the air"; the S14(d)
+     *  0.5-1.5 float was REJECTED as air-motes). 0.16 lifts the quad's bottom edge clear of the surface
+     *  plane; 0.34 keeps the whole cloud hugging the ground, far under the rejected float band. */
+    public static final double SURFACE_GLINT_Y_MIN = 0.16;
+    public static final double SURFACE_GLINT_Y_MAX = 0.34;
 }
