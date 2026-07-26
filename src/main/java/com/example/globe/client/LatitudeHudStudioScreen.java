@@ -62,6 +62,7 @@ public class LatitudeHudStudioScreen extends Screen {
     private AbstractWidget wCompassCompact;
     private AbstractWidget wCompassAttachHotbar;
     private AbstractWidget wLocationDetail;
+    private AbstractWidget wCustomBiomeSource;
     private AbstractWidget wLocationFollow;
 
     private AbstractWidget wTitleScale;
@@ -70,6 +71,7 @@ public class LatitudeHudStudioScreen extends Screen {
     private AbstractWidget wShowHud;
     private AbstractWidget wDisplayWhen;
     private AbstractWidget wWarningMessages;
+    private AbstractWidget wPlacementGrid;
 
     private AbstractWidget wResetHud;
 
@@ -122,6 +124,7 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wCompassCompact = null;
         this.wCompassAttachHotbar = null;
         this.wLocationDetail = null;
+        this.wCustomBiomeSource = null;
         this.wLocationFollow = null;
         this.wTitleScale = null;
         this.wZoneEnterTitle = null;
@@ -129,6 +132,7 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wShowHud = null;
         this.wDisplayWhen = null;
         this.wWarningMessages = null;
+        this.wPlacementGrid = null;
         this.wResetHud = null;
 
         this.titleOffsetXf = LatitudeConfig.zoneEnterTitleOffsetX;
@@ -283,6 +287,20 @@ public class LatitudeHudStudioScreen extends Screen {
         trackSidebarWidget(this.wLocationDetail, y);
         y += rowH + rowGap;
 
+        this.wCustomBiomeSource = this.addRenderableWidget(CycleButton.<Boolean>builder(
+                        v -> Component.literal(v ? "ON" : "OFF"),
+                        () -> cfg.showCustomBiomeSource)
+                .withValues(true, false)
+                .create(panelX, y, widgetW, rowH, Component.literal("Show Biome Source"), (btn, value) -> {
+                    cfg.showCustomBiomeSource = value;
+                    CompassHudConfig.saveCurrent();
+                }));
+        tooltip(
+                this.wCustomBiomeSource,
+                "Adds the provider name after custom biome names. Vanilla biomes stay unlabelled.");
+        trackSidebarWidget(this.wCustomBiomeSource, y);
+        y += rowH + rowGap;
+
         this.wLocationFollow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "FOLLOW" : "DETACH"), () -> cfg.zoneFollowsCompass)
                 .withValues(true, false)
                 .create(panelX, y, widgetW, rowH, Component.literal("Location Placement"), (btn, value) -> {
@@ -372,6 +390,20 @@ public class LatitudeHudStudioScreen extends Screen {
                     }));
             tooltip(this.wWarningMessages, "Show warning text near dangerous latitude boundaries.");
             trackSidebarWidget(this.wWarningMessages, y);
+            y += rowH + rowGap;
+
+            this.wPlacementGrid = this.addRenderableWidget(CycleButton.<Boolean>builder(
+                            v -> Component.literal(v ? "SNAP" : "FREE"),
+                            () -> LatitudeConfig.hudSnapEnabled)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("HUD Placement"), (btn, value) -> {
+                        LatitudeConfig.hudSnapEnabled = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(
+                    this.wPlacementGrid,
+                    "Snap keeps dragged HUD elements on an 8-pixel grid. Free allows pixel-by-pixel placement.");
+            trackSidebarWidget(this.wPlacementGrid, y);
         }
         this.sidebarContentHeight = y + rowH - panelY;
 
@@ -678,6 +710,7 @@ public class LatitudeHudStudioScreen extends Screen {
         LatitudeConfig.zoneEnterTitleEnabled = true;
         LatitudeConfig.zoneEnterTitleSeconds = 6.0;
         LatitudeConfig.showWarningMessages = true;
+        LatitudeConfig.hudSnapEnabled = true;
         LatitudeConfig.saveCurrent();
     }
 
@@ -750,6 +783,9 @@ public class LatitudeHudStudioScreen extends Screen {
         if (w == wLocationFollow) {
             return cfg.hasLocationDetail();
         }
+        if (w == wCustomBiomeSource) {
+            return cfg.locationDetailMode().includesBiome();
+        }
         return true;
     }
 
@@ -790,6 +826,9 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wCompassCompact, showCompassControls && !analog);
         setVisible(wCompassAttachHotbar, showCompassControls && !analog);
         setVisible(wLocationDetail, showCompassControls);
+        setVisible(
+                wCustomBiomeSource,
+                showCompassControls && CompassHudConfig.get().locationDetailMode().includesBiome());
         setVisible(wLocationFollow, showCompassControls && CompassHudConfig.get().hasLocationDetail());
 
         boolean showTitleControls = sidebarVisible && activeTab == TAB_TITLE;
@@ -801,6 +840,7 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wShowHud, showSettingsControls);
         setVisible(wDisplayWhen, showSettingsControls);
         setVisible(wWarningMessages, showSettingsControls);
+        setVisible(wPlacementGrid, showSettingsControls);
         setVisible(wResetHud, sidebarVisible);
     }
 

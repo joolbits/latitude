@@ -1,11 +1,34 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 8 PASSED LOCALLY; release actions remain unauthorized` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-25`
+`status: Phase 8 PASSED LOCALLY; post-TEST 9 polish is source/model green and rendered acceptance remains pending; release actions remain unauthorized` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-26`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
 
 `<home>/CascadeProjects/Latitude (Globe)/docs/LATITUDE_1_5_PRE_2_0_POLISH_ROADMAP.md`
+
+## Post-TEST 9 annotated polish
+
+the maintainer's annotated TEST 9 review admitted four bounded refinements after Phase 8:
+
+- an opt-in inline custom-biome provider suffix in biome-bearing HUD modes, defaulting OFF;
+- snowy Subpolar/Polar firefly-bush suppression from the canonical 50-degree boundary while
+  preserving warm fireflies and the sweet-berry exemption;
+- a restrained balance pass for the existing compact planisphere; and
+- a HUD Studio SNAP/FREE control over the pre-existing eight-pixel placement grid.
+
+The focused policy suites, structural HUD/create-screen verifiers, Java 25 22-task clean
+build/check/invariant gate, and diff audit pass. The planisphere retains the 1.5 band/input model
+and does not import Latitude 2.0 world-shape or create-screen behavior.
+
+This is a local source/model candidate. Custom-source legibility, planisphere appearance,
+SNAP/FREE drag feel and persistence, and a fresh snowy-provider firefly scene still require a
+separately authorized rendered TEST. TEST 9 remains untouched, and no tag, push, profile stage,
+upload, publication, or release is implied.
+
+Canonical evidence:
+
+`docs/binder/latitude-1-5-test9-annotated-polish-20260726.md`
 
 ## Post-TEST 2 findings acceptance
 

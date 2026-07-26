@@ -103,6 +103,37 @@ public final class LocationDetailPolicy {
         return result.isEmpty() ? "Unknown" : result.toString();
     }
 
+    public static String biomeLabel(String biomeId, boolean showCustomSource) {
+        String biome = titleCaseBiomeId(biomeId);
+        if (!showCustomSource) {
+            return biome;
+        }
+        String provider = customProviderLabel(biomeId);
+        return provider == null ? biome : biome + COMBINED_SEPARATOR + provider;
+    }
+
+    public static String customProviderLabel(String biomeId) {
+        if (biomeId == null || biomeId.isBlank()) {
+            return null;
+        }
+        String trimmed = biomeId.trim();
+        int separator = trimmed.indexOf(':');
+        if (separator <= 0) {
+            return null;
+        }
+        String namespace = trimmed.substring(0, separator).toLowerCase(Locale.ROOT);
+        if ("minecraft".equals(namespace)) {
+            return null;
+        }
+        return switch (namespace) {
+            case "biomesoplenty" -> "BIOMES O' PLENTY";
+            case "terralith" -> "TERRALITH";
+            case "promenade" -> "PROMENADE";
+            case "regions_unexplored", "regionsunexplored" -> "REGIONS UNEXPLORED";
+            default -> titleCaseBiomeId(namespace).toUpperCase(Locale.ROOT);
+        };
+    }
+
     private static String usableLabel(String label) {
         return label == null || label.isBlank() ? "Unknown" : label;
     }

@@ -10,6 +10,7 @@ public final class PolarFoliagePolicyTest {
         boundaryIsStrictAndSymmetric();
         activeRadiusOverridesFallback();
         foliageClassificationPreservesBerriesAndFailsOpen();
+        snowySubpolarFirefliesAreRejectedWithoutChangingWarmFireflies();
         staticIntegrationProofsHold();
         System.out.println("POLAR_FOLIAGE_POLICY_TEST_PASS");
     }
@@ -49,17 +50,38 @@ public final class PolarFoliagePolicyTest {
 
     private static void foliageClassificationPreservesBerriesAndFailsOpen() {
         assertFalse(
-                PolarFoliagePolicy.shouldSuppressSimpleBlock(true, true, true),
+                PolarFoliagePolicy.shouldSuppressSimpleBlock(true, false, false, true, true),
                 "sweet berry bushes remain eligible beyond 80 degrees");
         assertTrue(
-                PolarFoliagePolicy.shouldSuppressSimpleBlock(true, true, false),
+                PolarFoliagePolicy.shouldSuppressSimpleBlock(true, false, false, true, false),
                 "ordinary foliage is rejected beyond 80 degrees");
         assertFalse(
-                PolarFoliagePolicy.shouldSuppressSimpleBlock(true, false, false),
+                PolarFoliagePolicy.shouldSuppressSimpleBlock(true, false, false, false, false),
                 "non-foliage simple-block features fail open");
         assertFalse(
-                PolarFoliagePolicy.shouldSuppressSimpleBlock(false, true, false),
+                PolarFoliagePolicy.shouldSuppressSimpleBlock(false, false, false, true, false),
                 "foliage remains eligible through exactly 80 degrees");
+    }
+
+    private static void snowySubpolarFirefliesAreRejectedWithoutChangingWarmFireflies() {
+        assertFalse(
+                PolarFoliagePolicy.isSubpolarOrPolar(49.9, 90, 90),
+                "49.9 degrees remains temperate");
+        assertTrue(
+                PolarFoliagePolicy.isSubpolarOrPolar(50.0, 90, 90),
+                "the subpolar boundary starts at exactly 50 degrees");
+        assertTrue(
+                PolarFoliagePolicy.shouldSuppressSimpleBlock(false, true, true, true, false),
+                "firefly bushes are rejected in snowy subpolar and polar climates");
+        assertFalse(
+                PolarFoliagePolicy.shouldSuppressSimpleBlock(false, false, true, true, false),
+                "firefly bushes remain eligible outside snowy subpolar and polar climates");
+        assertFalse(
+                PolarFoliagePolicy.shouldSuppressSimpleBlock(false, true, false, true, false),
+                "other foliage remains eligible below the strict 80-degree foliage limit");
+        assertFalse(
+                PolarFoliagePolicy.shouldSuppressSimpleBlock(true, true, true, true, true),
+                "the explicit sweet-berry exemption remains authoritative");
     }
 
     private static void staticIntegrationProofsHold() throws Exception {
@@ -92,8 +114,11 @@ public final class PolarFoliagePolicyTest {
                 "simple foliage modifies exactly the sampled provider result instead of redirecting or resampling");
         assertTrue(
                 simpleGuard.contains("Blocks.SWEET_BERRY_BUSH")
+                        && simpleGuard.contains("Blocks.FIREFLY_BUSH")
+                        && simpleGuard.contains("coldEnoughToSnow(")
+                        && simpleGuard.contains("PolarFoliagePolicy.isSubpolarOrPolar(")
                         && simpleGuard.contains("PolarFoliagePolicy.shouldSuppressSimpleBlock("),
-                "simple-block interception explicitly preserves berries");
+                "simple-block interception preserves berries and rejects fireflies only in snowy subpolar/polar climates");
         assertTrue(
                 simpleGuard.contains("POLAR_FOLIAGE")
                         && simpleGuard.contains("sampledState.is(POLAR_FOLIAGE)"),

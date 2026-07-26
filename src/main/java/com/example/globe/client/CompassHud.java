@@ -823,14 +823,16 @@ public final class CompassHud {
         String zoneKey = com.example.globe.util.LatitudeMath.zoneKey(border, client.player.getZ());
         return LocationDetailPolicy.compose(
                 cfg.locationDetailMode(),
-                biomeLabel(client),
+                biomeLabel(client, cfg),
                 displayZoneName(zoneKey));
     }
 
-    private static String biomeLabel(Minecraft client) {
+    private static String biomeLabel(Minecraft client, CompassHudConfig cfg) {
         var biome = client.level.getBiome(client.player.blockPosition());
         return biome.unwrapKey()
-                .map(key -> LocationDetailPolicy.titleCaseBiomeId(key.identifier().toString()))
+                .map(key -> LocationDetailPolicy.biomeLabel(
+                        key.identifier().toString(),
+                        cfg.showCustomBiomeSource))
                 .orElse("Unknown");
     }
 

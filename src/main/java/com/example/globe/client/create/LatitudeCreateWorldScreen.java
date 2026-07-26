@@ -1548,10 +1548,9 @@ public class LatitudeCreateWorldScreen extends Screen {
             maxLabelWidth = Math.max(maxLabelWidth, scaledTextWidth(formatDegree(deg), labelScale));
         }
 
-        int labelPad = isTinyPreview(selectedSize) ? scaledUi(10) : scaledUi(8);
-        int rightPadding = scaledUi(8);
-        int captionGap = Math.max(6, captionHeight / 2);
-        int maxRadiusByWidth = Math.max(18, (areaRight - areaLeft - maxLabelWidth - labelPad - rightPadding) / 2);
+        int labelPad = isTinyPreview(selectedSize) ? scaledUi(7) : scaledUi(6);
+        int captionGap = Math.max(4, captionHeight / 3);
+        int maxRadiusByWidth = Math.max(18, (areaRight - areaLeft - maxLabelWidth - labelPad) / 2);
         int maxRadiusByHeight = Math.max(18, (areaBottom - areaTop - captionHeight - captionGap) / 2);
         int radius = Math.round(Math.min(maxRadiusByWidth, maxRadiusByHeight) * previewDiscFill(selectedSize));
         radius = Math.max(18, radius);
@@ -1655,15 +1654,14 @@ public class LatitudeCreateWorldScreen extends Screen {
         for (double deg : PREVIEW_LABEL_DEGREES) {
             labelWidth = Math.max(labelWidth, scaledTextWidth(formatDegree(deg), labelScale));
         }
-        int labelPad = Math.max(8, Math.round(radius * 0.10f));
-        int rightPadding = 8;
-        int compositionWidth = globeDiameter + labelPad + labelWidth + rightPadding;
+        int labelPad = Math.max(6, Math.round(radius * 0.07f));
+        int compositionWidth = globeDiameter + labelPad + labelWidth;
         if (compositionWidth > areaRight - areaLeft) {
             return null;
         }
 
         int captionHeight = scaledFontHeight(captionScale);
-        int captionGap = Math.max(6, Math.round(radius * 0.10f));
+        int captionGap = Math.max(4, Math.round(radius * 0.06f));
         int compositionHeight = globeDiameter + captionGap + captionHeight;
         if (compositionHeight > areaBottom - areaTop) {
             return null;
@@ -1731,12 +1729,12 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private float previewDiscFill(GlobeWorldSize size) {
         return switch (size) {
-            case ITTY_BITTY -> 0.44f;
-            case TINY -> 0.52f;
-            case SMALL -> 0.62f;
-            case REGULAR -> 0.72f;
-            case LARGE -> 0.82f;
-            case MASSIVE -> 0.90f;
+            case ITTY_BITTY -> 0.48f;
+            case TINY -> 0.58f;
+            case SMALL -> 0.73f;
+            case REGULAR -> 0.84f;
+            case LARGE -> 0.91f;
+            case MASSIVE -> 0.96f;
         };
     }
 
