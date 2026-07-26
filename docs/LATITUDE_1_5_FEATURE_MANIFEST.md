@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 8 PASSED LOCALLY; TEST 13 is rendered green and its compact location-text range follow-up is source/model green; release actions remain unauthorized` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-26`
+`status: Phase 8 PASSED LOCALLY; TEST 14 compact location-text range is rendered green; release actions remain unauthorized` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: TEST 14 source commit plus acceptance record` · `recorded: 2026-07-26`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -98,13 +98,14 @@ steps. Existing saved values are safely clamped into that compact range.
 Focused policy proof checks the new 50% and 125% boundaries, retains the
 independent compass-size invariant, and verifies long provider labels against
 the same current-content bounds used by runtime rendering. The structural HUD
-Studio verifier and Java 25 build pass. This manifest-bearing commit is the
-designated source for TEST 14; a short rendered slider-range check remains the
-player-visible gate.
+Studio verifier and Java 25 build pass. TEST 14 was staged from source commit
+`2502b54c60c50a5464c7395dedf096d9fa24b967`; Maintainer then confirmed the rendered
+50%/100%/125% range is green. The player-visible gate for this compact-range
+follow-up is therefore closed.
 
 Canonical evidence:
 
-`docs/binder/latitude-1-5-test13-location-text-range-20260726.md`
+`docs/binder/latitude-1-5-test14-location-text-range-acceptance-20260726.md`
 
 ## Post-TEST 9 annotated polish
 
