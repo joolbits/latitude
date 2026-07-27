@@ -662,6 +662,16 @@ public class GlobeMod implements ModInitializer {
             int frostCueFloor = com.example.globe.core.PolarWounds.frostCueActive(frostbiteBiting, healLocked)
                     ? com.example.globe.core.PolarHazardWindow.frostbiteFrostCueTicks(effLatDeg)
                     : 0;
+            // BLUE HEARTS (owner 2026-07-26). The ramp above tops out at ~135 -- twelve ticks under vanilla's
+            // 140 fully-frozen threshold -- so for the whole frostbite band the player BLED from cold with red
+            // hearts. Now: whenever our frostbite damage is actually biting AND vanilla's competing auto-freeze
+            // is suppressed for this player (the powder-snow-aware carve-out in isInPolarFreezeDamageBand),
+            // hold the cue AT the threshold. Blue hearts therefore mean exactly one thing, everywhere: the cold
+            // is taking your health. A player buried in real powder snow keeps the vanilla ramp (no double dip).
+            if (frostbiteBiting && frostCueFloor > 0 && isInPolarFreezeDamageBand(player)) {
+                frostCueFloor = Math.max(frostCueFloor,
+                        com.example.globe.core.PolarHazardWindow.FROZEN_THRESHOLD_TICKS);
+            }
             if (frostCueFloor > 0
                     && effLatDeg < com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG
                     && player.getTicksFrozen() < frostCueFloor) {
@@ -1320,7 +1330,21 @@ public class GlobeMod implements ModInitializer {
         // suppressed for exactly the same population. Raw-lat here with an immersed 85-deg swimmer would
         // double-dip; the mirror discipline in this javadoc is the whole point of this method.
         double effLatDeg = com.example.globe.core.PolarImmersion.effectiveLatDeg(latDeg, player.isInWater());
-        return effLatDeg >= com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG;
+        if (effLatDeg >= com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG) {
+            return true;
+        }
+        // BLUE-HEART FIX (Peetsa 2026-07-26: "There aren't any freezing blue hearts!"). Vanilla only tints
+        // the hearts at ticksFrozen >= 140, and the F5 note below explains why the frostbite band [85,87.5)
+        // deliberately held the cue UNDER 140: this gate started at 87.5, so reaching the threshold there
+        // would have let vanilla's own 1 HP/40t auto-freeze stack on our frostbite nibble. The rejected fix
+        // was widening the gate to 85 outright -- correctly rejected, because that silently disables REAL
+        // powder-snow freezing across the whole band. THE CARVE-OUT THREADS IT: suppress vanilla's auto-freeze
+        // in the frostbite band ONLY for a player who is NOT actually in powder snow. A polar traveller on
+        // open ice gets our curve alone (so the cue may safely reach 140 and the hearts read blue whenever
+        // freeze damage is flowing); a player buried in real powder snow keeps 100% vanilla powder behaviour,
+        // exactly as F5 demanded.
+        return effLatDeg >= com.example.globe.core.PolarHazardWindow.FROSTBITE_ONSET_DEG
+                && !player.isInPowderSnow;
     }
 
     /**
