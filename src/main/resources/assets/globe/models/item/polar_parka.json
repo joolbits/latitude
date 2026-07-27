@@ -1,6 +1,7 @@
 {
   "parent": "minecraft:item/generated",
   "textures": {
-    "layer0": "globe:item/polar_parka"
+    "layer0": "globe:item/polar_parka",
+    "layer1": "globe:item/polar_parka_overlay"
   }
 }
