@@ -1,6 +1,12 @@
 {
   "model": {
     "type": "minecraft:model",
-    "model": "globe:item/polar_hood"
+    "model": "globe:item/polar_hood",
+    "tints": [
+      {
+        "type": "minecraft:dye",
+        "default": -1514796
+      }
+    ]
   }
 }
