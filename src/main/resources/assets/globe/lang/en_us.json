@@ -17,5 +17,10 @@
   "item.globe.polar_hood": "Polar Hood",
   "effect.globe.cold_protection": "Cold Protection",
   "block.globe.icicle": "Icicle",
-  "item.globe.icicle": "Icicle"
+  "item.globe.icicle": "Icicle",
+  "item.globe.polar_parka": "Polar Parka",
+  "item.globe.polar_leggings": "Polar Leggings",
+  "item.globe.polar_boots": "Polar Boots",
+  "item.globe.snow_goggles": "Snow Goggles",
+  "item.globe.insulated_hide": "Insulated Hide"
 }
