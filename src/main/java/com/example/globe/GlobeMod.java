@@ -117,6 +117,12 @@ public class GlobeMod implements ModInitializer {
     // default, datapack-extensible). A full set of freeze-immune pieces here negates freeze DAMAGE.
     private static final EquipmentSlot[] COLD_ARMOR_SLOTS =
             {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
+    /** B-10 P2: the item tag identifying a POLAR-SUIT piece ({@code data/globe/tags/item/polar_suit.json}) --
+     *  the higher-weight half of the unified cold score. Suit pieces are ALSO in
+     *  {@code freeze_immune_wearables} (vanilla powder-snow immunity); this tag is what tells them apart. */
+    private static final net.minecraft.tags.TagKey<net.minecraft.world.item.Item> POLAR_SUIT_TAG =
+            net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM,
+                    net.minecraft.resources.Identifier.fromNamespaceAndPath(MOD_ID, "polar_suit"));
     // B-7 S5(c): post-pole-crossing cold-grace end tick per player (PoleCrossingGrace.graceUntil), stamped on a
     // successful pole crossing so a low-health crosser cannot die inside the arrival-curtain ceremony. Read in
     // borderUxTick; suppresses BOTH cold-damage bands + the F3 frost cue while active; NOT wired into the S6
@@ -601,7 +607,11 @@ public class GlobeMod implements ModInitializer {
                 coldSheltered = isColdSheltered(overworld, player);
                 if (inRawColdZone) {
                     boolean nearWarmth = coldSheltered && isNearWarmthCached(overworld, player, worldTime);
-                    healLocked = com.example.globe.core.PolarWounds.healLocked(true, coldSheltered, nearWarmth);
+                    // B-10 sweep A1: a COMPLETE polar suit is a warm body -- wounds mend without shelter or
+                    // a fire, and the "Your wounds are frozen." whisper cannot fire. Gameplay upgrade, not a
+                    // mute: the 4-arg overload takes fullSuit as the lift. Leather/partial never lift it.
+                    healLocked = com.example.globe.core.PolarWounds.healLocked(
+                            true, coldSheltered, nearWarmth, polarFullyProtected(player));
                 }
             }
             boolean coldDamagePaused =
@@ -635,7 +645,7 @@ public class GlobeMod implements ModInitializer {
                 int fInterval = com.example.globe.core.PolarHazardWindow.frostbiteIntervalTicks(effLatDeg);
                 if (worldTime % (long) fInterval == 0L) {
                     float fAmount = com.example.globe.core.PolarHazardWindow.frostbiteDamageAmount(effLatDeg)
-                            * (float) com.example.globe.core.ColdProtection.damageMultiplier(coldProtectionPieceCount(player));
+                            * (float) coldDamageMultiplier(player);
                     if (fAmount > 0.0f) {
                         player.hurtServer(overworld, overworld.damageSources().freeze(), fAmount);
                     }
@@ -697,7 +707,7 @@ public class GlobeMod implements ModInitializer {
                     // B-7 S1: scale the lethal-core amount by the cold-protection multiplier at this single
                     // computed-amount point (interval unchanged, per the design). Full freeze-immune set -> 0.
                     float amount = com.example.globe.core.PolarHazardWindow.freezeDamageAmount(progress)
-                            * (float) com.example.globe.core.ColdProtection.damageMultiplier(coldProtectionPieceCount(player));
+                            * (float) coldDamageMultiplier(player);
                     if (amount > 0.0f) {
                         player.hurtServer(overworld, overworld.damageSources().freeze(), amount);
                     }
@@ -712,6 +722,24 @@ public class GlobeMod implements ModInitializer {
             boolean ambient = true;
             boolean showParticles = false;
             boolean showIcon = false;
+
+            // B-10 P2: the COMPLETE polar suit is the sole exemption from the whole hazard family.
+            // Owner amendment A8 (2026-07-18, binding): "the full 4/4 suit negates the cold SLOWNESS/
+            // WEAKNESS/MINING-FATIGUE staging as well as damage". This amends the standing "slowness always
+            // seeps" law -- still TRUE for leather and PARTIAL suits (the cold drags at the underdressed);
+            // only the complete set walks the pole freely. Same predicate as the damage-0, the silence, the
+            // heal-lock lift and the status effect: one evaluator, one truth.
+            boolean fullSuit = polarFullyProtected(player);
+            if (fullSuit) {
+                // The suit's ONLY visible feedback (design §5, her ask): a beneficial status effect in the
+                // inventory. It is a pure INDICATOR -- the protection is the ColdProtection score, never this
+                // effect, so milking/dispelling it can never desync from the armour truth. Refreshed each
+                // effects tick; lapses on its own within ~2s of the set breaking.
+                player.addEffect(new MobEffectInstance(
+                        com.example.globe.content.PolarOutfitting.COLD_PROTECTION_EFFECT,
+                        duration, 0, ambient, showParticles, true));
+                continue;
+            }
 
             int slowAmp = com.example.globe.core.PolarHazardWindow.slownessAmplifier(progress);
             int weakAmp = com.example.globe.core.PolarHazardWindow.weaknessAmplifier(progress);
@@ -865,6 +893,52 @@ public class GlobeMod implements ModInitializer {
      * an item in the vanilla {@code freeze_immune_wearables} tag (leather by default, datapack-extensible per the
      * vanilla-first law). The thin MC shim feeding {@link com.example.globe.core.ColdProtection}; 0..4.
      */
+    /**
+     * B-10 P2 shim: how many of the four armour slots carry a POLAR-SUIT piece ({@code #globe:polar_suit}).
+     * The higher-weight count in the unified {@link com.example.globe.core.ColdProtection} score, and — via
+     * {@link com.example.globe.core.ColdProtection#fullyProtected} — the SINGLE truth behind total protection:
+     * damage 0, warning silence, the effects exemption (A8), the heal-lock lift (A1) and the Cold Protection
+     * status effect all key off this one number.
+     */
+    private static int polarSuitPieceCount(ServerPlayer player) {
+        int count = 0;
+        for (EquipmentSlot slot : COLD_ARMOR_SLOTS) {
+            ItemStack stack = player.getItemBySlot(slot);
+            if (!stack.isEmpty() && stack.is(holder -> holder.is(POLAR_SUIT_TAG))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * B-10 P2 freeze-damage multiplier, flag-routed (sweep A3 — the no-gap law). Flag OFF routes the LEGACY
+     * single-count path (leather 0.25/piece, full negation at 4) so today's behaviour is preserved bit-for-bit
+     * while the suit is unshipped; flag ON routes the unified weighted path where a suit piece (0.25) outweighs
+     * a leather piece (0.125) and only a full 4/4 suit reaches zero.
+     *
+     * <p><b>Sweep A2 (the one-evaluator law):</b> {@code leatherPieces} is the freeze-immune count MINUS the
+     * suit count — a suit piece is also a {@code freeze_immune_wearables} member (so the suit still grants
+     * vanilla powder-snow immunity), and passing the raw count would double-weight it into a damage-0 state
+     * while the warnings still fired.
+     */
+    private static double coldDamageMultiplier(ServerPlayer player) {
+        int freezeImmune = coldProtectionPieceCount(player);
+        if (!com.example.globe.core.LatitudeV2Flags.POLAR_OUTFITTING_ENABLED) {
+            return com.example.globe.core.ColdProtection.damageMultiplier(freezeImmune);
+        }
+        int suit = polarSuitPieceCount(player);
+        return com.example.globe.core.ColdProtection.weightedMultiplier(suit, freezeImmune - suit);
+    }
+
+    /** B-10 P2: is the player wearing the COMPLETE polar suit? Flag-gated — OFF is always false, so every
+     *  total-protection consequence (silence, effects exemption, heal-lock lift, status effect) stays dormant
+     *  and the legacy leather behaviour is untouched. */
+    private static boolean polarFullyProtected(ServerPlayer player) {
+        return com.example.globe.core.LatitudeV2Flags.POLAR_OUTFITTING_ENABLED
+                && com.example.globe.core.ColdProtection.fullyProtected(polarSuitPieceCount(player));
+    }
+
     private static int coldProtectionPieceCount(ServerPlayer player) {
         int count = 0;
         for (EquipmentSlot slot : COLD_ARMOR_SLOTS) {

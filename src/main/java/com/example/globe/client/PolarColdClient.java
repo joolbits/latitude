@@ -76,6 +76,64 @@ public final class PolarColdClient {
         return ColdProtection.negatesFreezeDamage(coldProtectionPieces(mc));
     }
 
+    // ---- B-10 P2 client twins (server twins: GlobeMod.polarSuitPieceCount / polarFullyProtected) -----------
+
+    /** The polar-suit item tag ({@code #globe:polar_suit}); server twin {@code GlobeMod.POLAR_SUIT_TAG}. */
+    private static final net.minecraft.tags.TagKey<net.minecraft.world.item.Item> POLAR_SUIT_TAG =
+            net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM,
+                    Identifier.fromNamespaceAndPath(com.example.globe.GlobeMod.MOD_ID, "polar_suit"));
+
+    /** How many of the OWN player's four armour slots carry a POLAR-SUIT piece (0..4). */
+    public static int polarSuitPieces(Minecraft mc) {
+        if (mc == null || mc.player == null) {
+            return 0;
+        }
+        int count = 0;
+        for (EquipmentSlot slot : COLD_ARMOR_SLOTS) {
+            ItemStack stack = mc.player.getItemBySlot(slot);
+            if (!stack.isEmpty() && stack.is(holder -> holder.is(POLAR_SUIT_TAG))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** B-10: is the OWN player wearing the COMPLETE polar suit? Flag-gated, exactly like the server twin, so
+     *  flag-OFF keeps every total-protection presentation consequence dormant. This is the client's half of
+     *  the "one evaluator, one truth" law: the same predicate silences the ladder, kills the vignette and
+     *  matches the server's damage-0. */
+    public static boolean fullSuit(Minecraft mc) {
+        return com.example.globe.core.LatitudeV2Flags.POLAR_OUTFITTING_ENABLED
+                && ColdProtection.fullyProtected(polarSuitPieces(mc));
+    }
+
+    /** B-10 (sweep A2): freeze-immune pieces that are NOT suit pieces -- i.e. plain leather / datapack
+     *  wearables. Drives the leather reassurance line; never double-counts a suit piece. */
+    public static boolean wearsLeather(Minecraft mc) {
+        return coldProtectionPieces(mc) - polarSuitPieces(mc) > 0;
+    }
+
+    /**
+     * B-10 (design §6 + sweep A4): does the OWN player have GOGGLE SIGHT? True for the standalone
+     * {@code globe:snow_goggles} OR the {@code globe:polar_hood} (the hood carries a built-in visor -- the
+     * resolution of the head-slot clash: a full-suit traveller gets clear sight for free, and the cheap
+     * goggles are the early option for someone who has not sewn the suit yet). Gates the warning VIGNETTE
+     * only; the text ladder is untouched, so goggles compose with every row of the matrix.
+     */
+    public static boolean wearsGoggleSight(Minecraft mc) {
+        if (mc == null || mc.player == null
+                || !com.example.globe.core.LatitudeV2Flags.POLAR_OUTFITTING_ENABLED) {
+            return false;
+        }
+        ItemStack head = mc.player.getItemBySlot(EquipmentSlot.HEAD);
+        if (head.isEmpty()) {
+            return false;
+        }
+        net.minecraft.world.item.Item item = head.getItem();
+        return item == com.example.globe.content.PolarOutfitting.SNOW_GOGGLES
+                || item == com.example.globe.content.PolarOutfitting.POLAR_HOOD;
+    }
+
     /** True iff the OWN player is in the polar cold zone ({@code |lat| >=} the frostbite onset, 85 deg). */
     public static boolean isInColdZone(Minecraft mc) {
         if (mc == null || mc.player == null || mc.level == null) {

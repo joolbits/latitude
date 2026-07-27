@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "equipment",
+  "key": {
+    "G": "minecraft:glass_pane",
+    "L": "minecraft:leather",
+    "S": "minecraft:string"
+  },
+  "pattern": [
+    "   ",
+    "GLG",
+    "S S"
+  ],
+  "result": {
+    "id": "globe:snow_goggles"
+  }
+}
