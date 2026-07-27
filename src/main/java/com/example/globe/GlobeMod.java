@@ -616,6 +616,12 @@ public class GlobeMod implements ModInitializer {
             }
             boolean coldDamagePaused =
                     com.example.globe.core.PolarImmersion.coldDamagePaused(coldSheltered, inWater, coldGrace);
+            // B-10: the ONE total-protection predicate, resolved once per player per tick. Everything the
+            // cold does -- damage, effects, warnings, the heal lock, AND the frost visuals -- keys off this
+            // single truth (the one-evaluator law). Owner live report 2026-07-27: "Blue hearts and chill are
+            // present while wearing the set" -- the frost writers below were the last holdouts that never
+            // consulted it, so a fully-protected traveller was shown freezing while taking zero damage.
+            boolean fullSuitProtected = polarFullyProtected(player);
 
             // S37 F1: PONDED WATER CAUSES FREEZING (Peetsa: "the water that has ponded is not causing freezing
             // damage -- hearts are red"). DIRECT water-contact chill: raises ticksFrozen itself, exactly like
@@ -668,7 +674,9 @@ public class GlobeMod implements ModInitializer {
             // is suppressed for this player (the powder-snow-aware carve-out in isInPolarFreezeDamageBand),
             // hold the cue AT the threshold. Blue hearts therefore mean exactly one thing, everywhere: the cold
             // is taking your health. A player buried in real powder snow keeps the vanilla ramp (no double dip).
-            if (frostbiteBiting && frostCueFloor > 0 && isInPolarFreezeDamageBand(player)) {
+            if (fullSuitProtected) {
+                frostCueFloor = 0; // the complete suit: the cold never reaches the body, so it never shows.
+            } else if (frostbiteBiting && frostCueFloor > 0 && isInPolarFreezeDamageBand(player)) {
                 frostCueFloor = Math.max(frostCueFloor,
                         com.example.globe.core.PolarHazardWindow.FROZEN_THRESHOLD_TICKS);
             }
@@ -696,7 +704,13 @@ public class GlobeMod implements ModInitializer {
             // ticksFrozen ~2/tick when the player isn't in powder snow; this END_SERVER_TICK write is the last
             // writer each tick (the entity-tracker broadcast reads it before aiStep's decay), so the client
             // reliably sees our value and the blue hearts don't flicker.
-            if (!unaffected) {
+            if (fullSuitProtected) {
+                // Suited: clear the frost outright rather than letting vanilla's 2/tick decay crawl it down,
+                // so pulling the hood up reads as immediate relief -- hearts back to red, screen-frost gone.
+                if (player.getTicksFrozen() > 0) {
+                    player.setTicksFrozen(0);
+                }
+            } else if (!unaffected) {
                 // F3 composite: never set BELOW the active frostbite cue floor (relevant only in [87.5,88),
                 // where the lethal ramp is still climbing 0->140 and the cue floor is at ~117-140; max() keeps
                 // the frost monotone across the hand-off instead of popping down at 87.5).
@@ -739,8 +753,7 @@ public class GlobeMod implements ModInitializer {
             // seeps" law -- still TRUE for leather and PARTIAL suits (the cold drags at the underdressed);
             // only the complete set walks the pole freely. Same predicate as the damage-0, the silence, the
             // heal-lock lift and the status effect: one evaluator, one truth.
-            boolean fullSuit = polarFullyProtected(player);
-            if (fullSuit) {
+            if (fullSuitProtected) {
                 // The suit's ONLY visible feedback (design §5, her ask): a beneficial status effect in the
                 // inventory. It is a pure INDICATOR -- the protection is the ColdProtection score, never this
                 // effect, so milking/dispelling it can never desync from the armour truth. Refreshed each
