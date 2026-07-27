@@ -241,8 +241,13 @@ public final class LatitudeV2Flags {
      * is presentation/items (no worldgen), so only the {@code runClient} forwarding is needed. Design
      * {@code docs/binder/b10-polar-outfitting-design-20260718.md} (incl. the binding A1-A7 sweep tail).
      */
+    // FLIGHT DEFAULT ON -- REVISIT BEFORE MERGE (branch-local, the B-6/B-7/B-8 precedent). Flipped
+    // 2026-07-26 for the TEST 141 owner flight so the suit can be crafted and worn without a JVM arg
+    // (she flies through the Modrinth profile, where passing -D is impractical). The no-gap law is
+    // unchanged: setting this OFF restores the LEGACY leather path bit-for-bit. The SHIPPED default is
+    // her call after the flight verdict.
     public static final boolean POLAR_OUTFITTING_ENABLED =
-            Boolean.parseBoolean(System.getProperty("latitude.polarOutfitting.enabled", "false"));
+            Boolean.parseBoolean(System.getProperty("latitude.polarOutfitting.enabled", "true"));
 
     /**
      * Polar small-vegetation fade (Peetsa 2026-07-10). Default TRUE since 2026-07-12: the TEST 75 live

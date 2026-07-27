@@ -129,11 +129,15 @@ class LatitudeV2FlagsTest {
     }
 
     @Test
-    void polarOutfittingDefaultsToDisabled() {
-        // B-10 master flag ships default-OFF: flag-off routes the LEGACY leather path (full negation at 4), so
-        // leather demotes ONLY when the suit ships -- never a protection gap (the sequencing / no-gap law).
-        assertFalse(LatitudeV2Flags.POLAR_OUTFITTING_ENABLED,
-                "Polar Outfitting must ship default-off (legacy leather path, no protection gap)");
+    void polarOutfittingIsFlippedOnForTheOwnerFlight() {
+        // B-10 master flag: FLIGHT DEFAULT ON, branch-local, REVISIT BEFORE MERGE (the B-6/B-7/B-8
+        // precedent). Flipped 2026-07-26 so the TEST 141 flight can craft and wear the suit through the
+        // Modrinth profile, where passing -D is impractical. This assertion is the tripwire that keeps the
+        // flip DELIBERATE and visible: if this branch ever heads for main with the flight default still on,
+        // this is the test that makes someone say it out loud. The no-gap law itself is untouched -- setting
+        // the property OFF still routes the LEGACY leather path bit-for-bit.
+        assertTrue(LatitudeV2Flags.POLAR_OUTFITTING_ENABLED,
+                "Polar Outfitting is flipped ON for the owner flight (REVISIT BEFORE MERGE)");
     }
 
     @Test
