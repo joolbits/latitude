@@ -131,7 +131,8 @@ public final class PolarColdClient {
         }
         net.minecraft.world.item.Item item = head.getItem();
         return item == com.example.globe.content.PolarOutfitting.SNOW_GOGGLES
-                || item == com.example.globe.content.PolarOutfitting.POLAR_HOOD;
+                || item == com.example.globe.content.PolarOutfitting.POLAR_HOOD
+                || item == com.example.globe.content.PolarOutfitting.POLAR_HOOD_GOGGLED;
     }
 
     /** True iff the OWN player is in the polar cold zone ({@code |lat| >=} the frostbite onset, 85 deg). */

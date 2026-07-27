@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "equipment",
+  "ingredients": [
+    "globe:polar_hood",
+    "globe:snow_goggles"
+  ],
+  "result": {
+    "id": "globe:polar_hood_goggled"
+  }
+}

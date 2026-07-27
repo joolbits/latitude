@@ -1,0 +1,18 @@
+{
+  "layers": {
+    "humanoid": [
+      {
+        "dyeable": {
+          "color_when_undyed": -1514796
+        },
+        "texture": "globe:polar"
+      },
+      {
+        "texture": "globe:polar_overlay"
+      },
+      {
+        "texture": "globe:goggles"
+      }
+    ]
+  }
+}

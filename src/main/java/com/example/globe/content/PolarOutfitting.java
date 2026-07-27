@@ -112,6 +112,16 @@ public final class PolarOutfitting {
      *  camera. Populated by {@link #register()}. */
     public static Item SNOW_GOGGLES;
 
+    /**
+     * GOGGLED HOOD (Peetsa 2026-07-27: "let's do the make goggles cosmetic thing"). The head slot can
+     * only hold one item, so wearing the suit hood meant giving up the goggles' LOOK -- the hood already
+     * carried the visor's POWER. This variant resolves it cosmetically: craft hood + goggles together and
+     * wear a hood with the goggle band visibly strapped across it. Mechanically it IS the hood -- same
+     * leather-tier armour, same {@code #globe:polar_suit} membership (so it still completes the set), same
+     * dyeable cloth, and it grants the same goggle sight. Populated by {@link #register()}.
+     */
+    public static Item POLAR_HOOD_GOGGLED;
+
     /** Insulated Hide -- the crafted intermediate (leather + any-colour wool + string) the whole suit is
      *  sewn from. Plain item; recipes ship with the mechanics round. Populated by {@link #register()}. */
     public static Item INSULATED_HIDE;
@@ -119,6 +129,11 @@ public final class PolarOutfitting {
     /** Equipment-asset key for the goggles' own worn layer (a thin band across the eyes). */
     public static final ResourceKey<EquipmentAsset> GOGGLES_EQUIPMENT_ASSET =
             ResourceKey.create(EquipmentAssets.ROOT_ID, id("goggles"));
+
+    /** Equipment-asset key for the GOGGLED HOOD -- three stacked layers (dyeable cloth, the suit's
+     *  untinted fur/trim identity, then the goggle band) so the wearer shows hood AND goggles at once. */
+    public static final ResourceKey<EquipmentAsset> POLAR_GOGGLED_EQUIPMENT_ASSET =
+            ResourceKey.create(EquipmentAssets.ROOT_ID, id("polar_goggled"));
 
     /** The single spike status effect ({@code globe:cold_protection}, BENEFICIAL). Populated by
      *  {@link #register()}. */
@@ -130,6 +145,8 @@ public final class PolarOutfitting {
      */
     public static void register() {
         POLAR_HOOD = registerArmor("polar_hood", ArmorType.HELMET);
+        POLAR_HOOD_GOGGLED = registerArmor("polar_hood_goggled", ArmorType.HELMET,
+                POLAR_GOGGLED_EQUIPMENT_ASSET);
         POLAR_PARKA = registerArmor("polar_parka", ArmorType.CHESTPLATE);
         POLAR_LEGGINGS = registerArmor("polar_leggings", ArmorType.LEGGINGS);
         POLAR_BOOTS = registerArmor("polar_boots", ArmorType.BOOTS);
@@ -163,10 +180,29 @@ public final class PolarOutfitting {
     }
 
     private static Item registerArmor(String name, ArmorType type) {
+        return registerArmor(name, type, null);
+    }
+
+    /** @param assetOverride when non-null, the piece wears this equipment asset instead of the suit's
+     *      default (the goggled hood's three-layer asset). The MATERIAL -- and therefore the armour
+     *      values, durability and repair -- is identical either way. */
+    private static Item registerArmor(String name, ArmorType type,
+            ResourceKey<EquipmentAsset> assetOverride) {
         ResourceKey<Item> key = ResourceKey.create(Registries.ITEM, id(name));
         // 26.2: the item MUST carry its registry key in Properties (setId) BEFORE construction; humanoidArmor
         // wires the material's durability + equippable component + attributes + the equipment-asset key.
-        Item item = new Item(new Item.Properties().humanoidArmor(POLAR_MATERIAL, type).setId(key));
+        Item.Properties props = new Item.Properties().humanoidArmor(POLAR_MATERIAL, type).setId(key);
+        if (assetOverride != null) {
+            // Re-point ONLY the worn-layer asset; everything else the material gave us stands.
+            net.minecraft.world.item.equipment.Equippable base =
+                    net.minecraft.world.item.equipment.Equippable
+                            .builder(type.getSlot())
+                            .setEquipSound(SoundEvents.ARMOR_EQUIP_LEATHER)
+                            .setAsset(assetOverride)
+                            .build();
+            props = props.component(net.minecraft.core.component.DataComponents.EQUIPPABLE, base);
+        }
+        Item item = new Item(props);
         return Registry.register(BuiltInRegistries.ITEM, key, item);
     }
 
