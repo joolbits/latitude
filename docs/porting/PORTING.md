@@ -1,6 +1,6 @@
 # Latitude Porting Guide
 
-`scope: Latitude ports and backports` · `status: active` · `updated: 2026-06-18`
+`scope: Latitude ports and backports` · `status: active; Latitude 1.5 Java 26.x campaign added` · `updated: 2026-07-17`
 
 This is the operational front door for Latitude porting. It turns the scattered porting lessons into a short checklist so each backport starts from known truth instead of rediscovery.
 
@@ -11,11 +11,20 @@ This is the operational front door for Latitude porting. It turns the scattered 
 3. This file for porting procedure.
 4. Dated external record or port handoff docs only when this file links to them.
 
+For the concurrent Latitude 1.5 Java 26.x campaign, also read:
+
+- `docs/LATITUDE_1_5_PRE_2_0_POLISH_ROADMAP.md`
+
 ## Current Porting Law
 
-- Current canonical line: Minecraft 26.1.2.
+- Historical Latitude 1.4 canon remains Minecraft 26.1.2.
+- The bounded Latitude 1.5 campaign uses one shared 26.1.x artifact for 26.1, 26.1.1, and 26.1.2,
+  followed by a separate clean 26.2 port.
+- Its current clean 26.1.x implementation root is
+  `<home>/CascadeProjects/Latitude-1.5-26.1x` on
+  `codex/1.5-mini-launch-26.1x`, based directly on `f26d5f58`.
 - Older lines, including 1.21.11, 1.21.1, and 1.20.1, are backports.
-- 26.2 is a later evaluation target, not current canon.
+- The 26.2 Pivot is not a 1.5 donor root. Its committed fixes are behavior evidence only.
 - Do not resume older-version implementation until the 26.1.2 source of truth is accepted or Maintainer explicitly opens a bounded emergency lane.
 
 ## Six-Line Port Working Card
