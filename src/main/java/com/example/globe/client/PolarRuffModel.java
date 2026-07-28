@@ -20,12 +20,15 @@ import net.minecraft.resources.Identifier;
  * past the silhouette, so the earlier texture ruff always read as a stripe. A halo needs a model.
  * This is the mod's FIRST custom entity geometry.
  *
- * <p><b>Shape.</b> A closed rectangular ring of four slabs encircling the head at brow height,
- * standing ~3px proud of the 8x8x8 head box on every side. Deliberately chunky and rectangular:
- * that is Minecraft's own vocabulary (the turtle helmet, a wither's ribs), and a smoothly rounded
- * wreath would read as foreign here. The shagginess comes from the TEXTURE (irregular pelt strands
- * with a dark hide underline), the SILHOUETTE comes from this geometry -- the same division of
- * labour that made the icicles work.
+ * <p><b>Shape -- a MANE, not a collar.</b> Owner correction 2026-07-27: the first ring went
+ * "around the head circumferentially, not as a 'mane' framing the face". She is right, and every
+ * reference parka shows why: a hood ruff does NOT encircle the skull. It borders the FACE OPENING
+ * -- arcing over the brow, down both temples, and under the chin -- with plain hood fabric behind
+ * the head. So this is a vertical picture-frame standing in front of the face, open in the middle
+ * where the face shows, projecting forward past the face plane. Deliberately chunky and
+ * rectangular: Minecraft's own vocabulary. Silhouette from geometry, shagginess from the pelt
+ * texture (guard-hair streaking + a dark hide underline) -- the division of labour that made the
+ * icicles work.
  *
  * <p><b>Coordinates.</b> After {@code HeadedModel.translateToHead}, the origin sits at the neck
  * pivot with the head occupying y -8 (crown) to 0 (neck) and x/z -4..4. The ring is centred at
@@ -42,47 +45,55 @@ public class PolarRuffModel extends Model<net.minecraft.client.renderer.entity.s
     public static final Identifier TEXTURE = Identifier.fromNamespaceAndPath(
             com.example.globe.GlobeMod.MOD_ID, "textures/entity/polar_ruff.png");
 
-    // Ring geometry, in model pixels. The head is 8 wide; the ring stands OUT to +-7 so it reads
-    // as a halo from every angle, including straight on (the angle her references are shot from).
-    // Live-corrected 2026-07-27: at -7.5 the ring sat ON the crown and read as a flat hat BRIM,
-    // not a hood opening. The face occupies roughly y -6..-1, so the ring now starts at -6 and
-    // frames it -- which is what a ruff does and what her reference parkas all show.
-    private static final float RING_TOP = -6.0f;
-    private static final int RING_HEIGHT = 5;      // brow band, tall enough to frame the face
-    private static final int RING_OUT = 7;         // outer half-extent (head is 4)
-    private static final int SLAB_THICK = 3;       // how far the fur projects past the head
+    // Frame geometry, in model pixels. After translateToHead the bare head is x -4..4, y -8 (crown)
+    // to 0 (neck), z -4..4, and the FACE is the -Z side. The HOOD is an outer-armour layer, which
+    // vanilla inflates by 1.0 on every side, so the garment's real surface is x +-5, y -9..1,
+    // z +-5 -- the ruff has to clear THAT, not the bare head, or it z-fights the hood it trims.
+    //
+    // Sizing (revision 3, after the owner saw revision 2 in game). Revision 2 was 4px deep with 2px
+    // bars, and the chin bar hung below the jaw: it read as a deep picture frame bolted to the face
+    // rather than fur. This one is a RING that hugs the hood -- thin bars, shallow depth, closing at
+    // the jaw line, standing just 0.75px proud of the hood all the way round.
+    private static final float FRAME_Z = -6.5f;     // front of the fur (1.5px proud of the hood)
+    private static final int FRAME_DEPTH = 3;       // z -6.5..-3.5: shallow, so it reads as trim
+    private static final float FRAME_BAR = 1.75f;   // thickness of each fur bar
+    private static final float RING_TOP = -9.75f;   // 0.75px over the hood crown
+    private static final float RING_BOTTOM = 0.25f; // closes at the jaw, not below it
+    private static final float RING_HALF_W = 5.75f; // 0.75px past the hood's cheeks
+    private static final float OPENING_HALF_W = 4.0f;  // the face shows through at full width
+    private static final float RING_HEIGHT = RING_BOTTOM - RING_TOP; // 10.0
 
     public PolarRuffModel(ModelPart root) {
         super(root, RenderTypes::entityCutout);
     }
 
     /**
-     * Four slabs forming a closed ring. Front/back span the full outer width so the corners are
-     * closed by overlap -- no gaps at the diagonals, which is where a naive four-box ring falls
-     * apart when the player turns.
+     * Four bars forming a ring around the face opening: brow, two temples, chin. The TEMPLES run the
+     * full height and own the corners; the brow and chin bars span only the gap between them. Butted
+     * rather than overlapped, deliberately -- two boxes sharing a face z-fight, and a flickering
+     * corner on a head that turns constantly would be the first thing anyone noticed.
      */
     public static LayerDefinition createLayer() {
         MeshDefinition mesh = new MeshDefinition();
         PartDefinition root = mesh.getRoot();
-        int fullWidth = RING_OUT * 2;                 // 14
-        int sideDepth = (RING_OUT - SLAB_THICK) * 2;  // 8 -- meets the front/back slabs, no gap
-        root.addOrReplaceChild("front", CubeListBuilder.create()
+        float openingWidth = OPENING_HALF_W * 2.0f;
+        float templeX = RING_HALF_W - FRAME_BAR;
+        root.addOrReplaceChild("brow", CubeListBuilder.create()
                 .texOffs(0, 0)
-                .addBox(-RING_OUT, RING_TOP, -RING_OUT, fullWidth, RING_HEIGHT, SLAB_THICK),
+                .addBox(-OPENING_HALF_W, RING_TOP, FRAME_Z, openingWidth, FRAME_BAR, FRAME_DEPTH),
                 PartPose.ZERO);
-        root.addOrReplaceChild("back", CubeListBuilder.create()
-                .texOffs(0, 10)
-                .addBox(-RING_OUT, RING_TOP, RING_OUT - SLAB_THICK, fullWidth, RING_HEIGHT, SLAB_THICK),
+        root.addOrReplaceChild("chin", CubeListBuilder.create()
+                .texOffs(0, 8)
+                .addBox(-OPENING_HALF_W, RING_BOTTOM - FRAME_BAR, FRAME_Z, openingWidth, FRAME_BAR,
+                        FRAME_DEPTH),
                 PartPose.ZERO);
-        root.addOrReplaceChild("left", CubeListBuilder.create()
-                .texOffs(0, 20)
-                .addBox(RING_OUT - SLAB_THICK, RING_TOP, -sideDepth / 2.0f,
-                        SLAB_THICK, RING_HEIGHT, sideDepth),
+        root.addOrReplaceChild("temple_left", CubeListBuilder.create()
+                .texOffs(0, 16)
+                .addBox(templeX, RING_TOP, FRAME_Z, FRAME_BAR, RING_HEIGHT, FRAME_DEPTH),
                 PartPose.ZERO);
-        root.addOrReplaceChild("right", CubeListBuilder.create()
-                .texOffs(0, 32)
-                .addBox(-RING_OUT, RING_TOP, -sideDepth / 2.0f,
-                        SLAB_THICK, RING_HEIGHT, sideDepth),
+        root.addOrReplaceChild("temple_right", CubeListBuilder.create()
+                .texOffs(20, 16)
+                .addBox(-RING_HALF_W, RING_TOP, FRAME_Z, FRAME_BAR, RING_HEIGHT, FRAME_DEPTH),
                 PartPose.ZERO);
         return LayerDefinition.create(mesh, 64, 64);
     }
