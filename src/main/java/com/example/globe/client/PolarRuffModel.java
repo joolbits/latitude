@@ -71,40 +71,67 @@ public class PolarRuffModel extends Model<net.minecraft.client.renderer.entity.s
     private static final float RING_HEIGHT = RING_BOTTOM - RING_TOP; // 10.0
 
     /**
-     * The shaggy bits, as {@code {x, y, z, width, height, depth, texU, texV}}. Hand-placed rather
-     * than generated: the sizes and offsets are deliberately uneven so no two tufts read as a
-     * repeated stamp, and the numbers have to stay stable across builds (a random seed here would
-     * reshuffle the fur every time the model reloaded).
+     * The shaggy bits, as {@code {x, y, z, width, height, depth}}. UVs are allocated by index, since
+     * the pelt is a uniform field and every tuft wants the same kind of fur.
      *
-     * <p>The first block hangs off the ring's OUTER edge -- top, both sides, under the chin, and one
-     * at each corner so the corners step instead of turning a hard 90 degrees. The second block
-     * (from {@code ROOT_TUFT_FROM} on) lies flat on the hood BEHIND the ring: the hood's real
-     * surface is x +-5, y -9, so these sit just outside it and carry the fur back onto the garment.
+     * <p><b>Why they look like this (revision 5).</b> Revision 4's fringe was thirteen tufts of
+     * near-identical size, evenly spaced, each standing clear of the ring with a visible gap. In
+     * game that read as a COG -- machine-cut teeth, not fur. Fur is ragged because its edge is
+     * continuous and its length varies: so these tufts are smaller, roughly twice as many, spaced
+     * so each OVERLAPS its neighbour (no gaps to see through), and every one has a different
+     * protrusion (0.3 to 0.9px) and a different front-to-back depth (1.4 to 2.6px) so the crest is
+     * uneven in all three dimensions rather than a row of matching pegs.
+     *
+     * <p>Hand-placed rather than seeded on purpose: these numbers must be identical on every client
+     * and stable across reloads, and a random seed would reshuffle the fur each time the model
+     * baked. Each tuft overlaps the ring by ~0.5px so it grows out of it instead of floating.
+     *
+     * <p>The last five entries are ROOTS: they lie flat on the hood BEHIND the ring. The hood's real
+     * surface is x +-5, y -9, so these sit just outside it and carry the fur back onto the garment,
+     * which is what stops the ring reading as a mask stuck on the front of the face.
      */
     private static final float[][] TUFTS = {
-            // ---- top edge -------------------------------------------------------------------
-            {-4.75f, -10.75f, -6.25f, 1.50f, 1.25f, 1.50f, 32, 0},
-            {-1.25f, -11.00f, -5.75f, 1.75f, 1.50f, 1.75f, 40, 0},
-            { 2.25f, -10.60f, -6.50f, 1.50f, 1.00f, 1.50f, 48, 0},
-            // ---- corners: step them so the outline is not a drawn rectangle -----------------
-            { 4.75f, -10.50f, -6.00f, 1.75f, 1.75f, 1.75f, 32, 6},
-            {-6.50f, -10.50f, -6.00f, 1.75f, 1.75f, 1.75f, 40, 6},
-            { 4.75f,  -0.75f, -6.00f, 1.50f, 1.50f, 1.50f, 48, 6},
-            {-6.25f,  -0.75f, -6.00f, 1.50f, 1.50f, 1.50f, 32, 12},
-            // ---- sides ----------------------------------------------------------------------
-            { 5.50f,  -8.25f, -6.25f, 1.50f, 1.75f, 1.50f, 40, 12},
-            { 5.75f,  -4.50f, -5.75f, 1.25f, 1.50f, 1.50f, 48, 12},
-            {-7.00f,  -8.50f, -6.00f, 1.50f, 1.50f, 1.50f, 32, 18},
-            {-7.00f,  -4.75f, -6.40f, 1.25f, 1.75f, 1.50f, 40, 18},
-            // ---- under the chin -------------------------------------------------------------
-            {-2.75f,   0.00f, -6.25f, 1.50f, 1.25f, 1.50f, 48, 18},
-            { 1.25f,  -0.10f, -5.75f, 1.75f, 1.25f, 1.50f, 32, 24},
+            // ---- top crest: nine tufts, uneven height, overlapping ---------------------------
+            {-5.70f, -10.25f, -6.55f, 1.45f, 1.10f, 1.60f},
+            {-4.40f, -10.60f, -6.30f, 1.35f, 1.45f, 2.30f},
+            {-3.15f, -10.10f, -6.65f, 1.50f, 0.95f, 1.40f},
+            {-1.75f, -10.50f, -6.15f, 1.40f, 1.35f, 2.55f},
+            {-0.45f, -10.15f, -6.60f, 1.30f, 1.00f, 1.70f},
+            { 0.80f, -10.65f, -6.40f, 1.50f, 1.50f, 2.10f},
+            { 2.20f, -10.20f, -6.70f, 1.35f, 1.05f, 1.50f},
+            { 3.45f, -10.55f, -6.25f, 1.45f, 1.40f, 2.40f},
+            { 4.70f, -10.30f, -6.55f, 1.30f, 1.15f, 1.60f},
+            // ---- right cheek -----------------------------------------------------------------
+            { 5.25f,  -9.40f, -6.45f, 1.35f, 1.35f, 1.80f},
+            { 5.25f,  -8.15f, -6.60f, 0.90f, 1.45f, 1.45f},
+            { 5.25f,  -6.80f, -6.20f, 1.25f, 1.30f, 2.35f},
+            { 5.25f,  -5.55f, -6.65f, 0.85f, 1.50f, 1.55f},
+            { 5.25f,  -4.10f, -6.35f, 1.40f, 1.35f, 2.05f},
+            { 5.25f,  -2.80f, -6.60f, 0.95f, 1.45f, 1.60f},
+            { 5.25f,  -1.40f, -6.25f, 1.20f, 1.30f, 2.20f},
+            // ---- left cheek ------------------------------------------------------------------
+            {-6.50f,  -9.45f, -6.50f, 1.25f, 1.40f, 1.70f},
+            {-6.15f,  -8.10f, -6.65f, 0.90f, 1.35f, 1.40f},
+            {-6.65f,  -6.70f, -6.25f, 1.40f, 1.45f, 2.30f},
+            {-6.10f,  -5.40f, -6.60f, 0.85f, 1.30f, 1.50f},
+            {-6.55f,  -4.05f, -6.30f, 1.30f, 1.45f, 2.15f},
+            {-6.20f,  -2.75f, -6.65f, 0.95f, 1.35f, 1.55f},
+            {-6.40f,  -1.35f, -6.35f, 1.15f, 1.30f, 2.00f},
+            // ---- under the chin: shorter, so it does not read as a beard --------------------
+            {-5.10f,  -0.25f, -6.55f, 1.35f, 0.85f, 1.55f},
+            {-3.70f,  -0.25f, -6.30f, 1.45f, 1.05f, 2.10f},
+            {-2.35f,  -0.25f, -6.65f, 1.30f, 0.80f, 1.45f},
+            {-0.90f,  -0.25f, -6.40f, 1.40f, 1.00f, 1.95f},
+            { 0.55f,  -0.25f, -6.60f, 1.35f, 0.80f, 1.50f},
+            { 1.95f,  -0.25f, -6.35f, 1.45f, 1.05f, 2.05f},
+            { 3.40f,  -0.25f, -6.55f, 1.30f, 0.85f, 1.60f},
+            { 4.65f,  -0.25f, -6.45f, 1.40f, 0.95f, 1.80f},
             // ---- roots: fur spreading back onto the hood ------------------------------------
-            { 4.90f,  -8.00f, -3.40f, 1.25f, 2.00f, 1.75f, 40, 24},
-            { 4.90f,  -4.50f, -3.20f, 1.25f, 1.75f, 1.50f, 48, 24},
-            {-6.15f,  -8.00f, -3.40f, 1.25f, 2.00f, 1.75f, 32, 30},
-            {-6.15f,  -4.50f, -3.20f, 1.25f, 1.75f, 1.50f, 40, 30},
-            {-2.00f,  -9.90f, -3.30f, 3.00f, 1.25f, 1.75f, 48, 30},
+            { 4.90f,  -8.20f, -3.30f, 1.15f, 1.90f, 1.70f},
+            { 4.90f,  -5.60f, -3.10f, 1.05f, 1.60f, 1.45f},
+            {-6.05f,  -8.20f, -3.30f, 1.15f, 1.90f, 1.70f},
+            {-6.05f,  -5.60f, -3.10f, 1.05f, 1.60f, 1.45f},
+            {-2.20f,  -9.85f, -3.20f, 2.60f, 1.10f, 1.60f},
     };
 
     public PolarRuffModel(ModelPart root) {
@@ -139,9 +166,14 @@ public class PolarRuffModel extends Model<net.minecraft.client.renderer.entity.s
                 .texOffs(20, 16)
                 .addBox(-RING_HALF_W, RING_TOP, FRAME_Z, FRAME_BAR, RING_HEIGHT, FRAME_DEPTH),
                 PartPose.ZERO);
+        // UVs by index on a 3-wide grid in the sheet's unused right-hand band. Every slot is 10x5,
+        // which comfortably holds the largest tuft's 8.1x4.05 footprint, and the pelt is a uniform
+        // field so it does not matter which slot a given tuft lands in.
         CubeListBuilder fringe = CubeListBuilder.create();
-        for (float[] t : TUFTS) {
-            fringe.texOffs((int) t[6], (int) t[7]).addBox(t[0], t[1], t[2], t[3], t[4], t[5]);
+        for (int i = 0; i < TUFTS.length; i++) {
+            float[] t = TUFTS[i];
+            fringe.texOffs(32 + (i % 3) * 10, (i / 3) * 5)
+                    .addBox(t[0], t[1], t[2], t[3], t[4], t[5]);
         }
         root.addOrReplaceChild("fringe", fringe, PartPose.ZERO);
         return LayerDefinition.create(mesh, 64, 64);
