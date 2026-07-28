@@ -50,18 +50,62 @@ public class PolarRuffModel extends Model<net.minecraft.client.renderer.entity.s
     // vanilla inflates by 1.0 on every side, so the garment's real surface is x +-5, y -9..1,
     // z +-5 -- the ruff has to clear THAT, not the bare head, or it z-fights the hood it trims.
     //
-    // Sizing (revision 3, after the owner saw revision 2 in game). Revision 2 was 4px deep with 2px
-    // bars, and the chin bar hung below the jaw: it read as a deep picture frame bolted to the face
-    // rather than fur. This one is a RING that hugs the hood -- thin bars, shallow depth, closing at
-    // the jaw line, standing just 0.75px proud of the hood all the way round.
-    private static final float FRAME_Z = -6.5f;     // front of the fur (1.5px proud of the hood)
-    private static final int FRAME_DEPTH = 3;       // z -6.5..-3.5: shallow, so it reads as trim
+    // Sizing (revision 4, after the owner saw revision 3 in game: "it doesn't look like it really
+    // connects to the hood -- it looks like a square mask around the face"). Revision 3 was a clean
+    // rectangle floating at the front of the head, and a clean rectangle is exactly what a mask is.
+    // Three answers, all geometry:
+    //   1. the ring is DEEPER (3.75 not 3.0), so it roots 2px inside the hood instead of grazing it;
+    //   2. FRINGE -- irregular tufts all round the outer edge, so the silhouette is shaggy rather
+    //      than a drawn rectangle. This is what stops it reading as a mask;
+    //   3. ROOT tufts lying ON the hood behind the ring, so the fur visibly continues onto the
+    //      garment and dies out, instead of stopping dead at a seam.
+    // The ring itself stays CLOSED all the way round -- that is what a parka ruff does, and an
+    // open-bottomed one reads as a headband. It is the outline that needed breaking, not the loop.
+    private static final float FRAME_Z = -6.75f;    // front of the fur (1.75px proud of the hood)
+    private static final float FRAME_DEPTH = 3.75f; // z -6.75..-3.0: back edge buried in the hood
     private static final float FRAME_BAR = 1.75f;   // thickness of each fur bar
     private static final float RING_TOP = -9.75f;   // 0.75px over the hood crown
     private static final float RING_BOTTOM = 0.25f; // closes at the jaw, not below it
     private static final float RING_HALF_W = 5.75f; // 0.75px past the hood's cheeks
     private static final float OPENING_HALF_W = 4.0f;  // the face shows through at full width
     private static final float RING_HEIGHT = RING_BOTTOM - RING_TOP; // 10.0
+
+    /**
+     * The shaggy bits, as {@code {x, y, z, width, height, depth, texU, texV}}. Hand-placed rather
+     * than generated: the sizes and offsets are deliberately uneven so no two tufts read as a
+     * repeated stamp, and the numbers have to stay stable across builds (a random seed here would
+     * reshuffle the fur every time the model reloaded).
+     *
+     * <p>The first block hangs off the ring's OUTER edge -- top, both sides, under the chin, and one
+     * at each corner so the corners step instead of turning a hard 90 degrees. The second block
+     * (from {@code ROOT_TUFT_FROM} on) lies flat on the hood BEHIND the ring: the hood's real
+     * surface is x +-5, y -9, so these sit just outside it and carry the fur back onto the garment.
+     */
+    private static final float[][] TUFTS = {
+            // ---- top edge -------------------------------------------------------------------
+            {-4.75f, -10.75f, -6.25f, 1.50f, 1.25f, 1.50f, 32, 0},
+            {-1.25f, -11.00f, -5.75f, 1.75f, 1.50f, 1.75f, 40, 0},
+            { 2.25f, -10.60f, -6.50f, 1.50f, 1.00f, 1.50f, 48, 0},
+            // ---- corners: step them so the outline is not a drawn rectangle -----------------
+            { 4.75f, -10.50f, -6.00f, 1.75f, 1.75f, 1.75f, 32, 6},
+            {-6.50f, -10.50f, -6.00f, 1.75f, 1.75f, 1.75f, 40, 6},
+            { 4.75f,  -0.75f, -6.00f, 1.50f, 1.50f, 1.50f, 48, 6},
+            {-6.25f,  -0.75f, -6.00f, 1.50f, 1.50f, 1.50f, 32, 12},
+            // ---- sides ----------------------------------------------------------------------
+            { 5.50f,  -8.25f, -6.25f, 1.50f, 1.75f, 1.50f, 40, 12},
+            { 5.75f,  -4.50f, -5.75f, 1.25f, 1.50f, 1.50f, 48, 12},
+            {-7.00f,  -8.50f, -6.00f, 1.50f, 1.50f, 1.50f, 32, 18},
+            {-7.00f,  -4.75f, -6.40f, 1.25f, 1.75f, 1.50f, 40, 18},
+            // ---- under the chin -------------------------------------------------------------
+            {-2.75f,   0.00f, -6.25f, 1.50f, 1.25f, 1.50f, 48, 18},
+            { 1.25f,  -0.10f, -5.75f, 1.75f, 1.25f, 1.50f, 32, 24},
+            // ---- roots: fur spreading back onto the hood ------------------------------------
+            { 4.90f,  -8.00f, -3.40f, 1.25f, 2.00f, 1.75f, 40, 24},
+            { 4.90f,  -4.50f, -3.20f, 1.25f, 1.75f, 1.50f, 48, 24},
+            {-6.15f,  -8.00f, -3.40f, 1.25f, 2.00f, 1.75f, 32, 30},
+            {-6.15f,  -4.50f, -3.20f, 1.25f, 1.75f, 1.50f, 40, 30},
+            {-2.00f,  -9.90f, -3.30f, 3.00f, 1.25f, 1.75f, 48, 30},
+    };
 
     public PolarRuffModel(ModelPart root) {
         super(root, RenderTypes::entityCutout);
@@ -95,6 +139,11 @@ public class PolarRuffModel extends Model<net.minecraft.client.renderer.entity.s
                 .texOffs(20, 16)
                 .addBox(-RING_HALF_W, RING_TOP, FRAME_Z, FRAME_BAR, RING_HEIGHT, FRAME_DEPTH),
                 PartPose.ZERO);
+        CubeListBuilder fringe = CubeListBuilder.create();
+        for (float[] t : TUFTS) {
+            fringe.texOffs((int) t[6], (int) t[7]).addBox(t[0], t[1], t[2], t[3], t[4], t[5]);
+        }
+        root.addOrReplaceChild("fringe", fringe, PartPose.ZERO);
         return LayerDefinition.create(mesh, 64, 64);
     }
 
