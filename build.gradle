@@ -105,6 +105,17 @@ loom {
             vmArg "-Dlatdev.probe.out=${System.getProperty('latdev.probe.out', '')}"
             vmArg "-Dlatdev.probe.radius=${System.getProperty('latdev.probe.radius', '')}"
             vmArg "-Dlatdev.probe.maxCombos=${System.getProperty('latdev.probe.maxCombos', '')}"
+            vmArg "-Dlatdev.caveDropAudit=${System.getProperty('latdev.caveDropAudit', 'false')}"
+            vmArg "-Dlatdev.caveDropAudit.mode=${System.getProperty('latdev.caveDropAudit.mode', 'generate')}"
+            vmArg "-Dlatdev.caveDropAudit.chunkMinX=${System.getProperty('latdev.caveDropAudit.chunkMinX', '')}"
+            vmArg "-Dlatdev.caveDropAudit.chunkMinZ=${System.getProperty('latdev.caveDropAudit.chunkMinZ', '')}"
+            vmArg "-Dlatdev.caveDropAudit.chunkSpan=${System.getProperty('latdev.caveDropAudit.chunkSpan', '')}"
+            vmArg "-Dlatdev.caveDropAudit.afterTicks=${System.getProperty('latdev.caveDropAudit.afterTicks', '')}"
+            vmArg "-Dlatdev.caveDropAudit.out=${System.getProperty('latdev.caveDropAudit.out', '')}"
+            vmArg "-Dlatdev.caveDropAudit.baseline=${System.getProperty('latdev.caveDropAudit.baseline', '')}"
+            vmArg "-Dlatdev.caveDropAudit.minOrdinary=${System.getProperty('latdev.caveDropAudit.minOrdinary', '')}"
+            vmArg "-Dlatdev.caveDropAudit.minFlooded=${System.getProperty('latdev.caveDropAudit.minFlooded', '')}"
+            vmArg "-Dlatdev.caveDropAudit.minProspector=${System.getProperty('latdev.caveDropAudit.minProspector', '')}"
             vmArg "-Dlatitude.debugWorldgenPath=${System.getProperty('latitude.debugWorldgenPath', 'false')}"
             // Phase 4 terrain-wrapper mechanical proof harness (com.example.globe.dev.TerrainProofHarness).
             // See docs/design/terrain-wrapper-design-20260705.md §6/§8 items 7-9.
@@ -163,11 +174,11 @@ loom {
             // S11(c) firefly-specific ban dial (default 50 = the SUBPOLAR onset) -- forwarded in the SAME
             // pass as the constant (L17 discipline), beside its veg-fade dial family.
             vmArg "-Dlatitude.polarVegetationFade.fireflyBanDeg=${System.getProperty('latitude.polarVegetationFade.fireflyBanDeg', '50.0')}"
-            // Phase 5 B-8 Polar Barrens (default FALSE, byte-identical off). WORLDGEN change -- forwarded
-            // here in the SAME PASS as the flag (L17) so a headless flag-on atlas actually runs with the
-            // barrens on (the L17 forwarding gap has produced silent byte-identical false-greens before).
+            // Phase 5 B-8 Polar Barrens ships ON (owner decision 2026-07-25, matching LatitudeV2Flags).
+            // Forwarded here so a headless run agrees with the shipped jar; an explicit false still provides
+            // the byte-identical-off comparison leg without silently making the default proof false-green.
             // The onset/full degree dials are advertised as live-tunable, so forward them too.
-            vmArg "-Dlatitude.polarBarrens.enabled=${System.getProperty('latitude.polarBarrens.enabled', 'false')}"
+            vmArg "-Dlatitude.polarBarrens.enabled=${System.getProperty('latitude.polarBarrens.enabled', 'true')}"
             // S21c 2026-07-19: the veg-fade/Barrens COUPLING IS BROKEN (deliberately). The onset default used
             // to NEST the veg-fade fullDeg sysprop (barrens began exactly where the grass died); the owner moved
             // the veg fade's finish down to 80 ("veg to 80") but wants the Barrens BIOME to stay at 82, so the
@@ -176,13 +187,10 @@ loom {
             // An explicit -Dlatitude.polarBarrens.onsetDeg still wins; .fullDeg 84 holds the fray at +2 (82->84).
             vmArg "-Dlatitude.polarBarrens.onsetDeg=${System.getProperty('latitude.polarBarrens.onsetDeg', '82.0')}"
             vmArg "-Dlatitude.polarBarrens.fullDeg=${System.getProperty('latitude.polarBarrens.fullDeg', '84.0')}"
-            // Phase 5 B-9 Glacial Caves & Crevasses carver append (design default FALSE, byte-identical off;
-            // the Java constant is branch-locally staged ON for the flight -- REVISIT BEFORE MERGE lives
-            // there). Forwarded in the SAME pass as the flag (L17 discipline), default 'false' like the
-            // barrens precedent so headless/atlas runs stay on the design default unless explicitly armed
-            // (gate-1 cannot see the carver seam anyway -- the atlas never executes applyCarvers -- but the
-            // forwarding keeps a -D-armed dev run agreeing with a shipped jar).
-            vmArg "-Dlatitude.glacialCavesV1=${System.getProperty('latitude.glacialCavesV1', 'false')}"
+            // Phase 5 B-9 Glacial Caves & Crevasses also ship ON (owner decision 2026-07-25, matching
+            // LatitudeV2Flags). Forwarding the same default keeps real headless chunks representative;
+            // an explicit false remains available for a controlled comparison.
+            vmArg "-Dlatitude.glacialCavesV1=${System.getProperty('latitude.glacialCavesV1', 'true')}"
             // Polar water freeze (default TRUE, matching LatitudeV2Flags; byte-identical when explicitly
             // set off). Forwarded on sight this round -- the L17 forwarding class has bitten this repo
             // twice before (climateV2/biomeConsumerV2 2026-07-07); don't let a third flag go unforwarded.

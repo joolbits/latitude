@@ -1,6 +1,7 @@
 package com.example.globe.world;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Test;
@@ -59,6 +60,18 @@ class GlacialCavesBiomeJsonSchemaTest {
         List<String> ids = new ArrayList<>();
         features.get(step).getAsJsonArray().forEach(e -> ids.add(e.getAsString()));
         return ids;
+    }
+
+    private static int featureReferenceCount(JsonObject biome, String featureId) {
+        int count = 0;
+        for (JsonElement step : biome.getAsJsonArray("features")) {
+            for (JsonElement feature : step.getAsJsonArray()) {
+                if (featureId.equals(feature.getAsString())) {
+                    count++;
+                }
+            }
+        }
+        return count;
     }
 
     @Test
@@ -120,22 +133,40 @@ class GlacialCavesBiomeJsonSchemaTest {
     @Test
     void dressingStepsCarryTheGlacialFeatures() {
         JsonObject caves = glacialCaves();
-        assertEquals(List.of("globe:hanging_icicles", "globe:glacial_snow_drift",
+        JsonObject barrens = polarBarrens();
+        List<String> expectedUndergroundDecoration = List.of(
+                        "globe:hanging_icicles", "globe:glacial_snow_drift",
                         "globe:glacial_powder_pocket", "globe:glacial_frost_carpet", "globe:glacial_slush_floe",
-                        "globe:cave_drop_trap", "globe:ice_spire_cluster", "globe:ice_spire",
-                        "globe:icicle_cluster", "globe:ice_spear_patch", "globe:magma_quench_sweep"),
-                featureStep(caves, 7),
+                        "globe:ice_spire_cluster", "globe:ice_spire", "globe:icicle_cluster",
+                        "globe:ice_spear_patch", "globe:magma_quench_sweep");
+        assertEquals(expectedUndergroundDecoration, featureStep(caves, 7),
                 "underground_decoration (step 7): the plain-ice hanging_icicles (reinstated S40 per owner), "
-                        + "the floor/pool dressing, the S44 drop trap, the S45 ice spires (cluster before "
+                        + "the floor/pool dressing, then the S45 ice spires (cluster before "
                         + "single, vanilla sulfur order; floor forms, not the rejected speleothem silhouette), "
                         + "then the S46 icicle revival: needle clusters (owner GO 2026-07-26, \"really love\") "
                         + "and the LOW-rate floor spear patch (PROVISIONAL -- owner is \"a tad less sold\" on "
                         + "floor ones and judges them live; count stays low until her final call), then the S50 magma quench sweep LAST -- it must run after underwater_magma and every other magma source, or flooded pockets go bare again (the TEST 138 regression)");
-        assertEquals(List.of("globe:glacial_glow_lichen"),
+        assertEquals(expectedUndergroundDecoration, featureStep(barrens, 7),
+                "both glacial hosts keep the same step-7 dressing order, with magma quench last");
+        assertEquals("globe:magma_quench_sweep",
+                featureStep(caves, 7).get(featureStep(caves, 7).size() - 1));
+        assertEquals("globe:magma_quench_sweep",
+                featureStep(barrens, 7).get(featureStep(barrens, 7).size() - 1));
+
+        assertEquals(List.of("globe:cave_drop_trap", "globe:glacial_glow_lichen"),
                 featureStep(caves, 9),
-                "vegetal step = the sparse glacial glow_lichen only (punctuation, not illumination). "
+                "intentional new-generation migration: the cave trap runs FIRST in vegetal decoration, "
+                        + "after the complete cave floor exists, then sparse glow lichen. "
                         + "S40 (owner: \"remove pale moss, hanging moss\") deleted both pale-moss atmosphere "
                         + "features that S37 had appended here");
+        assertEquals(List.of("globe:cave_drop_trap", "minecraft:glow_lichen",
+                        "globe:glacial_glow_lichen"),
+                featureStep(barrens, 9),
+                "the barrens also run cave traps FIRST in step 9, before vanilla and glacial glow lichen");
+        assertEquals(1, featureReferenceCount(caves, "globe:cave_drop_trap"),
+                "glacial_caves lists the migrated trap exactly once");
+        assertEquals(1, featureReferenceCount(barrens, "globe:cave_drop_trap"),
+                "polar_barrens lists the migrated trap exactly once");
     }
 
     @Test

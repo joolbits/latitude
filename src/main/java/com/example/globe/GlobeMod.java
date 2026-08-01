@@ -191,6 +191,8 @@ public class GlobeMod implements ModInitializer {
         // S37: globe:icicle (vanilla speleothem rooted on packed ice) + its item. Unconditional (registry
         // consistency law); generation is biome-JSON-scoped to glacial caves.
         com.example.globe.world.IcicleBlocks.register();
+        com.example.globe.world.CaveTrapBlocks.register();
+        com.example.globe.world.CollapsedExplorerBlocks.register();
         // S44: in-cave drop traps (thin false floors over deeper galleries; punchlist item 1).
         com.example.globe.world.CaveDropTrapFeature.register();
         com.example.globe.world.MagmaQuenchSweepFeature.register();
@@ -567,25 +569,28 @@ public class GlobeMod implements ModInitializer {
             // "the mistake"; and its falling blocks BACKFILLED the very shaft they revealed). The trap is now
             // pure vanilla powder physics -- the cover itself sinks the victim; nothing to tick here.
 
-            // B-7 S7 (POLAR IMMERSION): the SINGLE cold-evaluation latitude. In water (isInWater -- false in a
-            // boat, the free story-true exemption) the existing curves are evaluated at |lat|+3 capped at 90
-            // ("polar water is three degrees colder than the air"), so the open 82-85 liquid sea bites like 85
-            // land and under-ice swimming at 87+ reads like the lethal core. EVERY cold-band read below
-            // (frostbite applies/interval/amount, the F3 cue, the 87.5 lethal gate, hazardProgress -> frost
-            // visual + slowness staging + lethal damage) uses effLatDeg, so damage, cue and blue hearts shift
-            // together (the honesty law); LivingEntityFreezeDamageMixin's gate (isInPolarFreezeDamageBand)
-            // applies the SAME shift so vanilla's auto-freeze can never double-dip an immersed player.
-            boolean inWater = !unaffected && player.isInWater();
-            double effLatDeg = com.example.globe.core.PolarImmersion.effectiveLatDeg(latDeg, inWater);
+            // B-7 S7 (POLAR IMMERSION): physical water contact is false in a boat, preserving that free
+            // story-true exemption. At Y=0 and higher it is cold-conductive: every cold-band read below uses
+            // the +3 effective latitude, so damage, cue and blue hearts move together. Physical water below
+            // Y=0 is an insulated deep-cave pool: depth itself pauses Latitude cold damage and direct water
+            // chill, even when a terrain opening leaves sky visible above the pool.
+            // The mirror gate in isInPolarFreezeDamageBand uses this same depth rule.
+            boolean physicalWaterContact = !unaffected && player.isInWater();
+            int playerBlockY = player.blockPosition().getY();
+            boolean deepCaveInsulatedWater = com.example.globe.core.PolarImmersion
+                    .isDeepCaveInsulatedWater(physicalWaterContact, playerBlockY);
+            boolean coldConductiveImmersion = physicalWaterContact && !deepCaveInsulatedWater;
+            double effLatDeg = com.example.globe.core.PolarImmersion
+                    .effectiveLatDeg(latDeg, physicalWaterContact, playerBlockY);
 
             // B-7 S4/S5(c)/S6: the cold-pause + heal-lock inputs, computed once per tick for survival players
             // in the cold zone. The DAMAGE zone reads the S7 effective latitude (a swimmer at 82 is in the
             // band); the S6 heal-lock zone stays RAW latitude (S7 leaves the lock untouched -- immersion is not
             // shelter, and this local must mirror isPolarHealLocked exactly). S4: genuine shelter (raw sky
-            // light <= 3 at the eye, ColdShelter) pauses cold DAMAGE -- unless IMMERSED (S7: water conducts
-            // cold; walls do not help in the sea -- PolarImmersion.coldDamagePaused owns the rule). S5(c): the
-            // post-crossing grace pauses it for the arrival-curtain window (grace > immersion). S6: sheltered
-            // without a warmth source freezes WOUNDS (heal lock, enforced at the LivingEntity.heal chokepoint
+            // light <= 3 at the eye, ColdShelter) pauses cold DAMAGE -- except for cold-conductive water at
+            // Y=0 or higher. A below-Y0 pool is paused by depth itself; sky exposure is irrelevant. S5(c):
+            // the post-crossing grace pauses it for the arrival-curtain window (grace >
+            // immersion). S6: sheltered without a warmth source freezes WOUNDS (heal lock, enforced at the LivingEntity.heal chokepoint
             // by LivingEntityHealLockMixin via isPolarHealLocked) and HOLDS the F3 frost cue. Short-circuit
             // order: zone -> grace -> shelter -> warmth scan (the 405-block scan still runs only for sheltered
             // RAW-zone polar players, cached ~20t in POLE_WARMTH_CACHE -- S7 does not widen the S6 scan).
@@ -605,20 +610,22 @@ public class GlobeMod implements ModInitializer {
                 }
             }
             boolean coldDamagePaused =
-                    com.example.globe.core.PolarImmersion.coldDamagePaused(coldSheltered, inWater, coldGrace);
+                    com.example.globe.core.PolarImmersion.coldDamagePaused(
+                            coldSheltered, physicalWaterContact, playerBlockY, coldGrace);
 
             // S37 F1: PONDED WATER CAUSES FREEZING (Peetsa: "the water that has ponded is not causing freezing
             // damage -- hearts are red"). DIRECT water-contact chill: raises ticksFrozen itself, exactly like
             // standing in vanilla powder snow, just faster (+3..+6/t vs vanilla's -2/t decay; PolarWaterChill).
             // Raw |lat| (NOT the S7-shifted effective latitude) is the input -- see the law's javadoc. Gated on
-            // canFreeze() so any leather piece exempts (vanilla's own powder gate, javap-verified); isInWater()
-            // is false in a boat and in mere rain. SWEEP REQUIRED-FIX 1 (S37): sits AFTER coldDamagePaused and
+            // canFreeze() so any leather piece exempts (vanilla's own powder gate, javap-verified); physical
+            // water is false in a boat and in mere rain. It skips insulated deep-cave pools. SWEEP REQUIRED-FIX
+            // 1 (S37): sits AFTER coldDamagePaused and
             // honors it -- during the sacred post-crossing grace curtain (or any pause) the chill must not
             // build toward vanilla's own auto-freeze damage below the 87.5 suppression band. NOTE (sweep 2):
             // an 82+ swimmer is ALREADY frostbite-band via the S7 +3 shift, so the chill's vanilla freeze
             // damage STACKS with S7 frostbite -- deliberate ("polar water is colder than polar air"), owner
             // confirms the harshness at flight.
-            if (inWater && player.canFreeze() && !coldDamagePaused
+            if (coldConductiveImmersion && player.canFreeze() && !coldDamagePaused
                     && latDeg >= com.example.globe.core.PolarWaterChill.ONSET_LAT_DEG) {
                 player.setTicksFrozen(com.example.globe.core.PolarWaterChill.nextTicksFrozen(
                         player.getTicksFrozen(), latDeg, player.getTicksRequiredToFreeze()));
@@ -1212,22 +1219,21 @@ public class GlobeMod implements ModInitializer {
     }
 
     /**
-     * True iff {@code entity} is a survival/adventure {@link ServerPlayer} standing in a globe overworld at
-     * or beyond the polar HAZARD onset -- i.e. exactly the band where {@link #borderUxTick} drives our own
-     * latitude-scaled freeze damage (and holds {@code ticksFrozen} at/above vanilla's fully-frozen threshold
-     * so the blue hearts show, TEST 77). This is the SOLE gate {@code LivingEntityFreezeDamageMixin} uses to
-     * suppress vanilla's own fixed 1 HP/40-tick auto-freeze damage, keeping our curve the ONLY freeze-damage
-     * source in-band while real powder snow / non-globe / non-band / creative / spectator play stays 100%
-     * vanilla. Mirrors {@link #borderUxTick}'s own in-band test (isGlobeOverworld + absLatDegExact &gt;=
-     * {@link com.example.globe.core.PolarHazardWindow#HAZARD_ONSET_DEG} + not creative/spectator) so the two
-     * can never drift apart.
+     * True iff {@code entity} is an applicable survival/adventure {@link ServerPlayer} in a globe overworld
+     * and either (a) at or beyond the effective polar HAZARD onset where {@link #borderUxTick} owns the
+     * latitude-scaled freeze damage, or (b) physically swimming below Y=0 where the deep-cave depth law pauses
+     * all Latitude water damage. This is the SOLE gate {@code LivingEntityFreezeDamageMixin} uses to suppress
+     * vanilla's fixed 1 HP/40-tick auto-freeze damage. In the lethal band it prevents double damage; in
+     * deep-cave water it prevents vanilla damage leaking through the refuge. Real powder snow, non-globe
+     * worlds, dry non-band play, creative, and spectator remain vanilla.
      *
-     * <p><b>Accepted niche (B-7 F5): powder-snow double-dip in the frostbite band {@code [85,87.5)}.</b> This
-     * gate starts at the HAZARD onset (87.5), so vanilla's own powder-snow auto-freeze damage is NOT suppressed
-     * in the frostbite band -- a player standing fully-buried IN powder snow there can take vanilla's
-     * 1 HP/40t on top of the S3 frostbite nibble. Accepted as-is: it requires deliberate burial in powder snow
-     * (not mere polar presence), reads as "buried in powder snow hurts extra" (true), and widening this gate to
-     * 85 would silently disable REAL powder-snow freezing across the whole frostbite band -- a worse lie.
+     * <p><b>Accepted niche (B-7 F5): powder-snow double-dip in the frostbite band
+     * {@code [85,87.5)}.</b> Outside the water-only deep-cave refuge, this gate starts at the HAZARD onset
+     * (87.5), so vanilla's own powder-snow auto-freeze damage is NOT suppressed in the frostbite band -- a
+     * player standing fully buried in powder snow there can take vanilla's 1 HP/40t on top of the S3 frostbite
+     * nibble. Accepted as-is: it requires deliberate burial in powder snow (not mere polar presence), reads
+     * as "buried in powder snow hurts extra" (true), and widening this gate to 85 would silently disable REAL
+     * powder-snow freezing across the whole frostbite band -- a worse lie.
      */
     public static boolean isInPolarFreezeDamageBand(net.minecraft.world.entity.LivingEntity entity) {
         if (!(entity instanceof ServerPlayer player)) {
@@ -1240,13 +1246,15 @@ public class GlobeMod implements ModInitializer {
             return false;
         }
         double latDeg = com.example.globe.util.LatitudeMath.absLatDegExact(level.getWorldBorder(), player.getZ());
-        // S7: the SAME immersion shift borderUxTick's chokepoint applies -- an immersed swimmer whose
-        // EFFECTIVE latitude is in the lethal band (e.g. raw 85 in water = 88) gets our curve, so vanilla's
-        // fixed auto-freeze (which keys off the 140 ticksFrozen our shifted frost visual now crosses) must be
-        // suppressed for exactly the same population. Raw-lat here with an immersed 85-deg swimmer would
-        // double-dip; the mirror discipline in this javadoc is the whole point of this method.
-        double effLatDeg = com.example.globe.core.PolarImmersion.effectiveLatDeg(latDeg, player.isInWater());
-        return effLatDeg >= com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG;
+        boolean physicalWaterContact = player.isInWater();
+        int playerBlockY = player.blockPosition().getY();
+        // S7: use the SAME depth-aware shift and final vanilla-damage suppression decision as borderUxTick.
+        // The surrounding survival-player + globe-world gates keep the exception local to Latitude; physical
+        // water below Y=0 suppresses vanilla auto-freeze regardless of skylight.
+        double effLatDeg = com.example.globe.core.PolarImmersion
+                .effectiveLatDeg(latDeg, physicalWaterContact, playerBlockY);
+        return com.example.globe.core.PolarImmersion
+                .shouldSuppressVanillaFreezeDamage(physicalWaterContact, playerBlockY, effLatDeg);
     }
 
     /**

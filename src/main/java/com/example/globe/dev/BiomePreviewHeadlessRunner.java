@@ -69,6 +69,7 @@ public final class BiomePreviewHeadlessRunner {
     private static final String PROBE_OUT_PROP = "latdev.probe.out";
     private static final String PROBE_RADIUS_PROP = "latdev.probe.radius";
     private static final String PROBE_MAX_COMBOS_PROP = "latdev.probe.maxCombos";
+    private static final String CAVE_DROP_AUDIT_PROP_KEY = "latdev.caveDropAudit";
     private static final int PROBE_DEFAULT_MAX_COMBOS = 200_000;
     private static final Pattern PROP_PAIR = Pattern.compile(
             "(?i)([a-z][a-z0-9_]*)\\s*=\\s*([^;]+?)(?=(?:\\s*[;,]\\s*[a-z][a-z0-9_]*\\s*=)|$)");
@@ -104,6 +105,12 @@ public final class BiomePreviewHeadlessRunner {
 
         if (parseBoolean(System.getProperty(PROBE_PROP_KEY, ""))) {
             server.execute(() -> runFunctionProbeAndStop(server));
+            return;
+        }
+
+        if (CaveDropTrapFullChunkAudit.isEnabled()) {
+            // This is deliberately ahead of the atlas/export paths: it needs real FULL chunks, not samples.
+            CaveDropTrapFullChunkAudit.start(server);
             return;
         }
 

@@ -116,4 +116,64 @@ class PolarImmersionTest {
         assertEquals(0, dryCue, "dry 83 has no bite and no cue");
         assertEquals(PolarHazardWindow.frostbiteFrostCueTicks(86.0), wetCue, "cue value == the shifted band's");
     }
+
+    @Test
+    void deepCaveWaterPausesLatitudeDamageRegardlessOfSkyExposure() {
+        assertTrue(PolarImmersion.isDeepCaveInsulatedWater(true, -1),
+                "water below Y=0 is a deep-cave pool, not exposed polar sea");
+        assertFalse(PolarImmersion.isDeepCaveInsulatedWater(true, 0), "Y=0 remains cold immersion");
+        assertFalse(PolarImmersion.isDeepCaveInsulatedWater(true, 64), "open-sea water remains cold immersion");
+        assertFalse(PolarImmersion.isDeepCaveInsulatedWater(false, -24),
+                "dry players and boat riders are never classified as insulated water");
+
+        assertEquals(89.0, PolarImmersion.effectiveLatDeg(89.0, true, -1), EPS,
+                "insulated deep-cave water receives no +3 immersion shift");
+        assertTrue(PolarHazardWindow.appliesFreezeDamage(PolarHazardWindow.hazardProgress(89.0)),
+                "the chosen latitude is genuinely lethal unless the depth pause controls the hurt path");
+        assertTrue(PolarImmersion.coldDamagePaused(false, true, -1, false),
+                "a sky-breached below-Y0 swimmer is paused by depth itself");
+        assertTrue(PolarImmersion.coldDamagePaused(true, true, -1, false),
+                "a sheltered below-Y0 swimmer is paused by the same depth rule");
+
+        assertEquals(90.0, PolarImmersion.effectiveLatDeg(89.0, true, 0), EPS,
+                "Y=0 water keeps the existing capped +3 cold-sea shift");
+        assertEquals(85.0, PolarImmersion.effectiveLatDeg(82.0, true, 64), EPS,
+                "open sea keeps the existing +3 shift");
+        assertFalse(PolarImmersion.coldDamagePaused(false, true, 0, false),
+                "Y=0 is the exact cold-water boundary");
+        assertFalse(PolarImmersion.coldDamagePaused(true, true, 0, false),
+                "water still overrides shelter at Y=0");
+        assertFalse(PolarImmersion.coldDamagePaused(false, true, 64, false),
+                "exposed water above Y=0 remains cold");
+        assertFalse(PolarImmersion.coldDamagePaused(true, true, 64, false),
+                "shelter still does not insulate the surface polar sea");
+    }
+
+    @Test
+    void deepCaveRuleDoesNotPauseDryOrOtherwiseInapplicableCases() {
+        assertEquals(82.0, PolarImmersion.effectiveLatDeg(82.0, false, -24), EPS,
+                "dry/boat behavior remains raw latitude at every depth");
+        assertFalse(PolarImmersion.coldDamagePaused(false, false, -24, false),
+                "depth alone never pauses an exposed dry player");
+        assertTrue(PolarImmersion.coldDamagePaused(true, false, -24, false),
+                "the existing dry shelter pause remains unchanged underground");
+        assertTrue(PolarImmersion.coldDamagePaused(false, true, -24, true),
+                "crossing grace still pauses every applicable cold path");
+    }
+
+    @Test
+    void deepCaveWaterSuppressesVanillaFreezeDamageAtTheActualDecisionSeam() {
+        assertTrue(PolarImmersion.shouldSuppressVanillaFreezeDamage(true, -1, 20.0),
+                "below-Y0 water suppresses vanilla auto-freeze even far outside Latitude's hazard bands");
+        assertTrue(PolarImmersion.shouldSuppressVanillaFreezeDamage(true, -80, 90.0),
+                "sky exposure and lethal latitude cannot pierce the deep-water refuge");
+        assertFalse(PolarImmersion.shouldSuppressVanillaFreezeDamage(true, 0, 20.0),
+                "Y=0 ordinary water is not granted the deep-cave exception");
+        assertFalse(PolarImmersion.shouldSuppressVanillaFreezeDamage(true, 64, 87.49),
+                "above-Y0 water below the existing lethal band stays vanilla");
+        assertTrue(PolarImmersion.shouldSuppressVanillaFreezeDamage(true, 64, 87.5),
+                "the existing lethal-band vanilla suppression begins at the same boundary");
+        assertFalse(PolarImmersion.shouldSuppressVanillaFreezeDamage(false, -24, 20.0),
+                "a dry below-Y0 player does not receive a water-only exception");
+    }
 }

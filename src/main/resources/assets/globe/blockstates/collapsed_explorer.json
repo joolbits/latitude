@@ -1,0 +1,34 @@
+{
+  "variants": {
+    "facing=north,part=head": {
+      "model": "globe:block/collapsed_explorer_head"
+    },
+    "facing=east,part=head": {
+      "model": "globe:block/collapsed_explorer_head",
+      "y": 90
+    },
+    "facing=south,part=head": {
+      "model": "globe:block/collapsed_explorer_head",
+      "y": 180
+    },
+    "facing=west,part=head": {
+      "model": "globe:block/collapsed_explorer_head",
+      "y": 270
+    },
+    "facing=north,part=foot": {
+      "model": "globe:block/collapsed_explorer_foot"
+    },
+    "facing=east,part=foot": {
+      "model": "globe:block/collapsed_explorer_foot",
+      "y": 90
+    },
+    "facing=south,part=foot": {
+      "model": "globe:block/collapsed_explorer_foot",
+      "y": 180
+    },
+    "facing=west,part=foot": {
+      "model": "globe:block/collapsed_explorer_foot",
+      "y": 270
+    }
+  }
+}

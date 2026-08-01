@@ -70,7 +70,6 @@
       "globe:glacial_powder_pocket",
       "globe:glacial_frost_carpet",
       "globe:glacial_slush_floe",
-      "globe:cave_drop_trap",
       "globe:ice_spire_cluster",
       "globe:ice_spire",
       "globe:icicle_cluster",
@@ -82,6 +81,7 @@
       "minecraft:spring_lava"
     ],
     [
+      "globe:cave_drop_trap",
       "minecraft:glow_lichen",
       "globe:glacial_glow_lichen"
     ],

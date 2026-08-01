@@ -6,13 +6,13 @@ package com.example.globe.core;
  * The MC-coupled part is ONE boolean read -- {@code player.isInWater()} -- in {@code GlobeMod.borderUxTick};
  * every decision lives here.
  *
- * <p><b>The rule (one line).</b> While IN WATER in polar country, cold damage evaluates the EXISTING
+ * <p><b>The rule (one line).</b> Physical water at Y=0 or higher in polar country evaluates the EXISTING
  * {@link PolarHazardWindow} curves at {@code effectiveLat = min(90, |lat| + 3)} -- and the S4 shelter pause
- * does NOT apply (immersion OVERRIDES shelter: the under-ice/underwater low-skylight "sheltered" reading is
- * deliberately beaten -- water conducts cold; walls do not help you in the sea). Consequences: swimming the
- * open 82-85 liquid sea (below the 85 freeze line -- the main surface water in polar country) bites like 85
- * land (frostbite onset); under-ice swimming at 87+ evaluates like the lethal core, so the under-ice wall
- * trek is genuinely gated on cold protection.
+ * does NOT apply (immersion OVERRIDES shelter: water conducts cold; walls do not help in the sea). Physical
+ * water below Y=0 is a deep-cave pool: depth itself pauses Latitude cold damage and direct water chill,
+ * whether or not a sky shaft happens to reach the pool. Consequences: swimming the open 82-85 liquid sea
+ * (below the 85 freeze line -- the main surface water in polar country) bites like 85 land (frostbite onset),
+ * while an underground reward pool is not secretly a lethal ocean even when terrain leaves a skylight.
  *
  * <p><b>What is deliberately UNCHANGED:</b>
  * <ul>
@@ -48,26 +48,71 @@ public final class PolarImmersion {
     public static final double MAX_LAT_DEG = 90.0;
 
     /**
-     * The latitude the cold curves are EVALUATED at: {@code |lat|} on land / in a boat, {@code min(90,
-     * |lat| + 3)} while immersed. NaN propagates (the curves' own NaN guards treat it as "no hazard").
+     * Byte-compatible sea-level overload. The latitude the cold curves are EVALUATED at: {@code |lat|} on
+     * land / in a boat, {@code min(90, |lat| + 3)} while immersed. NaN propagates (the curves' own NaN guards
+     * treat it as "no hazard").
      */
     public static double effectiveLatDeg(double absLatDeg, boolean inWater) {
-        if (!inWater) {
+        return effectiveLatDeg(absLatDeg, inWater, 0);
+    }
+
+    /**
+     * True only for actual water contact below the deep-cave boundary. The Y coordinate is the insulation
+     * law: shelter/sky visibility is deliberately irrelevant.
+     */
+    public static boolean isDeepCaveInsulatedWater(boolean inWater, int blockY) {
+        return inWater && blockY < 0;
+    }
+
+    /**
+     * The latitude the cold curves are EVALUATED at, including the deep-cave water exception. Land, boats,
+     * and physical water below Y=0 use raw {@code |lat|}; Y=0 and higher physical water retains the existing
+     * {@code min(90, |lat| + 3)} sea rule.
+     */
+    public static double effectiveLatDeg(double absLatDeg, boolean inWater, int blockY) {
+        if (!inWater || isDeepCaveInsulatedWater(inWater, blockY)) {
             return absLatDeg;
         }
         return Math.min(MAX_LAT_DEG, absLatDeg + IMMERSION_SEVERITY_DEG);
     }
 
     /**
-     * The ONE cold-damage pause rule, S7-revised: paused iff the S5 post-crossing grace is open (grace beats
-     * everything -- the ceremony window), OR the player is genuinely sheltered AND NOT immersed (immersion
-     * overrides the S4 shelter pause; a dry player behind walls still stops the bleeding). Replaces the P1
-     * {@code sheltered || grace} composition at the {@code GlobeMod} chokepoint.
+     * Byte-compatible sea-level overload. The ONE cold-damage pause rule, S7-revised: paused iff the S5
+     * post-crossing grace is open (grace beats everything -- the ceremony window), OR the player is genuinely
+     * sheltered AND NOT immersed. Replaces the P1 {@code sheltered || grace} composition at the
+     * {@code GlobeMod} chokepoint.
      */
     public static boolean coldDamagePaused(boolean sheltered, boolean inWater, boolean graceActive) {
+        return coldDamagePaused(sheltered, inWater, 0, graceActive);
+    }
+
+    /**
+     * Depth-aware cold-damage pause. Physical water below Y=0 pauses Latitude cold damage because cave depth
+     * itself is the insulation rule; sky exposure does not defeat it. Y=0/higher water retains the existing
+     * immersion-overrides-shelter rule, while dry shelter and crossing grace remain unchanged.
+     */
+    public static boolean coldDamagePaused(boolean sheltered, boolean inWater, int blockY, boolean graceActive) {
         if (graceActive) {
             return true;
         }
+        if (isDeepCaveInsulatedWater(inWater, blockY)) {
+            return true;
+        }
         return sheltered && !inWater;
+    }
+
+    /**
+     * The actual vanilla-freeze suppression decision after Globe's player/dimension/exemption gates have
+     * passed. Deep-cave water is always suppressed so a lingering or externally raised frozen-tick counter
+     * cannot leak vanilla's fixed freeze damage through the Latitude pause. Outside that refuge, the existing
+     * lethal-band suppression law is unchanged.
+     */
+    public static boolean shouldSuppressVanillaFreezeDamage(
+            boolean inWater,
+            int blockY,
+            double effectiveLatDeg
+    ) {
+        return isDeepCaveInsulatedWater(inWater, blockY)
+                || effectiveLatDeg >= PolarHazardWindow.HAZARD_ONSET_DEG;
     }
 }

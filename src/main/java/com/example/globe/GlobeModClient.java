@@ -76,6 +76,10 @@ public class GlobeModClient implements ClientModInitializer {
         GlobeNet.registerPayloads();
         GlobeMod.LOGGER.info("Globe client init OK");
 
+        net.fabricmc.fabric.api.client.rendering.v1.BlockEntityRendererRegistry.register(
+                com.example.globe.world.CollapsedExplorerBlocks.COLLAPSED_EXPLORER_BLOCK_ENTITY,
+                com.example.globe.client.CollapsedExplorerBlockEntityRenderer::new);
+
         // S27: the CLIENT render factory for globe:frost_glint (type registered common-side in
         // content.GlobeParticles). Fabric's ParticleProviderRegistry hands the factory the loaded sprite set
         // (from assets/globe/particles/frost_glint.json -> the vanilla minecraft:glow sprite), so the desaturated
