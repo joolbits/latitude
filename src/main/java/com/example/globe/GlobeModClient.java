@@ -110,6 +110,19 @@ public class GlobeModClient implements ClientModInitializer {
                     if (!(renderer.getModel() instanceof net.minecraft.client.model.HeadedModel)) {
                         return; // no head bone to hang a hood ruff on.
                     }
+                    // HeadedModel alone is not humanoid-specific -- villagers, illagers, and
+                    // other non-player mobs implement it too, and their render STATE classes
+                    // do not extend HumanoidRenderState. PolarRuffLayer is generically bound to
+                    // S extends HumanoidRenderState, so Java's erasure inserts an unconditional
+                    // cast to HumanoidRenderState in submit()'s bridge method; attaching the
+                    // layer to a renderer whose real state type is unrelated (e.g. a villager)
+                    // crashed the render thread the first time one came into view. Probe the
+                    // renderer's OWN state instance -- the one true source of its runtime type --
+                    // before ever constructing the layer.
+                    if (!(renderer.createRenderState()
+                            instanceof net.minecraft.client.renderer.entity.state.HumanoidRenderState)) {
+                        return;
+                    }
                     try {
                         net.minecraft.client.model.geom.ModelPart baked =
                                 ctx.bakeLayer(com.example.globe.client.PolarRuffModel.LAYER);
