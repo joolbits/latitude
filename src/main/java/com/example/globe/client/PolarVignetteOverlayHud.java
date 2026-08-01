@@ -56,6 +56,14 @@ public final class PolarVignetteOverlayHud {
             return;
         }
 
+        // B-10 (design §6, owner: "when the snow goggles are worn, the vignette effect is removed as well";
+        // sweep A4 extends it to the suit HOOD, whose built-in visor is what resolves the head-slot clash).
+        // Gates ONLY this edge frame -- the text ladder is untouched, so goggles compose with every row of the
+        // warning matrix: a goggled bare traveller still gets every honest word, just no dark pulsing frame.
+        if (PolarColdClient.wearsGoggleSight(mc)) {
+            return;
+        }
+
         int tier = GlobeWarningOverlay.poleVignetteTier();
         if (tier != PolarWarningVignette.TIER_DANGER && tier != PolarWarningVignette.TIER_LETHAL) {
             return; // provable no-op: no serious episode armed.

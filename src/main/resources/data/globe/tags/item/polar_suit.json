@@ -1,0 +1,10 @@
+{
+  "replace": false,
+  "values": [
+    "globe:polar_hood",
+    "globe:polar_parka",
+    "globe:polar_leggings",
+    "globe:polar_boots",
+    "globe:polar_hood_goggled"
+  ]
+}

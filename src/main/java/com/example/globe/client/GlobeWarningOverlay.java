@@ -165,6 +165,9 @@ public final class GlobeWarningOverlay {
     private static boolean poleWarnLethal = false;
     // B-7 removal whisper: the previous sample's full-freeze-immune-set state, for the falling-edge one-shot.
     private static boolean prevPoleProtectionFull = false;
+    /** B-10: has the leather reassurance line already fired this zone entry? Re-armed by a full retreat
+     *  (PolarColdCues.leatherLineStep owns the hysteresis) and by the world-switch reset below. */
+    private static boolean poleLeatherLineFired = false;
     // Understudy SWING: the DANGER/LETHAL warning text and the atmosphere pulse as ONE moment. When a serious
     // tier (3=DANGER / 4=LETHAL) fires, arm a subtle edge-darkening VIGNETTE synced to the text's appearance.
     // WALL-CLOCK armed (System.currentTimeMillis) -- the tick-clock lesson is law, so PolarVignetteOverlayHud
@@ -295,8 +298,34 @@ public final class GlobeWarningOverlay {
         if (com.example.globe.core.PolarExposure.warningAlpha(exposure01) <= 0.0f) {
             return; // sealed in / deep underground: freeze the ladder rather than burn a one-shot unseen.
         }
+        // B-10 P2 WARNING MATRIX (design §4). Flag ON routes the FULL-SUIT ladder: a complete four-piece suit
+        // silences EVERY rung (the pole simply goes quiet -- her ask: no warnings at all, the inventory status
+        // effect is the only sign) while still advancing the tier so nothing retries; bare / leather / PARTIAL
+        // suits keep firing honestly, because the place is still genuinely deadly for them. Flag OFF keeps the
+        // legacy ladder verbatim (hypothermia-only suppression) -- the no-gap law.
+        boolean fullSuit = com.example.globe.client.PolarColdClient.fullSuit(client);
         com.example.globe.core.PolarColdCues.LadderStep step =
-                com.example.globe.core.PolarColdCues.evaluateLadder(absLatDeg, poleWarnHighestTier, protectionFull);
+                com.example.globe.core.LatitudeV2Flags.POLAR_OUTFITTING_ENABLED
+                        ? com.example.globe.core.PolarColdCues.evaluateLadderFullSuit(
+                                absLatDeg, poleWarnHighestTier, fullSuit)
+                        : com.example.globe.core.PolarColdCues.evaluateLadder(
+                                absLatDeg, poleWarnHighestTier, protectionFull);
+        // B-10 leather reassurance (design §4.3): fires ONCE per zone entry for a leather wearer who is not
+        // fully suited -- it accompanies the honest rungs rather than replacing them, and re-arms on the same
+        // full retreat the ladder uses.
+        if (com.example.globe.core.LatitudeV2Flags.POLAR_OUTFITTING_ENABLED) {
+            com.example.globe.core.PolarColdCues.LeatherLineStep leatherStep =
+                    com.example.globe.core.PolarColdCues.leatherLineStep(absLatDeg,
+                            com.example.globe.client.PolarColdClient.wearsLeather(client),
+                            fullSuit, poleLeatherLineFired);
+            poleLeatherLineFired = leatherStep.nextFired();
+            if (leatherStep.fire()) {
+                LatitudeWhisperOverlay.trigger(com.example.globe.core.PolarColdCues.LEATHER_PROTECTION_TEXT);
+                logEntryTitle("pole_leather_line",
+                        com.example.globe.core.PolarColdCues.LEATHER_PROTECTION_TEXT,
+                        client, client.player.getX(), client.player.getZ());
+            }
+        }
         poleWarnHighestTier = step.nextHighestFired();
         // A full retreat below RETREAT_REARM_DEG (81, one deg under the 82-deg first rung) re-arms the whole
         // ladder -- clear any armed vignette so the swing is a provable no-op once the player has left.
@@ -665,6 +694,7 @@ public final class GlobeWarningOverlay {
         poleWarnEndTick = Long.MIN_VALUE;
         poleWarnLethal = false;
         prevPoleProtectionFull = false;
+        poleLeatherLineFired = false;
         poleVignetteTier = 0;
         poleVignetteStartMs = Long.MIN_VALUE;
         ewBannerState = com.example.globe.core.EwBannerEnvelope.State.INITIAL;

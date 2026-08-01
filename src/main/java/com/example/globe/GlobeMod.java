@@ -117,6 +117,12 @@ public class GlobeMod implements ModInitializer {
     // default, datapack-extensible). A full set of freeze-immune pieces here negates freeze DAMAGE.
     private static final EquipmentSlot[] COLD_ARMOR_SLOTS =
             {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
+    /** B-10 P2: the item tag identifying a POLAR-SUIT piece ({@code data/globe/tags/item/polar_suit.json}) --
+     *  the higher-weight half of the unified cold score. Suit pieces are ALSO in
+     *  {@code freeze_immune_wearables} (vanilla powder-snow immunity); this tag is what tells them apart. */
+    private static final net.minecraft.tags.TagKey<net.minecraft.world.item.Item> POLAR_SUIT_TAG =
+            net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM,
+                    net.minecraft.resources.Identifier.fromNamespaceAndPath(MOD_ID, "polar_suit"));
     // B-7 S5(c): post-pole-crossing cold-grace end tick per player (PoleCrossingGrace.graceUntil), stamped on a
     // successful pole crossing so a low-health crosser cannot die inside the arrival-curtain ceremony. Read in
     // borderUxTick; suppresses BOTH cold-damage bands + the F3 frost cue while active; NOT wired into the S6
@@ -606,12 +612,22 @@ public class GlobeMod implements ModInitializer {
                 coldSheltered = isColdSheltered(overworld, player);
                 if (inRawColdZone) {
                     boolean nearWarmth = coldSheltered && isNearWarmthCached(overworld, player, worldTime);
-                    healLocked = com.example.globe.core.PolarWounds.healLocked(true, coldSheltered, nearWarmth);
+                    // B-10 sweep A1: a COMPLETE polar suit is a warm body -- wounds mend without shelter or
+                    // a fire, and the "Your wounds are frozen." whisper cannot fire. Gameplay upgrade, not a
+                    // mute: the 4-arg overload takes fullSuit as the lift. Leather/partial never lift it.
+                    healLocked = com.example.globe.core.PolarWounds.healLocked(
+                            true, coldSheltered, nearWarmth, polarFullyProtected(player));
                 }
             }
             boolean coldDamagePaused =
                     com.example.globe.core.PolarImmersion.coldDamagePaused(
                             coldSheltered, physicalWaterContact, playerBlockY, coldGrace);
+            // B-10: the ONE total-protection predicate, resolved once per player per tick. Everything the
+            // cold does -- damage, effects, warnings, the heal lock, AND the frost visuals -- keys off this
+            // single truth (the one-evaluator law). Owner live report 2026-07-27: "Blue hearts and chill are
+            // present while wearing the set" -- the frost writers below were the last holdouts that never
+            // consulted it, so a fully-protected traveller was shown freezing while taking zero damage.
+            boolean fullSuitProtected = polarFullyProtected(player);
 
             // S37 F1: PONDED WATER CAUSES FREEZING (Peetsa: "the water that has ponded is not causing freezing
             // damage -- hearts are red"). DIRECT water-contact chill: raises ticksFrozen itself, exactly like
@@ -642,7 +658,7 @@ public class GlobeMod implements ModInitializer {
                 int fInterval = com.example.globe.core.PolarHazardWindow.frostbiteIntervalTicks(effLatDeg);
                 if (worldTime % (long) fInterval == 0L) {
                     float fAmount = com.example.globe.core.PolarHazardWindow.frostbiteDamageAmount(effLatDeg)
-                            * (float) com.example.globe.core.ColdProtection.damageMultiplier(coldProtectionPieceCount(player));
+                            * (float) coldDamageMultiplier(player);
                     if (fAmount > 0.0f) {
                         player.hurtServer(overworld, overworld.damageSources().freeze(), fAmount);
                     }
@@ -659,6 +675,18 @@ public class GlobeMod implements ModInitializer {
             int frostCueFloor = com.example.globe.core.PolarWounds.frostCueActive(frostbiteBiting, healLocked)
                     ? com.example.globe.core.PolarHazardWindow.frostbiteFrostCueTicks(effLatDeg)
                     : 0;
+            // BLUE HEARTS (owner 2026-07-26). The ramp above tops out at ~135 -- twelve ticks under vanilla's
+            // 140 fully-frozen threshold -- so for the whole frostbite band the player BLED from cold with red
+            // hearts. Now: whenever our frostbite damage is actually biting AND vanilla's competing auto-freeze
+            // is suppressed for this player (the powder-snow-aware carve-out in isInPolarFreezeDamageBand),
+            // hold the cue AT the threshold. Blue hearts therefore mean exactly one thing, everywhere: the cold
+            // is taking your health. A player buried in real powder snow keeps the vanilla ramp (no double dip).
+            if (fullSuitProtected) {
+                frostCueFloor = 0; // the complete suit: the cold never reaches the body, so it never shows.
+            } else if (frostbiteBiting && frostCueFloor > 0 && isInPolarFreezeDamageBand(player)) {
+                frostCueFloor = Math.max(frostCueFloor,
+                        com.example.globe.core.PolarHazardWindow.FROZEN_THRESHOLD_TICKS);
+            }
             if (frostCueFloor > 0
                     && effLatDeg < com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG
                     && player.getTicksFrozen() < frostCueFloor) {
@@ -683,7 +711,13 @@ public class GlobeMod implements ModInitializer {
             // ticksFrozen ~2/tick when the player isn't in powder snow; this END_SERVER_TICK write is the last
             // writer each tick (the entity-tracker broadcast reads it before aiStep's decay), so the client
             // reliably sees our value and the blue hearts don't flicker.
-            if (!unaffected) {
+            if (fullSuitProtected) {
+                // Suited: clear the frost outright rather than letting vanilla's 2/tick decay crawl it down,
+                // so pulling the hood up reads as immediate relief -- hearts back to red, screen-frost gone.
+                if (player.getTicksFrozen() > 0) {
+                    player.setTicksFrozen(0);
+                }
+            } else if (!unaffected) {
                 // F3 composite: never set BELOW the active frostbite cue floor (relevant only in [87.5,88),
                 // where the lethal ramp is still climbing 0->140 and the cue floor is at ~117-140; max() keeps
                 // the frost monotone across the hand-off instead of popping down at 87.5).
@@ -704,7 +738,7 @@ public class GlobeMod implements ModInitializer {
                     // B-7 S1: scale the lethal-core amount by the cold-protection multiplier at this single
                     // computed-amount point (interval unchanged, per the design). Full freeze-immune set -> 0.
                     float amount = com.example.globe.core.PolarHazardWindow.freezeDamageAmount(progress)
-                            * (float) com.example.globe.core.ColdProtection.damageMultiplier(coldProtectionPieceCount(player));
+                            * (float) coldDamageMultiplier(player);
                     if (amount > 0.0f) {
                         player.hurtServer(overworld, overworld.damageSources().freeze(), amount);
                     }
@@ -719,6 +753,23 @@ public class GlobeMod implements ModInitializer {
             boolean ambient = true;
             boolean showParticles = false;
             boolean showIcon = false;
+
+            // B-10 P2: the COMPLETE polar suit is the sole exemption from the whole hazard family.
+            // Owner amendment A8 (2026-07-18, binding): "the full 4/4 suit negates the cold SLOWNESS/
+            // WEAKNESS/MINING-FATIGUE staging as well as damage". This amends the standing "slowness always
+            // seeps" law -- still TRUE for leather and PARTIAL suits (the cold drags at the underdressed);
+            // only the complete set walks the pole freely. Same predicate as the damage-0, the silence, the
+            // heal-lock lift and the status effect: one evaluator, one truth.
+            if (fullSuitProtected) {
+                // The suit's ONLY visible feedback (design §5, her ask): a beneficial status effect in the
+                // inventory. It is a pure INDICATOR -- the protection is the ColdProtection score, never this
+                // effect, so milking/dispelling it can never desync from the armour truth. Refreshed each
+                // effects tick; lapses on its own within ~2s of the set breaking.
+                player.addEffect(new MobEffectInstance(
+                        com.example.globe.content.PolarOutfitting.COLD_PROTECTION_EFFECT,
+                        duration, 0, ambient, showParticles, true));
+                continue;
+            }
 
             int slowAmp = com.example.globe.core.PolarHazardWindow.slownessAmplifier(progress);
             int weakAmp = com.example.globe.core.PolarHazardWindow.weaknessAmplifier(progress);
@@ -872,6 +923,52 @@ public class GlobeMod implements ModInitializer {
      * an item in the vanilla {@code freeze_immune_wearables} tag (leather by default, datapack-extensible per the
      * vanilla-first law). The thin MC shim feeding {@link com.example.globe.core.ColdProtection}; 0..4.
      */
+    /**
+     * B-10 P2 shim: how many of the four armour slots carry a POLAR-SUIT piece ({@code #globe:polar_suit}).
+     * The higher-weight count in the unified {@link com.example.globe.core.ColdProtection} score, and — via
+     * {@link com.example.globe.core.ColdProtection#fullyProtected} — the SINGLE truth behind total protection:
+     * damage 0, warning silence, the effects exemption (A8), the heal-lock lift (A1) and the Cold Protection
+     * status effect all key off this one number.
+     */
+    private static int polarSuitPieceCount(ServerPlayer player) {
+        int count = 0;
+        for (EquipmentSlot slot : COLD_ARMOR_SLOTS) {
+            ItemStack stack = player.getItemBySlot(slot);
+            if (!stack.isEmpty() && stack.is(holder -> holder.is(POLAR_SUIT_TAG))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * B-10 P2 freeze-damage multiplier, flag-routed (sweep A3 — the no-gap law). Flag OFF routes the LEGACY
+     * single-count path (leather 0.25/piece, full negation at 4) so today's behaviour is preserved bit-for-bit
+     * while the suit is unshipped; flag ON routes the unified weighted path where a suit piece (0.25) outweighs
+     * a leather piece (0.125) and only a full 4/4 suit reaches zero.
+     *
+     * <p><b>Sweep A2 (the one-evaluator law):</b> {@code leatherPieces} is the freeze-immune count MINUS the
+     * suit count — a suit piece is also a {@code freeze_immune_wearables} member (so the suit still grants
+     * vanilla powder-snow immunity), and passing the raw count would double-weight it into a damage-0 state
+     * while the warnings still fired.
+     */
+    private static double coldDamageMultiplier(ServerPlayer player) {
+        int freezeImmune = coldProtectionPieceCount(player);
+        if (!com.example.globe.core.LatitudeV2Flags.POLAR_OUTFITTING_ENABLED) {
+            return com.example.globe.core.ColdProtection.damageMultiplier(freezeImmune);
+        }
+        int suit = polarSuitPieceCount(player);
+        return com.example.globe.core.ColdProtection.weightedMultiplier(suit, freezeImmune - suit);
+    }
+
+    /** B-10 P2: is the player wearing the COMPLETE polar suit? Flag-gated — OFF is always false, so every
+     *  total-protection consequence (silence, effects exemption, heal-lock lift, status effect) stays dormant
+     *  and the legacy leather behaviour is untouched. */
+    private static boolean polarFullyProtected(ServerPlayer player) {
+        return com.example.globe.core.LatitudeV2Flags.POLAR_OUTFITTING_ENABLED
+                && com.example.globe.core.ColdProtection.fullyProtected(polarSuitPieceCount(player));
+    }
+
     private static int coldProtectionPieceCount(ServerPlayer player) {
         int count = 0;
         for (EquipmentSlot slot : COLD_ARMOR_SLOTS) {
@@ -1248,13 +1345,28 @@ public class GlobeMod implements ModInitializer {
         double latDeg = com.example.globe.util.LatitudeMath.absLatDegExact(level.getWorldBorder(), player.getZ());
         boolean physicalWaterContact = player.isInWater();
         int playerBlockY = player.blockPosition().getY();
-        // S7: use the SAME depth-aware shift and final vanilla-damage suppression decision as borderUxTick.
-        // The surrounding survival-player + globe-world gates keep the exception local to Latitude; physical
-        // water below Y=0 suppresses vanilla auto-freeze regardless of skylight.
+        // S7: the SAME depth-aware immersion shift borderUxTick's chokepoint applies -- an immersed
+        // swimmer whose EFFECTIVE latitude is in the lethal band (e.g. raw 85 in water = 88) gets our
+        // curve, so vanilla's fixed auto-freeze must be suppressed for exactly the same population.
+        // Physical water below Y=0 is the deep-cave refuge and suppresses regardless of skylight.
         double effLatDeg = com.example.globe.core.PolarImmersion
                 .effectiveLatDeg(latDeg, physicalWaterContact, playerBlockY);
-        return com.example.globe.core.PolarImmersion
-                .shouldSuppressVanillaFreezeDamage(physicalWaterContact, playerBlockY, effLatDeg);
+        if (com.example.globe.core.PolarImmersion
+                .shouldSuppressVanillaFreezeDamage(physicalWaterContact, playerBlockY, effLatDeg)) {
+            return true;
+        }
+        // BLUE-HEART FIX (Peetsa 2026-07-26: "There aren't any freezing blue hearts!"). Vanilla only tints
+        // the hearts at ticksFrozen >= 140, and the F5 note below explains why the frostbite band [85,87.5)
+        // deliberately held the cue UNDER 140: this gate started at 87.5, so reaching the threshold there
+        // would have let vanilla's own 1 HP/40t auto-freeze stack on our frostbite nibble. The rejected fix
+        // was widening the gate to 85 outright -- correctly rejected, because that silently disables REAL
+        // powder-snow freezing across the whole band. THE CARVE-OUT THREADS IT: suppress vanilla's auto-freeze
+        // in the frostbite band ONLY for a player who is NOT actually in powder snow. A polar traveller on
+        // open ice gets our curve alone (so the cue may safely reach 140 and the hearts read blue whenever
+        // freeze damage is flowing); a player buried in real powder snow keeps 100% vanilla powder behaviour,
+        // exactly as F5 demanded.
+        return effLatDeg >= com.example.globe.core.PolarHazardWindow.FROSTBITE_ONSET_DEG
+                && !player.isInPowderSnow;
     }
 
     /**

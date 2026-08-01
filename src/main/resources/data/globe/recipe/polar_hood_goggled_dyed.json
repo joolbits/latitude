@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:crafting_dye",
+  "dye": "#minecraft:dyes",
+  "group": "dyed_armor",
+  "result": {
+    "id": "globe:polar_hood_goggled"
+  },
+  "target": "globe:polar_hood_goggled"
+}

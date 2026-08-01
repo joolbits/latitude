@@ -99,6 +99,27 @@ public class GlobeModClient implements ClientModInitializer {
         }
         warnIfSodiumCullHookInactive();
 
+        // B-10 FUR RUFF (Peetsa 2026-07-27, "a proper fur trim 'halo'"): the mod's first custom
+        // entity geometry. The model layer is registered here; the render layer is attached to every
+        // humanoid renderer as it is built, and no-ops for anyone not wearing the polar hood.
+        net.fabricmc.fabric.api.client.rendering.v1.ModelLayerRegistry.registerModelLayer(
+                com.example.globe.client.PolarRuffModel.LAYER,
+                com.example.globe.client.PolarRuffModel::createLayer);
+        net.fabricmc.fabric.api.client.rendering.v1.LivingEntityRenderLayerRegistrationCallback.EVENT
+                .register((entityType, renderer, helper, ctx) -> {
+                    if (!(renderer.getModel() instanceof net.minecraft.client.model.HeadedModel)) {
+                        return; // no head bone to hang a hood ruff on.
+                    }
+                    try {
+                        net.minecraft.client.model.geom.ModelPart baked =
+                                ctx.bakeLayer(com.example.globe.client.PolarRuffModel.LAYER);
+                        helper.register(new com.example.globe.client.PolarRuffLayer(renderer, baked));
+                    } catch (Throwable t) {
+                        GlobeMod.LOGGER.warn("[B-10] fur ruff layer not attached to {}: {}",
+                                entityType, t.toString());
+                    }
+                });
+
         LatitudeConfig.get();
         ClientLifecycleEvents.CLIENT_STARTED.register(GlobeModClient::registerPromenadePalmTintCompat);
 

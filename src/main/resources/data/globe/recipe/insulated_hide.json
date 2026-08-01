@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "key": {
+    "L": "minecraft:leather",
+    "W": "#minecraft:wool",
+    "S": "minecraft:string"
+  },
+  "pattern": [
+    "LWL",
+    "WSW",
+    "LWL"
+  ],
+  "result": {
+    "count": 2,
+    "id": "globe:insulated_hide"
+  }
+}
