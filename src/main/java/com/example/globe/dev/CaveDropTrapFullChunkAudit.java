@@ -76,7 +76,6 @@ public final class CaveDropTrapFullChunkAudit {
     private static final int FLOODED_GALLERY_MIN_FOOTPRINT = 36;
     private static final int FLOODED_GALLERY_ENTRANCE_MARGIN = 16;
     private static final int MIN_STABLE_SUPPORT_DEPTH = 4;
-    private static final int INNER_TRAP_ENTRY_COUNT = 8;
     private static final int MOB_DESCENT_TICK_LIMIT = 200;
     private static final double MOB_NAVIGATION_SPEED = 1.0D;
     private static final String TREASURE_LOOT = "globe:chests/collapsed_explorer_treasure";
@@ -580,6 +579,7 @@ public final class CaveDropTrapFullChunkAudit {
                 MobNavigationAssay.notRun("audit has not reached navigation assay");
         private Mob assayMob;
         private BlockPos assayEntrance;
+        private BlockPos assayTarget;
         private int assayRepathCooldown;
         private final List<net.minecraft.world.level.ChunkPos> assayForcedChunks =
                 new ArrayList<>();
@@ -2222,6 +2222,7 @@ public final class CaveDropTrapFullChunkAudit {
                             }
                             assayMob = mob;
                             assayEntrance = hit;
+                            assayTarget = target;
                             mobTicksRemaining = MOB_DESCENT_TICK_LIMIT;
                             if (!mob.getNavigation().moveTo(path, MOB_NAVIGATION_SPEED)) {
                                 mobNavigationAssay = new MobNavigationAssay(
@@ -2275,20 +2276,25 @@ public final class CaveDropTrapFullChunkAudit {
             // assay re-asserts the entrance as the navigation target -- but only when the
             // navigator has gone idle or on a slow keep-alive beat: recomputing every tick
             // resets path progress and the mob only inches forward.
+            BlockPos walkTarget = assayTarget != null ? assayTarget : entrance.above();
             if (!mob.isRemoved()) {
                 assayRepathCooldown--;
                 if (mob.getNavigation().isDone() || assayRepathCooldown <= 0) {
+                    // Aim BEYOND the carpet at the far mouth: the crossing itself is what
+                    // drops the mob. Aiming at the entrance cell stalls at the carpet edge,
+                    // because the pathfinder treats the powder cell as blocked support and
+                    // settles for the nearest adjacent node.
                     mob.getNavigation().moveTo(
-                            entrance.getX() + 0.5D,
-                            entrance.getY() + 1,
-                            entrance.getZ() + 0.5D,
+                            walkTarget.getX() + 0.5D,
+                            walkTarget.getY(),
+                            walkTarget.getZ() + 0.5D,
                             MOB_NAVIGATION_SPEED);
                     assayRepathCooldown = 20;
                 }
                 mob.getLookControl().setLookAt(
-                        entrance.getX() + 0.5D,
-                        entrance.getY() + 1,
-                        entrance.getZ() + 0.5D);
+                        walkTarget.getX() + 0.5D,
+                        walkTarget.getY(),
+                        walkTarget.getZ() + 0.5D);
             }
             int ticksObserved = mobNavigationAssay.ticksObserved() + 1;
             String finalPosition = entityPosition(mob);
@@ -2365,6 +2371,7 @@ public final class CaveDropTrapFullChunkAudit {
             }
             assayMob = null;
             assayEntrance = null;
+            assayTarget = null;
             for (net.minecraft.world.level.ChunkPos forced : assayForcedChunks) {
                 world.setChunkForced(forced.x(), forced.z(), false);
             }
@@ -3539,8 +3546,13 @@ public final class CaveDropTrapFullChunkAudit {
 
     private static boolean descentObserved(
             BlockPos entrance, double x, double y, double z) {
-        return Math.floor(x) == entrance.getX()
-                && Math.floor(z) == entrance.getZ()
+        // The carpet is one connected false floor: a mob that ends up two-plus blocks below
+        // the carpet plane within the trap's small footprint can only have fallen through one
+        // of its powder entrances (the surrounding envelope is certified solid, and the climb-
+        // out stair rises the other way). Crediting only the single pre-selected column made
+        // the watch flaky whenever the zombie stepped onto a neighbouring entrance cell first.
+        return Math.abs(x - (entrance.getX() + 0.5D)) <= 4.0D
+                && Math.abs(z - (entrance.getZ() + 0.5D)) <= 4.0D
                 && y <= entrance.getY() - 2.0D;
     }
 

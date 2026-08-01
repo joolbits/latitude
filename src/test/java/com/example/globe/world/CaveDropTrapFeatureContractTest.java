@@ -2468,11 +2468,12 @@ class CaveDropTrapFeatureContractTest {
     @Test
     void auditOraclePinsExactTemplateOrePayoffAndAttributedDescentThreshold()
             throws ReflectiveOperationException {
-        Field entryCount = CaveDropTrapFullChunkAudit.class
-                .getDeclaredField("INNER_TRAP_ENTRY_COUNT");
-        entryCount.setAccessible(true);
-        assertEquals(8, entryCount.getInt(null),
-                "the audit oracle rejects every non-eight-entry production template");
+        assertThrows(
+                NoSuchFieldException.class,
+                () -> CaveDropTrapFullChunkAudit.class
+                        .getDeclaredField("INNER_TRAP_ENTRY_COUNT"),
+                "entry counts are derived from the scene itself: the conformal carpet is"
+                        + " six cells and any fixed count would re-freeze the geometry");
 
         Field oreComposition = CaveDropTrapFullChunkAudit.class
                 .getDeclaredField("FLOODED_ORE_COMPOSITION");
@@ -2498,8 +2499,11 @@ class CaveDropTrapFeatureContractTest {
                 "two blocks down in the selected entrance column is a real descent");
         assertEquals(false, descent.invoke(null, entrance, 10.5D, 38.001D, -3.5D),
                 "path selection or a shallow dip cannot pass as descent");
-        assertEquals(false, descent.invoke(null, entrance, 11.0D, 37.0D, -3.5D),
-                "a deep position in a different column is not attributed to the selected shaft");
+        assertEquals(true, descent.invoke(null, entrance, 12.0D, 37.0D, -3.5D),
+                "a fall through a neighbouring entrance of the same carpet is a real descent"
+                        + " -- the certified envelope leaves no other way down");
+        assertEquals(false, descent.invoke(null, entrance, 15.5D, 37.0D, -3.5D),
+                "a deep position outside the trap footprint is never attributed to it");
     }
 
     @Test
