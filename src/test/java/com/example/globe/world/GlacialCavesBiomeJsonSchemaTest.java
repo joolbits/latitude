@@ -74,6 +74,14 @@ class GlacialCavesBiomeJsonSchemaTest {
         return count;
     }
 
+    private static List<String> generatedFeatureOrder(JsonObject biome) {
+        List<String> ids = new ArrayList<>();
+        for (JsonElement step : biome.getAsJsonArray("features")) {
+            step.getAsJsonArray().forEach(feature -> ids.add(feature.getAsString()));
+        }
+        return ids;
+    }
+
     @Test
     void requiredCodecFieldsArePresent() {
         JsonObject biome = glacialCaves();
@@ -98,13 +106,23 @@ class GlacialCavesBiomeJsonSchemaTest {
             assertEquals(featureStep(barrens, step), featureStep(caves, step),
                     "underground step " + step + " must be exactly the barrens/snowy_plains subset");
         }
-        // Step 10 (top_layer_modification) DIVERGES since S25b: the barrens surface biome appended the
-        // barrens-only powder-roof crevasse trap AFTER freeze_top_layer; the underground caves keep only the
-        // bare freeze pass. The shared "underground stays alive" law is unaffected (it lives in steps 1-8).
-        assertEquals(List.of("minecraft:freeze_top_layer"), featureStep(caves, 10),
-                "glacial_caves top-layer step stays the bare freeze pass (the surface trap is barrens-only)");
+        // Step 10 (top_layer_modification) freezes the completed spring topology into sparse lake fringes,
+        // then carries the final-state quench after every water/ice writer. The barrens-only powder roof
+        // remains between freeze and quench; the underground caves have no roof.
+        assertEquals(List.of("minecraft:freeze_top_layer", "globe:glacial_lake_ice_fringe",
+                        "globe:magma_quench_sweep"), featureStep(caves, 10),
+                "glacial_caves lake fringe runs after springs, with the quench still final");
+        List<String> caveOrder = generatedFeatureOrder(caves);
+        assertTrue(caveOrder.indexOf("minecraft:spring_water")
+                        < caveOrder.indexOf("globe:glacial_lake_ice_fringe"),
+                "spring_water must run before the lake fringe reads the completed water topology");
+        assertTrue(caveOrder.indexOf("globe:glacial_lake_ice_fringe")
+                        < caveOrder.indexOf("globe:magma_quench_sweep"),
+                "the final magma repair sweep must run after the fringe's ice writes");
         assertEquals("minecraft:freeze_top_layer", featureStep(barrens, 10).get(0),
-                "barrens top-layer step still leads with the freeze pass, then the surface trap");
+                "barrens top-layer step still leads with the freeze pass");
+        assertEquals("globe:magma_quench_sweep", featureStep(barrens, 10).get(featureStep(barrens, 10).size() - 1),
+                "polar barrens quench is final after its surface roof");
         // Step 6 (underground_ores) is now a three-course SANDWICH (S45 extends the S24 law):
         //   [vanilla ore run] + [the two S24 ice blobs, caves only] + [the five S45 ore-in-ice features]
         // The vanilla run stays the exact ordered head in BOTH biomes (no ore dropped or reordered). The
@@ -134,24 +152,33 @@ class GlacialCavesBiomeJsonSchemaTest {
     void dressingStepsCarryTheGlacialFeatures() {
         JsonObject caves = glacialCaves();
         JsonObject barrens = polarBarrens();
-        List<String> expectedUndergroundDecoration = List.of(
+        List<String> expectedCaveUndergroundDecoration = List.of(
                         "globe:hanging_icicles", "globe:glacial_snow_drift",
-                        "globe:glacial_powder_pocket", "globe:glacial_frost_carpet", "globe:glacial_slush_floe",
+                        "globe:glacial_powder_pocket", "globe:glacial_frost_carpet",
                         "globe:ice_spire_cluster", "globe:ice_spire", "globe:icicle_cluster",
-                        "globe:ice_spear_patch", "globe:magma_quench_sweep");
-        assertEquals(expectedUndergroundDecoration, featureStep(caves, 7),
+                        "globe:ice_spear_patch");
+        assertEquals(expectedCaveUndergroundDecoration, featureStep(caves, 7),
                 "underground_decoration (step 7): the plain-ice hanging_icicles (reinstated S40 per owner), "
                         + "the floor/pool dressing, then the S45 ice spires (cluster before "
                         + "single, vanilla sulfur order; floor forms, not the rejected speleothem silhouette), "
                         + "then the S46 icicle revival: needle clusters (owner GO 2026-07-26, \"really love\") "
                         + "and the LOW-rate floor spear patch (PROVISIONAL -- owner is \"a tad less sold\" on "
-                        + "floor ones and judges them live; count stays low until her final call), then the S50 magma quench sweep LAST -- it must run after underwater_magma and every other magma source, or flooded pockets go bare again (the TEST 138 regression)");
-        assertEquals(expectedUndergroundDecoration, featureStep(barrens, 7),
-                "both glacial hosts keep the same step-7 dressing order, with magma quench last");
-        assertEquals("globe:magma_quench_sweep",
-                featureStep(caves, 7).get(featureStep(caves, 7).size() - 1));
-        assertEquals("globe:magma_quench_sweep",
-                featureStep(barrens, 7).get(featureStep(barrens, 7).size() - 1));
+                        + "floor ones and judges them live; count stays low until her final call; the lake fringe and magma quench are deliberately deferred until after fluid springs");
+        assertEquals(1, featureReferenceCount(caves, "globe:glacial_lake_ice_fringe"));
+        assertEquals(0, featureReferenceCount(caves, "globe:glacial_slush_floe"));
+        List<String> expectedPolarUndergroundDecoration = List.of(
+                        "globe:hanging_icicles", "globe:glacial_snow_drift",
+                        "globe:glacial_powder_pocket", "globe:glacial_frost_carpet", "globe:glacial_slush_floe",
+                        "globe:ice_spire_cluster", "globe:ice_spire", "globe:icicle_cluster",
+                        "globe:ice_spear_patch");
+        assertEquals(expectedPolarUndergroundDecoration, featureStep(barrens, 7),
+                "polar barrens keeps its old slush-floe dressing while caves own the new fringe");
+        assertEquals(List.of("minecraft:spring_water", "minecraft:spring_lava"), featureStep(caves, 8),
+                "fluid springs stay after underground decoration and before the final quench");
+        assertEquals(featureStep(caves, 8), featureStep(barrens, 8),
+                "both glacial hosts share the same spring writers before their final quench");
+        assertEquals("globe:magma_quench_sweep", featureStep(caves, 10).get(featureStep(caves, 10).size() - 1));
+        assertEquals("globe:magma_quench_sweep", featureStep(barrens, 10).get(featureStep(barrens, 10).size() - 1));
 
         assertEquals(List.of("globe:cave_drop_trap", "globe:glacial_glow_lichen"),
                 featureStep(caves, 9),
@@ -159,14 +186,8 @@ class GlacialCavesBiomeJsonSchemaTest {
                         + "after the complete cave floor exists, then sparse glow lichen. "
                         + "S40 (owner: \"remove pale moss, hanging moss\") deleted both pale-moss atmosphere "
                         + "features that S37 had appended here");
-        assertEquals(List.of("globe:cave_drop_trap", "minecraft:glow_lichen",
-                        "globe:glacial_glow_lichen"),
-                featureStep(barrens, 9),
-                "the barrens also run cave traps FIRST in step 9, before vanilla and glacial glow lichen");
         assertEquals(1, featureReferenceCount(caves, "globe:cave_drop_trap"),
                 "glacial_caves lists the migrated trap exactly once");
-        assertEquals(1, featureReferenceCount(barrens, "globe:cave_drop_trap"),
-                "polar_barrens lists the migrated trap exactly once");
     }
 
     @Test

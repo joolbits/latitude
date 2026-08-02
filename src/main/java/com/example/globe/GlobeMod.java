@@ -202,6 +202,7 @@ public class GlobeMod implements ModInitializer {
         // S44: in-cave drop traps (thin false floors over deeper galleries; punchlist item 1).
         com.example.globe.world.CaveDropTrapFeature.register();
         com.example.globe.world.MagmaQuenchSweepFeature.register();
+        com.example.globe.world.GlacialLakeIceFringeFeature.register();
 
         // Phase 5 S27: register the mod's first custom PARTICLE type (globe:frost_glint) into
         // BuiltInRegistries.PARTICLE_TYPE UNCONDITIONALLY, before registry freeze (same registry-consistency law

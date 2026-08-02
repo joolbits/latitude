@@ -300,6 +300,18 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
 
     @Unique
     private static List<Holder<Biome>> latitude$taggedCustomPolicyBiomes(Registry<Biome> biomeRegistry) {
+        return latitude$taggedCustomPolicyBiomes(
+                biomeRegistry,
+                LatitudeV2Flags.POLAR_BARRENS_ENABLED,
+                LatitudeV2Flags.GLACIAL_CAVES_V1_ENABLED
+        );
+    }
+
+    @Unique
+    private static List<Holder<Biome>> latitude$taggedCustomPolicyBiomes(
+            Registry<Biome> biomeRegistry,
+            boolean polarBarrensEnabled,
+            boolean glacialCavesEnabled) {
         Map<Identifier, Holder<Biome>> out = new LinkedHashMap<>();
         for (String tagPath : LATITUDE_CUSTOM_POLICY_TAGS) {
             TagKey<Biome> tag = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", tagPath));
@@ -321,9 +333,17 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
         // appear -- so every barrens feature is already in the FeatureSorter index at the same step
         // (total == inIndex, the "already_safe" path: NO index rebuild, no new sort nodes or edges, no
         // decoration-RNG shift). The redirect just needs the biome itself in the retain set.
-        if (LatitudeV2Flags.POLAR_BARRENS_ENABLED) {
+        if (polarBarrensEnabled) {
             Identifier barrensId = Identifier.fromNamespaceAndPath("globe", "polar_barrens");
             biomeRegistry.get(barrensId).ifPresent(holder -> out.putIfAbsent(barrensId, holder));
+        }
+        // Glacial Caves is likewise assigned after biome-source selection rather than through a lat_*
+        // policy tag. Keep it in the decoration retain/index set while its family flag is on; otherwise
+        // vanilla's retainAll(possibleBiomes) can remove the cave biome before its own features run.
+        if (glacialCavesEnabled) {
+            Identifier glacialCavesId = Identifier.fromNamespaceAndPath("globe", "glacial_caves");
+            biomeRegistry.get(glacialCavesId)
+                    .ifPresent(holder -> out.putIfAbsent(glacialCavesId, holder));
         }
         return new ArrayList<>(out.values());
     }

@@ -6,8 +6,10 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntPredicate;
 import java.util.function.Predicate;
@@ -42,6 +44,27 @@ public final class CaveDropTrap {
 
     /** Minimum authored fall from the embedded cave floor to its powder cushion. */
     public static final int MIN_DROP_AIR = 10;
+
+    /** The conformal throat is an upper glacial-cave encounter, never a deep-slate or surface trap. */
+    public static final int MIN_CONFORMAL_THROAT_FLOOR_Y = 24;
+
+    /** Y45 leaves two air cells beneath the glacial cave ceiling at Y48. */
+    public static final int MAX_CONFORMAL_THROAT_FLOOR_Y = 45;
+
+    /** Natural destination galleries belong to the lower glacial layer, including its Y0 floor. */
+    public static final int MIN_BETWEEN_LAYER_LOWER_FLOOR_Y = 0;
+
+    /** Y23 is the last lower-layer floor; Y24 begins the upper encounter band. */
+    public static final int MAX_BETWEEN_LAYER_LOWER_FLOOR_Y = 23;
+
+    /** A true layer change must be materially deeper than the retired ten-block authored pocket. */
+    public static final int MIN_BETWEEN_LAYER_SEPARATION = 16;
+
+    /** Ordinary between-layer drops stay bounded and survivable on their powder cushions. */
+    public static final int MAX_BETWEEN_LAYER_SEPARATION = 32;
+
+    /** A lower opening must continue through a meaningful natural gallery, not a six-cell pocket. */
+    public static final int MIN_NATURAL_LOWER_CONTINUATION = 12;
 
     /** A one-block floor undulation can make an individual station one block deeper than the
      * twelve-block common approach descent. */
@@ -129,6 +152,481 @@ public final class CaveDropTrap {
         return galleryAirAbove >= MIN_GALLERY_AIR
                 && certifiedSolidDepth >= MIN_CERTIFIED_SOLID_DEPTH
                 && !preexistingVoidBelow;
+    }
+
+    /** Whether a conformal cave throat belongs to the authored upper-glacial vertical band. */
+    public static boolean isConformalThroatFloor(int floorY) {
+        return floorY >= MIN_CONFORMAL_THROAT_FLOOR_Y
+                && floorY <= MAX_CONFORMAL_THROAT_FLOOR_Y;
+    }
+
+    /** Exact upper-layer boundary used by the new natural between-layer materializer. */
+    public static boolean isBetweenLayerUpperFloor(int floorY) {
+        return isConformalThroatFloor(floorY);
+    }
+
+    /** Exact lower natural-gallery floor boundary used by the new materializer. */
+    public static boolean isBetweenLayerLowerFloor(int floorY) {
+        return floorY >= MIN_BETWEEN_LAYER_LOWER_FLOOR_Y
+                && floorY <= MAX_BETWEEN_LAYER_LOWER_FLOOR_Y;
+    }
+
+    /** Exact vertical-separation boundary for an ordinary natural layer change. */
+    public static boolean isBetweenLayerSeparation(int separation) {
+        return separation >= MIN_BETWEEN_LAYER_SEPARATION
+                && separation <= MAX_BETWEEN_LAYER_SEPARATION;
+    }
+
+    /** Immutable vertical choice; the destination itself remains untouched natural evidence. */
+    public record BetweenLayerDropPlan(
+            int upperFloorY,
+            int lowerGalleryFloorY,
+            int verticalSeparation) {
+
+        public BetweenLayerDropPlan {
+            if (!isBetweenLayerUpperFloor(upperFloorY)
+                    || !isBetweenLayerLowerFloor(lowerGalleryFloorY)
+                    || verticalSeparation != upperFloorY - lowerGalleryFloorY
+                    || !isBetweenLayerSeparation(verticalSeparation)) {
+                throw new IllegalArgumentException("invalid between-layer drop plan");
+            }
+        }
+    }
+
+    /**
+     * Chooses the deepest qualified lower gallery deterministically. Observation order and duplicate
+     * candidates cannot change the result; an absent qualified gallery fails closed.
+     */
+    public static BetweenLayerDropPlan planBetweenLayerDrop(
+            int upperFloorY, List<Integer> observedLowerFloors) {
+        if (!isBetweenLayerUpperFloor(upperFloorY) || observedLowerFloors == null) {
+            return null;
+        }
+        Integer deepest = observedLowerFloors.stream()
+                .filter(Objects::nonNull)
+                .filter(CaveDropTrap::isBetweenLayerLowerFloor)
+                .filter(lower -> isBetweenLayerSeparation(upperFloorY - lower))
+                .min(Integer::compareTo)
+                .orElse(null);
+        return deepest == null
+                ? null
+                : new BetweenLayerDropPlan(
+                        upperFloorY, deepest, upperFloorY - deepest);
+    }
+
+    /**
+     * One read-only natural-column profile. Element zero is {@code floorY + 1}; the final element is
+     * {@code upperFloorY - 1}. The adapter separately proves that the floor and its three supports are
+     * safe natural mass.
+     */
+    public record LowerColumnObservation(
+            Cell cell,
+            int floorY,
+            boolean fourSafeSupports,
+            List<ThroatBlockKind> blocksAboveThroughUpper,
+            int firstUnsafeSupportDepth,
+            ThroatBlockKind firstUnsafeSupportKind) {
+
+        public LowerColumnObservation {
+            blocksAboveThroughUpper = blocksAboveThroughUpper == null
+                    ? List.of() : List.copyOf(blocksAboveThroughUpper);
+            firstUnsafeSupportKind = firstUnsafeSupportKind == null
+                    ? ThroatBlockKind.OTHER : firstUnsafeSupportKind;
+        }
+
+        public LowerColumnObservation(
+                Cell cell,
+                int floorY,
+                boolean fourSafeSupports,
+                List<ThroatBlockKind> blocksAboveThroughUpper) {
+            this(
+                    cell,
+                    floorY,
+                    fourSafeSupports,
+                    blocksAboveThroughUpper,
+                    fourSafeSupports ? -1 : 0,
+                    fourSafeSupports ? ThroatBlockKind.SAFE_NATURAL
+                            : ThroatBlockKind.OTHER);
+        }
+    }
+
+    /** Exact first clause returned by the shared lower-column qualifier. */
+    public enum LowerColumnFailureClause {
+        PASSED,
+        MISSING_COLUMN,
+        UNSAFE_SUPPORT_MASS,
+        LOWER_FLOOR_OUT_OF_BAND,
+        SEPARATION_OUT_OF_BAND,
+        INCOMPLETE_VERTICAL_PROFILE,
+        INSUFFICIENT_NATURAL_AIR,
+        MISSING_NATURAL_PLUG,
+        UNSAFE_NATURAL_PLUG,
+        NO_COHERENT_SIX_COLUMN_SURFACE,
+        INVALID_FOOTPRINT
+    }
+
+    /** One lower-column decision plus the exact voxel fact that made it fail. */
+    public record LowerColumnAssessment(
+            LowerColumnPlan plan,
+            LowerColumnFailureClause failureClause,
+            Cell cell,
+            int floorY,
+            int failureY,
+            ThroatBlockKind blockKind) {
+
+        public LowerColumnAssessment {
+            failureClause = Objects.requireNonNull(failureClause);
+            blockKind = blockKind == null ? ThroatBlockKind.OTHER : blockKind;
+            if ((plan != null) != (failureClause == LowerColumnFailureClause.PASSED)) {
+                throw new IllegalArgumentException(
+                        "only a passed lower-column assessment may carry a plan");
+            }
+        }
+
+        public boolean feasible() {
+            return plan != null;
+        }
+    }
+
+    /** One selected landing column, including every untouched cave-air Y and the first authored plug Y. */
+    public record LowerColumnPlan(
+            Cell cell,
+            int floorY,
+            int plugBottomY,
+            List<Integer> preservedAirYs) {
+
+        public LowerColumnPlan {
+            preservedAirYs = List.copyOf(preservedAirYs);
+        }
+    }
+
+    /** A deterministic six-column lower interface; columns are ordered by local X then Z. */
+    public record BetweenLayerSurfacePlan(
+            int upperFloorY,
+            List<LowerColumnPlan> columns) {
+
+        public BetweenLayerSurfacePlan {
+            columns = List.copyOf(columns);
+        }
+
+        public int minimumFloorY() {
+            return columns.stream().mapToInt(LowerColumnPlan::floorY).min().orElseThrow();
+        }
+
+        public int maximumFloorY() {
+            return columns.stream().mapToInt(LowerColumnPlan::floorY).max().orElseThrow();
+        }
+
+        public LowerColumnPlan column(Cell cell) {
+            return columns.stream()
+                    .filter(column -> column.cell().equals(cell))
+                    .findFirst().orElse(null);
+        }
+    }
+
+    /**
+     * Returns every legal six-column surface in deterministic deepest-first order. A column must expose
+     * at least two contiguous natural-air blocks, followed by a first safe-natural plug block and only
+     * safe-natural plug mass through {@code upperFloorY - 1}. The footprint may step by one block, but
+     * never has more than one block of total relief.
+     */
+    public static List<BetweenLayerSurfacePlan> planBetweenLayerSurfaces(
+            int upperFloorY,
+            List<Cell> footprint,
+            List<LowerColumnObservation> observations) {
+        if (!isBetweenLayerUpperFloor(upperFloorY)
+                || footprint == null
+                || observations == null
+                || footprint.size() != MIN_PATCH_AREA
+                || footprint.stream().anyMatch(Objects::isNull)
+                || new HashSet<>(footprint).size() != MIN_PATCH_AREA) {
+            return List.of();
+        }
+        Comparator<Cell> cellOrder = Comparator.comparingInt(Cell::x).thenComparingInt(Cell::z);
+        List<Cell> canonicalFootprint = footprint.stream().sorted(cellOrder).toList();
+        if (!isFourConnected(canonicalFootprint)) {
+            return List.of();
+        }
+
+        Map<Cell, Map<Integer, LowerColumnPlan>> qualified = new java.util.LinkedHashMap<>();
+        for (Cell cell : canonicalFootprint) {
+            qualified.put(cell, new TreeMap<>());
+        }
+        for (LowerColumnObservation observation : observations) {
+            if (observation == null || !qualified.containsKey(observation.cell())) {
+                continue;
+            }
+            LowerColumnPlan column = assessLowerColumn(upperFloorY, observation).plan();
+            if (column != null) {
+                qualified.get(observation.cell()).putIfAbsent(column.floorY(), column);
+            }
+        }
+        if (qualified.values().stream().anyMatch(Map::isEmpty)) {
+            return List.of();
+        }
+
+        List<BetweenLayerSurfacePlan> result = new ArrayList<>();
+        for (int baseY = MIN_BETWEEN_LAYER_LOWER_FLOOR_Y;
+                baseY <= MAX_BETWEEN_LAYER_LOWER_FLOOR_Y;
+                baseY++) {
+            List<List<LowerColumnPlan>> choices = new ArrayList<>();
+            boolean complete = true;
+            for (Cell cell : canonicalFootprint) {
+                Map<Integer, LowerColumnPlan> byFloor = qualified.get(cell);
+                List<LowerColumnPlan> cellChoices = new ArrayList<>(2);
+                if (byFloor.containsKey(baseY)) {
+                    cellChoices.add(byFloor.get(baseY));
+                }
+                if (byFloor.containsKey(baseY + 1)) {
+                    cellChoices.add(byFloor.get(baseY + 1));
+                }
+                if (cellChoices.isEmpty()) {
+                    complete = false;
+                    break;
+                }
+                choices.add(List.copyOf(cellChoices));
+            }
+            if (!complete) {
+                continue;
+            }
+            List<List<LowerColumnPlan>> candidates = new ArrayList<>();
+            collectLowerSurfaces(choices, 0, new ArrayList<>(), candidates);
+            int expectedBase = baseY;
+            candidates.removeIf(columns -> columns.stream()
+                            .mapToInt(LowerColumnPlan::floorY).min().orElseThrow() != expectedBase
+                    || columns.stream().mapToInt(LowerColumnPlan::floorY).max().orElseThrow()
+                            - expectedBase > 1
+                    || !stepConnectedSurface(columns));
+            candidates.sort((first, second) -> compareLowerSurfaces(first, second));
+            for (List<LowerColumnPlan> columns : candidates) {
+                result.add(new BetweenLayerSurfacePlan(upperFloorY, columns));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    /** The first result from {@link #planBetweenLayerSurfaces}; absent evidence fails closed. */
+    public static BetweenLayerSurfacePlan planBetweenLayerSurface(
+            int upperFloorY,
+            List<Cell> footprint,
+            List<LowerColumnObservation> observations) {
+        List<BetweenLayerSurfacePlan> plans =
+                planBetweenLayerSurfaces(upperFloorY, footprint, observations);
+        return plans.isEmpty() ? null : plans.getFirst();
+    }
+
+    /**
+     * Runs the exact qualifier used by {@link #planBetweenLayerSurfaces} while retaining its first
+     * failing clause and voxel. Diagnostics therefore cannot drift from the placement decision.
+     */
+    public static LowerColumnAssessment assessLowerColumn(
+            int upperFloorY, LowerColumnObservation observation) {
+        if (observation == null) {
+            return rejectedLowerColumn(
+                    LowerColumnFailureClause.MISSING_COLUMN,
+                    null,
+                    Integer.MIN_VALUE,
+                    Integer.MIN_VALUE,
+                    ThroatBlockKind.OTHER);
+        }
+        int floorY = observation.floorY();
+        List<ThroatBlockKind> vertical = observation.blocksAboveThroughUpper();
+        if (observation.cell() == null) {
+            return rejectedLowerColumn(
+                    LowerColumnFailureClause.MISSING_COLUMN,
+                    null, floorY, floorY, ThroatBlockKind.OTHER);
+        }
+        if (!observation.fourSafeSupports()) {
+            int depth = Math.max(0, observation.firstUnsafeSupportDepth());
+            return rejectedLowerColumn(
+                    LowerColumnFailureClause.UNSAFE_SUPPORT_MASS,
+                    observation.cell(), floorY, floorY - depth,
+                    observation.firstUnsafeSupportKind());
+        }
+        if (!isBetweenLayerLowerFloor(floorY)) {
+            return rejectedLowerColumn(
+                    LowerColumnFailureClause.LOWER_FLOOR_OUT_OF_BAND,
+                    observation.cell(), floorY, floorY, ThroatBlockKind.OTHER);
+        }
+        if (!isBetweenLayerSeparation(upperFloorY - floorY)) {
+            return rejectedLowerColumn(
+                    LowerColumnFailureClause.SEPARATION_OUT_OF_BAND,
+                    observation.cell(), floorY, floorY, ThroatBlockKind.OTHER);
+        }
+        if (vertical.size() != upperFloorY - floorY - 1) {
+            int failureY = floorY + Math.min(vertical.size() + 1,
+                    Math.max(1, upperFloorY - floorY - 1));
+            return rejectedLowerColumn(
+                    LowerColumnFailureClause.INCOMPLETE_VERTICAL_PROFILE,
+                    observation.cell(), floorY, failureY, ThroatBlockKind.OTHER);
+        }
+        int airCount = 0;
+        while (airCount < vertical.size()
+                && vertical.get(airCount) == ThroatBlockKind.AIR) {
+            airCount++;
+        }
+        if (airCount < MIN_GALLERY_AIR) {
+            ThroatBlockKind kind = airCount < vertical.size()
+                    ? vertical.get(airCount) : ThroatBlockKind.OTHER;
+            return rejectedLowerColumn(
+                    LowerColumnFailureClause.INSUFFICIENT_NATURAL_AIR,
+                    observation.cell(), floorY, floorY + airCount + 1, kind);
+        }
+        if (airCount == vertical.size()) {
+            return rejectedLowerColumn(
+                    LowerColumnFailureClause.MISSING_NATURAL_PLUG,
+                    observation.cell(), floorY, upperFloorY - 1,
+                    ThroatBlockKind.AIR);
+        }
+        for (int index = airCount; index < vertical.size(); index++) {
+            if (vertical.get(index) != ThroatBlockKind.SAFE_NATURAL) {
+                return rejectedLowerColumn(
+                        LowerColumnFailureClause.UNSAFE_NATURAL_PLUG,
+                        observation.cell(), floorY, floorY + index + 1,
+                        vertical.get(index));
+            }
+        }
+        List<Integer> preservedAir = new ArrayList<>(airCount);
+        for (int offset = 1; offset <= airCount; offset++) {
+            preservedAir.add(floorY + offset);
+        }
+        LowerColumnPlan plan = new LowerColumnPlan(
+                observation.cell(), floorY, floorY + airCount + 1, preservedAir);
+        return new LowerColumnAssessment(
+                plan,
+                LowerColumnFailureClause.PASSED,
+                observation.cell(),
+                floorY,
+                plan.plugBottomY(),
+                ThroatBlockKind.SAFE_NATURAL);
+    }
+
+    private static LowerColumnAssessment rejectedLowerColumn(
+            LowerColumnFailureClause clause,
+            Cell cell,
+            int floorY,
+            int failureY,
+            ThroatBlockKind kind) {
+        return new LowerColumnAssessment(null, clause, cell, floorY, failureY, kind);
+    }
+
+    /**
+     * Diagnoses an already-empty surface result. The first canonical column with no qualified
+     * profile wins; if every column has one, the exact residual is cross-column step coherence.
+     */
+    public static LowerColumnAssessment diagnoseBetweenLayerSurfaceFailure(
+            int upperFloorY,
+            List<Cell> footprint,
+            List<LowerColumnObservation> observations) {
+        if (!isBetweenLayerUpperFloor(upperFloorY)
+                || footprint == null
+                || observations == null
+                || footprint.size() != MIN_PATCH_AREA
+                || footprint.stream().anyMatch(Objects::isNull)
+                || new HashSet<>(footprint).size() != MIN_PATCH_AREA
+                || !isFourConnected(footprint)) {
+            Cell first = footprint == null || footprint.isEmpty() ? null : footprint.getFirst();
+            return rejectedLowerColumn(
+                    LowerColumnFailureClause.INVALID_FOOTPRINT,
+                    first, Integer.MIN_VALUE, Integer.MIN_VALUE, ThroatBlockKind.OTHER);
+        }
+        Comparator<Cell> cellOrder = Comparator.comparingInt(Cell::x).thenComparingInt(Cell::z);
+        List<Cell> canonicalFootprint = footprint.stream().sorted(cellOrder).toList();
+        Map<Cell, List<LowerColumnAssessment>> byCell = new java.util.LinkedHashMap<>();
+        for (Cell cell : canonicalFootprint) {
+            byCell.put(cell, new ArrayList<>());
+        }
+        for (LowerColumnObservation observation : observations) {
+            if (observation != null && byCell.containsKey(observation.cell())) {
+                byCell.get(observation.cell()).add(assessLowerColumn(upperFloorY, observation));
+            }
+        }
+        for (Cell cell : canonicalFootprint) {
+            List<LowerColumnAssessment> assessments = byCell.get(cell);
+            if (assessments.stream().noneMatch(LowerColumnAssessment::feasible)) {
+                return assessments.stream()
+                        .min(Comparator.comparingInt(LowerColumnAssessment::floorY)
+                                .thenComparingInt(assessment ->
+                                        assessment.failureClause().ordinal())
+                                .thenComparingInt(LowerColumnAssessment::failureY))
+                        .orElseGet(() -> rejectedLowerColumn(
+                                LowerColumnFailureClause.MISSING_COLUMN,
+                                cell, Integer.MIN_VALUE, Integer.MIN_VALUE,
+                                ThroatBlockKind.OTHER));
+            }
+        }
+        LowerColumnAssessment firstQualified = byCell.get(canonicalFootprint.getFirst()).stream()
+                .filter(LowerColumnAssessment::feasible)
+                .min(Comparator.comparingInt(LowerColumnAssessment::floorY))
+                .orElseThrow();
+        return rejectedLowerColumn(
+                LowerColumnFailureClause.NO_COHERENT_SIX_COLUMN_SURFACE,
+                firstQualified.cell(),
+                firstQualified.floorY(),
+                firstQualified.floorY(),
+                ThroatBlockKind.SAFE_NATURAL);
+    }
+
+    private static void collectLowerSurfaces(
+            List<List<LowerColumnPlan>> choices,
+            int index,
+            List<LowerColumnPlan> selected,
+            List<List<LowerColumnPlan>> result) {
+        if (index == choices.size()) {
+            result.add(List.copyOf(selected));
+            return;
+        }
+        for (LowerColumnPlan choice : choices.get(index)) {
+            selected.add(choice);
+            collectLowerSurfaces(choices, index + 1, selected, result);
+            selected.removeLast();
+        }
+    }
+
+    private static boolean stepConnectedSurface(List<LowerColumnPlan> columns) {
+        if (columns.size() != MIN_PATCH_AREA) {
+            return false;
+        }
+        Map<Cell, Integer> floors = new java.util.LinkedHashMap<>();
+        for (LowerColumnPlan column : columns) {
+            if (floors.put(column.cell(), column.floorY()) != null) {
+                return false;
+            }
+        }
+        Set<Cell> unseen = new HashSet<>(floors.keySet());
+        ArrayDeque<Cell> queue = new ArrayDeque<>();
+        Cell start = columns.getFirst().cell();
+        unseen.remove(start);
+        queue.add(start);
+        while (!queue.isEmpty()) {
+            Cell current = queue.removeFirst();
+            for (Cell next : neighbours(current)) {
+                if (unseen.contains(next)
+                        && Math.abs(floors.get(current) - floors.get(next)) <= 1) {
+                    unseen.remove(next);
+                    queue.addLast(next);
+                }
+            }
+        }
+        return unseen.isEmpty();
+    }
+
+    private static int compareLowerSurfaces(
+            List<LowerColumnPlan> first, List<LowerColumnPlan> second) {
+        int firstSum = first.stream().mapToInt(LowerColumnPlan::floorY).sum();
+        int secondSum = second.stream().mapToInt(LowerColumnPlan::floorY).sum();
+        int comparison = Integer.compare(firstSum, secondSum);
+        if (comparison != 0) {
+            return comparison;
+        }
+        for (int index = 0; index < first.size(); index++) {
+            comparison = Integer.compare(
+                    first.get(index).floorY(), second.get(index).floorY());
+            if (comparison != 0) {
+                return comparison;
+            }
+        }
+        return 0;
     }
 
     /**
@@ -898,7 +1396,11 @@ public final class CaveDropTrap {
     /** World observations accepted by the pure shared Pass-A predicate. */
     public enum ThroatBlockKind {
         SAFE_NATURAL,
+        /** Explicitly unsafe for the lower glacial destination, even when a broad carver tag matches. */
+        DEEPSLATE,
         AIR,
+        /** Latitude's non-structural hanging ice decoration; never floor, support, or roof mass. */
+        HANGING_ICICLE,
         FLUID,
         GRAVEL,
         ORE_OR_BLOCK_ENTITY,
@@ -958,6 +1460,21 @@ public final class CaveDropTrap {
             RewardFeasibilityFailure floodedFailure,
             boolean prospectorFeasible,
             RewardFeasibilityFailure prospectorFailure) {
+    }
+
+    /** Upper passage result for the separate natural between-layer materializer. */
+    public record UpperThroatEvaluation(
+            PassARejection rejection,
+            List<Voxel> naturalWitnessVoxels) {
+
+        public UpperThroatEvaluation {
+            rejection = Objects.requireNonNull(rejection);
+            naturalWitnessVoxels = List.copyOf(naturalWitnessVoxels);
+        }
+
+        public boolean feasible() {
+            return rejection == PassARejection.PASS;
+        }
     }
 
     /**
@@ -1317,8 +1834,141 @@ public final class CaveDropTrap {
     }
 
     /**
-     * Runs the exact read-only Pass-A predicate. No branch writes or substitutes authored air for
-     * natural evidence; gravel is accepted only when its complete gravity column is owner-contained.
+     * Proves only the locked upper conformal passage. The historical lower pocket and stair remain
+     * part of {@link RoofedGalleryThroatPlan} for compatibility, but this predicate deliberately
+     * never reads them. Its returned witnesses are the untouched upper floor, headroom, support,
+     * and roof cells that the separate between-layer materializer must preserve.
+     */
+    public static UpperThroatEvaluation evaluateRoofedGalleryUpper(
+            RoofedGalleryThroatPlan plan, RoofedThroatWorldView world) {
+        PassARejection topology = validateRoofedGalleryThroatTopology(plan);
+        if (topology != PassARejection.PASS || world == null
+                || !isBetweenLayerUpperFloor(plan.floorY())) {
+            return rejectedUpper(topology == PassARejection.PASS
+                    ? PassARejection.INVALID_OR_SELF_AUTHORED_WITNESS : topology);
+        }
+
+        LinkedHashSet<Voxel> witnesses = new LinkedHashSet<>();
+        for (Voxel voxel : plan.continuationFloorVoxels()) {
+            if (!upperWitnessIsOwned(world, voxel) || world.authored(voxel)) {
+                return rejectedUpper(PassARejection.INVALID_OR_SELF_AUTHORED_WITNESS);
+            }
+            PassARejection failure = naturalFloorFailure(world.blockKind(voxel));
+            if (failure != PassARejection.PASS) {
+                return rejectedUpper(failure);
+            }
+            witnesses.add(voxel);
+        }
+        for (Cell cell : plan.coverCells()) {
+            Voxel floor = voxel(cell, plan.floorY());
+            if (!upperWitnessIsOwned(world, floor) || world.authored(floor)) {
+                return rejectedUpper(PassARejection.INVALID_OR_SELF_AUTHORED_WITNESS);
+            }
+            PassARejection failure = naturalFloorFailure(world.blockKind(floor));
+            if (failure != PassARejection.PASS) {
+                return rejectedUpper(failure);
+            }
+        }
+        for (Voxel voxel : plan.headroomVoxels()) {
+            if (!upperWitnessIsOwned(world, voxel) || world.authored(voxel)) {
+                return rejectedUpper(PassARejection.INVALID_OR_SELF_AUTHORED_WITNESS);
+            }
+            ThroatBlockKind kind = world.blockKind(voxel);
+            if (kind == ThroatBlockKind.FLUID) {
+                return rejectedUpper(PassARejection.SEAFLOOR_OR_FLUID_STANDING);
+            }
+            if (kind != ThroatBlockKind.AIR) {
+                return rejectedUpper(PassARejection.INVALID_OR_SELF_AUTHORED_WITNESS);
+            }
+            witnesses.add(voxel);
+        }
+        for (Cell cell : plan.firmCells()) {
+            for (int depth = 1; depth <= APPROACH_CONTINUATION_SUPPORT_DEPTH; depth++) {
+                Voxel support = voxel(cell, plan.floorY() - depth);
+                if (!upperWitnessIsOwned(world, support)
+                        || world.authored(support)
+                        || world.blockKind(support) != ThroatBlockKind.SAFE_NATURAL) {
+                    return rejectedUpper(PassARejection.SHELL_OR_SUPPORT);
+                }
+                witnesses.add(support);
+            }
+        }
+        for (Cell cell : plan.relevantFloorColumns()) {
+            Voxel ceiling = null;
+            for (int rise = MIN_ROOF_SEARCH_RISE; rise <= MAX_ROOF_SEARCH_RISE; rise++) {
+                Voxel candidate = voxel(cell, plan.floorY() + rise);
+                if (!upperWitnessIsOwned(world, candidate)) {
+                    return rejectedUpper(PassARejection.OWNER);
+                }
+                ThroatBlockKind kind = world.blockKind(candidate);
+                if (kind == ThroatBlockKind.FLUID) {
+                    return rejectedUpper(PassARejection.EXPOSED_SKY_WATER_OR_THIN_ROOF);
+                }
+                if (kind == ThroatBlockKind.AIR) {
+                    if (world.authored(candidate)) {
+                        return rejectedUpper(
+                                PassARejection.INVALID_OR_SELF_AUTHORED_WITNESS);
+                    }
+                    witnesses.add(candidate);
+                    continue;
+                }
+                if (kind == ThroatBlockKind.HANGING_ICICLE) {
+                    if (world.authored(candidate)) {
+                        return rejectedUpper(
+                                PassARejection.INVALID_OR_SELF_AUTHORED_WITNESS);
+                    }
+                    // Hanging icicles decorate the open gallery below the structural ceiling.
+                    // Search past them, but never retain them as natural roof evidence.
+                    continue;
+                }
+                if (kind != ThroatBlockKind.SAFE_NATURAL || world.authored(candidate)) {
+                    return rejectedUpper(PassARejection.INVALID_OR_SELF_AUTHORED_WITNESS);
+                }
+                ceiling = candidate;
+                witnesses.add(candidate);
+                break;
+            }
+            if (ceiling == null) {
+                return rejectedUpper(PassARejection.EXPOSED_SKY_WATER_OR_THIN_ROOF);
+            }
+            for (int above = 1; above <= ROOF_CLEARANCE_ABOVE; above++) {
+                Voxel roofWitness = new Voxel(
+                        ceiling.x(), ceiling.y() + above, ceiling.z());
+                if (!upperWitnessIsOwned(world, roofWitness)) {
+                    return rejectedUpper(PassARejection.OWNER);
+                }
+                ThroatBlockKind kind = world.blockKind(roofWitness);
+                if (kind == ThroatBlockKind.FLUID) {
+                    return rejectedUpper(PassARejection.EXPOSED_SKY_WATER_OR_THIN_ROOF);
+                }
+                if (world.authored(roofWitness)
+                        || (kind != ThroatBlockKind.SAFE_NATURAL
+                                && kind != ThroatBlockKind.AIR)
+                        || (above == 1 && kind != ThroatBlockKind.SAFE_NATURAL)) {
+                    return rejectedUpper(
+                            PassARejection.EXPOSED_SKY_WATER_OR_THIN_ROOF);
+                }
+                witnesses.add(roofWitness);
+            }
+            if (world.seesSky(ceiling.above().above())) {
+                return rejectedUpper(PassARejection.EXPOSED_SKY_WATER_OR_THIN_ROOF);
+            }
+        }
+        return new UpperThroatEvaluation(PassARejection.PASS, List.copyOf(witnesses));
+    }
+
+    private static boolean upperWitnessIsOwned(
+            RoofedThroatWorldView world, Voxel voxel) {
+        return world.insideOwnerInset(voxel);
+    }
+
+    private static UpperThroatEvaluation rejectedUpper(PassARejection rejection) {
+        return new UpperThroatEvaluation(rejection, List.of());
+    }
+
+    /**
+     * Runs the exact read-only legacy Pass-A predicate. No branch writes or substitutes authored air
+     * for natural evidence; gravel is accepted only when its complete gravity column is owner-contained.
      */
     public static RoofedThroatEvaluation evaluateRoofedGalleryThroat(
             RoofedGalleryThroatPlan plan, RoofedThroatWorldView world) {

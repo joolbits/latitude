@@ -64,6 +64,34 @@ public final class FrostMoteLaw {
         return blockId != null && WATER_MOTE_BLOCKS.contains(blockId);
     }
 
+    /** Exact cave-lake atmosphere band, mirrored from the world planner's Y0..47 hazardous surface band. */
+    public static final int DRESSING_MIN_Y = 0;
+    public static final int DRESSING_MAX_Y = 47;
+
+    /** Frost motes support the freeze-shut cave-lake story only inside its exact Y0..47 band. */
+    public static boolean isDressableMoteY(int blockY) {
+        return blockY >= DRESSING_MIN_Y && blockY <= DRESSING_MAX_Y;
+    }
+
+    /**
+     * Final sampled-cell decision. The player-biome check remains a cheap tick-level fast-out, but it is
+     * never enough on a mixed-biome boundary: the actual water cell must also be glacial caves.
+     */
+    public static boolean isEligibleMoteSample(
+            boolean flagOn,
+            String playerBiomeId,
+            String sampleBiomeId,
+            int blockY,
+            String blockId,
+            boolean airAbove) {
+        return flagOn
+                && isGlacialCavesBiome(playerBiomeId)
+                && isGlacialCavesBiome(sampleBiomeId)
+                && isDressableMoteY(blockY)
+                && isWaterMoteBlock(blockId)
+                && airAbove;
+    }
+
     /** Default SPARSE peak per-spawn-tick mote budget (in motes) BEFORE the caller's Particles scaling: a few
      *  at a time -- ATMOSPHERE, not weather (owner S25: "very small ice blocks... to show that it's cold").
      *  One-line dial (raise for denser). */

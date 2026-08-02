@@ -2,6 +2,9 @@ package com.example.globe.core;
 
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -46,6 +49,35 @@ class FrostMoteLawTest {
         assertFalse(FrostMoteLaw.isWaterMoteBlock("minecraft:stone"));
         assertFalse(FrostMoteLaw.isWaterMoteBlock("minecraft:lava"), "never lava");
         assertFalse(FrostMoteLaw.isWaterMoteBlock(null), "null -> no mote");
+    }
+
+    @Test
+    void moteDressingUsesTheExactYZeroThroughFortySevenLakeBand() {
+        assertFalse(FrostMoteLaw.isDressableMoteY(-1), "below Y0 remains insulated and mote-free");
+        assertTrue(FrostMoteLaw.isDressableMoteY(0), "Y0 is the first eligible dressing layer");
+        assertTrue(FrostMoteLaw.isDressableMoteY(47), "Y47 is the last hazardous cave-lake layer");
+        assertFalse(FrostMoteLaw.isDressableMoteY(48), "upper polar water is outside the cave-lake atmosphere");
+    }
+
+    @Test
+    void clientDecisionReadsTheSampledWaterCellsBiome() throws Exception {
+        String source = Files.readString(Path.of("src/main/java/com/example/globe/GlobeModClient.java"));
+        assertTrue(source.contains("sampleBiomeId"));
+        assertTrue(source.contains("isEligibleMoteSample"),
+                "the final spawn decision must include the sampled cell, not only the player biome");
+    }
+
+    @Test
+    void sampledCellBiomeControlsTheFinalMoteDecision() {
+        assertFalse(FrostMoteLaw.isEligibleMoteSample(
+                        true, "globe:glacial_caves", "globe:polar_barrens", 32, "minecraft:water", true),
+                "player in caves plus sampled barrens water is still ineligible");
+        assertTrue(FrostMoteLaw.isEligibleMoteSample(
+                        true, "globe:glacial_caves", "globe:glacial_caves", 32, "minecraft:water", true),
+                "sampled glacial-caves water inside the band remains eligible");
+        assertFalse(FrostMoteLaw.isEligibleMoteSample(
+                        true, "globe:polar_barrens", "globe:glacial_caves", 32, "minecraft:water", true),
+                "the player fast gate remains conservative too");
     }
 
     // ---- budget bounds --------------------------------------------------------------------------

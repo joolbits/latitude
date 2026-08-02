@@ -618,6 +618,206 @@ class CaveDropTrapTest {
     }
 
     @Test
+    void conformalThroatFloorsStayInTheUpperGlacialBandAboveTheDeepSlateCushionFloor() {
+        assertFalse(CaveDropTrap.isConformalThroatFloor(23));
+        assertTrue(CaveDropTrap.isConformalThroatFloor(24));
+        assertTrue(CaveDropTrap.isConformalThroatFloor(45));
+        assertFalse(CaveDropTrap.isConformalThroatFloor(46));
+
+        CaveDropTrap.RoofedGalleryThroatPlan lowest =
+                CaveDropTrap.planRoofedGalleryThroat(24, CaveDropTrap.RibbonOrientation.NORTH);
+        CaveDropTrap.RoofedGalleryThroatPlan highest =
+                CaveDropTrap.planRoofedGalleryThroat(45, CaveDropTrap.RibbonOrientation.NORTH);
+        assertEquals(14, lowest.landingY(),
+                "the locked factory plan retains its historical fixed ten-block fall");
+        assertEquals(35, highest.landingY(), "the highest legal floor preserves the fixed ten-block fall");
+        assertTrue(lowest.cushionSupportVoxels().stream()
+                        .mapToInt(CaveDropTrap.Voxel::y)
+                        .min().orElseThrow() >= 0,
+                "the lowest legal throat keeps every authored cushion support at or above Y0");
+    }
+
+    @Test
+    void betweenLayerDropUsesExactBandsAndChoosesTheDeepestQualifiedGallery() {
+        assertFalse(CaveDropTrap.isBetweenLayerUpperFloor(23));
+        assertTrue(CaveDropTrap.isBetweenLayerUpperFloor(24));
+        assertTrue(CaveDropTrap.isBetweenLayerUpperFloor(45));
+        assertFalse(CaveDropTrap.isBetweenLayerUpperFloor(46));
+
+        assertFalse(CaveDropTrap.isBetweenLayerLowerFloor(-1));
+        assertTrue(CaveDropTrap.isBetweenLayerLowerFloor(0));
+        assertTrue(CaveDropTrap.isBetweenLayerLowerFloor(23));
+        assertFalse(CaveDropTrap.isBetweenLayerLowerFloor(24));
+
+        assertFalse(CaveDropTrap.isBetweenLayerSeparation(15));
+        assertTrue(CaveDropTrap.isBetweenLayerSeparation(16));
+        assertTrue(CaveDropTrap.isBetweenLayerSeparation(32));
+        assertFalse(CaveDropTrap.isBetweenLayerSeparation(33));
+
+        CaveDropTrap.BetweenLayerDropPlan selected =
+                CaveDropTrap.planBetweenLayerDrop(40, List.of(25, 24, 8, 7, 23, 8));
+        assertNotNull(selected);
+        assertEquals(40, selected.upperFloorY());
+        assertEquals(8, selected.lowerGalleryFloorY(),
+                "the deepest qualifying lower gallery wins independent of input order");
+        assertEquals(32, selected.verticalSeparation());
+        assertEquals(
+                selected,
+                CaveDropTrap.planBetweenLayerDrop(40, List.of(8, 23, 7, 24, 25, 8)),
+                "selection is stable under observation order and duplicate candidates");
+
+        assertEquals(
+                new CaveDropTrap.BetweenLayerDropPlan(24, 0, 24),
+                CaveDropTrap.planBetweenLayerDrop(24, List.of(-1, 0, 8, 24)),
+                "Y0 is a legal lower natural gallery floor");
+        assertNull(CaveDropTrap.planBetweenLayerDrop(23, List.of(0, 7)),
+                "an upper floor below Y24 fails closed");
+        assertNull(CaveDropTrap.planBetweenLayerDrop(40, List.of(7, 24, 25)),
+                "gap 33, gap 16 at an out-of-band lower floor, and gap 15 all reject");
+        assertNull(CaveDropTrap.planBetweenLayerDrop(40, List.of()),
+                "no qualifying natural lower gallery means no trap");
+    }
+
+    @Test
+    void steppedLowerSurfaceRescuesTheExactY20Y21CaveAndPreservesAirThroughY25() {
+        List<CaveDropTrap.Cell> footprint = lowerSurfaceFootprint();
+        List<Integer> floorYs = List.of(20, 20, 21, 21, 21, 21);
+        List<CaveDropTrap.LowerColumnObservation> observations = new ArrayList<>();
+        for (int index = 0; index < footprint.size(); index++) {
+            observations.add(lowerColumn(
+                    footprint.get(index), floorYs.get(index), 44, 25, null, true));
+            observations.add(lowerColumn(
+                    footprint.get(index), 22, 44, 25, null, true));
+        }
+
+        CaveDropTrap.BetweenLayerSurfacePlan selected =
+                CaveDropTrap.planBetweenLayerSurface(44, footprint, observations);
+        assertNotNull(selected,
+                "the representative anchor's connected Y20/Y21 floor is a legal lower interface");
+        assertEquals(20, selected.minimumFloorY());
+        assertEquals(21, selected.maximumFloorY());
+        assertEquals(floorYs, selected.columns().stream()
+                .map(CaveDropTrap.LowerColumnPlan::floorY).toList());
+        assertTrue(selected.columns().stream().allMatch(column ->
+                        column.plugBottomY() == 26
+                                && column.preservedAirYs().getLast() == 25),
+                "every complete natural air stack stays untouched and the shaft begins at plug Y26");
+
+        List<CaveDropTrap.LowerColumnObservation> reversed = new ArrayList<>(observations);
+        java.util.Collections.reverse(reversed);
+        assertEquals(selected, CaveDropTrap.planBetweenLayerSurface(44, footprint, reversed),
+                "observation order cannot change the deepest conformal surface");
+    }
+
+    @Test
+    void steppedLowerSurfaceRejectsReliefTwoDisconnectedFootprintsMissingPlugsAndHazards() {
+        List<CaveDropTrap.Cell> footprint = lowerSurfaceFootprint();
+        List<Integer> reliefTwo = List.of(20, 20, 22, 22, 22, 22);
+        List<CaveDropTrap.LowerColumnObservation> reliefObservations = new ArrayList<>();
+        for (int index = 0; index < footprint.size(); index++) {
+            reliefObservations.add(lowerColumn(
+                    footprint.get(index), reliefTwo.get(index), 44, 25, null, true));
+        }
+        assertNull(CaveDropTrap.planBetweenLayerSurface(44, footprint, reliefObservations),
+                "two blocks of total relief is not a coherent landing surface");
+
+        List<CaveDropTrap.Cell> disconnected = new ArrayList<>(footprint);
+        disconnected.set(disconnected.size() - 1, new CaveDropTrap.Cell(9, 9));
+        assertNull(CaveDropTrap.planBetweenLayerSurface(
+                        44, disconnected, representativeLowerColumns(disconnected, 20, 44)),
+                "six columns that are not one cardinal footprint fail closed");
+
+        List<CaveDropTrap.LowerColumnObservation> noPlug =
+                representativeLowerColumns(footprint, 20, 44);
+        noPlug.set(0, lowerColumn(footprint.getFirst(), 20, 44, 43, null, true));
+        assertNull(CaveDropTrap.planBetweenLayerSurface(44, footprint, noPlug),
+                "an air column with no solid plug below the upper floor cannot be authored");
+
+        List<CaveDropTrap.LowerColumnObservation> hazard =
+                representativeLowerColumns(footprint, 20, 44);
+        hazard.set(0, lowerColumn(
+                footprint.getFirst(), 20, 44, 25,
+                CaveDropTrap.ThroatBlockKind.GRAVEL, true));
+        assertNull(CaveDropTrap.planBetweenLayerSurface(44, footprint, hazard),
+                "one hazardous block anywhere in the plug rejects the whole surface");
+
+        List<CaveDropTrap.LowerColumnObservation> deepslatePlug =
+                representativeLowerColumns(footprint, 20, 44);
+        deepslatePlug.set(0, lowerColumn(
+                footprint.getFirst(), 20, 44, 25,
+                CaveDropTrap.ThroatBlockKind.DEEPSLATE, true));
+        assertNull(CaveDropTrap.planBetweenLayerSurface(44, footprint, deepslatePlug),
+                "deepslate in an authored lower shaft target rejects the whole surface");
+
+        List<CaveDropTrap.LowerColumnObservation> thinFloor =
+                representativeLowerColumns(footprint, 20, 44);
+        thinFloor.set(0, lowerColumn(footprint.getFirst(), 20, 44, 25, null, false));
+        assertNull(CaveDropTrap.planBetweenLayerSurface(44, footprint, thinFloor),
+                "every cushion floor needs four safe natural supports");
+    }
+
+    @Test
+    void lowerColumnDiagnosticsReuseTheQualifierAndNameTheExactFailedVoxel() {
+        CaveDropTrap.Cell cell = lowerSurfaceFootprint().getFirst();
+        CaveDropTrap.LowerColumnObservation green =
+                lowerColumn(cell, 20, 44, 25, null, true);
+        CaveDropTrap.LowerColumnObservation deepslateSupport =
+                new CaveDropTrap.LowerColumnObservation(
+                        cell,
+                        green.floorY(),
+                        false,
+                        green.blocksAboveThroughUpper(),
+                        2,
+                        CaveDropTrap.ThroatBlockKind.DEEPSLATE);
+        CaveDropTrap.LowerColumnAssessment support =
+                CaveDropTrap.assessLowerColumn(44, deepslateSupport);
+        assertFalse(support.feasible());
+        assertEquals(
+                CaveDropTrap.LowerColumnFailureClause.UNSAFE_SUPPORT_MASS,
+                support.failureClause());
+        assertEquals(18, support.failureY());
+        assertEquals(CaveDropTrap.ThroatBlockKind.DEEPSLATE, support.blockKind());
+
+        CaveDropTrap.LowerColumnObservation gravelPlug =
+                lowerColumn(
+                        cell,
+                        20,
+                        44,
+                        25,
+                        CaveDropTrap.ThroatBlockKind.GRAVEL,
+                        true);
+        CaveDropTrap.LowerColumnAssessment plug =
+                CaveDropTrap.assessLowerColumn(44, gravelPlug);
+        assertFalse(plug.feasible());
+        assertEquals(
+                CaveDropTrap.LowerColumnFailureClause.UNSAFE_NATURAL_PLUG,
+                plug.failureClause());
+        assertEquals(28, plug.failureY());
+        assertEquals(CaveDropTrap.ThroatBlockKind.GRAVEL, plug.blockKind());
+    }
+
+    @Test
+    void steppedLowerSurfaceKeepsBothGapAndFloorBoundariesInclusive() {
+        List<CaveDropTrap.Cell> footprint = lowerSurfaceFootprint();
+        CaveDropTrap.BetweenLayerSurfacePlan yZero = CaveDropTrap.planBetweenLayerSurface(
+                24, footprint, representativeLowerColumns(footprint, 0, 24));
+        assertNotNull(yZero);
+        assertEquals(0, yZero.minimumFloorY(), "Y0 remains a legal natural landing floor");
+
+        CaveDropTrap.BetweenLayerSurfacePlan gapThirtyTwo =
+                CaveDropTrap.planBetweenLayerSurface(
+                        45, footprint, representativeLowerColumns(footprint, 13, 45));
+        assertNotNull(gapThirtyTwo);
+        assertEquals(32, 45 - gapThirtyTwo.minimumFloorY());
+
+        CaveDropTrap.BetweenLayerSurfacePlan gapSixteen =
+                CaveDropTrap.planBetweenLayerSurface(
+                        39, footprint, representativeLowerColumns(footprint, 23, 39));
+        assertNotNull(gapSixteen);
+        assertEquals(16, 39 - gapSixteen.maximumFloorY());
+    }
+
+    @Test
     void floodedRewardGalleryIsMateriallyLargerThanItsEntrance() {
         assertEquals(36, CaveDropTrap.MIN_FLOODED_GALLERY_FOOTPRINT);
         assertEquals(16, CaveDropTrap.MIN_FLOODED_GALLERY_ENTRANCE_MARGIN);
@@ -1027,6 +1227,101 @@ class CaveDropTrapTest {
     }
 
     @Test
+    void upperRoofSearchSkipsOnlyHangingIciclesAndStillRequiresTheRealRoofLaw() {
+        CaveDropTrap.RoofedGalleryThroatPlan plan =
+                CaveDropTrap.planRoofedGalleryThroat(
+                        40, CaveDropTrap.RibbonOrientation.NORTH);
+        CaveDropTrap.Cell column = plan.relevantFloorColumns().getFirst();
+        CaveDropTrap.Voxel firstIcicle =
+                new CaveDropTrap.Voxel(column.x(), 43, column.z());
+        CaveDropTrap.Voxel secondIcicle = firstIcicle.above();
+        CaveDropTrap.Voxel realCeiling = secondIcicle.above();
+        CaveDropTrap.Voxel secondRoofLayer = realCeiling.above();
+
+        TestThroatWorld clear = TestThroatWorld.green(plan);
+        CaveDropTrap.UpperThroatEvaluation clearEvaluation =
+                CaveDropTrap.evaluateRoofedGalleryUpper(plan, clear);
+        assertEquals(CaveDropTrap.PassARejection.PASS, clearEvaluation.rejection());
+
+        TestThroatWorld decorated = TestThroatWorld.green(plan);
+        decorated.kinds.put(firstIcicle, CaveDropTrap.ThroatBlockKind.HANGING_ICICLE);
+        decorated.kinds.put(secondIcicle, CaveDropTrap.ThroatBlockKind.HANGING_ICICLE);
+        CaveDropTrap.UpperThroatEvaluation decoratedEvaluation =
+                CaveDropTrap.evaluateRoofedGalleryUpper(plan, decorated);
+        assertEquals(clearEvaluation.rejection(), decoratedEvaluation.rejection(),
+                "one or more Latitude icicles below a real roof preserve upper eligibility");
+        assertTrue(decoratedEvaluation.feasible());
+        assertTrue(decoratedEvaluation.naturalWitnessVoxels().contains(realCeiling));
+        assertTrue(decoratedEvaluation.naturalWitnessVoxels().contains(secondRoofLayer));
+        assertFalse(decoratedEvaluation.naturalWitnessVoxels().contains(firstIcicle));
+        assertFalse(decoratedEvaluation.naturalWitnessVoxels().contains(secondIcicle));
+        assertTrue(java.util.Collections.disjoint(
+                        List.of(firstIcicle, secondIcicle), plan.ordinaryAuthoredVoxels()),
+                "accepted roof decorations are outside the generated scene's authored clearance");
+
+        TestThroatWorld noRealRoof = TestThroatWorld.green(plan);
+        for (int rise = CaveDropTrap.MIN_ROOF_SEARCH_RISE;
+                rise <= CaveDropTrap.MAX_ROOF_SEARCH_RISE;
+                rise++) {
+            noRealRoof.kinds.put(
+                    new CaveDropTrap.Voxel(column.x(), plan.floorY() + rise, column.z()),
+                    CaveDropTrap.ThroatBlockKind.HANGING_ICICLE);
+        }
+        assertEquals(
+                CaveDropTrap.PassARejection.EXPOSED_SKY_WATER_OR_THIN_ROOF,
+                CaveDropTrap.evaluateRoofedGalleryUpper(plan, noRealRoof).rejection(),
+                "icicles alone can never satisfy the structural ceiling");
+
+        TestThroatWorld thinRoof = TestThroatWorld.green(plan);
+        thinRoof.kinds.put(firstIcicle, CaveDropTrap.ThroatBlockKind.HANGING_ICICLE);
+        thinRoof.kinds.put(secondIcicle, CaveDropTrap.ThroatBlockKind.HANGING_ICICLE);
+        thinRoof.kinds.put(secondRoofLayer, CaveDropTrap.ThroatBlockKind.AIR);
+        assertEquals(
+                CaveDropTrap.PassARejection.EXPOSED_SKY_WATER_OR_THIN_ROOF,
+                CaveDropTrap.evaluateRoofedGalleryUpper(plan, thinRoof).rejection());
+
+        TestThroatWorld wetRoof = TestThroatWorld.green(plan);
+        wetRoof.kinds.put(firstIcicle, CaveDropTrap.ThroatBlockKind.HANGING_ICICLE);
+        wetRoof.kinds.put(secondIcicle, CaveDropTrap.ThroatBlockKind.HANGING_ICICLE);
+        wetRoof.kinds.put(secondRoofLayer, CaveDropTrap.ThroatBlockKind.FLUID);
+        assertEquals(
+                CaveDropTrap.PassARejection.EXPOSED_SKY_WATER_OR_THIN_ROOF,
+                CaveDropTrap.evaluateRoofedGalleryUpper(plan, wetRoof).rejection());
+
+        TestThroatWorld skyRoof = TestThroatWorld.green(plan);
+        skyRoof.kinds.put(firstIcicle, CaveDropTrap.ThroatBlockKind.HANGING_ICICLE);
+        skyRoof.kinds.put(secondIcicle, CaveDropTrap.ThroatBlockKind.HANGING_ICICLE);
+        skyRoof.sky.add(realCeiling.above().above());
+        assertEquals(
+                CaveDropTrap.PassARejection.EXPOSED_SKY_WATER_OR_THIN_ROOF,
+                CaveDropTrap.evaluateRoofedGalleryUpper(plan, skyRoof).rejection());
+
+        TestThroatWorld supportIcicle = TestThroatWorld.green(plan);
+        CaveDropTrap.Cell firm = plan.firmCells().getFirst();
+        supportIcicle.kinds.put(
+                new CaveDropTrap.Voxel(firm.x(), plan.floorY() - 1, firm.z()),
+                CaveDropTrap.ThroatBlockKind.HANGING_ICICLE);
+        assertEquals(
+                CaveDropTrap.PassARejection.SHELL_OR_SUPPORT,
+                CaveDropTrap.evaluateRoofedGalleryUpper(plan, supportIcicle).rejection());
+
+        TestThroatWorld headroomIcicle = TestThroatWorld.green(plan);
+        headroomIcicle.kinds.put(
+                plan.headroomVoxels().getFirst(),
+                CaveDropTrap.ThroatBlockKind.HANGING_ICICLE);
+        assertEquals(
+                CaveDropTrap.PassARejection.INVALID_OR_SELF_AUTHORED_WITNESS,
+                CaveDropTrap.evaluateRoofedGalleryUpper(plan, headroomIcicle).rejection());
+
+        TestThroatWorld unrelatedOther = TestThroatWorld.green(plan);
+        unrelatedOther.kinds.put(firstIcicle, CaveDropTrap.ThroatBlockKind.OTHER);
+        assertEquals(
+                CaveDropTrap.PassARejection.INVALID_OR_SELF_AUTHORED_WITNESS,
+                CaveDropTrap.evaluateRoofedGalleryUpper(plan, unrelatedOther).rejection(),
+                "vanilla pointed dripstone and every unrelated OTHER stay strict rejects");
+    }
+
+    @Test
     void passAPredictionCallsExistingSelectorsAndFallsBackWithoutRerolling() {
         for (int roll = 0; roll < 16; roll++) {
             CaveDropTrap.RewardKind expected = roll <= 13
@@ -1346,6 +1641,49 @@ class CaveDropTrapTest {
             assertTrue(x >= 0 && x < mask.length && z >= 0 && z < mask[x].length && mask[x][z],
                     message + ": " + x + "," + z);
         }
+    }
+
+    private static List<CaveDropTrap.Cell> lowerSurfaceFootprint() {
+        return List.of(
+                new CaveDropTrap.Cell(0, 0),
+                new CaveDropTrap.Cell(0, 1),
+                new CaveDropTrap.Cell(1, 0),
+                new CaveDropTrap.Cell(1, 1),
+                new CaveDropTrap.Cell(2, 0),
+                new CaveDropTrap.Cell(2, 1));
+    }
+
+    private static List<CaveDropTrap.LowerColumnObservation> representativeLowerColumns(
+            List<CaveDropTrap.Cell> footprint, int floorY, int upperFloorY) {
+        List<CaveDropTrap.LowerColumnObservation> observations = new ArrayList<>();
+        int airTopY = Math.min(floorY + 2, upperFloorY - 2);
+        for (CaveDropTrap.Cell cell : footprint) {
+            observations.add(lowerColumn(
+                    cell, floorY, upperFloorY, airTopY, null, true));
+        }
+        return observations;
+    }
+
+    private static CaveDropTrap.LowerColumnObservation lowerColumn(
+            CaveDropTrap.Cell cell,
+            int floorY,
+            int upperFloorY,
+            int airTopY,
+            CaveDropTrap.ThroatBlockKind plugHazard,
+            boolean fourSafeSupports) {
+        List<CaveDropTrap.ThroatBlockKind> vertical = new ArrayList<>();
+        int plugBottomY = airTopY + 1;
+        for (int y = floorY + 1; y < upperFloorY; y++) {
+            if (y <= airTopY) {
+                vertical.add(CaveDropTrap.ThroatBlockKind.AIR);
+            } else if (plugHazard != null && y == plugBottomY + 2) {
+                vertical.add(plugHazard);
+            } else {
+                vertical.add(CaveDropTrap.ThroatBlockKind.SAFE_NATURAL);
+            }
+        }
+        return new CaveDropTrap.LowerColumnObservation(
+                cell, floorY, fourSafeSupports, vertical);
     }
 
     private static int cellCoordinate(Object cell, String axis) {

@@ -10,6 +10,7 @@ import com.example.globe.world.CaveTrapBlocks;
 import com.example.globe.world.CollapsedExplorerBlock;
 import com.example.globe.world.CollapsedExplorerBlockEntity;
 import com.example.globe.world.CollapsedExplorerBlocks;
+import com.example.globe.world.LatitudeBiomes;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -19,6 +20,7 @@ import com.google.gson.JsonParser;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.QuartPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
@@ -60,6 +62,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 /**
  * Development-only, strict full-chunk evidence harness for inner-cave traps.
@@ -71,8 +74,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class CaveDropTrapFullChunkAudit {
     private static final Gson JSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final String PREFIX = "latdev.caveDropAudit";
-    private static final String SCHEMA = "cave-drop-full-chunk-audit-v4";
-    private static final String CENSUS_SCHEMA = "cave-drop-candidate-census-v6";
+    private static final String SCHEMA = "cave-drop-full-chunk-audit-v6";
+    private static final String CENSUS_SCHEMA = "cave-drop-candidate-census-v8";
     private static final int FLOODED_GALLERY_MIN_FOOTPRINT = 36;
     private static final int FLOODED_GALLERY_ENTRANCE_MARGIN = 16;
     private static final int MIN_STABLE_SUPPORT_DEPTH = 4;
@@ -220,12 +223,17 @@ public final class CaveDropTrapFullChunkAudit {
             return "census".equals(mode);
         }
 
+        boolean recheck() {
+            return "recheck".equals(mode);
+        }
+
         static Config read(MinecraftServer server) {
             List<String> errors = new ArrayList<>();
             String mode = System.getProperty(PREFIX + ".mode", "generate")
                     .trim().toLowerCase(Locale.ROOT);
-            if (!mode.equals("generate") && !mode.equals("rescan") && !mode.equals("census")) {
-                errors.add("mode must be generate, rescan, or census");
+            if (!mode.equals("generate") && !mode.equals("rescan")
+                    && !mode.equals("recheck") && !mode.equals("census")) {
+                errors.add("mode must be generate, rescan, recheck, or census");
             }
             int minX = integer("chunkMinX", 0, errors, false);
             int minZ = integer("chunkMinZ", 0, errors, false);
@@ -241,8 +249,8 @@ public final class CaveDropTrapFullChunkAudit {
                     "out",
                     server.getServerDirectory().resolve("latdev").resolve("cave-drop-audit.json"));
             Path baseline = optionalPath("baseline");
-            if (mode.equals("rescan") && baseline == null) {
-                errors.add("rescan requires latdev.caveDropAudit.baseline");
+            if ((mode.equals("rescan") || mode.equals("recheck")) && baseline == null) {
+                errors.add(mode + " requires latdev.caveDropAudit.baseline");
             }
 
             // Every audit mode has an explicit outcome gate. Census remains no-write, but its
@@ -671,6 +679,10 @@ public final class CaveDropTrapFullChunkAudit {
         }
 
         private void loadBaseline() throws IOException {
+            if (config.recheck()) {
+                loadRecheckBaseline();
+                return;
+            }
             JsonObject root = JsonParser.parseString(
                     Files.readString(config.baseline(), StandardCharsets.UTF_8)).getAsJsonObject();
             requireCurrentSchema(root);
@@ -683,8 +695,10 @@ public final class CaveDropTrapFullChunkAudit {
                         scene,
                         "immediateFingerprint",
                         "settledFingerprint",
+                        "placementContainment",
                         "assertionFailures",
                         "verdict");
+                requirePassingPlacementContainment(scene);
                 if (!"PASS".equals(scene.get("verdict").getAsString())
                         || !scene.getAsJsonArray("assertionFailures").isEmpty()) {
                     throw new IOException("baseline contains a scene without a clean PASS");
@@ -703,6 +717,79 @@ public final class CaveDropTrapFullChunkAudit {
                 failures.add("baseline contained no scenes");
             }
             validateBaselineCounts(root);
+        }
+
+        /**
+         * Read-only recovery for the one known audit-order false negative. Unlike strict rescan,
+         * this admits a red baseline only when every red fact is exactly placement containment;
+         * the current saved world is still revalidated by the ordinary validators afterward.
+         */
+        private void loadRecheckBaseline() throws IOException {
+            JsonObject root = JsonParser.parseString(
+                    Files.readString(config.baseline(), StandardCharsets.UTF_8)).getAsJsonObject();
+            requireCurrentSchema(root);
+            validateRecheckBaselineIdentity(root);
+
+            JsonArray rows = root.getAsJsonArray("scenes");
+            Set<String> anchors = new HashSet<>();
+            List<String> approvedFailures = new ArrayList<>();
+            for (JsonElement row : rows) {
+                JsonObject scene = row.getAsJsonObject();
+                CaveDropTrapFeature.AuditEvent event = readScene(scene);
+                approvedFailures.add(
+                        requireKnownPlacementContainmentFalseNegative(scene, event));
+                if (!anchors.add(key(event))) {
+                    throw new IOException("baseline contains duplicate anchor " + key(event));
+                }
+                scenes.add(event);
+            }
+            if (scenes.isEmpty()) {
+                throw new IOException("recheck baseline contained no scenes");
+            }
+            requireOnlyKnownRootFailures(root, approvedFailures);
+            validateBaselineCounts(root);
+        }
+
+        private void validateRecheckBaselineIdentity(JsonObject root) throws IOException {
+            require(
+                    root,
+                    "schema",
+                    "mode",
+                    "worldSeed",
+                    "chunkMinX",
+                    "chunkMinZ",
+                    "chunkSpan",
+                    "afterTicks",
+                    "requiredMinimums",
+                    "counts",
+                    "mobNavigationAssay",
+                    "verdict",
+                    "assertionFailures",
+                    "scenes");
+            if (!"generate".equals(root.get("mode").getAsString())) {
+                throw new IOException("recheck recovery requires a generate-mode baseline");
+            }
+            if (root.get("worldSeed").getAsLong() != world.getSeed()) {
+                throw new IOException("baseline world seed differs from loaded world");
+            }
+            if (root.get("chunkMinX").getAsInt() != config.chunkMinX()
+                    || root.get("chunkMinZ").getAsInt() != config.chunkMinZ()
+                    || root.get("chunkSpan").getAsInt() != config.chunkSpan()) {
+                throw new IOException("baseline chunk window differs from recheck configuration");
+            }
+            if (root.get("afterTicks").getAsInt() != config.afterTicks()) {
+                throw new IOException("baseline settling window differs from recheck configuration");
+            }
+            JsonObject minima = root.getAsJsonObject("requiredMinimums");
+            require(minima, "ordinary", "flooded", "prospector");
+            if (minima.get("ordinary").getAsInt() != config.minOrdinary()
+                    || minima.get("flooded").getAsInt() != config.minFlooded()
+                    || minima.get("prospector").getAsInt() != config.minProspector()) {
+                throw new IOException("baseline required minima differ from recheck configuration");
+            }
+            JsonObject counts = root.getAsJsonObject("counts");
+            require(counts, "total", "ordinary", "flooded", "prospector");
+            requireProvenMobAssay(root.getAsJsonObject("mobNavigationAssay"));
         }
 
         private void validateBaselineRoot(JsonObject root) throws IOException {
@@ -1004,21 +1091,34 @@ public final class CaveDropTrapFullChunkAudit {
         private JsonObject validate(
                 CaveDropTrapFeature.AuditEvent event, Map<String, Long> baseline) {
             List<String> local = new ArrayList<>();
+            boolean placementBiomeChunksLoaded =
+                    loadSceneChunksBeforePlacementContainment(event, local);
+            JsonObject placementContainment = placementContainmentJson(
+                    event,
+                    placementBiomeChunksLoaded
+                            ? position -> world.getBiome(position).unwrapKey()
+                                    .map(key -> key.identifier().toString())
+                                    .orElse(null)
+                            : ignored -> null);
+            validatePlacementContainment(event, placementContainment, local);
             requireRichEvidence(event, local);
             String rewardError = rewardMappingError(event);
             check(rewardError == null, local, key(event) + " " + rewardError);
             validateOwnerChunk(event, local);
             validateAtomicReadback(event, local);
             validateCarpetAndBanks(event, local);
-            validateNaturalRoutes(event, local);
-            validateEntries(event, local);
-            validateRouteProvenance(event, local);
+            if (event.resolvedKind() == CaveDropTrap.RewardKind.ORDINARY) {
+                validateBetweenLayerOrdinary(event, local);
+                validateOrdinary(event, local);
+            } else {
+                validateNaturalRoutes(event, local);
+                validateEntries(event, local);
+                validateRouteProvenance(event, local);
+            }
             if (event.resolvedKind() == CaveDropTrap.RewardKind.FLOODED_ORE_GALLERY) {
                 validateFlooded(event, local);
             } else if (event.resolvedKind() == CaveDropTrap.RewardKind.LOST_PROSPECTOR) {
                 validateProspector(event, local);
-            } else {
-                validateOrdinary(event, local);
             }
 
             long settledFingerprint = actualEvidenceFingerprint(world, event);
@@ -1037,6 +1137,7 @@ public final class CaveDropTrapFullChunkAudit {
 
             failures.addAll(local);
             JsonObject row = sceneJson(event);
+            row.add("placementContainment", placementContainment);
             row.addProperty("immediateFingerprint", unsignedHex(immediate));
             row.addProperty("settledFingerprint", unsignedHex(settledFingerprint));
             JsonArray sceneFailures = new JsonArray();
@@ -1044,6 +1145,29 @@ public final class CaveDropTrapFullChunkAudit {
             row.add("assertionFailures", sceneFailures);
             row.addProperty("verdict", local.isEmpty() ? "PASS" : "FAIL");
             return row;
+        }
+
+        /**
+         * The settling delay can unload generated scene chunks. Load only the chunk columns that
+         * Minecraft's fuzzy block-biome lookup can sample for this scene before its first biome
+         * query; otherwise ServerLevel falls back to the raw generator, which cannot report the
+         * populated glacial-caves biome. No persistent ticket is installed.
+         */
+        private boolean loadSceneChunksBeforePlacementContainment(
+                CaveDropTrapFeature.AuditEvent event, List<String> local) {
+            boolean loaded = true;
+            for (long column : placementBiomeChunkColumns(event)) {
+                int chunkX = unpackX(column);
+                int chunkZ = unpackZ(column);
+                ChunkAccess chunk = world.getChunkSource().getChunk(
+                        chunkX, chunkZ, ChunkStatus.FULL, true);
+                if (chunk == null) {
+                    loaded = false;
+                    local.add(key(event) + " placement-biome FULL chunk unavailable "
+                            + chunkX + "," + chunkZ);
+                }
+            }
+            return loaded;
         }
 
         private void requireRichEvidence(
@@ -1434,7 +1558,7 @@ public final class CaveDropTrapFullChunkAudit {
             String label = first ? "first" : "second";
             check(continuation.size() == CaveDropTrap.MIN_APPROACH_CONTINUATION_AREA
                             && continuation.size() == new HashSet<>(continuation).size()
-                            && connectedColumns(continuation),
+                            && stepConnectedFloors(continuation),
                     local,
                     key(event) + " " + label
                             + " natural continuation is not exactly four unique connected cells");
@@ -1446,9 +1570,10 @@ public final class CaveDropTrapFullChunkAudit {
             boolean touchesNamed = false;
             for (BlockPos floor : continuation) {
                 boolean namedAdjacent = namedBank.stream()
-                        .anyMatch(bankFloor -> cardinalAdjacent(bankFloor, floor));
+                        .anyMatch(bankFloor -> validWalkingStep(bankFloor, floor));
                 touchesNamed |= namedAdjacent;
-                check(other.stream().noneMatch(bankFloor -> cardinalAdjacent(bankFloor, floor)),
+                check(other.stream().noneMatch(
+                                bankFloor -> validWalkingStep(bankFloor, floor)),
                         local,
                         key(event) + " " + label
                                 + " continuation touches the opposite bank");
@@ -1458,7 +1583,7 @@ public final class CaveDropTrapFullChunkAudit {
                         key(event) + " " + label
                                 + " continuation touches the powder carpet at " + pos(floor));
                 for (BlockPos firmFloor : firm) {
-                    if (cardinalAdjacent(firmFloor, floor)) {
+                    if (validWalkingStep(firmFloor, floor)) {
                         check(bank.contains(firmFloor), local,
                                 key(event) + " " + label
                                         + " continuation reaches authored firm floor outside its bank");
@@ -1840,13 +1965,212 @@ public final class CaveDropTrapFullChunkAudit {
                     key(event) + " named dry exit is not supported/passable");
         }
 
+        /** New v6 ordinary proof: a natural lower gallery, never the retired authored stair. */
+        private void validateBetweenLayerOrdinary(
+                CaveDropTrapFeature.AuditEvent event, List<String> local) {
+            Map<BlockPos, AuthoredPosition> authored = authoredByPosition(event);
+            Set<BlockPos> authoredPositions = authored.keySet();
+            Set<BlockPos> naturalWitnesses = new LinkedHashSet<>(
+                    event.naturalWitnessPositions());
+            Set<BlockPos> landings = event.entries().stream()
+                    .map(EntryEvidence::landing)
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            Set<BlockPos> cushionWrites = event.authoredPositions().stream()
+                    .filter(position -> position.role() == AuthoredRole.POWDER_CUSHION)
+                    .map(AuthoredPosition::position)
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+
+            check(event.powderPositions().size() == 6
+                            && new HashSet<>(event.powderPositions()).size() == 6,
+                    local, key(event) + " ordinary trap must have exactly six powder entrances");
+            check(event.entries().size() == 6
+                            && landings.size() == 6
+                            && cushionWrites.size() == 6
+                            && landings.equals(cushionWrites),
+                    local, key(event) + " ordinary trap must have exactly six unique cushions");
+            List<BlockPos> upperFloors = new ArrayList<>(event.powderPositions());
+            upperFloors.addAll(event.regularPositions());
+            check(!upperFloors.isEmpty() && upperFloors.stream().allMatch(position ->
+                            CaveDropTrap.isBetweenLayerUpperFloor(position.getY())),
+                    local, key(event) + " upper floor leaves Y24..45");
+            check(event.landingMinY() >= CaveDropTrap.MIN_BETWEEN_LAYER_LOWER_FLOOR_Y
+                            && event.landingMaxY()
+                                    <= CaveDropTrap.MAX_BETWEEN_LAYER_LOWER_FLOOR_Y
+                            && event.landingMaxY() - event.landingMinY() <= 1,
+                    local, key(event) + " lower gallery leaves Y0..23 or exceeds one relief block");
+            check(event.fallMin() >= CaveDropTrap.MIN_BETWEEN_LAYER_SEPARATION
+                            && event.fallMax()
+                                    <= CaveDropTrap.MAX_BETWEEN_LAYER_SEPARATION,
+                    local, key(event) + " between-layer gap leaves 16..32");
+
+            check(!naturalWitnesses.isEmpty()
+                            && java.util.Collections.disjoint(
+                                    naturalWitnesses, authoredPositions),
+                    local, key(event) + " natural witnesses are absent or overlap authored writes");
+            for (BlockPos witness : naturalWitnesses) {
+                String biome = world.getBiome(witness).unwrapKey()
+                        .map(key -> key.identifier().toString())
+                        .orElse(null);
+                check(insideOwnerInset(witness)
+                                && LatitudeBiomes.GLACIAL_CAVES_ID.equals(biome)
+                                && world.getBlockEntity(witness) == null,
+                        local, key(event) + " natural witness is foreign, unowned, or authored at "
+                                + pos(witness));
+            }
+
+            validateNaturalContinuation(
+                    event,
+                    event.firstNaturalContinuation(),
+                    event.firstApproachBank(),
+                    event.secondApproachBank(),
+                    true,
+                    authored,
+                    local);
+            validateNaturalContinuation(
+                    event,
+                    event.secondNaturalContinuation(),
+                    event.secondApproachBank(),
+                    event.firstApproachBank(),
+                    false,
+                    authored,
+                    local);
+
+            List<BlockPos> continuation = event.lowerNaturalContinuation();
+            check(continuation.equals(event.galleryPositions()), local,
+                    key(event) + " lower natural continuation differs from connected gallery");
+            check(continuation.size() >= CaveDropTrap.MIN_NATURAL_LOWER_CONTINUATION
+                            && continuation.size() == new HashSet<>(continuation).size()
+                            && stepConnectedFloors(continuation),
+                    local, key(event) + " lower natural continuation is too small or disconnected");
+            for (BlockPos floor : continuation) {
+                check(CaveDropTrap.isBetweenLayerLowerFloor(floor.getY())
+                                && !authoredPositions.contains(floor)
+                                && certifiedLowerNaturalSolid(world.getBlockState(floor))
+                                && world.getBlockEntity(floor) == null
+                                && certifiedLowerNaturalMassBelow(floor.above(), 4, authored)
+                                && twoAirAbove(floor)
+                                && naturalWitnesses.contains(floor)
+                                && naturalWitnesses.contains(floor.above())
+                                && naturalWitnesses.contains(floor.above(2)),
+                        local, key(event) + " lower continuation is not untouched natural gallery at "
+                                + pos(floor));
+            }
+            List<BlockPos> completeLowerSurface = new ArrayList<>(continuation);
+            completeLowerSurface.addAll(landings);
+            check(stepConnectedFloors(completeLowerSurface), local,
+                    key(event) + " six cushions do not belong to the one stepped natural component");
+
+            Set<BlockPos> evidencedShaft = new LinkedHashSet<>();
+            for (EntryEvidence entry : event.entries()) {
+                int gap = entry.entranceTop().getY() - entry.landing().getY();
+                check(event.powderPositions().contains(entry.entranceTop())
+                                && CaveDropTrap.isBetweenLayerLowerFloor(entry.landing().getY())
+                                && CaveDropTrap.isBetweenLayerSeparation(gap),
+                        local, key(event) + " entry does not span the two legal layers");
+                AuthoredPosition cushion = authored.get(entry.landing());
+                check(cushion != null
+                                && cushion.role() == AuthoredRole.POWDER_CUSHION
+                                && cushion.priorBlockEntityAbsent()
+                                && certifiedLowerNaturalSolid(cushion.priorState())
+                                && certifiedLowerNaturalMassBelow(
+                                        entry.landing(), 3, authored),
+                        local, key(event) + " cushion did not replace a four-deep natural floor at "
+                                + pos(entry.landing()));
+                List<BlockPos> expectedShaft = new ArrayList<>();
+                check(!entry.shaftPositions().isEmpty(), local,
+                        key(event) + " entry has no measured natural plug shaft at "
+                                + pos(entry.entranceTop()));
+                int plugBottomY = entry.shaftPositions().isEmpty()
+                        ? entry.entranceTop().getY() : entry.shaftPositions().getLast().getY();
+                if (!entry.shaftPositions().isEmpty()) {
+                    for (int y = entry.entranceTop().getY() - 1;
+                            y >= plugBottomY; y--) {
+                        expectedShaft.add(new BlockPos(
+                                entry.entranceTop().getX(), y, entry.entranceTop().getZ()));
+                    }
+                }
+                check(plugBottomY >= entry.landing().getY() + 3
+                                && entry.shaftPositions().equals(expectedShaft), local,
+                        key(event) + " shaft is not contiguous top-down through its first plug at "
+                                + pos(entry.entranceTop()));
+                for (BlockPos shaft : entry.shaftPositions()) {
+                    evidencedShaft.add(shaft);
+                    AuthoredPosition write = authored.get(shaft);
+                    check(write != null
+                                    && write.role() == AuthoredRole.OPENED_SHAFT
+                                    && write.priorBlockEntityAbsent()
+                                    && certifiedLowerNaturalSolid(write.priorState())
+                                    && world.getBlockState(shaft).isAir(),
+                            local, key(event) + " shaft lacks exact natural OPENED_SHAFT provenance at "
+                                    + pos(shaft));
+                }
+                for (int y = entry.landing().getY() + 1; y < plugBottomY; y++) {
+                    BlockPos existingAir = new BlockPos(
+                            entry.landing().getX(), y, entry.landing().getZ());
+                    check(!authoredPositions.contains(existingAir)
+                                    && naturalWitnesses.contains(existingAir)
+                                    && world.getBlockEntity(existingAir) == null
+                                    && world.getBlockState(existingAir).isAir(),
+                            local, key(event) + " natural air below measured plug is not preserved at "
+                                    + pos(existingAir));
+                }
+
+                List<BlockPos> route = entry.dryPath();
+                check(!route.isEmpty()
+                                && route.getFirst().equals(entry.landing())
+                                && route.getLast().equals(entry.dryExit()),
+                        local, key(event) + " lower natural route has wrong endpoints");
+                for (int index = 1; index < route.size(); index++) {
+                    BlockPos node = route.get(index);
+                    boolean wadeOut = index == 1
+                            && node.equals(entry.landing().above());
+                    check(wadeOut || validWalkingStep(route.get(index - 1), node), local,
+                            key(event) + " lower natural route has invalid step " + index);
+                    boolean cushionStanding = landings.contains(node.below())
+                            && world.getBlockState(node).isAir()
+                            && world.getBlockState(node.above()).isAir();
+                    check(!authoredPositions.contains(node)
+                                    && naturalWitnesses.contains(node)
+                                    && (cushionStanding || dryWalkableStanding(node)),
+                            local, key(event) + " lower route is not untouched dry gallery at "
+                                    + pos(node));
+                }
+                BlockPos exitFloor = entry.dryExit().below();
+                boolean far = landings.stream().allMatch(landing ->
+                        Math.abs(exitFloor.getX() - landing.getX()) > 1
+                                || Math.abs(exitFloor.getZ() - landing.getZ()) > 1);
+                check(continuation.contains(exitFloor)
+                                && dryWalkableStanding(entry.dryExit())
+                                && far,
+                        local, key(event) + " named lower exit is not a far natural continuation");
+            }
+            Set<BlockPos> authoredShaft = event.authoredPositions().stream()
+                    .filter(position -> position.role() == AuthoredRole.OPENED_SHAFT)
+                    .map(AuthoredPosition::position)
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            check(evidencedShaft.equals(authoredShaft), local,
+                    key(event) + " entry shaft evidence differs from actual authored shafts");
+            for (AuthoredPosition write : event.authoredPositions()) {
+                check(write.role() != AuthoredRole.GALLERY_AIR, local,
+                        key(event) + " ordinary scene authors retired GALLERY_AIR at "
+                                + pos(write.position()));
+                if (write.position().getY() < event.canonicalAnchor().getY()) {
+                    check(write.role() == AuthoredRole.OPENED_SHAFT
+                                    || write.role() == AuthoredRole.POWDER_CUSHION,
+                            local, key(event) + " ordinary scene authors a lower pocket/stair role "
+                                    + write.role());
+                }
+            }
+        }
+
         private void validateOrdinary(
                 CaveDropTrapFeature.AuditEvent event, List<String> local) {
             check(
                     event.waterPositions().isEmpty()
                             && event.orePositions().isEmpty()
                             && event.shorePositions().isEmpty()
-                            && event.galleryPositions().isEmpty()
+                            && event.galleryPositions().equals(
+                                    event.lowerNaturalContinuation())
                             && event.chestPosition() == null
                             && event.chestFront() == null
                             && event.remainsFootPosition() == null
@@ -2474,6 +2798,21 @@ public final class CaveDropTrapFullChunkAudit {
             return true;
         }
 
+        private boolean certifiedLowerNaturalMassBelow(
+                BlockPos occupied,
+                int depth,
+                Map<BlockPos, AuthoredPosition> authored) {
+            for (int offset = 1; offset <= depth; offset++) {
+                BlockPos support = occupied.below(offset);
+                if (authored.containsKey(support)
+                        || world.getBlockEntity(support) != null
+                        || !certifiedLowerNaturalSolid(world.getBlockState(support))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         private boolean stableSupportBelow(BlockPos occupied, int depth) {
             for (int offset = 1; offset <= depth; offset++) {
                 BlockPos support = occupied.below(offset);
@@ -2544,6 +2883,8 @@ public final class CaveDropTrapFullChunkAudit {
         result.addAll(event.firstNaturalContinuation());
         result.addAll(event.secondNaturalContinuation());
         result.addAll(event.upperNaturalReturn());
+        result.addAll(event.naturalWitnessPositions());
+        result.addAll(event.lowerNaturalContinuation());
         result.addAll(event.firmCamouflagePositions());
         result.addAll(event.upperBookendPositions());
         result.addAll(event.dryExitPositions());
@@ -2761,6 +3102,38 @@ public final class CaveDropTrapFullChunkAudit {
         return seen.size() == remaining.size();
     }
 
+    /** Cardinal floor connectivity that permits a vanilla-walkable one-block vertical step. */
+    private static boolean stepConnectedFloors(List<BlockPos> floors) {
+        if (floors == null || floors.isEmpty()) {
+            return false;
+        }
+        Set<BlockPos> remaining = floors.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(BlockPos::immutable)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        if (remaining.size() != floors.size()) {
+            return false;
+        }
+        Set<BlockPos> seen = new HashSet<>();
+        ArrayDeque<BlockPos> queue = new ArrayDeque<>();
+        BlockPos start = remaining.iterator().next();
+        seen.add(start);
+        queue.add(start);
+        while (!queue.isEmpty()) {
+            BlockPos current = queue.removeFirst();
+            for (BlockPos candidate : remaining) {
+                if (!seen.contains(candidate)
+                        && Math.abs(current.getX() - candidate.getX())
+                                + Math.abs(current.getZ() - candidate.getZ()) == 1
+                        && Math.abs(current.getY() - candidate.getY()) <= 1) {
+                    seen.add(candidate);
+                    queue.addLast(candidate);
+                }
+            }
+        }
+        return seen.size() == remaining.size();
+    }
+
     private static boolean irregular(List<BlockPos> positions) {
         int minX = positions.stream().mapToInt(BlockPos::getX).min().orElse(0);
         int maxX = positions.stream().mapToInt(BlockPos::getX).max().orElse(0);
@@ -2835,6 +3208,140 @@ public final class CaveDropTrapFullChunkAudit {
         return value * 0x9e3779b97f4a7c15L;
     }
 
+    /**
+     * Generate-mode proof for the two placement laws that feature scheduling cannot establish:
+     * the upper floor stays in Y24..45, and every authored or untouched natural witness belongs
+     * to the glacial-caves biome. The supplied lookup keeps the calculation focused-testable.
+     */
+    private static JsonObject placementContainmentJson(
+            CaveDropTrapFeature.AuditEvent event,
+            Function<BlockPos, String> biomeIdAt) {
+        LinkedHashSet<BlockPos> floorPositions = new LinkedHashSet<>();
+        floorPositions.addAll(event.powderPositions());
+        floorPositions.addAll(event.regularPositions());
+        boolean floorEvidencePresent = !floorPositions.isEmpty();
+        int minimumFloorY = floorPositions.stream()
+                .mapToInt(BlockPos::getY)
+                .min()
+                .orElse(event.canonicalAnchor().getY());
+        int maximumFloorY = floorPositions.stream()
+                .mapToInt(BlockPos::getY)
+                .max()
+                .orElse(event.canonicalAnchor().getY());
+        boolean anchorInFloorBand =
+                CaveDropTrap.isConformalThroatFloor(event.canonicalAnchor().getY());
+        boolean allFloorsInFloorBand = floorEvidencePresent
+                && floorPositions.stream().allMatch(
+                        position -> CaveDropTrap.isConformalThroatFloor(position.getY()));
+
+        int glacialCavesWrites = 0;
+        BlockPos firstNonGlacialPosition = null;
+        String firstNonGlacialBiome = null;
+        BlockPos firstNonGlacialEvidencePosition = null;
+        String firstNonGlacialEvidenceBiome = null;
+        LinkedHashSet<String> observedBiomeIds = new LinkedHashSet<>();
+        for (AuthoredPosition authored : event.authoredPositions()) {
+            String biomeId = biomeIdAt == null ? null : biomeIdAt.apply(authored.position());
+            String reportedBiomeId = biomeId == null ? "<unkeyed>" : biomeId;
+            observedBiomeIds.add(reportedBiomeId);
+            if (LatitudeBiomes.GLACIAL_CAVES_ID.equals(biomeId)) {
+                glacialCavesWrites++;
+            } else if (firstNonGlacialPosition == null) {
+                firstNonGlacialPosition = authored.position();
+                firstNonGlacialBiome = reportedBiomeId;
+            }
+            if (!LatitudeBiomes.GLACIAL_CAVES_ID.equals(biomeId)
+                    && firstNonGlacialEvidencePosition == null) {
+                firstNonGlacialEvidencePosition = authored.position();
+                firstNonGlacialEvidenceBiome = reportedBiomeId;
+            }
+        }
+        int authoredWriteCount = event.authoredPositions().size();
+        int nonGlacialWrites = authoredWriteCount - glacialCavesWrites;
+        boolean authoredBiomeContainmentPass = authoredWriteCount > 0
+                && nonGlacialWrites == 0;
+
+        int glacialNaturalWitnesses = 0;
+        for (BlockPos witness : event.naturalWitnessPositions()) {
+            String biomeId = biomeIdAt == null ? null : biomeIdAt.apply(witness);
+            String reportedBiomeId = biomeId == null ? "<unkeyed>" : biomeId;
+            observedBiomeIds.add(reportedBiomeId);
+            if (LatitudeBiomes.GLACIAL_CAVES_ID.equals(biomeId)) {
+                glacialNaturalWitnesses++;
+            } else if (firstNonGlacialEvidencePosition == null) {
+                firstNonGlacialEvidencePosition = witness;
+                firstNonGlacialEvidenceBiome = reportedBiomeId;
+            }
+        }
+        int naturalWitnessCount = event.naturalWitnessPositions().size();
+        int nonGlacialNaturalWitnesses = naturalWitnessCount - glacialNaturalWitnesses;
+        int evidenceCount = authoredWriteCount + naturalWitnessCount;
+        int glacialEvidenceCount = glacialCavesWrites + glacialNaturalWitnesses;
+        int nonGlacialEvidenceCount = nonGlacialWrites + nonGlacialNaturalWitnesses;
+        boolean sceneBiomeContainmentPass = authoredWriteCount > 0
+                && naturalWitnessCount > 0
+                && nonGlacialEvidenceCount == 0;
+
+        JsonObject out = new JsonObject();
+        out.addProperty("anchorY", event.canonicalAnchor().getY());
+        out.addProperty("floorEvidenceCount", floorPositions.size());
+        out.addProperty("minimumFloorY", minimumFloorY);
+        out.addProperty("maximumFloorY", maximumFloorY);
+        out.addProperty("floorEvidencePresent", floorEvidencePresent);
+        out.addProperty("anchorInFloorBand", anchorInFloorBand);
+        out.addProperty("allFloorsInFloorBand", allFloorsInFloorBand);
+        out.addProperty("floorBandPass", anchorInFloorBand && allFloorsInFloorBand);
+        out.addProperty("expectedAuthoredBiome", LatitudeBiomes.GLACIAL_CAVES_ID);
+        out.addProperty("authoredWriteCount", authoredWriteCount);
+        out.addProperty("glacialCavesAuthoredWriteCount", glacialCavesWrites);
+        out.addProperty("nonGlacialAuthoredWriteCount", nonGlacialWrites);
+        out.addProperty("authoredBiomeContainmentPass", authoredBiomeContainmentPass);
+        out.addProperty("naturalWitnessCount", naturalWitnessCount);
+        out.addProperty("glacialCavesNaturalWitnessCount", glacialNaturalWitnesses);
+        out.addProperty("nonGlacialNaturalWitnessCount", nonGlacialNaturalWitnesses);
+        out.addProperty("evidenceCount", evidenceCount);
+        out.addProperty("glacialCavesEvidenceCount", glacialEvidenceCount);
+        out.addProperty("nonGlacialEvidenceCount", nonGlacialEvidenceCount);
+        out.addProperty("sceneBiomeContainmentPass", sceneBiomeContainmentPass);
+        JsonArray observedBiomes = new JsonArray();
+        observedBiomeIds.forEach(observedBiomes::add);
+        out.add("observedAuthoredBiomes", observedBiomes);
+        nullablePos(out, "firstNonGlacialAuthoredPosition", firstNonGlacialPosition);
+        nullable(out, "firstNonGlacialAuthoredBiome", firstNonGlacialBiome);
+        nullablePos(out, "firstNonGlacialEvidencePosition", firstNonGlacialEvidencePosition);
+        nullable(out, "firstNonGlacialEvidenceBiome", firstNonGlacialEvidenceBiome);
+        return out;
+    }
+
+    /** Adds scene-local hard failures consumed by the report's overall PASS/FAIL gate. */
+    private static void validatePlacementContainment(
+            CaveDropTrapFeature.AuditEvent event,
+            JsonObject evidence,
+            List<String> local) {
+        if (!evidence.get("anchorInFloorBand").getAsBoolean()) {
+            local.add(key(event) + " canonical anchor Y="
+                    + evidence.get("anchorY").getAsInt() + " is outside Y24..45");
+        }
+        if (!evidence.get("floorEvidencePresent").getAsBoolean()) {
+            local.add(key(event) + " has no authored floor evidence for Y24..45");
+        } else if (!evidence.get("allFloorsInFloorBand").getAsBoolean()) {
+            local.add(key(event) + " authored floor range Y="
+                    + evidence.get("minimumFloorY").getAsInt() + ".."
+                    + evidence.get("maximumFloorY").getAsInt()
+                    + " is outside Y24..45");
+        }
+        if (!evidence.get("sceneBiomeContainmentPass").getAsBoolean()) {
+            local.add(key(event) + " has "
+                    + evidence.get("nonGlacialEvidenceCount").getAsInt()
+                    + " authored/witness positions outside "
+                    + LatitudeBiomes.GLACIAL_CAVES_ID
+                    + "; first="
+                    + nullableString(evidence.get("firstNonGlacialEvidencePosition"))
+                    + " biome="
+                    + nullableString(evidence.get("firstNonGlacialEvidenceBiome")));
+        }
+    }
+
     private static JsonObject sceneJson(CaveDropTrapFeature.AuditEvent event) {
         JsonObject out = new JsonObject();
         out.addProperty("anchor", pos(event.canonicalAnchor()));
@@ -2862,6 +3369,8 @@ public final class CaveDropTrapFullChunkAudit {
         out.add("firstNaturalContinuation", positions(event.firstNaturalContinuation()));
         out.add("secondNaturalContinuation", positions(event.secondNaturalContinuation()));
         out.add("upperNaturalReturn", positions(event.upperNaturalReturn()));
+        out.add("naturalWitnessPositions", positions(event.naturalWitnessPositions()));
+        out.add("lowerNaturalContinuation", positions(event.lowerNaturalContinuation()));
         JsonArray entries = new JsonArray();
         event.entries().forEach(entry -> entries.add(entryJson(entry)));
         out.add("entries", entries);
@@ -2940,6 +3449,8 @@ public final class CaveDropTrapFullChunkAudit {
                 "firstNaturalContinuation",
                 "secondNaturalContinuation",
                 "upperNaturalReturn",
+                "naturalWitnessPositions",
+                "lowerNaturalContinuation",
                 "entries",
                 "dryExits",
                 "chestToExitPath",
@@ -2950,15 +3461,17 @@ public final class CaveDropTrapFullChunkAudit {
                 "expectedFingerprint",
                 "observedFingerprint",
                 "postWriteVerified");
-        requirePresent(
-                row,
-                "fallbackReason",
-                "chest",
-                "remainsFoot",
-                "remainsHead",
-                "chestFront");
+        // These modern fields are nullable by design. Gson omits JsonNull members when the report
+        // is written, and the readers below already map either absence or JsonNull back to null.
         if (row.has("remains") || row.has("remainsPosition")) {
             throw new IOException("ambiguous legacy single-remains field is forbidden");
+        }
+        boolean hasRemainsFoot = row.has("remainsFoot")
+                && !row.get("remainsFoot").isJsonNull();
+        boolean hasRemainsHead = row.has("remainsHead")
+                && !row.get("remainsHead").isJsonNull();
+        if (hasRemainsFoot != hasRemainsHead) {
+            throw new IOException("paired prospector remains must include both foot and head");
         }
         JsonArray entryRows = row.getAsJsonArray("entries");
         JsonArray authoredRows = row.getAsJsonArray("authoredPositions");
@@ -3010,7 +3523,9 @@ public final class CaveDropTrapFullChunkAudit {
                 parsePositions(row.getAsJsonArray("upperBookends")),
                 parsePositions(row.getAsJsonArray("firstNaturalContinuation")),
                 parsePositions(row.getAsJsonArray("secondNaturalContinuation")),
-                parsePositions(row.getAsJsonArray("upperNaturalReturn")));
+                parsePositions(row.getAsJsonArray("upperNaturalReturn")),
+                parsePositions(row.getAsJsonArray("naturalWitnessPositions")),
+                parsePositions(row.getAsJsonArray("lowerNaturalContinuation")));
     }
 
     private static EntryEvidence readEntry(JsonObject row) throws IOException {
@@ -3022,7 +3537,8 @@ public final class CaveDropTrapFullChunkAudit {
                 "shorePath",
                 "chestPath",
                 "shaftPositions");
-        requirePresent(row, "dryExit", "shore");
+        // v14 ordinary entries have a dry exit but no shore; Gson omits that nullable member.
+        requirePresent(row, "dryExit");
         return new EntryEvidence(
                 parsePos(row.get("entranceTop").getAsString()),
                 parsePos(row.get("landing").getAsString()),
@@ -3150,6 +3666,44 @@ public final class CaveDropTrapFullChunkAudit {
         candidateSource.addProperty(
                 "reconciles", census.candidateSourceReconciles());
         row.add("candidateSource", candidateSource);
+
+        JsonObject candidateOutcomes = new JsonObject();
+        candidateOutcomes.addProperty("noUpperCandidate", census.caveAnchorRejected());
+        candidateOutcomes.addProperty("duplicateCandidate", census.duplicateReject());
+        candidateOutcomes.addProperty(
+                "upperStructuralRejected",
+                preflightOutcomeCount(
+                        census,
+                        CaveDropTrapFeature.BetweenLayerPreflightOutcome
+                                .UPPER_STRUCTURAL_REJECTED));
+        candidateOutcomes.addProperty(
+                "upperContinuationRejected",
+                preflightOutcomeCount(
+                        census,
+                        CaveDropTrapFeature.BetweenLayerPreflightOutcome
+                                .UPPER_CONTINUATION_REJECTED));
+        JsonObject lowerStructuralRejections = new JsonObject();
+        for (CaveDropTrapFeature.BetweenLayerPreflightOutcome outcome
+                : CaveDropTrapFeature.BetweenLayerPreflightOutcome.values()) {
+            if (outcome.lowerStructuralRejection()) {
+                lowerStructuralRejections.addProperty(
+                        outcome.name(), preflightOutcomeCount(census, outcome));
+            }
+        }
+        candidateOutcomes.add("lowerStructuralRejectionsByReason", lowerStructuralRejections);
+        candidateOutcomes.addProperty(
+                "finalOwnerOrBiomeRejected",
+                preflightOutcomeCount(
+                        census,
+                        CaveDropTrapFeature.BetweenLayerPreflightOutcome
+                                .FINAL_OWNER_OR_BIOME_REJECTED));
+        candidateOutcomes.addProperty(
+                "feasibleButSelectionMiss",
+                diagnosticCountSum(census.fractionRejected(), census.capRejected()));
+        candidateOutcomes.addProperty("acceptedCandidate", census.capAccepted());
+        candidateOutcomes.addProperty(
+                "reconciles", candidateOutcomesReconcile(census));
+        row.add("candidateOutcomes", candidateOutcomes);
         row.addProperty("scanSlots", census.scanSlots());
         row.addProperty("uniqueOwnerAnchors", census.uniqueOwnerAnchors());
         row.addProperty("duplicateReject", census.duplicateReject());
@@ -3276,6 +3830,7 @@ public final class CaveDropTrapFullChunkAudit {
         }
         row.add("terminalRepresentatives", representatives);
         JsonArray provenance = new JsonArray();
+        JsonArray candidateDiagnostics = new JsonArray();
         for (CaveDropTrapFeature.PassAProvenanceCount count
                 : census.provenanceCounts()) {
             CaveDropTrapFeature.PassAFirstWitness witness = count.representative();
@@ -3285,6 +3840,12 @@ public final class CaveDropTrapFullChunkAudit {
             item.addProperty("terminalBucket", witness.terminalBucket());
             item.addProperty("source", witness.source().name());
             item.addProperty("predicateRole", witness.predicateRole().name());
+            nullablePos(item, "ownerAnchor", witness.ownerAnchor());
+            if (witness.orientation() == null) {
+                item.add("orientation", com.google.gson.JsonNull.INSTANCE);
+            } else {
+                item.addProperty("orientation", witness.orientation().name());
+            }
             nullablePos(item, "worldPosition", witness.worldPosition());
             boolean causalQuery = witness.source()
                     == CaveDropTrapFeature.PassAProvenanceSource.PREDICATE_QUERY;
@@ -3308,11 +3869,156 @@ public final class CaveDropTrapFullChunkAudit {
                 item.add("surfaceY", com.google.gson.JsonNull.INSTANCE);
                 item.add("surfaceOffset", com.google.gson.JsonNull.INSTANCE);
             }
+            if (witness.upperRejection() == null) {
+                item.add("upperRejection", com.google.gson.JsonNull.INSTANCE);
+            } else {
+                item.addProperty("upperRejection", witness.upperRejection().name());
+            }
+            item.addProperty("failedClause", witness.failedClause());
+            if (witness.lowerColumnX() == null) {
+                item.add("lowerColumn", com.google.gson.JsonNull.INSTANCE);
+            } else {
+                JsonObject lowerColumn = new JsonObject();
+                lowerColumn.addProperty("x", witness.lowerColumnX());
+                lowerColumn.addProperty("z", witness.lowerColumnZ());
+                item.add("lowerColumn", lowerColumn);
+            }
+            if (witness.biomeId() == null) {
+                item.add("biomeId", com.google.gson.JsonNull.INSTANCE);
+            } else {
+                item.addProperty("biomeId", witness.biomeId());
+            }
+            if (witness.ownerPass() == null) {
+                item.add("ownerPass", com.google.gson.JsonNull.INSTANCE);
+            } else {
+                item.addProperty("ownerPass", witness.ownerPass());
+            }
             provenance.add(item);
+            candidateDiagnostics.add(item.deepCopy());
         }
         row.add("firstFailureProvenance", provenance);
         row.addProperty("provenanceReconciles", census.provenanceReconciles());
+        row.add("candidateDiagnostics", candidateDiagnostics);
+        row.addProperty(
+                "candidateDiagnosticsReconcile",
+                candidateDiagnosticsReconcile(census));
         return row;
+    }
+
+    private static boolean candidateDiagnosticsReconcile(
+            CaveDropTrapFeature.PassACensusSnapshot census) {
+        if (!census.provenanceReconciles()) {
+            return false;
+        }
+        long total = 0L;
+        for (CaveDropTrapFeature.PassAProvenanceCount count : census.provenanceCounts()) {
+            CaveDropTrapFeature.PassAFirstWitness witness = count.representative();
+            if (witness.ownerAnchor() == null
+                    || witness.orientation() == null
+                    || witness.failedClause() == null
+                    || witness.failedClause().isBlank()) {
+                return false;
+            }
+            String terminal = witness.terminalBucket();
+            if (terminal.equals(CaveDropTrapFeature.BetweenLayerPreflightOutcome
+                            .UPPER_STRUCTURAL_REJECTED.name())
+                    && (witness.source()
+                                    != CaveDropTrapFeature.PassAProvenanceSource.PREDICATE_QUERY
+                            || witness.upperRejection() == null)) {
+                return false;
+            }
+            if (terminal.equals(CaveDropTrapFeature.BetweenLayerPreflightOutcome
+                            .LOWER_SURFACE_REJECTED.name())
+                    && (witness.source()
+                                    != CaveDropTrapFeature.PassAProvenanceSource.PREDICATE_QUERY
+                            || witness.lowerColumnX() == null)) {
+                return false;
+            }
+            if (terminal.equals(CaveDropTrapFeature.BetweenLayerPreflightOutcome
+                            .FINAL_OWNER_OR_BIOME_REJECTED.name())
+                    && (witness.source()
+                                    != CaveDropTrapFeature.PassAProvenanceSource.PREDICATE_QUERY
+                            || witness.ownerPass() == null)) {
+                return false;
+            }
+            total = diagnosticCountSum(total, count.count());
+            if (total < 0) {
+                return false;
+            }
+        }
+        return total == census.scanSlots();
+    }
+
+    private static long preflightOutcomeCount(
+            CaveDropTrapFeature.PassACensusSnapshot census,
+            CaveDropTrapFeature.BetweenLayerPreflightOutcome outcome) {
+        long total = 0L;
+        for (CaveDropTrapFeature.PassAProvenanceCount count : census.provenanceCounts()) {
+            if (!count.representative().terminalBucket().equals(outcome.name())) {
+                continue;
+            }
+            total = diagnosticCountSum(total, count.count());
+            if (total < 0) {
+                return -1L;
+            }
+        }
+        return total;
+    }
+
+    private static long diagnosticCountSum(long first, long second) {
+        if (first < 0 || second < 0 || Long.MAX_VALUE - first < second) {
+            return -1L;
+        }
+        return first + second;
+    }
+
+    private static boolean candidateOutcomesReconcile(
+            CaveDropTrapFeature.PassACensusSnapshot census) {
+        long detailedRejects = 0L;
+        for (CaveDropTrapFeature.BetweenLayerPreflightOutcome outcome
+                : CaveDropTrapFeature.BetweenLayerPreflightOutcome.values()) {
+            if (outcome == CaveDropTrapFeature.BetweenLayerPreflightOutcome
+                    .STRUCTURALLY_FEASIBLE) {
+                continue;
+            }
+            detailedRejects = diagnosticCountSum(
+                    detailedRejects, preflightOutcomeCount(census, outcome));
+        }
+        long detailedFeasible = preflightOutcomeCount(
+                census,
+                CaveDropTrapFeature.BetweenLayerPreflightOutcome.STRUCTURALLY_FEASIBLE);
+        long detailedTotal = diagnosticCountSum(detailedRejects, detailedFeasible);
+        boolean detailedPartition = detailedTotal == 0L
+                || (detailedRejects == census.disconnectedLowerOrRewardReject()
+                        && detailedFeasible == census.ordinaryFeasible());
+        long structuralRejects = diagnosticCountSum(
+                census.sameDoorReject(), census.invalidOrSelfAuthoredWitnessReject());
+        for (long count : new long[] {
+                census.exposedSkyWaterOrThinRoofReject(),
+                census.seafloorOrFluidStandingReject(),
+                census.firmBypassOrWrongRolesReject(),
+                census.cavityAirOrFluidReject(),
+                census.oreBlockEntityOrProtectedReject(),
+                census.gravityOrPartialStabilizationReject(),
+                census.shellOrSupportReject(),
+                census.ownerReject(),
+                census.disconnectedLowerOrRewardReject()
+        }) {
+            structuralRejects = diagnosticCountSum(structuralRejects, count);
+        }
+        long selectionMiss = diagnosticCountSum(
+                census.fractionRejected(), census.capRejected());
+        long terminalTotal = census.caveAnchorRejected();
+        for (long count : new long[] {
+                census.duplicateReject(), structuralRejects,
+                selectionMiss, census.capAccepted()
+        }) {
+            terminalTotal = diagnosticCountSum(terminalTotal, count);
+        }
+        return detailedPartition
+                && terminalTotal == census.auditDomainSlots()
+                && diagnosticCountSum(selectionMiss, census.capAccepted())
+                        == census.ordinaryFeasible();
     }
 
     private static JsonObject censusJson(CaveDropTrapFeature.CensusSnapshot census) {
@@ -3439,7 +4145,278 @@ public final class CaveDropTrapFullChunkAudit {
             throw new IOException(
                     "baseline schema " + actual
                             + " rejected; strict rescan requires " + SCHEMA
-                            + " paired-remains evidence");
+                            + " floor-band and authored-biome evidence");
+        }
+    }
+
+    private static void requirePassingPlacementContainment(JsonObject scene)
+            throws IOException {
+        JsonObject evidence = scene.getAsJsonObject("placementContainment");
+        if (evidence == null) {
+            throw new IOException("baseline scene lacks placement containment evidence");
+        }
+        require(
+                evidence,
+                "anchorY",
+                "floorEvidenceCount",
+                "minimumFloorY",
+                "maximumFloorY",
+                "floorEvidencePresent",
+                "anchorInFloorBand",
+                "allFloorsInFloorBand",
+                "floorBandPass",
+                "expectedAuthoredBiome",
+                "authoredWriteCount",
+                "glacialCavesAuthoredWriteCount",
+                "nonGlacialAuthoredWriteCount",
+                "authoredBiomeContainmentPass",
+                "naturalWitnessCount",
+                "glacialCavesNaturalWitnessCount",
+                "nonGlacialNaturalWitnessCount",
+                "evidenceCount",
+                "glacialCavesEvidenceCount",
+                "nonGlacialEvidenceCount",
+                "sceneBiomeContainmentPass",
+                "observedAuthoredBiomes");
+        requirePresent(
+                evidence,
+                "firstNonGlacialAuthoredPosition",
+                "firstNonGlacialAuthoredBiome",
+                "firstNonGlacialEvidencePosition",
+                "firstNonGlacialEvidenceBiome");
+        int authoredWriteCount = evidence.get("authoredWriteCount").getAsInt();
+        int glacialWriteCount = evidence.get("glacialCavesAuthoredWriteCount").getAsInt();
+        if (!evidence.get("floorBandPass").getAsBoolean()
+                || !evidence.get("sceneBiomeContainmentPass").getAsBoolean()
+                || authoredWriteCount <= 0
+                || evidence.get("naturalWitnessCount").getAsInt() <= 0
+                || glacialWriteCount != authoredWriteCount
+                || evidence.get("nonGlacialAuthoredWriteCount").getAsInt() != 0
+                || evidence.get("nonGlacialNaturalWitnessCount").getAsInt() != 0
+                || evidence.get("nonGlacialEvidenceCount").getAsInt() != 0
+                || !LatitudeBiomes.GLACIAL_CAVES_ID.equals(
+                        evidence.get("expectedAuthoredBiome").getAsString())) {
+            throw new IOException("baseline scene placement containment is not a clean PASS");
+        }
+    }
+
+    /**
+     * Admits only the exact red shape produced when the old audit queried an unloaded scene's raw
+     * biome instead of its saved FULL-chunk palette. This does not turn that evidence green: it
+     * merely allows recheck mode to load the scene, after which the ordinary validator runs again.
+     */
+    private static String requireKnownPlacementContainmentFalseNegative(
+            JsonObject scene, CaveDropTrapFeature.AuditEvent event) throws IOException {
+        require(
+                scene,
+                "anchor",
+                "expectedFingerprint",
+                "observedFingerprint",
+                "immediateFingerprint",
+                "settledFingerprint",
+                "placementContainment",
+                "assertionFailures",
+                "verdict",
+                "postWriteVerified");
+        if (!"FAIL".equals(scene.get("verdict").getAsString())) {
+            throw new IOException("recheck baseline scene is not the known red verdict");
+        }
+        if (event.resolvedKind() != CaveDropTrap.RewardKind.ORDINARY) {
+            throw new IOException("recheck recovery is limited to the ordinary v14 scene");
+        }
+        if (!scene.get("postWriteVerified").getAsBoolean()) {
+            throw new IOException("recheck baseline scene lacks post-write verification");
+        }
+        if (!scene.get("expectedFingerprint").getAsString()
+                .equals(scene.get("observedFingerprint").getAsString())
+                || event.expectedFingerprint() != event.observedFingerprint()) {
+            throw new IOException("recheck baseline scene lacks matching write fingerprints");
+        }
+        if (!scene.get("immediateFingerprint").getAsString()
+                .equals(scene.get("settledFingerprint").getAsString())) {
+            throw new IOException("recheck baseline contains an unsettled scene fingerprint");
+        }
+
+        JsonObject evidence = scene.getAsJsonObject("placementContainment");
+        require(
+                evidence,
+                "anchorY",
+                "floorEvidenceCount",
+                "minimumFloorY",
+                "maximumFloorY",
+                "floorEvidencePresent",
+                "anchorInFloorBand",
+                "allFloorsInFloorBand",
+                "floorBandPass",
+                "expectedAuthoredBiome",
+                "authoredWriteCount",
+                "glacialCavesAuthoredWriteCount",
+                "nonGlacialAuthoredWriteCount",
+                "authoredBiomeContainmentPass",
+                "naturalWitnessCount",
+                "glacialCavesNaturalWitnessCount",
+                "nonGlacialNaturalWitnessCount",
+                "evidenceCount",
+                "glacialCavesEvidenceCount",
+                "nonGlacialEvidenceCount",
+                "sceneBiomeContainmentPass",
+                "observedAuthoredBiomes");
+        requirePresent(
+                evidence,
+                "firstNonGlacialAuthoredPosition",
+                "firstNonGlacialAuthoredBiome",
+                "firstNonGlacialEvidencePosition",
+                "firstNonGlacialEvidenceBiome");
+
+        int anchorY = evidence.get("anchorY").getAsInt();
+        int minimumFloorY = evidence.get("minimumFloorY").getAsInt();
+        int maximumFloorY = evidence.get("maximumFloorY").getAsInt();
+        int floorEvidenceCount = evidence.get("floorEvidenceCount").getAsInt();
+        int authoredWriteCount = evidence.get("authoredWriteCount").getAsInt();
+        int glacialWriteCount = evidence.get("glacialCavesAuthoredWriteCount").getAsInt();
+        int nonGlacialWriteCount = evidence.get("nonGlacialAuthoredWriteCount").getAsInt();
+        int witnessCount = evidence.get("naturalWitnessCount").getAsInt();
+        int glacialWitnessCount = evidence.get("glacialCavesNaturalWitnessCount").getAsInt();
+        int nonGlacialWitnessCount = evidence.get("nonGlacialNaturalWitnessCount").getAsInt();
+        int evidenceCount = evidence.get("evidenceCount").getAsInt();
+        int glacialEvidenceCount = evidence.get("glacialCavesEvidenceCount").getAsInt();
+        int nonGlacialEvidenceCount = evidence.get("nonGlacialEvidenceCount").getAsInt();
+        boolean authoredContainment = evidence.get("authoredBiomeContainmentPass").getAsBoolean();
+
+        LinkedHashSet<BlockPos> floorPositions = new LinkedHashSet<>();
+        floorPositions.addAll(event.powderPositions());
+        floorPositions.addAll(event.regularPositions());
+        int expectedMinimumFloorY = floorPositions.stream()
+                .mapToInt(BlockPos::getY)
+                .min()
+                .orElse(event.canonicalAnchor().getY());
+        int expectedMaximumFloorY = floorPositions.stream()
+                .mapToInt(BlockPos::getY)
+                .max()
+                .orElse(event.canonicalAnchor().getY());
+        boolean expectedAnchorInFloorBand =
+                CaveDropTrap.isConformalThroatFloor(event.canonicalAnchor().getY());
+        boolean expectedAllFloorsInFloorBand = !floorPositions.isEmpty()
+                && floorPositions.stream().allMatch(
+                        position -> CaveDropTrap.isConformalThroatFloor(position.getY()));
+        boolean validFloorEvidence = floorEvidenceCount == floorPositions.size()
+                && minimumFloorY == expectedMinimumFloorY
+                && maximumFloorY == expectedMaximumFloorY
+                && anchorY == event.canonicalAnchor().getY()
+                && evidence.get("floorEvidencePresent").getAsBoolean()
+                        == !floorPositions.isEmpty()
+                && evidence.get("anchorInFloorBand").getAsBoolean()
+                        == expectedAnchorInFloorBand
+                && evidence.get("allFloorsInFloorBand").getAsBoolean()
+                        == expectedAllFloorsInFloorBand
+                && evidence.get("floorBandPass").getAsBoolean()
+                        == (expectedAnchorInFloorBand && expectedAllFloorsInFloorBand)
+                && evidence.get("floorBandPass").getAsBoolean();
+        int expectedAuthoredWriteCount = event.authoredPositions().size();
+        int expectedWitnessCount = event.naturalWitnessPositions().size();
+        int expectedEvidenceCount = expectedAuthoredWriteCount + expectedWitnessCount;
+        boolean validCounts = expectedAuthoredWriteCount > 0
+                && expectedWitnessCount > 0
+                && authoredWriteCount == expectedAuthoredWriteCount
+                && witnessCount == expectedWitnessCount
+                && evidenceCount == expectedEvidenceCount
+                && glacialWriteCount == 0
+                && nonGlacialWriteCount == expectedAuthoredWriteCount
+                && glacialWitnessCount == 0
+                && nonGlacialWitnessCount == expectedWitnessCount
+                && glacialEvidenceCount == 0
+                && nonGlacialEvidenceCount == expectedEvidenceCount;
+        boolean onlyContainmentIsRed = validFloorEvidence
+                && validCounts
+                && LatitudeBiomes.GLACIAL_CAVES_ID.equals(
+                        evidence.get("expectedAuthoredBiome").getAsString())
+                && !authoredContainment
+                && !evidence.get("sceneBiomeContainmentPass").getAsBoolean()
+                && nonGlacialEvidenceCount > 0;
+        if (!onlyContainmentIsRed) {
+            throw new IOException(
+                    "recheck baseline scene has a failed invariant beyond biome containment");
+        }
+
+        String firstAuthoredPosition = nullableString(
+                evidence.get("firstNonGlacialAuthoredPosition"));
+        String firstAuthoredBiome = nullableString(
+                evidence.get("firstNonGlacialAuthoredBiome"));
+        String expectedFirstPosition = pos(
+                event.authoredPositions().getFirst().position());
+        boolean authoredFirstFieldsValid = expectedFirstPosition.equals(firstAuthoredPosition)
+                && LatitudeBiomes.POLAR_BARRENS_ID.equals(firstAuthoredBiome);
+        String firstEvidencePosition = nullableString(
+                evidence.get("firstNonGlacialEvidencePosition"));
+        String firstEvidenceBiome = nullableString(
+                evidence.get("firstNonGlacialEvidenceBiome"));
+        if (!authoredFirstFieldsValid
+                || !expectedFirstPosition.equals(firstEvidencePosition)
+                || !LatitudeBiomes.POLAR_BARRENS_ID.equals(firstEvidenceBiome)) {
+            throw new IOException("recheck baseline containment witness fields are inconsistent");
+        }
+        JsonArray observedBiomes = evidence.getAsJsonArray("observedAuthoredBiomes");
+        if (observedBiomes.size() != 1
+                || !LatitudeBiomes.POLAR_BARRENS_ID.equals(
+                        observedBiomes.get(0).getAsString())) {
+            throw new IOException(
+                    "recheck baseline is not the all-polar-barrens v14 false negative");
+        }
+
+        String expectedFailure = scene.get("anchor").getAsString()
+                + " has " + nonGlacialEvidenceCount
+                + " authored/witness positions outside " + LatitudeBiomes.GLACIAL_CAVES_ID
+                + "; first=" + firstEvidencePosition
+                + " biome=" + firstEvidenceBiome;
+        JsonArray sceneFailures = scene.getAsJsonArray("assertionFailures");
+        if (sceneFailures.size() != 1
+                || !expectedFailure.equals(sceneFailures.get(0).getAsString())) {
+            throw new IOException(
+                    "recheck baseline scene has a failure beyond the known placement containment");
+        }
+        return expectedFailure;
+    }
+
+    private static void requireOnlyKnownRootFailures(
+            JsonObject root, List<String> approvedFailures) throws IOException {
+        if (!"generate".equals(root.get("mode").getAsString())
+                || !"FAIL".equals(root.get("verdict").getAsString())
+                || approvedFailures.isEmpty()) {
+            throw new IOException("recheck baseline root is not the known red verdict");
+        }
+        JsonArray rootFailures = root.getAsJsonArray("assertionFailures");
+        if (rootFailures.size() != approvedFailures.size()) {
+            throw new IOException(
+                    "recheck baseline root has failures beyond placement containment");
+        }
+        for (int index = 0; index < approvedFailures.size(); index++) {
+            if (!approvedFailures.get(index).equals(rootFailures.get(index).getAsString())) {
+                throw new IOException(
+                        "recheck baseline root failure differs from its scene containment failure");
+            }
+        }
+    }
+
+    private static void requireProvenMobAssay(JsonObject assay) throws IOException {
+        require(
+                assay,
+                "status",
+                "sceneAnchor",
+                "start",
+                "target",
+                "pathNodeCount",
+                "entranceHit",
+                "pathSelected",
+                "descentObserved",
+                "ticksObserved",
+                "finalPosition",
+                "detail");
+        if (!"PASS".equals(assay.get("status").getAsString())
+                || !assay.get("pathSelected").getAsBoolean()
+                || !assay.get("descentObserved").getAsBoolean()
+                || assay.get("pathNodeCount").getAsInt() <= 0
+                || assay.get("ticksObserved").getAsInt() <= 0) {
+            throw new IOException("baseline mob navigation assay lacks a proven descent");
         }
     }
 
@@ -3473,6 +4450,12 @@ public final class CaveDropTrapFullChunkAudit {
                 && !(state.getBlock() instanceof FallingBlock)
                 && naturalMaterial(state)
                 && !isOre(state);
+    }
+
+    private static boolean certifiedLowerNaturalSolid(BlockState state) {
+        return certifiedNaturalSolid(state)
+                && !state.is(Blocks.DEEPSLATE)
+                && !state.is(BlockTags.DEEPSLATE_ORE_REPLACEABLES);
     }
 
     private static boolean naturalMaterial(BlockState state) {
@@ -3574,6 +4557,31 @@ public final class CaveDropTrapFullChunkAudit {
 
     private static String key(CaveDropTrapFeature.AuditEvent event) {
         return pos(event.canonicalAnchor());
+    }
+
+    /** Exact chunk columns touched by BiomeManager's eight-quart fuzzy lookup for scene evidence. */
+    static Set<Long> placementBiomeChunkColumns(CaveDropTrapFeature.AuditEvent event) {
+        java.util.Objects.requireNonNull(event, "event");
+        LinkedHashSet<BlockPos> evidence = new LinkedHashSet<>();
+        evidence.add(event.canonicalAnchor());
+        event.authoredPositions().stream()
+                .map(AuthoredPosition::position)
+                .forEach(evidence::add);
+        evidence.addAll(event.naturalWitnessPositions());
+
+        LinkedHashSet<Long> chunks = new LinkedHashSet<>();
+        for (BlockPos position : evidence) {
+            int minimumQuartX = QuartPos.fromBlock(position.getX() - 2);
+            int minimumQuartZ = QuartPos.fromBlock(position.getZ() - 2);
+            for (int quartX = minimumQuartX; quartX <= minimumQuartX + 1; quartX++) {
+                for (int quartZ = minimumQuartZ; quartZ <= minimumQuartZ + 1; quartZ++) {
+                    chunks.add(columnKey(
+                            QuartPos.toSection(quartX),
+                            QuartPos.toSection(quartZ)));
+                }
+            }
+        }
+        return Collections.unmodifiableSet(chunks);
     }
 
     private static long columnKey(int x, int z) {

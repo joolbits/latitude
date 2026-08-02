@@ -4,8 +4,11 @@ import com.example.globe.GlobeMod;
 import com.example.globe.core.CaveDropTrap;
 import com.example.globe.core.LatitudeV2Flags;
 import com.mojang.serialization.Codec;
+import net.minecraft.ReportedException;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
+import net.minecraft.core.QuartPos;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -21,6 +24,10 @@ import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeManager;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.feature.Feature;
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
@@ -41,6 +48,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntPredicate;
+import java.util.function.Predicate;
 
 /**
  * Cave-specific inset stumble carpets. The feature runs first in vegetal decoration, after ores and
@@ -54,6 +62,7 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
     private static final BlockState SNOW_BLOCK = Blocks.SNOW_BLOCK.defaultBlockState();
     private static final BlockState AIR = Blocks.AIR.defaultBlockState();
     private static final BlockState WATER = Blocks.WATER.defaultBlockState();
+    private static final String HANGING_ICICLE_BLOCK_ID = GlobeMod.MOD_ID + ":icicle";
 
     static final Heightmap.Types FEATURE_STAGE_SURFACE_HEIGHTMAP = Heightmap.Types.WORLD_SURFACE;
     private static final int SCAN_TOP_Y = 100;
@@ -155,7 +164,105 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
             List<LandingRoute> landingRoutes,
             ProspectorPlacement prospectorPlacement,
             BlockPos anchor,
-            int fallDepth) {
+            int fallDepth,
+            List<BlockPos> naturalWitnessPositions,
+            List<BlockPos> lowerNaturalContinuation) {
+    }
+
+    /** Exact terminal stage of the one shared production/census pre-RNG predicate. */
+    public enum BetweenLayerPreflightOutcome {
+        UPPER_STRUCTURAL_REJECTED,
+        LOWER_SURFACE_REJECTED,
+        LOWER_COMPONENT_REJECTED,
+        LOWER_CONTINUATION_REJECTED,
+        LOWER_DRY_EXIT_REJECTED,
+        LOWER_AUTHORED_TARGET_REJECTED,
+        UPPER_CONTINUATION_REJECTED,
+        FINAL_OWNER_OR_BIOME_REJECTED,
+        STRUCTURALLY_FEASIBLE;
+
+        public boolean lowerStructuralRejection() {
+            return name().startsWith("LOWER_");
+        }
+    }
+
+    /** One shared, read-only-before-apply result consumed by census and production. */
+    private record BetweenLayerPreflight(
+            BetweenLayerPreflightOutcome outcome,
+            TrapGeometry geometry,
+            ScenePlan ordinary,
+            PassAFirstWitness firstWitness) {
+
+        private static BetweenLayerPreflight rejected(
+                BetweenLayerPreflightOutcome outcome,
+                PassAFirstWitness firstWitness) {
+            if (outcome == BetweenLayerPreflightOutcome.STRUCTURALLY_FEASIBLE) {
+                throw new IllegalArgumentException("feasible outcome needs a scene");
+            }
+            return new BetweenLayerPreflight(
+                    outcome, null, null, Objects.requireNonNull(firstWitness));
+        }
+
+        private static BetweenLayerPreflight feasible(
+                TrapGeometry geometry,
+                ScenePlan ordinary,
+                PassAFirstWitness firstWitness) {
+            return new BetweenLayerPreflight(
+                    BetweenLayerPreflightOutcome.STRUCTURALLY_FEASIBLE,
+                    Objects.requireNonNull(geometry),
+                    Objects.requireNonNull(ordinary),
+                    Objects.requireNonNull(firstWitness));
+        }
+
+        private boolean accepted() {
+            return outcome == BetweenLayerPreflightOutcome.STRUCTURALLY_FEASIBLE;
+        }
+    }
+
+    /** Materializer result retains the exact lower-stage failure without any world write. */
+    private record BetweenLayerMaterialization(
+            TrapGeometry geometry,
+            BetweenLayerPreflightOutcome outcome,
+            BetweenLayerFailure failure) {
+
+        private static BetweenLayerMaterialization rejected(
+                BetweenLayerPreflightOutcome outcome) {
+            return new BetweenLayerMaterialization(null, outcome, null);
+        }
+
+        private static BetweenLayerMaterialization rejected(
+                BetweenLayerPreflightOutcome outcome,
+                BetweenLayerFailure failure) {
+            return new BetweenLayerMaterialization(
+                    null, outcome, Objects.requireNonNull(failure));
+        }
+
+        private static BetweenLayerMaterialization feasible(TrapGeometry geometry) {
+            return new BetweenLayerMaterialization(
+                    Objects.requireNonNull(geometry),
+                    BetweenLayerPreflightOutcome.STRUCTURALLY_FEASIBLE,
+                    null);
+        }
+    }
+
+    /** Internal exact predicate fact; the public census witness adds candidate identity and block id. */
+    private record BetweenLayerFailure(
+            PassAProvenanceSource source,
+            PassAPredicateRole predicateRole,
+            String failedClause,
+            BlockPos worldPosition,
+            String blockKindOverride,
+            CaveDropTrap.PassARejection upperRejection,
+            CaveDropTrap.Cell lowerColumn,
+            String biomeId,
+            Boolean ownerPass) {
+
+        private BetweenLayerFailure {
+            source = Objects.requireNonNull(source);
+            predicateRole = Objects.requireNonNull(predicateRole);
+            failedClause = Objects.requireNonNull(failedClause);
+            worldPosition = Objects.requireNonNull(worldPosition).immutable();
+        }
     }
 
     private record ProspectorPlacement(
@@ -188,7 +295,8 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
             BlockPos remainsHeadPosition,
             List<List<BlockPos>> chestPaths,
             List<BlockPos> chestToExitPath,
-            long lootSeed) {
+            long lootSeed,
+            List<BlockPos> naturalWitnessPositions) {
     }
 
     public record EntryEvidence(
@@ -284,7 +392,9 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
             List<BlockPos> upperBookendPositions,
             List<BlockPos> firstNaturalContinuation,
             List<BlockPos> secondNaturalContinuation,
-            List<BlockPos> upperNaturalReturn) {
+            List<BlockPos> upperNaturalReturn,
+            List<BlockPos> naturalWitnessPositions,
+            List<BlockPos> lowerNaturalContinuation) {
 
         public AuditEvent {
             canonicalAnchor = canonicalAnchor.immutable();
@@ -314,6 +424,8 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
             firstNaturalContinuation = immutablePositions(firstNaturalContinuation);
             secondNaturalContinuation = immutablePositions(secondNaturalContinuation);
             upperNaturalReturn = immutablePositions(upperNaturalReturn);
+            naturalWitnessPositions = immutablePositions(naturalWitnessPositions);
+            lowerNaturalContinuation = immutablePositions(lowerNaturalContinuation);
         }
     }
 
@@ -562,7 +674,10 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
         MOUTH_OR_CONTINUATION_FLOOR,
         COVER_FLOOR,
         HEADROOM,
+        FIRM_SUPPORT,
         ROOF,
+        LOWER_SURFACE,
+        FINAL_OWNER_OR_BIOME,
         AUTHORED_VOLUME_OR_OTHER,
         REWARD_PREFLIGHT,
         PASSED_STRUCTURAL,
@@ -584,21 +699,67 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
             String terminalBucket,
             PassAProvenanceSource source,
             PassAPredicateRole predicateRole,
+            BlockPos ownerAnchor,
+            CaveDropTrap.RibbonOrientation orientation,
             BlockPos worldPosition,
             String blockId,
             String blockKind,
             boolean actualAuthored,
             int floorY,
             int surfaceY,
-            int surfaceOffset) {
+            int surfaceOffset,
+            CaveDropTrap.PassARejection upperRejection,
+            String failedClause,
+            Integer lowerColumnX,
+            Integer lowerColumnZ,
+            String biomeId,
+            Boolean ownerPass) {
 
         public PassAFirstWitness {
             terminalBucket = Objects.requireNonNull(terminalBucket);
             source = Objects.requireNonNull(source);
             predicateRole = Objects.requireNonNull(predicateRole);
+            ownerAnchor = ownerAnchor == null ? null : ownerAnchor.immutable();
             worldPosition = Objects.requireNonNull(worldPosition).immutable();
             blockId = Objects.requireNonNull(blockId);
             blockKind = Objects.requireNonNull(blockKind);
+            failedClause = failedClause == null ? terminalBucket : failedClause;
+            if ((lowerColumnX == null) != (lowerColumnZ == null)) {
+                throw new IllegalArgumentException(
+                        "lower diagnostic column coordinates must be paired");
+            }
+        }
+
+        public PassAFirstWitness(
+                String terminalBucket,
+                PassAProvenanceSource source,
+                PassAPredicateRole predicateRole,
+                BlockPos worldPosition,
+                String blockId,
+                String blockKind,
+                boolean actualAuthored,
+                int floorY,
+                int surfaceY,
+                int surfaceOffset) {
+            this(
+                    terminalBucket,
+                    source,
+                    predicateRole,
+                    null,
+                    null,
+                    worldPosition,
+                    blockId,
+                    blockKind,
+                    actualAuthored,
+                    floorY,
+                    surfaceY,
+                    surfaceOffset,
+                    null,
+                    terminalBucket,
+                    null,
+                    null,
+                    null,
+                    null);
         }
 
         public PassAFirstWitness(
@@ -626,7 +787,19 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
 
         public String provenanceKey() {
             return terminalBucket + "|" + source.name() + "|" + predicateRole.name() + "|"
-                    + blockId + "|" + blockKind + "|" + actualAuthored;
+                    + positionKey(ownerAnchor) + "|"
+                    + (orientation == null ? "NONE" : orientation.name()) + "|"
+                    + positionKey(worldPosition) + "|"
+                    + blockId + "|" + blockKind + "|" + actualAuthored + "|"
+                    + failedClause + "|"
+                    + (lowerColumnX == null ? "NONE" : lowerColumnX + "," + lowerColumnZ)
+                    + "|" + Objects.toString(biomeId, "NONE") + "|"
+                    + Objects.toString(ownerPass, "NONE");
+        }
+
+        private static String positionKey(BlockPos position) {
+            return position == null ? "NONE"
+                    : position.getX() + "," + position.getY() + "," + position.getZ();
         }
 
         public boolean isBetterThan(PassAFirstWitness other) {
@@ -663,6 +836,17 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
             PassAFirstWitness firstWitness) {
 
         public PassATracedEvaluation {
+            evaluation = Objects.requireNonNull(evaluation);
+            firstWitness = Objects.requireNonNull(firstWitness);
+        }
+    }
+
+    /** The exact upper-only predicate result and its candidate-specific first causal witness. */
+    public record PassAUpperTracedEvaluation(
+            CaveDropTrap.UpperThroatEvaluation evaluation,
+            PassAFirstWitness firstWitness) {
+
+        public PassAUpperTracedEvaluation {
             evaluation = Objects.requireNonNull(evaluation);
             firstWitness = Objects.requireNonNull(firstWitness);
         }
@@ -897,10 +1081,14 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                     .mapToInt(CaveDropTrap.Voxel::y).min().orElseThrow();
             int maximumOffset = shape.ownerEnvelopeVoxels().stream()
                     .mapToInt(CaveDropTrap.Voxel::y).max().orElseThrow();
-            int minimumFloor = Math.subtractExact(levelMinimumY, minimumOffset);
-            int maximumFloor = Math.subtractExact(
+            int buildMinimumFloor = Math.subtractExact(levelMinimumY, minimumOffset);
+            int buildMaximumFloor = Math.subtractExact(
                     Math.subtractExact(levelMaximumYExclusive, 1),
                     maximumOffset);
+            int minimumFloor = Math.max(
+                    buildMinimumFloor, CaveDropTrap.MIN_CONFORMAL_THROAT_FLOOR_Y);
+            int maximumFloor = Math.min(
+                    buildMaximumFloor, CaveDropTrap.MAX_CONFORMAL_THROAT_FLOOR_Y);
             return new NaturalCaveFloorBounds(
                     orientation,
                     minimumOffset,
@@ -942,6 +1130,10 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                     for (int floorY = reference.maximumFloorY();
                             floorY >= reference.minimumFloorY();
                             floorY--) {
+                        if (!CaveDropTrap.isConformalThroatFloor(floorY)) {
+                            throw new IllegalStateException(
+                                    "conformal source escaped the upper-glacial floor band");
+                        }
                         auditDomainSlots =
                                 NaturalCaveAnchorSource.incrementSourceCounter(auditDomainSlots);
                         BlockPos ownerAnchor = new BlockPos(
@@ -2105,7 +2297,8 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                     return false;
                 }
                 total += provenance.count();
-                String terminal = provenance.representative().terminalBucket();
+                String terminal = canonicalProvenanceTerminal(
+                        provenance.representative().terminalBucket());
                 long prior = terminals.getOrDefault(terminal, 0L);
                 if (prior > Long.MAX_VALUE - provenance.count()) {
                     return false;
@@ -2187,6 +2380,19 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                 }
             }
             return count;
+        }
+
+        /** Detailed shared-preflight outcomes still occupy the legacy structural partition once. */
+        private static String canonicalProvenanceTerminal(String terminal) {
+            for (BetweenLayerPreflightOutcome outcome : BetweenLayerPreflightOutcome.values()) {
+                if (!outcome.name().equals(terminal)) {
+                    continue;
+                }
+                return outcome == BetweenLayerPreflightOutcome.STRUCTURALLY_FEASIBLE
+                        ? CaveDropTrap.PassARejection.PASS.name()
+                        : CaveDropTrap.PassARejection.DISCONNECTED_LOWER_OR_REWARD.name();
+            }
+            return terminal;
         }
 
         private static long terminalCount(Map<String, Long> terminals, String terminal) {
@@ -2585,18 +2791,13 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
             int originLx = candidate.originLx();
             int originLz = candidate.originLz();
             CaveDropTrap.RoofedGalleryThroatPlan plan = conformal.plan();
-            CaveDropTrap.RoofedThroatEvaluation evaluation =
-                    CaveDropTrap.evaluateRoofedGalleryThroat(
-                            plan,
-                            passAWorldView(level, plan, baseX, baseZ, originLx, originLz));
-            if (!evaluation.ordinaryFeasible()) {
+            BetweenLayerPreflight preflight = betweenLayerPreflight(
+                    level, plan, candidate.ownerAnchor(),
+                    baseX, baseZ, originLx, originLz);
+            if (!preflight.accepted()) {
                 continue;
             }
-            TrapGeometry geometry = materializePassAThroat(
-                    level, plan, baseX, baseZ, originLx, originLz);
-            if (geometry == null) {
-                continue;
-            }
+            TrapGeometry geometry = preflight.geometry();
 
             // RNG is consumed exactly where the census consumes it: once per structurally
             // feasible candidate, before the per-chunk cap is consulted.
@@ -2611,32 +2812,14 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                     geometry.anchor().getX(),
                     geometry.anchor().getY(),
                     geometry.anchor().getZ());
-            ScenePlan ordinary = ordinaryScene(geometry);
-            if (ordinary == null) {
-                continue;
-            }
-            String fallbackReason = null;
-            ScenePlan requested = switch (rewardRoll) {
-                case 14 -> floodedScene(level, geometry, baseX, baseZ, new HashMap<>());
-                case 15 -> prospectorScene(
-                        level, geometry, ordinary, baseX, baseZ, new HashMap<>());
-                default -> ordinary;
-            };
-            if (requested == null) {
-                fallbackReason = rewardRoll == 14
-                        ? "flooded_preflight"
-                        : rewardRoll == 15 ? "prospector_preflight" : null;
-                requested = ordinary;
-            }
+            ScenePlan ordinary = preflight.ordinary();
+            String fallbackReason = rewardRoll == 14
+                    ? "between_layer_flooded_fallback"
+                    : rewardRoll == 15
+                            ? "between_layer_prospector_fallback" : null;
+            ScenePlan requested = ordinary;
 
             ApplyResult applied = applyScene(level, requested, baseX, baseZ);
-            if (!applied.success()
-                    && applied.rollbackVerified()
-                    && requested.kind() != CaveDropTrap.RewardKind.ORDINARY) {
-                applied = applyScene(level, ordinary, baseX, baseZ);
-                requested = ordinary;
-                fallbackReason = "rare_apply_rollback";
-            }
             if (!applied.success()) {
                 continue;
             }
@@ -2697,50 +2880,35 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                                 "DUPLICATE",
                                 PassAPredicateRole.DUPLICATE,
                                 ownerAnchor,
+                                candidate.orientation(),
                                 floorY)));
                 continue;
             }
             CaveDropTrap.RoofedGalleryThroatPlan plan = conformal.plan();
-            CaveDropTrap.RoofedThroatWorldView world = passAWorldView(
-                    level, plan, baseX, baseZ, originLx, originLz);
-            PassATracedEvaluation traced = evaluatePassAWithTrace(
-                    plan,
-                    world,
-                    voxel -> passAWorldSample(
-                            level, voxel, baseX, baseZ, originLx, originLz),
-                    ownerAnchor);
-            CaveDropTrap.RoofedThroatEvaluation evaluation = traced.evaluation();
-            PassARewardPreflight rewards = null;
-            if (evaluation.ordinaryFeasible()) {
-                rewards = passARewardPreflight(
-                        level, plan, baseX, baseZ, originLx, originLz);
-                if (rewards == null) {
-                    evaluation = new CaveDropTrap.RoofedThroatEvaluation(
+            BetweenLayerPreflight preflight = betweenLayerPreflight(
+                    level, plan, ownerAnchor,
+                    baseX, baseZ, originLx, originLz);
+            CaveDropTrap.RoofedThroatEvaluation evaluation = !preflight.accepted()
+                    ? new CaveDropTrap.RoofedThroatEvaluation(
                             CaveDropTrap.PassARejection.DISCONNECTED_LOWER_OR_REWARD,
-                            false, false,
+                            false,
+                            false,
+                            CaveDropTrap.RewardFeasibilityFailure.REAL_PLANNER_REJECTED,
+                            false,
+                            CaveDropTrap.RewardFeasibilityFailure.REAL_PLANNER_REJECTED)
+                    : new CaveDropTrap.RoofedThroatEvaluation(
+                            CaveDropTrap.PassARejection.PASS,
+                            true,
+                            false,
                             CaveDropTrap.RewardFeasibilityFailure.REAL_PLANNER_REJECTED,
                             false,
                             CaveDropTrap.RewardFeasibilityFailure.REAL_PLANNER_REJECTED);
-                } else {
-                    evaluation = new CaveDropTrap.RoofedThroatEvaluation(
-                            CaveDropTrap.PassARejection.PASS,
-                            true,
-                            rewards.flooded() != null,
-                            rewards.flooded() == null
-                                    ? CaveDropTrap.RewardFeasibilityFailure.REAL_PLANNER_REJECTED
-                                    : CaveDropTrap.RewardFeasibilityFailure.NONE,
-                            rewards.prospector() != null,
-                            rewards.prospector() == null
-                                    ? CaveDropTrap.RewardFeasibilityFailure.REAL_PLANNER_REJECTED
-                                    : CaveDropTrap.RewardFeasibilityFailure.NONE);
-                }
-            }
             selectorSlots.add(PassASelectorSlot.evaluated(
                     candidate,
                     plan,
                     evaluation,
                     CaveDropTrap.measureRoofedGalleryThroat(plan),
-                    passAFinalWitness(traced, evaluation, ownerAnchor, floorY)));
+                    preflight.firstWitness()));
         }
         return runPassASelectorAssignments(
                 chunkX,
@@ -2854,6 +3022,49 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                 tracing.firstReturnWitness(evaluation, ownerAnchor));
     }
 
+    /** Calls the real upper predicate once and retains the precise query that caused its return. */
+    public static PassAUpperTracedEvaluation evaluateUpperPassAWithTrace(
+            CaveDropTrap.RoofedGalleryThroatPlan plan,
+            CaveDropTrap.RoofedThroatWorldView world,
+            Function<CaveDropTrap.Voxel, PassAWorldSample> sampler,
+            BlockPos ownerAnchor) {
+        Objects.requireNonNull(plan, "plan");
+        Objects.requireNonNull(world, "world");
+        Objects.requireNonNull(sampler, "sampler");
+        Objects.requireNonNull(ownerAnchor, "ownerAnchor");
+        PassATracingWorldView tracing = new PassATracingWorldView(plan, world, sampler);
+        CaveDropTrap.UpperThroatEvaluation evaluation =
+                CaveDropTrap.evaluateRoofedGalleryUpper(plan, tracing);
+        BetweenLayerFailure failure = tracing.upperFailure(evaluation, ownerAnchor);
+        PassAWorldSample sample = tracing.lastSample;
+        boolean causal = sample != null;
+        PassAFirstWitness witness = new PassAFirstWitness(
+                evaluation.feasible()
+                        ? BetweenLayerPreflightOutcome.STRUCTURALLY_FEASIBLE.name()
+                        : BetweenLayerPreflightOutcome.UPPER_STRUCTURAL_REJECTED.name(),
+                causal ? PassAProvenanceSource.PREDICATE_QUERY
+                        : PassAProvenanceSource.NON_PREDICATE,
+                evaluation.feasible()
+                        ? PassAPredicateRole.PASSED_STRUCTURAL
+                        : failure.predicateRole(),
+                ownerAnchor,
+                plan.orientation(),
+                causal ? sample.worldPosition() : ownerAnchor,
+                causal ? sample.blockId() : "none",
+                causal ? sample.blockKind() : "NONE",
+                causal && sample.actualAuthored(),
+                plan.floorY(),
+                causal ? sample.surfaceY() : Integer.MIN_VALUE,
+                causal ? plan.floorY() - sample.surfaceY() : Integer.MIN_VALUE,
+                evaluation.rejection(),
+                evaluation.rejection().name(),
+                null,
+                null,
+                null,
+                null);
+        return new PassAUpperTracedEvaluation(evaluation, witness);
+    }
+
     private static final class PassATracingWorldView
             implements CaveDropTrap.RoofedThroatWorldView {
         private final CaveDropTrap.RoofedGalleryThroatPlan plan;
@@ -2862,6 +3073,7 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
         private final Set<CaveDropTrap.Voxel> continuationFloor;
         private final Set<CaveDropTrap.Voxel> coverFloor;
         private final Set<CaveDropTrap.Voxel> headroom;
+        private final Set<CaveDropTrap.Voxel> firmSupport;
         private final Set<CaveDropTrap.Cell> roofColumns;
         private PassAWorldSample lastSample;
         private PassAPredicateRole lastRole;
@@ -2880,6 +3092,7 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
             }
             coverFloor = Set.copyOf(cover);
             headroom = Set.copyOf(plan.headroomVoxels());
+            firmSupport = Set.copyOf(plan.firmSupportVoxels());
             roofColumns = Set.copyOf(plan.relevantFloorColumns());
         }
 
@@ -2947,6 +3160,9 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
             if (headroom.contains(voxel)) {
                 return PassAPredicateRole.HEADROOM;
             }
+            if (firmSupport.contains(voxel)) {
+                return PassAPredicateRole.FIRM_SUPPORT;
+            }
             CaveDropTrap.Cell column = new CaveDropTrap.Cell(voxel.x(), voxel.z());
             if (roofColumns.contains(column) && voxel.y() >= plan.floorY() + 3) {
                 return PassAPredicateRole.ROOF;
@@ -2988,6 +3204,33 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                     lastSample.surfaceY(),
                     plan.floorY() - lastSample.surfaceY());
         }
+
+        private BetweenLayerFailure upperFailure(
+                CaveDropTrap.UpperThroatEvaluation evaluation,
+                BlockPos ownerAnchor) {
+            if (lastSample == null) {
+                return new BetweenLayerFailure(
+                        PassAProvenanceSource.NON_PREDICATE,
+                        PassAPredicateRole.AUTHORED_VOLUME_OR_OTHER,
+                        evaluation.rejection().name(),
+                        ownerAnchor,
+                        null,
+                        evaluation.rejection(),
+                        null,
+                        null,
+                        null);
+            }
+            return new BetweenLayerFailure(
+                    PassAProvenanceSource.PREDICATE_QUERY,
+                    lastRole,
+                    evaluation.rejection().name(),
+                    lastSample.worldPosition(),
+                    lastSample.blockKind(),
+                    evaluation.rejection(),
+                    null,
+                    null,
+                    null);
+        }
     }
 
     static PassAFirstWitness passAFinalWitness(
@@ -3028,18 +3271,81 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
             PassAPredicateRole role,
             BlockPos position,
             int floorY) {
+        return syntheticPassAWitness(
+                level, terminalBucket, role, position, null, floorY);
+    }
+
+    private static PassAFirstWitness syntheticPassAWitness(
+            WorldGenLevel level,
+            String terminalBucket,
+            PassAPredicateRole role,
+            BlockPos ownerAnchor,
+            CaveDropTrap.RibbonOrientation orientation,
+            int floorY) {
+        BlockPos position = ownerAnchor;
         PassAWorldSample sample = passAWorldSampleAtPosition(level, position);
         return new PassAFirstWitness(
                 terminalBucket,
                 PassAProvenanceSource.NON_PREDICATE,
                 role,
+                ownerAnchor,
+                orientation,
                 sample.worldPosition(),
                 sample.blockId(),
                 sample.blockKind(),
                 sample.actualAuthored(),
                 floorY,
                 sample.surfaceY(),
-                floorY - sample.surfaceY());
+                floorY - sample.surfaceY(),
+                null,
+                terminalBucket,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    private static PassAFirstWitness betweenLayerWitness(
+            WorldGenLevel level,
+            BetweenLayerPreflightOutcome outcome,
+            BlockPos ownerAnchor,
+            CaveDropTrap.RibbonOrientation orientation,
+            int floorY,
+            BetweenLayerFailure failure) {
+        if (failure == null) {
+            return syntheticPassAWitness(
+                    level,
+                    outcome.name(),
+                    outcome == BetweenLayerPreflightOutcome.STRUCTURALLY_FEASIBLE
+                            ? PassAPredicateRole.PASSED_STRUCTURAL
+                            : PassAPredicateRole.REWARD_PREFLIGHT,
+                    ownerAnchor,
+                    orientation,
+                    floorY);
+        }
+        PassAWorldSample sample = passAWorldSampleAtPosition(
+                level, failure.worldPosition());
+        CaveDropTrap.Cell lower = failure.lowerColumn();
+        return new PassAFirstWitness(
+                outcome.name(),
+                failure.source(),
+                failure.predicateRole(),
+                ownerAnchor,
+                orientation,
+                failure.worldPosition(),
+                sample.blockId(),
+                failure.blockKindOverride() == null
+                        ? sample.blockKind() : failure.blockKindOverride(),
+                sample.actualAuthored(),
+                floorY,
+                sample.surfaceY(),
+                floorY - sample.surfaceY(),
+                failure.upperRejection(),
+                failure.failedClause(),
+                lower == null ? null : lower.x(),
+                lower == null ? null : lower.z(),
+                failure.biomeId(),
+                failure.ownerPass());
     }
 
     private static CaveDropTrap.RoofedThroatWorldView passAWorldView(
@@ -3145,15 +3451,675 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
         if (state.is(Blocks.GRAVEL)) {
             return CaveDropTrap.ThroatBlockKind.GRAVEL;
         }
+        Identifier blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+        if (blockId != null && isPassAHangingIcicleId(blockId.toString())) {
+            return CaveDropTrap.ThroatBlockKind.HANGING_ICICLE;
+        }
         if (safeNaturalSupport(level, position, state)) {
             return CaveDropTrap.ThroatBlockKind.SAFE_NATURAL;
         }
         return CaveDropTrap.ThroatBlockKind.OTHER;
     }
 
+    /** Exact-ID seam: vanilla pointed dripstone and every unrelated OTHER remain strict rejects. */
+    static boolean isPassAHangingIcicleId(String blockId) {
+        return HANGING_ICICLE_BLOCK_ID.equals(blockId);
+    }
+
     private static boolean isPassAAuthored(BlockState state) {
         return CaveTrapBlocks.CAVE_TRAP_POWDER_SNOW != null
                 && state.is(CaveTrapBlocks.CAVE_TRAP_POWDER_SNOW);
+    }
+
+    /** One selected footprint column: authored floor, untouched cave air, then the measured plug. */
+    private record LowerColumnCandidate(
+            CaveDropTrap.Cell cell,
+            BlockPos floor,
+            int plugBottomY,
+            List<BlockPos> naturalAir) {
+
+        private LowerColumnCandidate {
+            floor = floor.immutable();
+            naturalAir = immutablePositions(naturalAir);
+        }
+    }
+
+    /** Qualified conformal lower surface retained by the separate between-layer materializer. */
+    private record LowerGalleryCandidate(
+            List<LowerColumnCandidate> columns,
+            List<BlockPos> continuationFloors,
+            BlockPos dryExitFloor,
+            List<List<BlockPos>> floorRoutes) {
+
+        private LowerGalleryCandidate {
+            columns = List.copyOf(columns);
+            continuationFloors = immutablePositions(continuationFloors);
+            dryExitFloor = dryExitFloor.immutable();
+            floorRoutes = floorRoutes.stream().map(List::copyOf).toList();
+        }
+
+        private LowerColumnCandidate column(CaveDropTrap.Cell cell) {
+            return columns.stream()
+                    .filter(column -> column.cell().equals(cell))
+                    .findFirst().orElse(null);
+        }
+
+        private List<BlockPos> floorRoute(CaveDropTrap.Cell cell) {
+            for (int index = 0; index < columns.size(); index++) {
+                if (columns.get(index).cell().equals(cell)) {
+                    return floorRoutes.get(index);
+                }
+            }
+            return null;
+        }
+    }
+
+    /** A lower-gallery discriminator that never collapses every failure into one null result. */
+    private record LowerGalleryDecision(
+            LowerGalleryCandidate gallery,
+            BetweenLayerPreflightOutcome outcome) {
+
+        private static LowerGalleryDecision rejected(BetweenLayerPreflightOutcome outcome) {
+            return new LowerGalleryDecision(null, outcome);
+        }
+
+        private static LowerGalleryDecision feasible(LowerGalleryCandidate gallery) {
+            return new LowerGalleryDecision(
+                    Objects.requireNonNull(gallery),
+                    BetweenLayerPreflightOutcome.STRUCTURALLY_FEASIBLE);
+        }
+    }
+
+    /**
+     * The one pre-RNG seam shared by production and the no-write census. It proves the locked upper
+     * passage, selects and materializes a genuine natural lower gallery, builds only the ordinary
+     * scene, and rejects any owner/biome mixture before returning.
+     */
+    private static BetweenLayerPreflight betweenLayerPreflight(
+            WorldGenLevel level,
+            CaveDropTrap.RoofedGalleryThroatPlan plan,
+            BlockPos ownerAnchor,
+            int baseX,
+            int baseZ,
+            int originLx,
+            int originLz) {
+        CaveDropTrap.RoofedThroatWorldView world =
+                passAWorldView(level, plan, baseX, baseZ, originLx, originLz);
+        PassAUpperTracedEvaluation tracedUpper = evaluateUpperPassAWithTrace(
+                plan,
+                world,
+                voxel -> passAWorldSample(
+                        level, voxel, baseX, baseZ, originLx, originLz),
+                ownerAnchor);
+        CaveDropTrap.UpperThroatEvaluation upper = tracedUpper.evaluation();
+        if (!upper.feasible()) {
+            return BetweenLayerPreflight.rejected(
+                    BetweenLayerPreflightOutcome.UPPER_STRUCTURAL_REJECTED,
+                    tracedUpper.firstWitness());
+        }
+        BetweenLayerMaterialization materialization = materializeBetweenLayerThroat(
+                level, plan, upper.naturalWitnessVoxels(),
+                baseX, baseZ, originLx, originLz);
+        if (materialization.geometry() == null) {
+            BetweenLayerFailure failure = materialization.failure();
+            if (failure == null) {
+                failure = new BetweenLayerFailure(
+                        PassAProvenanceSource.REWARD_PREFLIGHT,
+                        PassAPredicateRole.REWARD_PREFLIGHT,
+                        materialization.outcome().name(),
+                        ownerAnchor,
+                        null,
+                        upper.rejection(),
+                        null,
+                        null,
+                        null);
+            } else if (failure.upperRejection() == null) {
+                failure = new BetweenLayerFailure(
+                        failure.source(),
+                        failure.predicateRole(),
+                        failure.failedClause(),
+                        failure.worldPosition(),
+                        failure.blockKindOverride(),
+                        upper.rejection(),
+                        failure.lowerColumn(),
+                        failure.biomeId(),
+                        failure.ownerPass());
+            }
+            return BetweenLayerPreflight.rejected(
+                    materialization.outcome(),
+                    betweenLayerWitness(
+                            level,
+                            materialization.outcome(),
+                            ownerAnchor,
+                            plan.orientation(),
+                            plan.floorY(),
+                            failure));
+        }
+        TrapGeometry geometry = materialization.geometry();
+        ScenePlan ordinary = ordinaryScene(geometry);
+        if (ordinary == null) {
+            BetweenLayerFailure failure = new BetweenLayerFailure(
+                    PassAProvenanceSource.REWARD_PREFLIGHT,
+                    PassAPredicateRole.FINAL_OWNER_OR_BIOME,
+                    "ORDINARY_SCENE_NULL",
+                    ownerAnchor,
+                    null,
+                    upper.rejection(),
+                    null,
+                    null,
+                    null);
+            return BetweenLayerPreflight.rejected(
+                    BetweenLayerPreflightOutcome.FINAL_OWNER_OR_BIOME_REJECTED,
+                    betweenLayerWitness(
+                            level,
+                            BetweenLayerPreflightOutcome.FINAL_OWNER_OR_BIOME_REJECTED,
+                            ownerAnchor,
+                            plan.orientation(),
+                            plan.floorY(),
+                            failure));
+        }
+        SceneEvidenceEvaluation finalEvidence = sceneEvidenceEvaluation(
+                level, ordinary, baseX, baseZ);
+        if (!finalEvidence.accepted()) {
+            BlockPos position = finalEvidence.worldPosition() == null
+                    ? ownerAnchor : finalEvidence.worldPosition();
+            BetweenLayerFailure failure = new BetweenLayerFailure(
+                    PassAProvenanceSource.PREDICATE_QUERY,
+                    PassAPredicateRole.FINAL_OWNER_OR_BIOME,
+                    finalEvidence.failedClause(),
+                    position,
+                    null,
+                    upper.rejection(),
+                    null,
+                    finalEvidence.biomeId(),
+                    finalEvidence.ownerPass());
+            return BetweenLayerPreflight.rejected(
+                    BetweenLayerPreflightOutcome.FINAL_OWNER_OR_BIOME_REJECTED,
+                    betweenLayerWitness(
+                            level,
+                            BetweenLayerPreflightOutcome.FINAL_OWNER_OR_BIOME_REJECTED,
+                            ownerAnchor,
+                            plan.orientation(),
+                            plan.floorY(),
+                            failure));
+        }
+        return BetweenLayerPreflight.feasible(
+                geometry,
+                ordinary,
+                betweenLayerWitness(
+                        level,
+                        BetweenLayerPreflightOutcome.STRUCTURALLY_FEASIBLE,
+                        ownerAnchor,
+                        plan.orientation(),
+                        plan.floorY(),
+                        null));
+    }
+
+    /**
+     * Plans only an upper carpet, owner-contained natural shaft, six cushions, and untouched lower
+     * gallery evidence. The legacy authored lower pocket/stair materializer remains unchanged below.
+     */
+    private static BetweenLayerMaterialization materializeBetweenLayerThroat(
+            WorldGenLevel level,
+            CaveDropTrap.RoofedGalleryThroatPlan plan,
+            List<CaveDropTrap.Voxel> upperNaturalWitnesses,
+            int baseX,
+            int baseZ,
+            int originLx,
+            int originLz) {
+        if (CaveTrapBlocks.CAVE_TRAP_POWDER_SNOW == null
+                || !CaveDropTrap.isBetweenLayerUpperFloor(plan.floorY())) {
+            return BetweenLayerMaterialization.rejected(
+                    BetweenLayerPreflightOutcome.LOWER_AUTHORED_TARGET_REJECTED);
+        }
+
+        List<CaveDropTrap.LowerColumnObservation> observations = lowerColumnObservations(
+                level, plan.powderCells(), plan.floorY(),
+                baseX, baseZ, originLx, originLz);
+        List<CaveDropTrap.BetweenLayerSurfacePlan> surfaces =
+                CaveDropTrap.planBetweenLayerSurfaces(
+                        plan.floorY(), plan.powderCells(), observations);
+        if (surfaces.isEmpty()) {
+            CaveDropTrap.LowerColumnAssessment failure =
+                    CaveDropTrap.diagnoseBetweenLayerSurfaceFailure(
+                            plan.floorY(), plan.powderCells(), observations);
+            CaveDropTrap.Cell cell = failure.cell() == null
+                    ? plan.powderCells().getFirst() : failure.cell();
+            int failureY = failure.failureY() == Integer.MIN_VALUE
+                    ? plan.floorY() : failure.failureY();
+            BlockPos position = new BlockPos(
+                    baseX + originLx + cell.x(),
+                    failureY,
+                    baseZ + originLz + cell.z());
+            return BetweenLayerMaterialization.rejected(
+                    BetweenLayerPreflightOutcome.LOWER_SURFACE_REJECTED,
+                    new BetweenLayerFailure(
+                            PassAProvenanceSource.PREDICATE_QUERY,
+                            PassAPredicateRole.LOWER_SURFACE,
+                            failure.failureClause().name(),
+                            position,
+                            failure.blockKind().name(),
+                            null,
+                            cell,
+                            null,
+                            null));
+        }
+        LowerGalleryCandidate lower = null;
+        BetweenLayerPreflightOutcome lowerRejection =
+                BetweenLayerPreflightOutcome.LOWER_SURFACE_REJECTED;
+        for (CaveDropTrap.BetweenLayerSurfacePlan surface
+                : surfaces) {
+            LowerGalleryDecision decision = naturalLowerGallery(
+                    level, surface, baseX, baseZ, originLx, originLz);
+            lowerRejection = decision.outcome();
+            lower = decision.gallery();
+            if (lower != null) {
+                break;
+            }
+        }
+        if (lower == null
+                || lower.columns().size() != plan.powderCells().size()
+                || lower.floorRoutes().size() != plan.powderCells().size()) {
+            return BetweenLayerMaterialization.rejected(lowerRejection);
+        }
+
+        BlockState entrancePowder = CaveTrapBlocks.CAVE_TRAP_POWDER_SNOW.defaultBlockState();
+        LinkedHashMap<BlockPos, WorldWrite> upperWrites = new LinkedHashMap<>();
+        LinkedHashMap<BlockPos, WorldWrite> cushionWrites = new LinkedHashMap<>();
+        List<DropCell> powder = new ArrayList<>();
+        List<StableFloor> regular = new ArrayList<>();
+        List<LandingRoute> routes = new ArrayList<>();
+        for (int index = 0; index < plan.powderCells().size(); index++) {
+            CaveDropTrap.Cell cell = plan.powderCells().get(index);
+            LowerColumnCandidate lowerColumn = lower.column(cell);
+            List<BlockPos> floorRoute = lower.floorRoute(cell);
+            if (lowerColumn == null || floorRoute == null) {
+                return BetweenLayerMaterialization.rejected(
+                        BetweenLayerPreflightOutcome.LOWER_COMPONENT_REJECTED);
+            }
+            int lx = originLx + cell.x();
+            int lz = originLz + cell.z();
+            BlockPos entrance = new BlockPos(baseX + lx, plan.floorY(), baseZ + lz);
+            BlockPos cushion = lowerColumn.floor();
+            int dropDepth = plan.floorY() - cushion.getY();
+            powder.add(new DropCell(
+                    lx, lz, plan.floorY(), dropDepth,
+                    cushion.getY(), dropDepth));
+            if (!insideOwnerChunk(entrance, baseX, baseZ)
+                    || !addNaturalWrite(
+                            level, upperWrites, entrance, entrancePowder,
+                            AuthoredRole.ENTRANCE_POWDER)) {
+                return BetweenLayerMaterialization.rejected(
+                        BetweenLayerPreflightOutcome.LOWER_AUTHORED_TARGET_REJECTED);
+            }
+            for (int y = plan.floorY() - 1;
+                    y >= lowerColumn.plugBottomY();
+                    y--) {
+                BlockPos shaft = new BlockPos(entrance.getX(), y, entrance.getZ());
+                if (!insideOwnerChunk(shaft, baseX, baseZ)
+                        || !addLowerNaturalWrite(
+                                level, upperWrites, shaft, AIR,
+                                AuthoredRole.OPENED_SHAFT)) {
+                    return BetweenLayerMaterialization.rejected(
+                            BetweenLayerPreflightOutcome.LOWER_AUTHORED_TARGET_REJECTED);
+                }
+            }
+            if (!insideOwnerChunk(cushion, baseX, baseZ)
+                    || !addLowerNaturalWrite(
+                            level, cushionWrites, cushion, CUSHION_POWDER_SNOW,
+                            AuthoredRole.POWDER_CUSHION)) {
+                return BetweenLayerMaterialization.rejected(
+                        BetweenLayerPreflightOutcome.LOWER_AUTHORED_TARGET_REJECTED);
+            }
+
+            List<BlockPos> dryPath = new ArrayList<>();
+            dryPath.add(cushion);
+            floorRoute.stream()
+                    .map(BlockPos::above)
+                    .forEach(dryPath::add);
+            routes.add(new LandingRoute(
+                    entrance,
+                    cushion,
+                    lower.dryExitFloor().above(),
+                    List.copyOf(dryPath)));
+        }
+        for (CaveDropTrap.Cell cell : plan.firmCells()) {
+            int lx = originLx + cell.x();
+            int lz = originLz + cell.z();
+            BlockPos firm = new BlockPos(baseX + lx, plan.floorY(), baseZ + lz);
+            regular.add(new StableFloor(lx, lz, plan.floorY()));
+            if (!insideOwnerChunk(firm, baseX, baseZ)
+                    || !addNaturalWrite(
+                            level, upperWrites, firm, SNOW_BLOCK,
+                            AuthoredRole.FIRM_CAMOUFLAGE)) {
+                return BetweenLayerMaterialization.rejected(
+                        BetweenLayerPreflightOutcome.LOWER_AUTHORED_TARGET_REJECTED);
+            }
+        }
+
+        CaveDropTrap.InsetCarpetPlan carpet = new CaveDropTrap.InsetCarpetPlan(
+                plan.powderCells().stream()
+                        .map(cell -> new CaveDropTrap.Cell(
+                                originLx + cell.x(), originLz + cell.z()))
+                        .toList(),
+                plan.firmCells().stream()
+                        .map(cell -> new CaveDropTrap.Cell(
+                                originLx + cell.x(), originLz + cell.z()))
+                        .toList(),
+                plan.firmBanks().get(0).stream()
+                        .map(cell -> new CaveDropTrap.Cell(
+                                originLx + cell.x(), originLz + cell.z()))
+                        .toList(),
+                plan.firmBanks().get(1).stream()
+                        .map(cell -> new CaveDropTrap.Cell(
+                                originLx + cell.x(), originLz + cell.z()))
+                        .toList(),
+                plan.orientation().axis() == CaveDropTrap.ApproachAxis.NORTH_SOUTH
+                        ? CaveDropTrap.ApproachAxis.EAST_WEST
+                        : CaveDropTrap.ApproachAxis.NORTH_SOUTH);
+
+        List<BlockPos> approach = conformalNaturalFloors(
+                plan.approachA(), plan.continuationFloorVoxels(),
+                baseX, baseZ, originLx, originLz);
+        List<BlockPos> returned = conformalNaturalFloors(
+                plan.returnB(), plan.continuationFloorVoxels(),
+                baseX, baseZ, originLx, originLz);
+        if (approach.size() != plan.approachA().size()
+                || returned.size() != plan.returnB().size()) {
+            return BetweenLayerMaterialization.rejected(
+                    BetweenLayerPreflightOutcome.UPPER_CONTINUATION_REJECTED);
+        }
+        List<BlockPos> upperReturn = returned.isEmpty()
+                ? List.of() : List.of(returned.getFirst());
+
+        LinkedHashSet<BlockPos> naturalWitnesses = new LinkedHashSet<>();
+        upperNaturalWitnesses.stream()
+                .map(voxel -> passAWorldPosition(
+                        voxel, baseX, baseZ, originLx, originLz))
+                .forEach(position -> naturalWitnesses.add(position.immutable()));
+        for (LowerColumnCandidate column : lower.columns()) {
+            naturalWitnesses.addAll(column.naturalAir());
+        }
+        for (BlockPos floor : lower.continuationFloors()) {
+            naturalWitnesses.add(floor.immutable());
+            naturalWitnesses.add(floor.above());
+            naturalWitnesses.add(floor.above(2));
+        }
+        Set<BlockPos> authored = new HashSet<>(upperWrites.keySet());
+        authored.addAll(cushionWrites.keySet());
+        if (naturalWitnesses.isEmpty()
+                || naturalWitnesses.stream().anyMatch(authored::contains)
+                || authored.stream().anyMatch(position -> position.getY() < 0)
+                || naturalWitnesses.stream().anyMatch(position -> position.getY() < 0)
+                || naturalWitnesses.stream().anyMatch(position ->
+                        !insideOwnerChunk(position, baseX, baseZ)
+                                || !insideOwnerInset(position))) {
+            return BetweenLayerMaterialization.rejected(
+                    BetweenLayerPreflightOutcome.LOWER_AUTHORED_TARGET_REJECTED);
+        }
+
+        DropCell anchorCell = powder.stream()
+                .min(Comparator.comparingInt(DropCell::lx)
+                        .thenComparingInt(DropCell::lz))
+                .orElseThrow();
+        BlockPos anchor = new BlockPos(
+                baseX + anchorCell.lx(), anchorCell.floorY(), baseZ + anchorCell.lz());
+        int maximumSeparation = powder.stream()
+                .mapToInt(DropCell::dropDepth).max().orElseThrow();
+        return BetweenLayerMaterialization.feasible(new TrapGeometry(
+                carpet,
+                List.copyOf(powder),
+                List.copyOf(regular),
+                List.copyOf(approach),
+                List.copyOf(returned),
+                upperReturn,
+                List.copyOf(upperWrites.values()),
+                List.copyOf(cushionWrites.values()),
+                List.copyOf(routes),
+                null,
+                anchor,
+                maximumSeparation,
+                List.copyOf(naturalWitnesses),
+                lower.continuationFloors()));
+    }
+
+    /** Complete read-only floor/air/plug observations consumed by the pure deepest-first planner. */
+    private record LowerSupportObservation(
+            boolean safe,
+            int firstUnsafeDepth,
+            CaveDropTrap.ThroatBlockKind firstUnsafeKind) {
+    }
+
+    private static List<CaveDropTrap.LowerColumnObservation> lowerColumnObservations(
+            WorldGenLevel level,
+            List<CaveDropTrap.Cell> footprint,
+            int upperFloorY,
+            int baseX,
+            int baseZ,
+            int originLx,
+            int originLz) {
+        List<CaveDropTrap.LowerColumnObservation> observations = new ArrayList<>();
+        for (CaveDropTrap.Cell cell : footprint) {
+            int worldX = baseX + originLx + cell.x();
+            int worldZ = baseZ + originLz + cell.z();
+            for (int floorY = CaveDropTrap.MIN_BETWEEN_LAYER_LOWER_FLOOR_Y;
+                    floorY <= CaveDropTrap.MAX_BETWEEN_LAYER_LOWER_FLOOR_Y;
+                    floorY++) {
+                if (!CaveDropTrap.isBetweenLayerSeparation(upperFloorY - floorY)) {
+                    continue;
+                }
+                BlockPos floor = new BlockPos(worldX, floorY, worldZ);
+                LowerSupportObservation support = observeLowerSupport(
+                        level, floor, baseX, baseZ);
+                List<CaveDropTrap.ThroatBlockKind> vertical = new ArrayList<>();
+                for (int y = floorY + 1; y < upperFloorY; y++) {
+                    BlockPos position = new BlockPos(worldX, y, worldZ);
+                    vertical.add(betweenLayerBlockKind(level, position, baseX, baseZ));
+                }
+                observations.add(new CaveDropTrap.LowerColumnObservation(
+                        cell,
+                        floorY,
+                        support.safe(),
+                        vertical,
+                        support.firstUnsafeDepth(),
+                        support.firstUnsafeKind()));
+            }
+        }
+        return List.copyOf(observations);
+    }
+
+    /** Exact support loop used by the lower-floor predicate, retaining its first failed voxel. */
+    private static LowerSupportObservation observeLowerSupport(
+            WorldGenLevel level, BlockPos floor, int baseX, int baseZ) {
+        if (!insideOwnerChunk(floor, baseX, baseZ) || !insideOwnerInset(floor)) {
+            return new LowerSupportObservation(
+                    false, 0, CaveDropTrap.ThroatBlockKind.OTHER);
+        }
+        for (int depth = 0; depth < STABLE_MASS_DEPTH; depth++) {
+            BlockPos position = floor.below(depth);
+            BlockState state = level.getBlockState(position);
+            if (!safeLowerNaturalSupport(level, position, state)) {
+                CaveDropTrap.ThroatBlockKind kind = isDeepslateMaterial(state)
+                        ? CaveDropTrap.ThroatBlockKind.DEEPSLATE
+                        : betweenLayerBlockKind(level, position, baseX, baseZ);
+                return new LowerSupportObservation(false, depth, kind);
+            }
+        }
+        return new LowerSupportObservation(
+                true, -1, CaveDropTrap.ThroatBlockKind.SAFE_NATURAL);
+    }
+
+    private static CaveDropTrap.ThroatBlockKind betweenLayerBlockKind(
+            WorldGenLevel level, BlockPos position, int baseX, int baseZ) {
+        if (!insideOwnerChunk(position, baseX, baseZ) || !insideOwnerInset(position)) {
+            return CaveDropTrap.ThroatBlockKind.OTHER;
+        }
+        if (airWithoutEntity(level, position)) {
+            return CaveDropTrap.ThroatBlockKind.AIR;
+        }
+        BlockState state = level.getBlockState(position);
+        if (state.isAir()) {
+            return CaveDropTrap.ThroatBlockKind.OTHER;
+        }
+        return isDeepslateMaterial(state)
+                ? CaveDropTrap.ThroatBlockKind.DEEPSLATE
+                : passABlockKind(level, position, state);
+    }
+
+    /** Deepest-first qualification target: six safe stepped floors and one natural continuation. */
+    private static LowerGalleryDecision naturalLowerGallery(
+            WorldGenLevel level,
+            CaveDropTrap.BetweenLayerSurfacePlan surface,
+            int baseX,
+            int baseZ,
+            int originLx,
+            int originLz) {
+        if (surface == null
+                || surface.columns().size() != CaveDropTrap.MIN_PATCH_AREA
+                || surface.maximumFloorY() - surface.minimumFloorY() > 1) {
+            return LowerGalleryDecision.rejected(
+                    BetweenLayerPreflightOutcome.LOWER_SURFACE_REJECTED);
+        }
+        List<LowerColumnCandidate> columns = new ArrayList<>();
+        for (CaveDropTrap.LowerColumnPlan planned : surface.columns()) {
+            BlockPos floor = new BlockPos(
+                    baseX + originLx + planned.cell().x(),
+                    planned.floorY(),
+                    baseZ + originLz + planned.cell().z());
+            if (!naturalLowerFloor(level, floor, baseX, baseZ)
+                    || planned.plugBottomY() <= floor.getY() + 2
+                    || planned.plugBottomY() >= surface.upperFloorY()) {
+                return LowerGalleryDecision.rejected(
+                        BetweenLayerPreflightOutcome.LOWER_SURFACE_REJECTED);
+            }
+            List<BlockPos> naturalAir = planned.preservedAirYs().stream()
+                    .map(y -> new BlockPos(floor.getX(), y, floor.getZ()))
+                    .toList();
+            if (naturalAir.size() < CaveDropTrap.MIN_GALLERY_AIR
+                    || naturalAir.getFirst().getY() != floor.getY() + 1
+                    || naturalAir.getLast().getY() != planned.plugBottomY() - 1
+                    || naturalAir.stream().anyMatch(position ->
+                            !insideOwnerChunk(position, baseX, baseZ)
+                                    || !insideOwnerInset(position)
+                                    || !airWithoutEntity(level, position))) {
+                return LowerGalleryDecision.rejected(
+                        BetweenLayerPreflightOutcome.LOWER_SURFACE_REJECTED);
+            }
+            for (int y = planned.plugBottomY(); y < surface.upperFloorY(); y++) {
+                BlockPos plug = new BlockPos(floor.getX(), y, floor.getZ());
+                if (!insideOwnerChunk(plug, baseX, baseZ)
+                        || !insideOwnerInset(plug)
+                        || !safeLowerNaturalTarget(level, plug, level.getBlockState(plug))) {
+                    return LowerGalleryDecision.rejected(
+                            BetweenLayerPreflightOutcome.LOWER_AUTHORED_TARGET_REJECTED);
+                }
+            }
+            columns.add(new LowerColumnCandidate(
+                    planned.cell(), floor, planned.plugBottomY(), naturalAir));
+        }
+
+        Set<BlockPos> footprintSet = columns.stream()
+                .map(LowerColumnCandidate::floor)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        Map<BlockPos, BlockPos> connected = naturalLowerComponent(
+                level, columns.getFirst().floor(), baseX, baseZ);
+        if (!connected.keySet().containsAll(footprintSet)) {
+            return LowerGalleryDecision.rejected(
+                    BetweenLayerPreflightOutcome.LOWER_COMPONENT_REJECTED);
+        }
+        List<BlockPos> continuation = connected.keySet().stream()
+                .filter(position -> !footprintSet.contains(position))
+                .sorted(Comparator.comparingLong((BlockPos position) -> position.getX())
+                        .thenComparingLong(BlockPos::getZ)
+                        .thenComparingInt(BlockPos::getY))
+                .toList();
+        if (continuation.size() < CaveDropTrap.MIN_NATURAL_LOWER_CONTINUATION) {
+            return LowerGalleryDecision.rejected(
+                    BetweenLayerPreflightOutcome.LOWER_CONTINUATION_REJECTED);
+        }
+        Set<Long> footprintColumns = columns.stream()
+                .map(column -> localKey(
+                        column.floor().getX() - baseX,
+                        column.floor().getZ() - baseZ))
+                .collect(java.util.stream.Collectors.toSet());
+        BlockPos dryExit = continuation.stream()
+                .filter(floor -> farFromLandingFootprint(
+                        floor.above(), footprintColumns, baseX, baseZ))
+                .filter(floor -> dryNeighbourCount(level, floor.above()) >= 2)
+                .sorted(Comparator.comparingInt((BlockPos floor) -> floor.getY())
+                        .thenComparingInt(BlockPos::getX)
+                        .thenComparingInt(BlockPos::getZ))
+                .findFirst().orElse(null);
+        if (dryExit == null) {
+            return LowerGalleryDecision.rejected(
+                    BetweenLayerPreflightOutcome.LOWER_DRY_EXIT_REJECTED);
+        }
+        List<List<BlockPos>> routes = new ArrayList<>();
+        for (LowerColumnCandidate column : columns) {
+            List<BlockPos> path = naturalLowerPath(
+                    level, column.floor(), dryExit, baseX, baseZ);
+            if (path == null) {
+                return LowerGalleryDecision.rejected(
+                        BetweenLayerPreflightOutcome.LOWER_COMPONENT_REJECTED);
+            }
+            routes.add(path);
+        }
+        return LowerGalleryDecision.feasible(new LowerGalleryCandidate(
+                columns, continuation, dryExit, routes));
+    }
+
+    private static Map<BlockPos, BlockPos> naturalLowerComponent(
+            WorldGenLevel level, BlockPos start, int baseX, int baseZ) {
+        Map<BlockPos, BlockPos> parents = new LinkedHashMap<>();
+        ArrayDeque<BlockPos> queue = new ArrayDeque<>();
+        BlockPos root = start.immutable();
+        parents.put(root, null);
+        queue.add(root);
+        while (!queue.isEmpty() && parents.size() < 196) {
+            BlockPos current = queue.removeFirst();
+            for (Direction direction : HORIZONTAL) {
+                BlockPos horizontal = current.relative(direction);
+                for (int dy = -1; dy <= 1; dy++) {
+                    BlockPos next = horizontal.offset(0, dy, 0).immutable();
+                    if (parents.containsKey(next)
+                            || !naturalLowerFloor(level, next, baseX, baseZ)) {
+                        continue;
+                    }
+                    parents.put(next, current);
+                    queue.addLast(next);
+                    break;
+                }
+            }
+        }
+        return parents;
+    }
+
+    private static List<BlockPos> naturalLowerPath(
+            WorldGenLevel level,
+            BlockPos start,
+            BlockPos target,
+            int baseX,
+            int baseZ) {
+        Map<BlockPos, BlockPos> parents = naturalLowerComponent(level, start, baseX, baseZ);
+        BlockPos end = target.immutable();
+        if (!parents.containsKey(end)) {
+            return null;
+        }
+        ArrayDeque<BlockPos> reverse = new ArrayDeque<>();
+        for (BlockPos cursor = end; cursor != null; cursor = parents.get(cursor)) {
+            reverse.addFirst(cursor);
+        }
+        return List.copyOf(reverse);
+    }
+
+    private static boolean naturalLowerFloor(
+            WorldGenLevel level, BlockPos floor, int baseX, int baseZ) {
+        return CaveDropTrap.isBetweenLayerLowerFloor(floor.getY())
+                && insideOwnerChunk(floor, baseX, baseZ)
+                && insideOwnerInset(floor)
+                && supportedLowerNaturalMass(level, floor, STABLE_MASS_DEPTH)
+                && airWithoutEntity(level, floor.above())
+                && airWithoutEntity(level, floor.above(2));
     }
 
     /** The exact existing reward planners' read-only results for one Pass-A geometry. */
@@ -3415,7 +4381,10 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                 List.of(upperReturnFloor),
                 List.copyOf(upper.values()), List.copyOf(cushions.values()),
                 List.copyOf(landingRoutes), placement,
-                anchor, CaveDropTrap.MIN_DROP_AIR);
+                anchor, CaveDropTrap.MIN_DROP_AIR,
+                mergePositions(
+                        mergePositions(approach, returned), List.of(upperReturnFloor)),
+                List.of());
     }
 
     private static boolean addPassAPlannedWrite(
@@ -4327,7 +5296,11 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                 firstNaturalContinuation, secondNaturalContinuation, upperNaturalReturn,
                 List.copyOf(upper.values()), List.copyOf(cushions.values()),
                 List.copyOf(landingRoutes), prospectorPlacement,
-                anchor, CaveDropTrap.MIN_DROP_AIR);
+                anchor, CaveDropTrap.MIN_DROP_AIR,
+                mergePositions(
+                        mergePositions(firstNaturalContinuation, secondNaturalContinuation),
+                        upperNaturalReturn),
+                List.of());
     }
 
     private static BlockPos ribbonWorldPosition(
@@ -4347,7 +5320,8 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
         writes.addAll(geometry.cushionWrites());
         return scene(
                 geometry, CaveDropTrap.RewardKind.ORDINARY, writes,
-                geometry.fallDepth(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                geometry.fallDepth(), List.of(), List.of(),
+                geometry.lowerNaturalContinuation(), List.of(), List.of(),
                 null, null, null, null, List.of(), List.of(), 0L);
     }
 
@@ -4954,6 +5928,9 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
 
     private static ApplyResult applyScene(
             WorldGenLevel level, ScenePlan scene, int baseX, int baseZ) {
+        if (!sceneIsEntirelyGlacialCaves(level, scene, baseX, baseZ)) {
+            return new ApplyResult(false, true);
+        }
         if (!writesStillMatch(level, scene.writes(), baseX, baseZ)) {
             return new ApplyResult(false, true);
         }
@@ -4984,6 +5961,143 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
             }
         }
         return new ApplyResult(transaction.success(), rollbackVerified);
+    }
+
+    /**
+     * Final fail-closed biome gate over the exact positions the atomic transaction would change.
+     * Feature scheduling proves only where placement began; it does not prove that a shaft, cushion,
+     * stair, or rare reward remained inside the same underground biome.
+     */
+    private static boolean sceneIsEntirelyGlacialCaves(
+            WorldGenLevel level, ScenePlan scene, int baseX, int baseZ) {
+        return sceneEvidenceEvaluation(level, scene, baseX, baseZ).accepted();
+    }
+
+    private static SceneEvidenceEvaluation sceneEvidenceEvaluation(
+            WorldGenLevel level, ScenePlan scene, int baseX, int baseZ) {
+        Function<BlockPos, String> settledBiomeIdAt = settledBiomeIdLookup(
+                level.getSeed(),
+                (quartX, quartY, quartZ) -> populatedBiomeAt(
+                        level, quartX, quartY, quartZ));
+        return evaluateSceneEvidenceInGlacialCavesAndOwner(
+                scene.writes().stream().map(WorldWrite::position).toList(),
+                scene.naturalWitnessPositions(),
+                settledBiomeIdAt,
+                position -> insideOwnerChunk(position, baseX, baseZ)
+                        && insideOwnerInset(position));
+    }
+
+    /**
+     * Reproduces the settled server's real fuzzy block-biome query while reading only populated
+     * chunk palettes. Feature scheduling is not biome containment, and WorldGenLevel#getBiome may
+     * observe a generation-stage view whose neighboring quart source differs from the saved world.
+     */
+    static Function<BlockPos, String> settledBiomeIdLookup(
+            long worldSeed,
+            BiomeManager.NoiseBiomeSource populatedBiomes) {
+        Objects.requireNonNull(populatedBiomes, "populatedBiomes");
+        BiomeManager settled = new BiomeManager(
+                populatedBiomes, BiomeManager.obfuscateSeed(worldSeed));
+        return position -> {
+            Holder<Biome> biome = settled.getBiome(position);
+            return biome == null ? null : biome.unwrapKey()
+                    .map(key -> key.identifier().toString())
+                    .orElse(null);
+        };
+    }
+
+    /** Null means the BIOMES-complete palette is unavailable, which the final gate rejects. */
+    private static Holder<Biome> populatedBiomeAt(
+            WorldGenLevel level, int quartX, int quartY, int quartZ) {
+        int chunkX = QuartPos.toSection(quartX);
+        int chunkZ = QuartPos.toSection(quartZ);
+        if (!level.hasChunk(chunkX, chunkZ)) {
+            return null;
+        }
+        try {
+            ChunkAccess chunk = level.getChunk(
+                    chunkX, chunkZ, ChunkStatus.BIOMES, false);
+            return chunk == null ? null : chunk.getNoiseBiome(quartX, quartY, quartZ);
+        } catch (ReportedException unavailable) {
+            return null;
+        }
+    }
+
+    /** Exact first final-gate witness, including both facts needed to interpret the rejection. */
+    public record SceneEvidenceEvaluation(
+            boolean accepted,
+            String failedClause,
+            BlockPos worldPosition,
+            String biomeId,
+            Boolean ownerPass) {
+
+        public SceneEvidenceEvaluation {
+            failedClause = Objects.requireNonNull(failedClause);
+            worldPosition = worldPosition == null ? null : worldPosition.immutable();
+        }
+    }
+
+    /** Package-private pure seam for writes plus untouched natural witnesses. */
+    static boolean allSceneEvidenceInGlacialCavesAndOwner(
+            List<BlockPos> authoredPositions,
+            List<BlockPos> naturalWitnessPositions,
+            Function<BlockPos, String> biomeIdAt,
+            Predicate<BlockPos> ownerContains) {
+        return evaluateSceneEvidenceInGlacialCavesAndOwner(
+                authoredPositions,
+                naturalWitnessPositions,
+                biomeIdAt,
+                ownerContains).accepted();
+    }
+
+    /** Package-private pure seam returning the same predicate's exact first failing evidence row. */
+    static SceneEvidenceEvaluation evaluateSceneEvidenceInGlacialCavesAndOwner(
+            List<BlockPos> authoredPositions,
+            List<BlockPos> naturalWitnessPositions,
+            Function<BlockPos, String> biomeIdAt,
+            Predicate<BlockPos> ownerContains) {
+        if (authoredPositions == null || authoredPositions.isEmpty()
+                || naturalWitnessPositions == null || naturalWitnessPositions.isEmpty()
+                || biomeIdAt == null || ownerContains == null) {
+            return new SceneEvidenceEvaluation(
+                    false, "MISSING_SCENE_EVIDENCE", null, null, null);
+        }
+        LinkedHashSet<BlockPos> evidence = new LinkedHashSet<>();
+        evidence.addAll(authoredPositions);
+        evidence.addAll(naturalWitnessPositions);
+        for (BlockPos position : evidence) {
+            if (position == null) {
+                return new SceneEvidenceEvaluation(
+                        false, "NULL_SCENE_EVIDENCE", null, null, null);
+            }
+            boolean ownerPass = ownerContains.test(position);
+            String biomeId = biomeIdAt.apply(position);
+            if (!ownerPass) {
+                return new SceneEvidenceEvaluation(
+                        false, "FINAL_OWNER", position, biomeId, false);
+            }
+            if (!LatitudeBiomes.GLACIAL_CAVES_ID.equals(biomeId)) {
+                return new SceneEvidenceEvaluation(
+                        false, "FINAL_BIOME", position, biomeId, true);
+            }
+        }
+        return new SceneEvidenceEvaluation(true, "PASSED", null, null, true);
+    }
+
+    /** Package-private pure seam for the complete authored-footprint contract test. */
+    static boolean allAuthoredPositionsInGlacialCaves(
+            List<BlockPos> authoredPositions,
+            Function<BlockPos, String> biomeIdAt) {
+        if (authoredPositions == null || authoredPositions.isEmpty() || biomeIdAt == null) {
+            return false;
+        }
+        for (BlockPos position : authoredPositions) {
+            if (position == null
+                    || !LatitudeBiomes.GLACIAL_CAVES_ID.equals(biomeIdAt.apply(position))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean finalizeScene(WorldGenLevel level, ScenePlan scene) {
@@ -5057,7 +6171,8 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                 remainsHead,
                 immutablePathLists(chestPaths),
                 List.copyOf(chestToExitPath),
-                lootSeed);
+                lootSeed,
+                List.copyOf(geometry.naturalWitnessPositions()));
     }
 
     private static void emitAudit(
@@ -5088,6 +6203,10 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                     .filter(write -> isOre(write.desired()))
                     .map(WorldWrite::position)
                     .toList();
+            List<BlockPos> allAuthoredShafts = scene.writes().stream()
+                    .filter(write -> write.role() == AuthoredRole.OPENED_SHAFT)
+                    .map(WorldWrite::position)
+                    .toList();
             List<EntryEvidence> entries = new ArrayList<>();
             for (int index = 0; index < geometry.landingRoutes().size(); index++) {
                 LandingRoute route = geometry.landingRoutes().get(index);
@@ -5103,7 +6222,7 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                         .filter(scene.shorePositions()::contains)
                         .findFirst().orElse(null);
                 List<BlockPos> shaftPositions =
-                        orderedShaftPositions(route.entranceTop(), actualLanding);
+                        authoredShaftPositions(route.entranceTop(), allAuthoredShafts);
                 entries.add(new EntryEvidence(
                         route.entranceTop(), actualLanding, dryExit,
                         shorePath.isEmpty() ? route.path() : shorePath,
@@ -5174,7 +6293,9 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                     mergePositions(firstBank, secondBank),
                     geometry.firstNaturalContinuation(),
                     geometry.secondNaturalContinuation(),
-                    geometry.upperNaturalReturn()));
+                    geometry.upperNaturalReturn(),
+                    scene.naturalWitnessPositions(),
+                    geometry.lowerNaturalContinuation()));
         } catch (RuntimeException ignored) {
             // A proof observer must never alter successful production world generation.
         }
@@ -5186,6 +6307,42 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
 
     private static List<List<BlockPos>> immutablePathLists(List<List<BlockPos>> paths) {
         return paths.stream().map(CaveDropTrapFeature::immutablePositions).toList();
+    }
+
+    /**
+     * Carries the conformal source's already-certified one-block mouth relief into scene evidence.
+     * A missing or contradictory floor witness fails closed instead of being flattened to floorY.
+     */
+    static List<BlockPos> conformalNaturalFloors(
+            List<CaveDropTrap.Cell> cells,
+            List<CaveDropTrap.Voxel> continuationFloors,
+            int baseX,
+            int baseZ,
+            int originLx,
+            int originLz) {
+        if (cells == null || continuationFloors == null) {
+            return List.of();
+        }
+        Map<CaveDropTrap.Cell, Integer> floorY = new LinkedHashMap<>();
+        for (CaveDropTrap.Voxel floor : continuationFloors) {
+            CaveDropTrap.Cell cell = new CaveDropTrap.Cell(floor.x(), floor.z());
+            Integer prior = floorY.putIfAbsent(cell, floor.y());
+            if (prior != null && prior != floor.y()) {
+                return List.of();
+            }
+        }
+        List<BlockPos> result = new ArrayList<>(cells.size());
+        for (CaveDropTrap.Cell cell : cells) {
+            Integer y = floorY.get(cell);
+            if (y == null) {
+                return List.of();
+            }
+            result.add(new BlockPos(
+                    baseX + originLx + cell.x(),
+                    y,
+                    baseZ + originLz + cell.z()));
+        }
+        return List.copyOf(result);
     }
 
     private static List<BlockPos> naturalFloors(
@@ -5211,13 +6368,20 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
         return List.copyOf(merged);
     }
 
-    private static List<BlockPos> orderedShaftPositions(
-            BlockPos entranceTop, BlockPos landing) {
-        List<BlockPos> shaft = new ArrayList<>();
-        for (int y = entranceTop.getY() - 1; y > landing.getY(); y--) {
-            shaft.add(new BlockPos(entranceTop.getX(), y, entranceTop.getZ()));
+    static List<BlockPos> authoredShaftPositions(
+            BlockPos entranceTop, List<BlockPos> allAuthoredShafts) {
+        if (entranceTop == null || allAuthoredShafts == null) {
+            return List.of();
         }
-        return List.copyOf(shaft);
+        return allAuthoredShafts.stream()
+                .filter(position -> position != null
+                        && position.getX() == entranceTop.getX()
+                        && position.getZ() == entranceTop.getZ()
+                        && position.getY() < entranceTop.getY())
+                .map(BlockPos::immutable)
+                .sorted(Comparator.comparingLong(
+                        (BlockPos position) -> position.getY()).reversed())
+                .toList();
     }
 
     private static BlockPos stableWorldPosition(
@@ -5571,6 +6735,18 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
         return true;
     }
 
+    /** Lower-destination support is natural glacial stone/ice, never deepslate or its tag. */
+    private static boolean supportedLowerNaturalMass(
+            WorldGenLevel level, BlockPos top, int depth) {
+        for (int offset = 0; offset < depth; offset++) {
+            BlockPos pos = top.below(offset);
+            if (!safeLowerNaturalSupport(level, pos, level.getBlockState(pos))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static boolean supportedNaturalMass(
             WorldGenLevel level,
             Map<BlockPos, WorldWrite> writes,
@@ -5589,6 +6765,17 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
     private static boolean safeNaturalSupport(
             WorldGenLevel level, BlockPos position, BlockState state) {
         return safeNaturalTarget(level, position, state) && state.blocksMotion();
+    }
+
+    private static boolean safeLowerNaturalSupport(
+            WorldGenLevel level, BlockPos position, BlockState state) {
+        return safeLowerNaturalTarget(level, position, state) && state.blocksMotion();
+    }
+
+    private static boolean safeLowerNaturalTarget(
+            WorldGenLevel level, BlockPos position, BlockState state) {
+        return safeNaturalTarget(level, position, state)
+                && lowerNaturalMaterialAllowed(state);
     }
 
     private static boolean safeNaturalTarget(
@@ -5614,6 +6801,16 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
                 || state.is(Blocks.ICE);
     }
 
+    /** Test-visible exact material boundary for all lower destination evidence and writes. */
+    static boolean lowerNaturalMaterialAllowed(BlockState state) {
+        return naturalMaterial(state) && !isDeepslateMaterial(state);
+    }
+
+    private static boolean isDeepslateMaterial(BlockState state) {
+        return state.is(Blocks.DEEPSLATE)
+                || state.is(BlockTags.DEEPSLATE_ORE_REPLACEABLES);
+    }
+
     private static boolean isOre(BlockState state) {
         Identifier id = BuiltInRegistries.BLOCK.getKey(state.getBlock());
         return id != null && id.getPath().endsWith("_ore");
@@ -5624,6 +6821,14 @@ public final class CaveDropTrapFeature extends Feature<NoneFeatureConfiguration>
             BlockPos position, BlockState desired, AuthoredRole role) {
         BlockState current = level.getBlockState(position);
         return safeNaturalTarget(level, position, current)
+                && putWrite(level, writes, position, desired, role);
+    }
+
+    private static boolean addLowerNaturalWrite(
+            WorldGenLevel level, Map<BlockPos, WorldWrite> writes,
+            BlockPos position, BlockState desired, AuthoredRole role) {
+        BlockState current = level.getBlockState(position);
+        return safeLowerNaturalTarget(level, position, current)
                 && putWrite(level, writes, position, desired, role);
     }
 

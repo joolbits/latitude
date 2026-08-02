@@ -84,12 +84,10 @@
       "globe:glacial_snow_drift",
       "globe:glacial_powder_pocket",
       "globe:glacial_frost_carpet",
-      "globe:glacial_slush_floe",
       "globe:ice_spire_cluster",
       "globe:ice_spire",
       "globe:icicle_cluster",
-      "globe:ice_spear_patch",
-      "globe:magma_quench_sweep"
+      "globe:ice_spear_patch"
     ],
     [
       "minecraft:spring_water",
@@ -100,7 +98,9 @@
       "globe:glacial_glow_lichen"
     ],
     [
-      "minecraft:freeze_top_layer"
+      "minecraft:freeze_top_layer",
+      "globe:glacial_lake_ice_fringe",
+      "globe:magma_quench_sweep"
     ]
   ],
   "has_precipitation": true,

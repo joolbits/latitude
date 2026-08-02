@@ -73,21 +73,20 @@
       "globe:ice_spire_cluster",
       "globe:ice_spire",
       "globe:icicle_cluster",
-      "globe:ice_spear_patch",
-      "globe:magma_quench_sweep"
+      "globe:ice_spear_patch"
     ],
     [
       "minecraft:spring_water",
       "minecraft:spring_lava"
     ],
     [
-      "globe:cave_drop_trap",
       "minecraft:glow_lichen",
       "globe:glacial_glow_lichen"
     ],
     [
       "minecraft:freeze_top_layer",
-      "globe:powder_crevasse_roof"
+      "globe:powder_crevasse_roof",
+      "globe:magma_quench_sweep"
     ]
   ],
   "has_precipitation": true,

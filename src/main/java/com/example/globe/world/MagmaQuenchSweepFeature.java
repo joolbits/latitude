@@ -7,6 +7,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -15,17 +16,22 @@ import net.minecraft.world.level.levelgen.feature.Feature;
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
 import net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConfiguration;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 /**
  * S50 MAGMA QUENCH SWEEP ({@code globe:magma_quench_sweep}) -- Peetsa 2026-07-26, TEST 138 flight:
  * "magma not creating obsidian surrounding it." Her screenshot showed the vanilla {@code
  * minecraft:underwater_magma} FEATURE's patches on a flooded gallery floor -- and features run AFTER
  * {@code buildSurface}, so the S48 quench in {@code PolarBarrensGlacierMixin}'s surface-stage post-pass
  * ran before that magma existed and could never see it. THIS feature is the fix: it runs at the very END
- * of UNDERGROUND_DECORATION (step 7) in both glacial biomes -- after underwater_magma, after every other
- * magma source -- and sweeps the whole chunk column once:
+ * of TOP_LAYER_MODIFICATION (step 10) in both glacial biomes -- after underwater_magma, fluid springs,
+ * freeze_top_layer, and every other water/ice writer -- and sweeps the whole chunk column once:
  *
  * <ul>
- *   <li><b>FLOODED magma</b> (any face-adjacent water): the full 3x3x3 neighborhood's ice-family AND
+ *   <li><b>FLOODED magma</b> (water anywhere in the 3x3x3 shell): the shell's ice-family AND
  *       water cells quench to OBSIDIAN -- a sealed shell, her exact "surrounded by obsidian" ask; no
  *       gen-time air bubble is ever written under water.</li>
  *   <li><b>DRY ice-touching magma</b>: the S43b read, verbatim -- face-adjacent ice melts to AIR (the
@@ -37,12 +43,16 @@ import net.minecraft.world.level.levelgen.feature.configurations.NoneFeatureConf
  * idempotent over its output (obsidian and air match neither ice nor water, so already-quenched pockets
  * are skipped). S51: the sweep reads AND writes across chunk borders -- a decoration feature owns its
  * full region, and a border magma must neither classify dry because its water sits one chunk over nor
- * keep a half-open shell (scans stay anchored to this chunk's 16x16 columns, so no double-processing:
- * each magma is swept exactly once, by its own chunk). Scan band Y0..{@link #SCAN_TOP_Y}: the ice
+ * keep a half-open shell. S52: vanilla 26.2 {@code underwater_magma} has
+ * {@code placement_radius_around_floor=1}, so the final sweep scans the invoking chunk plus exactly one
+ * X/Z block of halo. That catches a neighbor feature's one-block spill into an already-swept owner chunk;
+ * repeat sightings are harmless because the shell transform is idempotent. Scan band Y0..{@link #SCAN_TOP_Y}: the ice
  * country -- sub-Y0 stone-cellar magma is the deepslate world's own business (the S49 cellar ruling).
  *
- * <p>Census line under {@code -Dlatitude.debugCollapse}: {@code [LAT][QUENCH] chunk=... magma=N
- * flooded=F dry=D} for rig calibration/audit.
+ * <p>Census line under {@code -Dlatitude.debugGlacialDressing=true} (or the backward-compatible
+ * {@code -Dlatitude.debugCollapse=true}): {@code [LAT][QUENCH] chunk=...
+ * invoked=true candidateMagma=N flooded=F dry=D attemptedWrites=A successfulWrites=S
+ * failedWrites=E residualShellCells=R} for rig calibration/audit.
  */
 public final class MagmaQuenchSweepFeature extends Feature<NoneFeatureConfiguration> {
 
@@ -50,11 +60,20 @@ public final class MagmaQuenchSweepFeature extends Feature<NoneFeatureConfigurat
 
     private static final BlockState OBSIDIAN = Blocks.OBSIDIAN.defaultBlockState();
     private static final BlockState AIR = Blocks.AIR.defaultBlockState();
+    private static final Identifier GLACIAL_CAVES = Identifier.fromNamespaceAndPath(GlobeMod.MOD_ID, "glacial_caves");
+    private static final Identifier POLAR_BARRENS = Identifier.fromNamespaceAndPath(GlobeMod.MOD_ID, "polar_barrens");
 
     private static final int SCAN_TOP_Y = 100;
     private static final int SCAN_BOTTOM_Y = 0;
+    static final int SCAN_HORIZONTAL_HALO = 1;
 
-    private static final boolean DEBUG = Boolean.getBoolean("latitude.debugCollapse");
+    private static final boolean DEBUG = debugEnabled(
+            Boolean.getBoolean("latitude.debugGlacialDressing"),
+            Boolean.getBoolean("latitude.debugCollapse"));
+
+    static boolean debugEnabled(boolean dedicated, boolean legacyCollapse) {
+        return dedicated || legacyCollapse;
+    }
 
     public MagmaQuenchSweepFeature(Codec<NoneFeatureConfiguration> codec) {
         super(codec);
@@ -72,6 +91,39 @@ public final class MagmaQuenchSweepFeature extends Feature<NoneFeatureConfigurat
         return b == Blocks.PACKED_ICE || b == Blocks.BLUE_ICE || b == Blocks.ICE || b == Blocks.SNOW_BLOCK;
     }
 
+    private static boolean isWater(BlockState state) {
+        return state.is(Blocks.WATER) || state.getFluidState().is(net.minecraft.tags.FluidTags.WATER);
+    }
+
+    private static boolean isGlacialHost(WorldGenLevel level, BlockPos pos) {
+        return level.getBiome(pos).unwrapKey().map(ResourceKey::identifier)
+                .map(id -> id.equals(GLACIAL_CAVES) || id.equals(POLAR_BARRENS))
+                .orElse(false);
+    }
+
+    record SweepStats(
+            int candidateMagma,
+            int flooded,
+            int dry,
+            int attemptedWrites,
+            int successfulWrites,
+            int failedWrites,
+            int residualShellCells) {
+
+        boolean completedWithoutResidual() {
+            return successfulWrites > 0 && failedWrites == 0 && residualShellCells == 0;
+        }
+    }
+
+    private record ShellClassification(boolean flooded, boolean touchesFaceIce) {
+        boolean eligible() {
+            return flooded || touchesFaceIce;
+        }
+    }
+
+    private record WriteCounts(int attempted, int successful, int failed) {
+    }
+
     @Override
     public boolean place(FeaturePlaceContext<NoneFeatureConfiguration> ctx) {
         if (!LatitudeV2Flags.POLAR_BARRENS_ENABLED || !LatitudeV2Flags.GLACIAL_CAVES_V1_ENABLED) {
@@ -80,14 +132,25 @@ public final class MagmaQuenchSweepFeature extends Feature<NoneFeatureConfigurat
         WorldGenLevel level = ctx.level();
         int baseX = (ctx.origin().getX() >> 4) << 4;
         int baseZ = (ctx.origin().getZ() >> 4) << 4;
+        SweepStats stats = sweep(level, baseX, baseZ);
+        if (DEBUG) {
+            GlobeMod.LOGGER.info(debugLine(baseX >> 4, baseZ >> 4, stats));
+        }
+        return stats.completedWithoutResidual();
+    }
+
+    static SweepStats sweep(WorldGenLevel level, int baseX, int baseZ) {
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
         int scanBottom = Math.max(level.getMinY() + 1, SCAN_BOTTOM_Y);
 
-        int magma = 0;
+        List<BlockPos> candidateMagmaPositions = new ArrayList<>();
         int flooded = 0;
         int dry = 0;
-        for (int lx = 0; lx < 16; lx++) {
-            for (int lz = 0; lz < 16; lz++) {
+        int attemptedWrites = 0;
+        int successfulWrites = 0;
+        int failedWrites = 0;
+        for (int lx = -SCAN_HORIZONTAL_HALO; lx < 16 + SCAN_HORIZONTAL_HALO; lx++) {
+            for (int lz = -SCAN_HORIZONTAL_HALO; lz < 16 + SCAN_HORIZONTAL_HALO; lz++) {
                 int wx = baseX + lx;
                 int wz = baseZ + lz;
                 for (int y = scanBottom; y <= SCAN_TOP_Y; y++) {
@@ -95,72 +158,162 @@ public final class MagmaQuenchSweepFeature extends Feature<NoneFeatureConfigurat
                     if (level.getBlockState(cursor).getBlock() != Blocks.MAGMA_BLOCK) {
                         continue;
                     }
-                    magma++;
-                    // Classify: flooded beats dry; neither = leave alone (bare stone country).
-                    // S51: cross-chunk faces are CHECKED and shells WRITTEN whole -- the chunk-local
-                    // discipline was inherited from the surface-stage mixin, but a decoration feature
-                    // legally owns its full region; a border magma must not classify dry because its
-                    // only water sits one chunk over (the TEST 139 flight's suspected miss class).
-                    boolean isFlooded = false;
-                    boolean touchesIce = false;
-                    for (int f = 0; f < 6; f++) {
-                        int fx = wx + (f == 0 ? 1 : f == 1 ? -1 : 0);
-                        int fy = y + (f == 2 ? 1 : f == 3 ? -1 : 0);
-                        int fz = wz + (f == 4 ? 1 : f == 5 ? -1 : 0);
-                        if (fy <= level.getMinY() || fy >= level.getMaxY()) {
-                            continue;
-                        }
-                        cursor.set(fx, fy, fz);
-                        BlockState fs = level.getBlockState(cursor);
-                        if (fs.getFluidState().is(net.minecraft.tags.FluidTags.WATER)) {
-                            isFlooded = true;
-                        }
-                        if (isIceFamily(fs.getBlock())) {
-                            touchesIce = true;
-                        }
-                    }
-                    if (!isFlooded && !touchesIce) {
+                    if (!isGlacialHost(level, cursor)) {
                         continue;
                     }
-                    if (isFlooded) {
+                    BlockPos magma = cursor.immutable();
+                    candidateMagmaPositions.add(magma);
+                    // Classify: any shell water makes a visibly flooded pocket; flooded beats dry.
+                    // Ice still needs a FACE contact for the dry pocket path. This prevents a prior lake-ice
+                    // write from hiding diagonal/edge water and misrouting the pocket to face-air carving.
+                    ShellClassification classification = classifyShell(level, magma, cursor);
+                    if (!classification.eligible()) {
+                        continue;
+                    }
+                    if (classification.flooded()) {
                         flooded++;
                     } else {
                         dry++;
                     }
-                    for (int dx = -1; dx <= 1; dx++) {
-                        for (int dy = -1; dy <= 1; dy++) {
-                            for (int dz = -1; dz <= 1; dz++) {
-                                if (dx == 0 && dy == 0 && dz == 0) {
-                                    continue;
-                                }
-                                int nx = wx + dx;
-                                int ny = y + dy;
-                                int nz = wz + dz;
-                                if (ny <= level.getMinY() || ny >= level.getMaxY()) {
-                                    continue;
-                                }
-                                cursor.set(nx, ny, nz);
-                                BlockState ns = level.getBlockState(cursor);
-                                boolean ice = isIceFamily(ns.getBlock());
-                                boolean water = ns.getFluidState().is(net.minecraft.tags.FluidTags.WATER);
-                                if (isFlooded) {
-                                    if (ice || water) {
-                                        level.setBlock(cursor, OBSIDIAN, 2);
-                                    }
-                                } else if (ice) {
-                                    boolean faceAdjacent = Math.abs(dx) + Math.abs(dy) + Math.abs(dz) == 1;
-                                    level.setBlock(cursor, faceAdjacent ? AIR : OBSIDIAN, 2);
-                                }
-                            }
+                    WriteCounts writes = writeEligibleShell(level, magma, classification, cursor);
+                    attemptedWrites += writes.attempted();
+                    successfulWrites += writes.successful();
+                    failedWrites += writes.failed();
+                }
+            }
+        }
+        int residualShellCells = countResidualEligibleShellCells(level, candidateMagmaPositions);
+        return new SweepStats(
+                candidateMagmaPositions.size(), flooded, dry,
+                attemptedWrites, successfulWrites, failedWrites, residualShellCells);
+    }
+
+    private static ShellClassification classifyShell(
+            WorldGenLevel level, BlockPos magma, BlockPos.MutableBlockPos cursor) {
+        boolean flooded = false;
+        boolean touchesFaceIce = false;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0) {
+                        continue;
+                    }
+                    int ny = magma.getY() + dy;
+                    if (ny <= level.getMinY() || ny >= level.getMaxY()) {
+                        continue;
+                    }
+                    cursor.set(magma.getX() + dx, ny, magma.getZ() + dz);
+                    BlockState shellState = level.getBlockState(cursor);
+                    if (isWater(shellState)) {
+                        flooded = true;
+                    }
+                    if (faceAdjacent(dx, dy, dz) && isIceFamily(shellState.getBlock())) {
+                        touchesFaceIce = true;
+                    }
+                }
+            }
+        }
+        return new ShellClassification(flooded, touchesFaceIce);
+    }
+
+    private static WriteCounts writeEligibleShell(
+            WorldGenLevel level,
+            BlockPos magma,
+            ShellClassification classification,
+            BlockPos.MutableBlockPos cursor) {
+        int attempted = 0;
+        int successful = 0;
+        int failed = 0;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0) {
+                        continue;
+                    }
+                    int ny = magma.getY() + dy;
+                    if (ny <= level.getMinY() || ny >= level.getMaxY()) {
+                        continue;
+                    }
+                    cursor.set(magma.getX() + dx, ny, magma.getZ() + dz);
+                    BlockState target = targetState(
+                            classification.flooded(), dx, dy, dz, level.getBlockState(cursor));
+                    if (target == null) {
+                        continue;
+                    }
+                    attempted++;
+                    boolean accepted = level.setBlock(cursor, target, 2);
+                    boolean observed = level.getBlockState(cursor).equals(target);
+                    if (accepted && observed) {
+                        successful++;
+                    } else {
+                        failed++;
+                    }
+                }
+            }
+        }
+        return new WriteCounts(attempted, successful, failed);
+    }
+
+    private static int countResidualEligibleShellCells(
+            WorldGenLevel level, List<BlockPos> candidateMagmaPositions) {
+        Set<BlockPos> residual = new HashSet<>();
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (BlockPos magma : candidateMagmaPositions) {
+            if (!level.getBlockState(magma).is(Blocks.MAGMA_BLOCK)) {
+                continue;
+            }
+            ShellClassification classification = classifyShell(level, magma, cursor);
+            if (!classification.eligible()) {
+                continue;
+            }
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        if (dx == 0 && dy == 0 && dz == 0) {
+                            continue;
+                        }
+                        int ny = magma.getY() + dy;
+                        if (ny <= level.getMinY() || ny >= level.getMaxY()) {
+                            continue;
+                        }
+                        cursor.set(magma.getX() + dx, ny, magma.getZ() + dz);
+                        if (targetState(
+                                classification.flooded(), dx, dy, dz,
+                                level.getBlockState(cursor)) != null) {
+                            residual.add(cursor.immutable());
                         }
                     }
                 }
             }
         }
-        if (DEBUG && magma > 0) {
-            GlobeMod.LOGGER.info("[LAT][QUENCH] chunk=({},{}) magma={} flooded={} dry={}",
-                    baseX >> 4, baseZ >> 4, magma, flooded, dry);
+        return residual.size();
+    }
+
+    private static BlockState targetState(
+            boolean flooded, int dx, int dy, int dz, BlockState current) {
+        boolean ice = isIceFamily(current.getBlock());
+        if (flooded) {
+            return ice || isWater(current) ? OBSIDIAN : null;
         }
-        return flooded + dry > 0;
+        if (!ice) {
+            return null;
+        }
+        return faceAdjacent(dx, dy, dz) ? AIR : OBSIDIAN;
+    }
+
+    private static boolean faceAdjacent(int dx, int dy, int dz) {
+        return Math.abs(dx) + Math.abs(dy) + Math.abs(dz) == 1;
+    }
+
+    static String debugLine(int chunkX, int chunkZ, SweepStats stats) {
+        return "[LAT][QUENCH] chunk=(" + chunkX + "," + chunkZ + ")"
+                + " invoked=true"
+                + " candidateMagma=" + stats.candidateMagma()
+                + " flooded=" + stats.flooded()
+                + " dry=" + stats.dry()
+                + " attemptedWrites=" + stats.attemptedWrites()
+                + " successfulWrites=" + stats.successfulWrites()
+                + " failedWrites=" + stats.failedWrites()
+                + " residualShellCells=" + stats.residualShellCells();
     }
 }

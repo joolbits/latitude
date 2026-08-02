@@ -191,6 +191,11 @@ loom {
             // LatitudeV2Flags). Forwarding the same default keeps real headless chunks representative;
             // an explicit false remains available for a controlled comparison.
             vmArg "-Dlatitude.glacialCavesV1=${System.getProperty('latitude.glacialCavesV1', 'true')}"
+            // Dedicated default-off lake-fringe + magma-quench telemetry. This keeps glacial-dressing
+            // evidence available without enabling the much broader legacy collapse diagnostics.
+            vmArg "-Dlatitude.debugGlacialDressing=${System.getProperty('latitude.debugGlacialDressing', 'false')}"
+            // Legacy broad diagnostics remain forwarded as a backward-compatible alternate trigger.
+            vmArg "-Dlatitude.debugCollapse=${System.getProperty('latitude.debugCollapse', 'false')}"
             // Polar water freeze (default TRUE, matching LatitudeV2Flags; byte-identical when explicitly
             // set off). Forwarded on sight this round -- the L17 forwarding class has bitten this repo
             // twice before (climateV2/biomeConsumerV2 2026-07-07); don't let a third flag go unforwarded.

@@ -21,8 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * a parse failure breaks world creation. Mirrors {@code GlacialDressingJsonSchemaTest}'s style: assert the
  * configured feature declares the mod's custom type (registered in code at mod-init), the placed feature
  * points back at it and ends with the biome filter, and {@code polar_barrens.json} lists the placed feature
- * at the TOP_LAYER_MODIFICATION step AFTER {@code minecraft:freeze_top_layer} (so the roof lands last -- after
- * carving + glacier + freeze -- and nothing overwrites it). Full codec validation happens at boot.
+ * at the TOP_LAYER_MODIFICATION step AFTER {@code minecraft:freeze_top_layer}, with the magma quench as the
+ * final flooded-magma writer. Full codec validation happens at boot.
  */
 class PowderCrevasseRoofJsonSchemaTest {
 
@@ -69,15 +69,17 @@ class PowderCrevasseRoofJsonSchemaTest {
     @Test
     void barrensListsTheTrapAtTopLayerAfterFreeze() {
         JsonObject barrens = load("/data/globe/worldgen/biome/polar_barrens.json");
-        // Step 10 = top_layer_modification. The trap must be AFTER freeze_top_layer (last), so the snowfield
-        // reference is final and the freeze pass cannot re-snow the powder roof.
+        // Step 10 = top_layer_modification. The trap remains after freeze_top_layer, while the magma quench
+        // stays last so a late spring/freeze writer cannot leave flooded magma bare.
         List<String> topLayer = featureStep(barrens, 10);
         assertEquals("minecraft:freeze_top_layer", topLayer.get(0),
                 "freeze_top_layer stays first in the top-layer step");
-        assertEquals(ID, topLayer.get(topLayer.size() - 1),
-                "the powder-roof trap is appended LAST in the top-layer step (after the freeze pass)");
+        assertEquals("globe:magma_quench_sweep", topLayer.get(topLayer.size() - 1),
+                "the magma quench is appended LAST in the top-layer step");
         assertTrue(topLayer.indexOf("minecraft:freeze_top_layer") < topLayer.indexOf(ID),
                 "the trap must run strictly after the freeze pass");
+        assertTrue(topLayer.indexOf(ID) < topLayer.indexOf("globe:magma_quench_sweep"),
+                "the final quench must follow the powder roof");
         // It is a SURFACE trap on the barrens -- it must NOT appear in glacial_caves (the underground biome).
         JsonObject caves = load("/data/globe/worldgen/biome/glacial_caves.json");
         for (int step = 0; step < caves.getAsJsonArray("features").size(); step++) {

@@ -788,6 +788,9 @@ public class GlobeModClient implements ClientModInitializer {
             int bx = (int) Math.floor(px + (random.nextDouble() - 0.5) * radius * 2.0);
             int bz = (int) Math.floor(pz + (random.nextDouble() - 0.5) * radius * 2.0);
             int by = feetY - yBelow + random.nextInt(ySpan);
+            if (!com.example.globe.core.FrostMoteLaw.isDressableMoteY(by)) {
+                continue;
+            }
             // A water SURFACE cell: a water-family block (pure table) with AIR directly above -- the top of a
             // cave pool. Rejects submerged mid-column water and the ice floes (which are ICE, not in the table).
             BlockPos here = new BlockPos(bx, by, bz);
@@ -796,7 +799,14 @@ public class GlobeModClient implements ClientModInitializer {
             if (!com.example.globe.core.FrostMoteLaw.isWaterMoteBlock(blockId)) {
                 continue;
             }
-            if (!client.level.getBlockState(here.above()).isAir()) {
+            boolean airAbove = client.level.getBlockState(here.above()).isAir();
+            if (!airAbove) {
+                continue;
+            }
+            String sampleBiomeId = client.level.getBiome(here).unwrapKey()
+                    .map(k -> k.identifier().toString()).orElse(null);
+            if (!com.example.globe.core.FrostMoteLaw.isEligibleMoteSample(
+                    flagOn, biomeId, sampleBiomeId, by, blockId, airAbove)) {
                 continue;
             }
             double mx = bx + random.nextDouble();
