@@ -490,6 +490,15 @@ Documentation:
 
 ### Phase 4: Terrain Integration Spike
 
+> **STATUS 2026-08-02 — BUILT, LIVE-CONFIRMED, awaiting one owner decision.** This section is the
+> original plan, kept as written. What actually happened: the wrapper shipped behind
+> `latitude.terrainV2.*` (default OFF); the Y-aware taper (Slice C) opened a usable strength window;
+> **S=0.4 is live-confirmed on both halves** — land-lift (TEST 27 retry, 2026-07-07) and ocean
+> carve/shelf (TEST 30, 2026-07-08); and gate G3's two residual checks closed 2026-08-02. The
+> "Terrain go/no-go decision note" listed under Documentation below **exists**:
+> `<external-notes>/test27-retry-go-no-go-20260707.md`. Remaining: the owner's **ship-on vs
+> keep-as-dial** call. Latest state: `<external-notes>/phase4-residual-closure-20260802.md`.
+
 Document review:
 
 - Active density-function docs.
@@ -956,12 +965,24 @@ needs her input first.
 > prompt: design locked (r2) → implemented behind `latitude.terrainV2.enabled` → mechanical proof gate →
 > 6-lens sweeper audit → live pass. The live pass found and fixed two real bugs no mechanical gate could
 > reach (install-timing `95bca16c`, per-column perf memo `0be832f2`); the mechanism is live-confirmed at
-> stress strengths. **Phase 4 is mechanically closed but NOT live-closed:** the Fable 5 audit (2026-07-06)
-> measured an EMPTY usable strength window on the Y-uniform bias formula, so the strength calibration this
-> prompt scoped is unsatisfiable until a Y-aware taper lands. Current truth + path forward (slices A–E,
-> gates G1–G3): `<external-notes>/fable5-overhaul-audit-report-20260706.md`. Execution log:
-> `<external-notes>/phase4-terrain-wrapper-20260705.md`. The prompt below is retained as the historical working
-> card.
+> stress strengths.
+>
+> ~~**Phase 4 is mechanically closed but NOT live-closed:** the Fable 5 audit (2026-07-06) measured an
+> EMPTY usable strength window on the Y-uniform bias formula, so the strength calibration this prompt
+> scoped is unsatisfiable until a Y-aware taper lands.~~
+>
+> **SUPERSEDED — UPDATE 2026-08-02.** The empty-window blocker was resolved the day after it was written:
+> the Y-aware taper landed 2026-07-07 (Slice C, `1d2402b6`), which opened a usable window, and **S=0.4 is
+> live-confirmed on BOTH halves** — land-lift on the TEST 27 retry (2026-07-07) and ocean carve/shelf on
+> TEST 30 (2026-07-08, C-3 grip fix: *"very continental-shelfy… I don't see the weird walls"*). Gate G3's
+> two skipped residuals closed 2026-08-02. Phase 4 now awaits only the owner's **ship-on vs keep-as-dial**
+> disposition; the flag remains default-off until she calls it.
+> Current truth, in reading order: `<external-notes>/phase4-residual-closure-20260802.md` (latest) →
+> `<external-notes>/test27-retry-go-no-go-20260707.md` (the go/no-go deliverable) →
+> `<external-notes>/fable5-recovery-checkpoint-20260707.md` (gates G1/G2 green) →
+> `<external-notes>/fable5-overhaul-audit-report-20260706.md` (the audit that structured slices A–E).
+> Execution log: `<external-notes>/phase4-terrain-wrapper-20260705.md`. The prompt below is retained as the
+> historical working card.
 
 Added 2026-07-05, once the Biome Consumer slice's live bug was fixed and BOTH sweeper audits (Biome
 Consumer bug scope, then a comprehensive Phases 0-3 sweep — 57 findings total, all fixed or deliberately
