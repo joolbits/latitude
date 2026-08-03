@@ -78,7 +78,8 @@ public final class TerrainLawPolicy {
      * any of the five terrain-law properties was passed as a real {@code -D} (vs baked-in defaults);
      * {@code adoptJvmArgs} is the per-run re-stamp opt-in.
      */
-    public record JvmTerrainConfig(TerrainLaw law, boolean anyKnobExplicit, boolean adoptJvmArgs) {
+    public record JvmTerrainConfig(TerrainLaw law, boolean anyKnobExplicit, boolean strengthExplicit,
+                                   boolean adoptJvmArgs) {
     }
 
     /** What kind of operator-visible message the decision warrants. */
@@ -132,12 +133,18 @@ public final class TerrainLawPolicy {
                 // Row 4.
                 return new Decision(jvmLaw, Optional.of(jvmLaw), false, WarningKind.ADOPTED_BY_OPTIN);
             }
-            if (jvm.anyKnobExplicit()) {
+            if (jvm.anyKnobExplicit() && flagsMayCarry(jvmLaw, jvm)) {
                 // Row 3 — explicit flags on a legacy world describe how it was really made (the Phase-4
-                // proof worlds were all generated via -Ds).
+                // proof worlds were all generated via -Ds). Sweep fix (2026-08-02): ARMING a legacy world
+                // this way additionally requires the STRENGTH knob to be explicitly present — a stale
+                // partial set (e.g. a launcher profile still carrying -Dlatitude.terrainV2.enabled=true
+                // from the pre-flip era, when the baked-in strength was 0.0 and that arg meant "no-op")
+                // is not evidence of arming intent, and silently arming a legacy world is exactly the
+                // shear this guard exists to prevent.
                 return new Decision(jvmLaw, Optional.of(jvmLaw), false, WarningKind.LEGACY_ADOPTED_FLAGS);
             }
-            // Row 2 — THE P2-8 case: pre-guard world under baked-in defaults. Terrain stays OFF forever.
+            // Row 2 — THE P2-8 case: pre-guard world under baked-in defaults (or under stale partial
+            // flags that may not arm). Terrain stays OFF forever.
             return new Decision(CANONICAL_OFF, Optional.of(CANONICAL_OFF), true, WarningKind.LEGACY_KEPT_OFF);
         }
 
@@ -150,8 +157,11 @@ public final class TerrainLawPolicy {
         }
 
         // Rows 9/10 — the formula boundary. Explicit knob -Ds do NOT cross it (equal knob values under a
-        // different formula still shear); only the adoptJvmArgs opt-in does.
-        if (stamp.formulaVersion() != CURRENT_FORMULA_VERSION) {
+        // different formula still shear); only the adoptJvmArgs opt-in does. Sweep fix (2026-08-02): the
+        // boundary applies to ARMED stamps only — an inert stamp never shaped a block, so its formula
+        // version is meaningless and must not trigger a perpetual false "different version" warning;
+        // inert stamps fall through to the value/provenance rows.
+        if (!stamp.isInert() && stamp.formulaVersion() != CURRENT_FORMULA_VERSION) {
             if (jvm.adoptJvmArgs()) {
                 return new Decision(jvmLaw, Optional.of(jvmLaw), false, WarningKind.ADOPTED_BY_OPTIN);
             }
@@ -168,8 +178,10 @@ public final class TerrainLawPolicy {
             // Row 8.
             return new Decision(jvmLaw, Optional.of(jvmLaw), false, WarningKind.ADOPTED_BY_OPTIN);
         }
-        if (jvm.anyKnobExplicit()) {
-            // Row 7 — dial-turning; flags always win, world re-stamped, honest warning.
+        if (jvm.anyKnobExplicit() && flagsMayCarry(jvmLaw, jvm)) {
+            // Row 7 — dial-turning; flags win, world re-stamped, honest warning. Same sweep carve-out as
+            // row 3: turning an inert-stamped world ON requires the strength knob explicitly (a stale
+            // partial -D set may retune or disarm, but never arm).
             return new Decision(jvmLaw, Optional.of(jvmLaw), false, WarningKind.ADOPTED_BY_FLAGS);
         }
         if (!stamp.isInert() && !jvmLaw.enabled()) {
@@ -180,6 +192,17 @@ public final class TerrainLawPolicy {
         }
         // Row 6 — differing baked-in defaults (e.g. a future retune): the world's own law wins, quietly.
         return new Decision(stamp, Optional.empty(), stampWasInferred, WarningKind.STAMP_HELD);
+    }
+
+    /**
+     * Sweep fix (2026-08-02): may this run's explicit knob flags carry the world to {@code jvmLaw}?
+     * Disarming and retuning are always allowed; ARMING (an inert or absent stamp -> an armed law)
+     * additionally requires the strength knob itself to be explicitly present, because a stale partial
+     * flag set (a launcher profile's leftover {@code -Dlatitude.terrainV2.enabled=true} from the era
+     * when the baked-in strength was 0.0) is not evidence of arming intent.
+     */
+    private static boolean flagsMayCarry(TerrainLaw jvmLaw, JvmTerrainConfig jvm) {
+        return jvmLaw.isInert() || jvm.strengthExplicit();
     }
 
     /** The "cannot honor / paused" effective law: disarmed, but carrying the stamp's identity knobs. */
@@ -229,7 +252,11 @@ public final class TerrainLawPolicy {
     /** The full operator log line for a decision (always names both laws; always ends with the remedy). */
     public static String logText(WarningKind kind, TerrainLaw stamped, boolean inferred,
                                  TerrainLaw effective, TerrainLaw jvmLaw) {
-        String stampSide = stamped == null ? "no stamp"
+        boolean legacyKind = kind == WarningKind.LEGACY_KEPT_OFF || kind == WarningKind.LEGACY_ADOPTED_FLAGS;
+        String stampSide = stamped == null
+                ? (legacyKind
+                        ? "appears to have been created before terrain shaping existed (treated as OFF)"
+                        : "no stamp")
                 : (inferred
                         ? "appears to have been created before terrain shaping existed (treated as OFF)"
                         : "stamped " + stamped.describe());
@@ -241,9 +268,12 @@ public final class TerrainLawPolicy {
             case STAMPED_NEW -> base + " New world stamped with this run's terrain law.";
             case LEGACY_ADOPTED_FLAGS -> base
                     + " Legacy world adopted this run's explicit -D flags (they describe how it was made).";
-            case LEGACY_KEPT_OFF, FORMULA_PAUSED -> base
+            case LEGACY_KEPT_OFF -> base
                     + " " + ADOPT_REMEDY
                     + (stamped != null ? " This world's own law as flags: " + remedyFlags(stamped) : "");
+            // Sweep fix (2026-08-02): no knob-flags remedy here — the policy itself refuses knob -Ds
+            // across a formula boundary, so offering them would be a lie; adoptJvmArgs is the only door.
+            case FORMULA_PAUSED -> base + " " + ADOPT_REMEDY;
             case STAMP_HELD -> "Latitude terrain law: keeping this world's own settings ("
                     + stamped.describe() + ") over this build's defaults (" + jvmLaw.describe()
                     + "). Pass the -D flags explicitly, or -Dlatitude.terrainV2.adoptJvmArgs=true, to change them.";

@@ -465,19 +465,20 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
      * S=0 bounds equal the delegate's exactly (the byte-identity contract).
      */
     private double maxAbsBias() {
-        // P2-8 widen-to-max: bounds must never be TIGHTER than what a stamped law can generate, so admit
-        // both the JVM flags and the world's effective law. Bit-identical whenever effective == flags
-        // (i.e. every configuration that existed before the guard), so no new armed-identity proof run
-        // is required by this change.
-        return Math.max(Math.abs(LatitudeV2Flags.TERRAIN_V2_STRENGTH),
-                Math.abs(LatitudeBiomes.effectiveTerrainStrength())) * K;
+        // P2-8 (sweep-corrected 2026-08-02): bounds follow the EFFECTIVE law exactly — the same source
+        // compute() biases with — so bounds and values can never disagree. In particular a legacy world
+        // held OFF under armed JVM flags gets bounds == the delegate's, which is the exact configuration
+        // the July installed-S=0 byte-identity proof covered; the first draft widened bounds to
+        // max(flags, effective), which put legacy worlds under 0.4-widened bounds no identity proof had
+        // ever seen. Pre-decision reads fall back to the flags (LatitudeBiomes accessor contract), and
+        // chunk generation only happens post-decision (the GlobeMod ordering invariant), so generation
+        // always sees matched bounds+values.
+        return Math.abs(LatitudeBiomes.effectiveTerrainStrength()) * K;
     }
 
     private static boolean clampRegimeCanBind() {
-        return (LatitudeV2Flags.TERRAIN_V2_STRENGTH != 0.0
-                        && LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO != 0.0)
-                || (LatitudeBiomes.effectiveTerrainStrength() != 0.0
-                        && LatitudeBiomes.effectiveOceanRatio() != 0.0);
+        return LatitudeBiomes.effectiveTerrainStrength() != 0.0
+                && LatitudeBiomes.effectiveOceanRatio() != 0.0;
     }
 
     @Override

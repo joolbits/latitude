@@ -440,7 +440,13 @@ public class GlobeMod implements ModInitializer {
         // GeoTerrainBiasFunction.compute no-ops per column until the provider is real -- so "provider
         // real" implies "law decided" and no chunk can ever generate under an undecided law. Do not move
         // the provider rebuild earlier.
-        boolean worldIsNew = world.getGameTime() < 100L; // same idiom as inferWorldgenPolicy / radius stamp
+        // Sweep fix (2026-08-02): the brand-new signal is the bespoke create-flow's pendingShape (the
+        // same bug-catcher-#1-proven signal the shape stamp uses above — the bespoke screen is the ONLY
+        // way to make a Globe world), NOT gameTime<100: a pre-flip world played for under five seconds
+        // and reopened post-flip would have read as "new" and been stamped born-armed, shearing its
+        // spawn area. Misclassifying new-as-legacy is safe (kept OFF, recoverable via adoptJvmArgs);
+        // misclassifying legacy-as-new is not.
+        boolean worldIsNew = pendingShape != null;
         com.example.globe.core.terrain.TerrainLawPolicy.TerrainLaw jvmLaw =
                 new com.example.globe.core.terrain.TerrainLawPolicy.TerrainLaw(
                         com.example.globe.core.terrain.TerrainLawPolicy.CURRENT_FORMULA_VERSION,
@@ -448,19 +454,26 @@ public class GlobeMod implements ModInitializer {
                         LatitudeV2Flags.TERRAIN_V2_STRENGTH,
                         LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO,
                         LatitudeV2Flags.TERRAIN_V2_GRIP_WIDTH);
+        // Sweep fix (2026-08-02): capture the PRIOR stamp BEFORE the decision writes — the adoption
+        // warnings must print the law the world USED to have (the only recovery record of what it was),
+        // not the freshly-written one.
+        com.example.globe.core.terrain.TerrainLawPolicy.TerrainLaw priorStamp =
+                worldState.getTerrainLawOptional().orElse(null);
+        boolean priorInferred = worldState.isTerrainLawInferred();
         com.example.globe.core.terrain.TerrainLawPolicy.Decision lawDecision =
                 com.example.globe.core.terrain.TerrainLawPolicy.decide(
-                        worldState.getTerrainLawOptional(), worldState.isTerrainLawInferred(),
+                        worldState.getTerrainLawOptional(), priorInferred,
                         new com.example.globe.core.terrain.TerrainLawPolicy.JvmTerrainConfig(jvmLaw,
                                 LatitudeV2Flags.TERRAIN_LAW_ANY_EXPLICIT,
+                                System.getProperty("latitude.terrainV2.strength") != null,
                                 LatitudeV2Flags.TERRAIN_V2_ADOPT_JVM_ARGS),
                         worldIsNew);
         lawDecision.stampToWrite().ifPresent(law -> worldState.setTerrainLaw(law, lawDecision.stampAsInferred()));
         LatitudeBiomes.setEffectiveTerrainLaw(lawDecision.effective());
         {
             String lawLog = com.example.globe.core.terrain.TerrainLawPolicy.logText(
-                    lawDecision.warning(), worldState.getTerrainLawOptional().orElse(null),
-                    lawDecision.stampAsInferred(), lawDecision.effective(), jvmLaw);
+                    lawDecision.warning(), priorStamp,
+                    priorInferred, lawDecision.effective(), jvmLaw);
             String lawChat = com.example.globe.core.terrain.TerrainLawPolicy.chatText(lawDecision.warning());
             TERRAIN_LAW_CHAT = lawChat.isEmpty() ? null : lawChat;
             if (!lawLog.isEmpty()) {

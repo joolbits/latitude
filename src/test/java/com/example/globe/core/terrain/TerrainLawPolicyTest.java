@@ -23,15 +23,21 @@ class TerrainLawPolicyTest {
             new TerrainLaw(TerrainLawPolicy.CURRENT_FORMULA_VERSION, false, 0.0, 1.0, 0.8);
 
     private static JvmTerrainConfig defaultsOnly(TerrainLaw law) {
-        return new JvmTerrainConfig(law, false, false);
+        return new JvmTerrainConfig(law, false, false, false);
     }
 
+    /** The full explicit set, strength included — the live-tuning shape (and gate-1's pins). */
     private static JvmTerrainConfig explicitFlags(TerrainLaw law) {
-        return new JvmTerrainConfig(law, true, false);
+        return new JvmTerrainConfig(law, true, true, false);
+    }
+
+    /** A stale PARTIAL set: some -D present, but not the strength knob. */
+    private static JvmTerrainConfig partialFlags(TerrainLaw law) {
+        return new JvmTerrainConfig(law, true, false, false);
     }
 
     private static JvmTerrainConfig optIn(TerrainLaw law) {
-        return new JvmTerrainConfig(law, true, true);
+        return new JvmTerrainConfig(law, true, true, true);
     }
 
     // ---- rows 1-4: unstamped worlds ------------------------------------------------------------
@@ -78,7 +84,7 @@ class TerrainLawPolicyTest {
     @Test
     void legacyOptInAdopts() {
         Decision d = TerrainLawPolicy.decide(Optional.empty(), false,
-                new JvmTerrainConfig(SHIPPED_ARMED, false, true), false);
+                new JvmTerrainConfig(SHIPPED_ARMED, false, false, true), false);
         assertEquals(SHIPPED_ARMED, d.effective());
         assertEquals(WarningKind.ADOPTED_BY_OPTIN, d.warning());
     }
@@ -161,6 +167,65 @@ class TerrainLawPolicyTest {
         assertEquals(TerrainLawPolicy.CURRENT_FORMULA_VERSION, d.stampToWrite().orElseThrow().formulaVersion(),
                 "every written stamp carries the CURRENT formula version");
         assertEquals(WarningKind.ADOPTED_BY_OPTIN, d.warning());
+    }
+
+    // ---- sweep fixes 2026-08-02 -----------------------------------------------------------------
+
+    @Test
+    void legacyPartialExplicitArmedStaysOff() {
+        // THE stale-launcher-profile case (found by the adversarial sweep): a profile still carrying
+        // -Dlatitude.terrainV2.enabled=true from the pre-flip era (when baked-in strength was 0.0, so
+        // that arg meant "no-op") must NOT arm a legacy world — arming requires the strength knob.
+        Decision d = TerrainLawPolicy.decide(Optional.empty(), false, partialFlags(SHIPPED_ARMED), false);
+        assertTrue(d.effective().isInert(), "stale partial -Ds must not arm a legacy world");
+        assertEquals(Optional.of(TerrainLawPolicy.CANONICAL_OFF), d.stampToWrite());
+        assertEquals(WarningKind.LEGACY_KEPT_OFF, d.warning());
+    }
+
+    @Test
+    void stampedInertPartialFlagsDoNotArm() {
+        // Same rule one step later: a world already stamped OFF (the inferred legacy stamp) opened in a
+        // profile with stale partial -Ds must stay OFF.
+        Decision d = TerrainLawPolicy.decide(Optional.of(TerrainLawPolicy.CANONICAL_OFF), true,
+                partialFlags(SHIPPED_ARMED), false);
+        assertTrue(d.effective().isInert());
+        assertEquals(Optional.empty(), d.stampToWrite());
+        assertEquals(WarningKind.STAMP_HELD, d.warning());
+    }
+
+    @Test
+    void partialFlagsMayStillDisarmAndRetune() {
+        // The carve-out is only about ARMING: partial explicit flags may disarm an armed world...
+        Decision disarm = TerrainLawPolicy.decide(Optional.of(SHIPPED_ARMED), false,
+                partialFlags(INERT_JVM), false);
+        assertEquals(INERT_JVM, disarm.effective(), "partial flags may disarm");
+        assertEquals(WarningKind.ADOPTED_BY_FLAGS, disarm.warning());
+        // ...but retuning an armed world's strength requires the strength knob (partial set holds).
+        TerrainLaw retuned = new TerrainLaw(TerrainLawPolicy.CURRENT_FORMULA_VERSION, true, 0.6, 1.0, 0.8);
+        Decision retune = TerrainLawPolicy.decide(Optional.of(SHIPPED_ARMED), false,
+                explicitFlags(retuned), false);
+        assertEquals(retuned, retune.effective(), "the full explicit set retunes as before");
+    }
+
+    @Test
+    void inertStampIgnoresFormulaVersion() {
+        // An inert stamp never shaped a block: its formula version is meaningless and must not trigger
+        // the perpetual false "different version" pause (sweep finding).
+        TerrainLaw ancientInert = new TerrainLaw(TerrainLawPolicy.CURRENT_FORMULA_VERSION + 5, false, 0.0, 1.0, 0.8);
+        Decision d = TerrainLawPolicy.decide(Optional.of(ancientInert), true, defaultsOnly(SHIPPED_ARMED), false);
+        assertEquals(WarningKind.STAMP_HELD, d.warning(),
+                "an inert stamp under differing defaults holds quietly — never FORMULA_PAUSED");
+        assertTrue(d.effective().isInert());
+    }
+
+    @Test
+    void formulaPausedLogOmitsFlagRemedy() {
+        TerrainLaw oldArmed = new TerrainLaw(TerrainLawPolicy.CURRENT_FORMULA_VERSION + 1, true, 0.4, 1.0, 0.8);
+        String log = TerrainLawPolicy.logText(WarningKind.FORMULA_PAUSED, oldArmed, false,
+                new TerrainLaw(oldArmed.formulaVersion(), false, 0.0, 1.0, 0.8), SHIPPED_ARMED);
+        assertTrue(log.contains("adoptJvmArgs"), "the one honest remedy must be present: " + log);
+        assertFalse(log.contains("This world's own law as flags"),
+                "the policy refuses knob -Ds across a formula boundary, so the log must not offer them: " + log);
     }
 
     // ---- laws, remedies, texts ------------------------------------------------------------------
