@@ -701,6 +701,49 @@ public final class LatitudeBiomes {
     private static volatile GeoSummaryProvider GEO_V2_PROVIDER = NoOpGeoSummaryProvider.INSTANCE;
     private static volatile ClimateSummaryProvider CLIMATE_V2_PROVIDER = NoOpClimateSummaryProvider.INSTANCE;
 
+    // P2-8 terrain-law guard: the EFFECTIVE law for the loaded world, decided by TerrainLawPolicy at
+    // world load (GlobeMod.initLatitudeBiomesForWorld) BEFORE setRadius/setWorldSeed rebuild the
+    // provider. null = not decided (harness/atlas contexts that set statics directly without firing
+    // ServerLevelEvents.LOAD) -> every accessor falls back to the raw flag statics, which keeps those
+    // contexts behaving exactly as pre-guard. Reset on server stop (a second world in the same JVM must
+    // never inherit the first world's law -- the P1-1 leak class).
+    private static volatile com.example.globe.core.terrain.TerrainLawPolicy.TerrainLaw EFFECTIVE_TERRAIN_LAW = null;
+
+    public static void setEffectiveTerrainLaw(com.example.globe.core.terrain.TerrainLawPolicy.TerrainLaw law) {
+        EFFECTIVE_TERRAIN_LAW = law;
+    }
+
+    /** The strength the wrapper must bias with for THIS world (0.0 when the effective law is disarmed). */
+    public static double effectiveTerrainStrength() {
+        com.example.globe.core.terrain.TerrainLawPolicy.TerrainLaw law = EFFECTIVE_TERRAIN_LAW;
+        if (law == null) {
+            return LatitudeV2Flags.TERRAIN_V2_STRENGTH;
+        }
+        return law.enabled() ? law.strength() : 0.0;
+    }
+
+    /** The ocean-strength ratio for THIS world. */
+    public static double effectiveOceanRatio() {
+        com.example.globe.core.terrain.TerrainLawPolicy.TerrainLaw law = EFFECTIVE_TERRAIN_LAW;
+        return law == null ? LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO : law.oceanRatio();
+    }
+
+    /** The carve grip width for THIS world. */
+    public static double effectiveGripWidth() {
+        com.example.globe.core.terrain.TerrainLawPolicy.TerrainLaw law = EFFECTIVE_TERRAIN_LAW;
+        return law == null ? LatitudeV2Flags.TERRAIN_V2_GRIP_WIDTH : law.gripWidth();
+    }
+
+    /** True iff THIS world's effective law arms the bias at a nonzero strength (provider realness aside). */
+    public static boolean effectiveTerrainArmed() {
+        com.example.globe.core.terrain.TerrainLawPolicy.TerrainLaw law = EFFECTIVE_TERRAIN_LAW;
+        if (law == null) {
+            return LatitudeV2Flags.TERRAIN_V2_ENABLED && LatitudeV2Flags.GEO_V2_ENABLED
+                    && LatitudeV2Flags.TERRAIN_V2_STRENGTH != 0.0;
+        }
+        return law.enabled() && law.strength() != 0.0;
+    }
+
     private static void rebuildGeoAuthority() {
         if (!LatitudeV2Flags.GEO_V2_ENABLED) {
             GEO_V2_PROVIDER = NoOpGeoSummaryProvider.INSTANCE;
@@ -777,6 +820,7 @@ public final class LatitudeBiomes {
         ACTIVE_RADIUS_BLOCKS = 0;
         GEO_V2_PROVIDER = NoOpGeoSummaryProvider.INSTANCE;
         CLIMATE_V2_PROVIDER = NoOpClimateSummaryProvider.INSTANCE;
+        EFFECTIVE_TERRAIN_LAW = null; // P2-8: the law must never leak into the next world in this JVM
         LOGGER.info("[Latitude] V2 worldgen statics reset on server stop (providers -> NoOp, seed/radius cleared).");
     }
 
@@ -800,9 +844,10 @@ public final class LatitudeBiomes {
      * (TEST 27 finding 1b).
      */
     public static boolean terrainBiasActivelyBiasing() {
-        return LatitudeV2Flags.TERRAIN_V2_ENABLED
-                && LatitudeV2Flags.GEO_V2_ENABLED
-                && LatitudeV2Flags.TERRAIN_V2_STRENGTH != 0.0
+        // P2-8: the WORLD'S effective law (not the raw flags) decides whether biasing is claimed --
+        // load-bearing for the mirror veto, the spawn edge clamp and carve-aware labels: a legacy world
+        // held OFF under flipped defaults must read exactly like a pre-Phase-4 world.
+        return effectiveTerrainArmed()
                 && GEO_V2_PROVIDER instanceof GeoAuthorityProvider;
     }
 
@@ -3594,7 +3639,7 @@ public final class LatitudeBiomes {
         if (LatitudeV2Flags.BOUNDARY_V2_ENABLED
                 && geoV2Summary != null
                 && terrainBiasActivelyBiasing()
-                && LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO != 0.0) {
+                && effectiveOceanRatio() != 0.0) {
             double edgeB = geoV2Summary.projectionEdgeXOnly01();
             if (edgeB > 0.0) {
                 int frayRadius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
@@ -3622,7 +3667,7 @@ public final class LatitudeBiomes {
                 // Slice C-2: the mirror exists to follow CARVED terrain, so it additionally requires the
                 // carve to be possible at all (r != 0). Without this, the floor-based check below would
                 // fire on ordinary vanilla shore columns under the r=0 recipe and change its biome output.
-                && LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO != 0.0
+                && effectiveOceanRatio() != 0.0
                 && geoV2Summary != null && geoV2Summary.isOceanIntent()
                 && generator != null && noiseConfig != null && heightView != null) {
             // Slice C-2: SOLID floor, not the fluid-inclusive surface -- a correctly-flooded carved column
@@ -4451,7 +4496,7 @@ public final class LatitudeBiomes {
         if (LatitudeV2Flags.BOUNDARY_V2_ENABLED
                 && geoV2Summary != null
                 && terrainBiasActivelyBiasing()
-                && LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO != 0.0) {
+                && effectiveOceanRatio() != 0.0) {
             double edgeB = geoV2Summary.projectionEdgeXOnly01();
             if (edgeB > 0.0) {
                 int frayRadius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
@@ -4479,7 +4524,7 @@ public final class LatitudeBiomes {
                 // Slice C-2: the mirror exists to follow CARVED terrain, so it additionally requires the
                 // carve to be possible at all (r != 0). Without this, the floor-based check below would
                 // fire on ordinary vanilla shore columns under the r=0 recipe and change its biome output.
-                && LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO != 0.0
+                && effectiveOceanRatio() != 0.0
                 && geoV2Summary != null && geoV2Summary.isOceanIntent()
                 && generator != null && noiseConfig != null && heightView != null) {
             // Slice C-2: SOLID floor, not the fluid-inclusive surface -- a correctly-flooded carved column

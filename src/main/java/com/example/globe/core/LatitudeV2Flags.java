@@ -37,8 +37,15 @@ package com.example.globe.core;
  */
 public final class LatitudeV2Flags {
 
+    /**
+     * SHIPPED ON 2026-08-02 (owner decision, Phase 4 ship-on): GeoAuthority is the geography source the
+     * terrain wrapper reads, so it flips with {@link #TERRAIN_V2_ENABLED}. The consumer-side flags
+     * (climateV2 / biomeConsumerV2 / oceanAuthority) remain OFF — this arms geography + terrain only.
+     * Gate-1 stays flag-off via the build.gradle biomePreview pins (deliberate divergence, the standing
+     * pattern behind the five prior default-ON flags; there is no re-baseline concept in this project).
+     */
     public static final boolean GEO_V2_ENABLED =
-            Boolean.parseBoolean(System.getProperty("latitude.geoV2.enabled", "false"));
+            Boolean.parseBoolean(System.getProperty("latitude.geoV2.enabled", "true"));
 
     public static final boolean CLIMATE_V2_ENABLED =
             Boolean.parseBoolean(System.getProperty("latitude.climateV2.enabled", "false"));
@@ -59,13 +66,24 @@ public final class LatitudeV2Flags {
     // The doubles are parsed defensively: a malformed -D degrades to the no-op default rather than
     // throwing at class-init (a class-init failure here would take down all worldgen). See design §3.
 
-    /** Phase 4 install gate. Default false -> the terrain-bias wrapper is never installed. */
+    /**
+     * Phase 4 install gate. SHIPPED ON 2026-08-02 (owner decision) after live confirmation of BOTH
+     * halves — land-lift (TEST 27 retry, 2026-07-07) and ocean carve/shelf (TEST 30, 2026-07-08) — and
+     * closure of gate G3's residual checks (docs/binder/phase4-residual-closure-20260802.md). Existing
+     * worlds are protected by the per-world terrain-law stamp ({@code TerrainLawPolicy}): a pre-flip
+     * world under defaults-only keeps terrain OFF forever, so the flip cannot shear anyone's map.
+     * Gate-1 stays flag-off via the build.gradle biomePreview pins.
+     */
     public static final boolean TERRAIN_V2_ENABLED =
-            Boolean.parseBoolean(System.getProperty("latitude.terrainV2.enabled", "false"));
+            Boolean.parseBoolean(System.getProperty("latitude.terrainV2.enabled", "true"));
 
-    /** Phase 4 primary strength knob (the live-tuning knob). Default 0.0 -> installed-but-no-op. */
+    /**
+     * Phase 4 primary strength knob (the live-tuning knob). Default 0.4 — the live-calibrated shipped
+     * value (Slice C named it the candidate; TEST 27/TEST 30 confirmed it; retunes land here, worlds
+     * keep their own stamped value via {@code TerrainLawPolicy}).
+     */
     public static final double TERRAIN_V2_STRENGTH =
-            parseDoubleOrDefault(System.getProperty("latitude.terrainV2.strength"), 0.0);
+            parseDoubleOrDefault(System.getProperty("latitude.terrainV2.strength"), 0.4);
 
     /** Phase 4 optional ocean-side asymmetry knob. Default 1.0 -> symmetric (land push == ocean push). */
     public static final double TERRAIN_V2_OCEAN_STRENGTH_RATIO =
@@ -83,6 +101,29 @@ public final class LatitudeV2Flags {
      */
     public static final double TERRAIN_V2_GRIP_WIDTH =
             parseDoubleOrDefault(System.getProperty("latitude.terrainV2.gripWidth"), 0.8);
+
+    /**
+     * P2-8 guard, provenance bit: true iff ANY terrain-law property was EXPLICITLY passed as a -D this
+     * run (vs riding the baked-in defaults). {@code TerrainLawPolicy} uses this to decide precedence:
+     * explicit flags beat a world's stamp (live tuning, and gate-1's build.gradle pins — which forward
+     * all five knobs as real -Ds, so pinned headless runs count as explicit and the pinned values
+     * deterministically beat any stamp); baked-in defaults DEFER to the stamp (shear prevention).
+     */
+    public static final boolean TERRAIN_LAW_ANY_EXPLICIT =
+            System.getProperty("latitude.geoV2.enabled") != null
+                    || System.getProperty("latitude.terrainV2.enabled") != null
+                    || System.getProperty("latitude.terrainV2.strength") != null
+                    || System.getProperty("latitude.terrainV2.oceanStrengthRatio") != null
+                    || System.getProperty("latitude.terrainV2.gripWidth") != null;
+
+    /**
+     * P2-8 guard, escape hatch: re-stamp the loaded world with THIS run's terrain law (accepting a
+     * one-time old/new chunk boundary step). Per-run consent, never persisted itself. Default false.
+     * Required to cross a formula-version boundary; explicit knob -Ds alone cannot (equal knob values
+     * under a different formula still shear).
+     */
+    public static final boolean TERRAIN_V2_ADOPT_JVM_ARGS =
+            Boolean.parseBoolean(System.getProperty("latitude.terrainV2.adoptJvmArgs", "false"));
 
     /**
      * Phase 5 Slice B-2 (Fix 2) sub-flag: floor-sight the live sunk-land mirror veto. Default false.

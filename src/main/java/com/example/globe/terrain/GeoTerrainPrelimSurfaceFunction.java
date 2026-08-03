@@ -58,8 +58,14 @@ public final class GeoTerrainPrelimSurfaceFunction implements DensityFunction.Si
      */
     @Override
     public double minValue() {
-        double maxDepth = Math.abs(com.example.globe.core.LatitudeV2Flags.TERRAIN_V2_STRENGTH)
-                * Math.abs(com.example.globe.core.LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO) * 60.0;
+        // P2-8 widen-to-max (see GeoTerrainBiasFunction.maxAbsBias): admit both the JVM flags and the
+        // world's effective law; bit-identical whenever they agree. RECIPROCAL RULE: a change to the
+        // SHAPE of the carve math must bump TerrainLawPolicy.CURRENT_FORMULA_VERSION.
+        double flagDepth = Math.abs(com.example.globe.core.LatitudeV2Flags.TERRAIN_V2_STRENGTH)
+                * Math.abs(com.example.globe.core.LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO);
+        double lawDepth = Math.abs(com.example.globe.world.LatitudeBiomes.effectiveTerrainStrength())
+                * Math.abs(com.example.globe.world.LatitudeBiomes.effectiveOceanRatio());
+        double maxDepth = Math.max(flagDepth, lawDepth) * 60.0;
         return maxDepth > 0.0 ? Math.min(delegate.minValue(), 63.0 - maxDepth) : delegate.minValue();
     }
 

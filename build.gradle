@@ -123,6 +123,9 @@ loom {
             vmArg "-Dlatitude.terrainV2.strength=${System.getProperty('latitude.terrainV2.strength', '0.0')}"
             vmArg "-Dlatitude.terrainV2.oceanStrengthRatio=${System.getProperty('latitude.terrainV2.oceanStrengthRatio', '1.0')}"
             vmArg "-Dlatitude.terrainV2.gripWidth=${System.getProperty('latitude.terrainV2.gripWidth', '0.8')}"
+            // P2-8 guard escape hatch (L17 same-pass forwarding for the new -D). Default false: headless
+            // runs never re-stamp a world dir unless an operator explicitly opts in.
+            vmArg "-Dlatitude.terrainV2.adoptJvmArgs=${System.getProperty('latitude.terrainV2.adoptJvmArgs', 'false')}"
             // Phase 5 Slice B-2: Fix 2 floor-sighted live veto sub-flag + Fix 1 edge-ocean gate. Both
             // default false (byte-identical flag-off); forwarded so a headless flag-on atlas is honest.
             vmArg "-Dlatitude.terrainV2.floorSightedVeto=${System.getProperty('latitude.terrainV2.floorSightedVeto', 'false')}"
@@ -216,6 +219,12 @@ loom {
             vmArg "-Xms2G"
             vmArg "-Xmx8G"
             vmArg "-Dlatdev.biomeSearch=${System.getProperty('latdev.biomeSearch', 'enabled')}"
+            // P2-8 / ship-on (2026-08-02): pin the terrain/geo family OFF here like biomePreview does.
+            // The Java defaults flipped ON; these explicit pins keep this headless tool's output
+            // comparable to its pre-flip baselines unless an operator overrides them (-D wins).
+            vmArg "-Dlatitude.geoV2.enabled=${System.getProperty('latitude.geoV2.enabled', 'false')}"
+            vmArg "-Dlatitude.terrainV2.enabled=${System.getProperty('latitude.terrainV2.enabled', 'false')}"
+            vmArg "-Dlatitude.terrainV2.strength=${System.getProperty('latitude.terrainV2.strength', '0.0')}"
         }
         bandAudit {
             server()
@@ -224,6 +233,12 @@ loom {
             vmArg "-Xms2G"
             vmArg "-Xmx8G"
             vmArg "-Dlatdev.bandAudit=${System.getProperty('latdev.bandAudit', 'enabled')}"
+            // P2-8 / ship-on (2026-08-02): pin the terrain/geo family OFF here like biomePreview does.
+            // The Java defaults flipped ON; these explicit pins keep this headless tool's output
+            // comparable to its pre-flip baselines unless an operator overrides them (-D wins).
+            vmArg "-Dlatitude.geoV2.enabled=${System.getProperty('latitude.geoV2.enabled', 'false')}"
+            vmArg "-Dlatitude.terrainV2.enabled=${System.getProperty('latitude.terrainV2.enabled', 'false')}"
+            vmArg "-Dlatitude.terrainV2.strength=${System.getProperty('latitude.terrainV2.strength', '0.0')}"
         }
     }
 }

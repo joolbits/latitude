@@ -140,9 +140,15 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
      *  shapes at all (rare vanilla 160+ coastal peaks get a flat cut there — accepted, bounded). */
     private static final double CEIL_ONSET_Y = 160.0;
 
+    // P2-8 RECIPROCAL RULE: if you change the SHAPE of the bias math in this class (lift curve, carve
+    // or grip semantics, taper window, edge geometry consumed) -- not merely a knob's VALUE -- you must
+    // bump TerrainLawPolicy.CURRENT_FORMULA_VERSION, or stamped worlds will silently shear at chunk
+    // boundaries under the new math. Knob reads below go through LatitudeBiomes.effective*() so each
+    // world generates under ITS OWN stamped law (the per-world terrain-law guard).
+
     /** grip01 for an ocean-side magnitude m=|d|: 0 at the coastline, 1 from GRIP_WIDTH outward. */
     private static double gripAt(double m) {
-        double w = LatitudeV2Flags.TERRAIN_V2_GRIP_WIDTH;
+        double w = LatitudeBiomes.effectiveGripWidth();
         if (w <= 0.0) {
             return 1.0; // ramp disabled: legacy instant grip
         }
@@ -163,8 +169,8 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
      * effectively free on the hot path.
      */
     static double carveCeilYOrInfinity(int blockX, int blockZ) {
-        double s = LatitudeV2Flags.TERRAIN_V2_STRENGTH;
-        double r = LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO;
+        double s = LatitudeBiomes.effectiveTerrainStrength();
+        double r = LatitudeBiomes.effectiveOceanRatio();
         if (s == 0.0 || r == 0.0) {
             return Double.POSITIVE_INFINITY;
         }
@@ -343,8 +349,11 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
             // rise), which is a legitimate live-tuning experiment (e.g. probing the sign convention, or an
             // inverted-relief aesthetic). It is bounds-safe (maxAbsBias() uses Math.abs(s)) and stays a true
             // no-op at exactly S==0. This comment is the explicit record of the decision-not-to-clamp.
-            double s = LatitudeV2Flags.TERRAIN_V2_STRENGTH;
+            double s = LatitudeBiomes.effectiveTerrainStrength();
             if (s == 0.0) {
+                // Exact no-op fast path -- ALSO the P2-8 prevention mechanism: a legacy world whose
+                // effective law is disarmed makes the installed wrapper the contractual bit-identical
+                // no-op even though the JVM flags shipped armed.
                 // Exact no-op fast path (design §2): biased == base, bit-for-bit, for every column/Y.
                 return base;
             }
@@ -375,7 +384,7 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
                 com.example.globe.GlobeMod.LOGGER.info(
                         "[Latitude] Phase 4 terrain bias ENGAGED: real GeoAuthority provider live "
                                 + "(strength={}, oceanStrengthRatio={}).",
-                        LatitudeV2Flags.TERRAIN_V2_STRENGTH, LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO);
+                        LatitudeBiomes.effectiveTerrainStrength(), LatitudeBiomes.effectiveOceanRatio());
             }
 
             int blockX = ctx.blockX();
@@ -456,12 +465,19 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
      * S=0 bounds equal the delegate's exactly (the byte-identity contract).
      */
     private double maxAbsBias() {
-        return Math.abs(LatitudeV2Flags.TERRAIN_V2_STRENGTH) * K;
+        // P2-8 widen-to-max: bounds must never be TIGHTER than what a stamped law can generate, so admit
+        // both the JVM flags and the world's effective law. Bit-identical whenever effective == flags
+        // (i.e. every configuration that existed before the guard), so no new armed-identity proof run
+        // is required by this change.
+        return Math.max(Math.abs(LatitudeV2Flags.TERRAIN_V2_STRENGTH),
+                Math.abs(LatitudeBiomes.effectiveTerrainStrength())) * K;
     }
 
     private static boolean clampRegimeCanBind() {
-        return LatitudeV2Flags.TERRAIN_V2_STRENGTH != 0.0
-                && LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO != 0.0;
+        return (LatitudeV2Flags.TERRAIN_V2_STRENGTH != 0.0
+                        && LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO != 0.0)
+                || (LatitudeBiomes.effectiveTerrainStrength() != 0.0
+                        && LatitudeBiomes.effectiveOceanRatio() != 0.0);
     }
 
     @Override

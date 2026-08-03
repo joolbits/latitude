@@ -1,6 +1,7 @@
 package com.example.globe;
 
 import net.fabricmc.api.ModInitializer;
+import com.example.globe.core.LatitudeV2Flags;
 import com.example.globe.core.PassageAxis;
 import com.example.globe.world.LatitudeBiomes;
 import com.example.globe.world.BiomeFeatureStripping;
@@ -113,6 +114,11 @@ public class GlobeMod implements ModInitializer {
     // clamp MATH -- engagement epsilon, clamped Z, outward-velocity kill -- is the pure core PoleHardStop.)
     private static final java.util.Map<java.util.UUID, Long> POLE_CLAMP_LAST_CONTACT_TICK = new java.util.HashMap<>();
     private static final java.util.Set<java.util.UUID> POLE_CLAMP_LOGGED = new java.util.HashSet<>();
+
+    // P2-8 terrain-law guard: pending plain-language chat line for the loaded world (null = nothing to
+    // say), delivered once per player on JOIN (the POLE_CLAMP_LOGGED idiom). Cleared on server stop.
+    private static volatile String TERRAIN_LAW_CHAT = null;
+    private static final java.util.Set<java.util.UUID> TERRAIN_LAW_CHAT_SENT = new java.util.HashSet<>();
     // B-7 S1 cold-protection: the four armor slots consulted for freeze-immune-wearable pieces (leather by
     // default, datapack-extensible). A full set of freeze-immune pieces here negates freeze DAMAGE.
     private static final EquipmentSlot[] COLD_ARMOR_SLOTS =
@@ -233,6 +239,8 @@ public class GlobeMod implements ModInitializer {
         registerDevOnlyHeadlessRunner();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             POLAR_SCRUBBER = null;
+            TERRAIN_LAW_CHAT = null;          // P2-8: never carry a law warning into the next world
+            TERRAIN_LAW_CHAT_SENT.clear();
             // Slice B (audit P1-1): tear down the V2 worldgen statics so a subsequent world in this JVM can
             // never inherit this world's GeoAuthority/ClimateAuthority. The seed-0/zero-radius decline path
             // in rebuild* historically never overwrote them (see LatitudeBiomes.resetWorldgenStateForServerStop).
@@ -253,6 +261,14 @@ public class GlobeMod implements ModInitializer {
             ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe, latitudeZRadius, intendedXRadius));
 
             LatitudeWorldState worldState = LatitudeWorldState.get(overworld);
+
+            // P2-8 terrain-law guard: deliver the pending plain-language line once per player, as real
+            // chat (not action bar) so it survives being away from the screen.
+            String terrainLawChat = TERRAIN_LAW_CHAT;
+            if (terrainLawChat != null && TERRAIN_LAW_CHAT_SENT.add(handler.player.getUUID())) {
+                handler.player.sendSystemMessage(Component.literal(terrainLawChat));
+            }
+
             boolean isBrandNewWorld = overworld.getGameTime() < 100L;
             boolean spawnAlreadyChosen = handler.player.entityTags().contains(SPAWN_CHOSEN_TAG);
 
@@ -418,6 +434,42 @@ public class GlobeMod implements ModInitializer {
 
         if (!isGlobeOverworld(world)) {
             return;
+        }
+        // P2-8 TERRAIN-LAW DECISION. ORDERING INVARIANT -- this MUST run before setRadius/setWorldSeed:
+        // the Geo provider only becomes real inside setWorldSeed -> rebuildGeoAuthority, and
+        // GeoTerrainBiasFunction.compute no-ops per column until the provider is real -- so "provider
+        // real" implies "law decided" and no chunk can ever generate under an undecided law. Do not move
+        // the provider rebuild earlier.
+        boolean worldIsNew = world.getGameTime() < 100L; // same idiom as inferWorldgenPolicy / radius stamp
+        com.example.globe.core.terrain.TerrainLawPolicy.TerrainLaw jvmLaw =
+                new com.example.globe.core.terrain.TerrainLawPolicy.TerrainLaw(
+                        com.example.globe.core.terrain.TerrainLawPolicy.CURRENT_FORMULA_VERSION,
+                        LatitudeV2Flags.TERRAIN_V2_ENABLED && LatitudeV2Flags.GEO_V2_ENABLED,
+                        LatitudeV2Flags.TERRAIN_V2_STRENGTH,
+                        LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO,
+                        LatitudeV2Flags.TERRAIN_V2_GRIP_WIDTH);
+        com.example.globe.core.terrain.TerrainLawPolicy.Decision lawDecision =
+                com.example.globe.core.terrain.TerrainLawPolicy.decide(
+                        worldState.getTerrainLawOptional(), worldState.isTerrainLawInferred(),
+                        new com.example.globe.core.terrain.TerrainLawPolicy.JvmTerrainConfig(jvmLaw,
+                                LatitudeV2Flags.TERRAIN_LAW_ANY_EXPLICIT,
+                                LatitudeV2Flags.TERRAIN_V2_ADOPT_JVM_ARGS),
+                        worldIsNew);
+        lawDecision.stampToWrite().ifPresent(law -> worldState.setTerrainLaw(law, lawDecision.stampAsInferred()));
+        LatitudeBiomes.setEffectiveTerrainLaw(lawDecision.effective());
+        {
+            String lawLog = com.example.globe.core.terrain.TerrainLawPolicy.logText(
+                    lawDecision.warning(), worldState.getTerrainLawOptional().orElse(null),
+                    lawDecision.stampAsInferred(), lawDecision.effective(), jvmLaw);
+            String lawChat = com.example.globe.core.terrain.TerrainLawPolicy.chatText(lawDecision.warning());
+            TERRAIN_LAW_CHAT = lawChat.isEmpty() ? null : lawChat;
+            if (!lawLog.isEmpty()) {
+                if (lawChat.isEmpty()) {
+                    LOGGER.info("[Latitude] {}", lawLog);
+                } else {
+                    LOGGER.warn("[Latitude] {}", lawLog);
+                }
+            }
         }
         long seed = server.getWorldGenSettings().options().seed();
         int radius = borderRadiusForGlobeOverworld(world);

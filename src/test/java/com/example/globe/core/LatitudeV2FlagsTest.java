@@ -11,9 +11,46 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LatitudeV2FlagsTest {
 
     @Test
-    void geoV2DefaultsToDisabled() {
-        assertFalse(LatitudeV2Flags.GEO_V2_ENABLED,
-                "Phase 0 must ship with GeoAuthority v2 disabled by default");
+    void geoV2ShipsOnByOwnerDecision() {
+        // History: Phase 0 shipped this OFF ("computed-and-discarded"). FLIPPED ON 2026-08-02 by owner
+        // decision (Phase 4 ship-on): GeoAuthority is the geography the terrain wrapper reads, so it
+        // arms with terrainV2. The consumer-side flags below stay off — geography + terrain only.
+        // Static-init capture guard per the degree-defaults law.
+        assertNull(System.getProperty("latitude.geoV2.enabled"),
+                "suite JVM must not carry -Dlatitude.geoV2.enabled (static-init capture: defaults law)");
+        assertTrue(LatitudeV2Flags.GEO_V2_ENABLED,
+                "GeoAuthority ships ON with the Phase 4 terrain default (owner decision 2026-08-02)");
+    }
+
+    @Test
+    void terrainV2ShipsOnByOwnerDecision() {
+        // FLIPPED ON 2026-08-02 (owner decision) after live confirmation of both halves (TEST 27 land
+        // lift, TEST 30 ocean carve/shelf) and gate-G3 closure. Existing worlds are protected by the
+        // per-world terrain-law stamp (TerrainLawPolicy): defaults-only legacy worlds stay OFF forever.
+        // Gate-1 stays flag-off via the build.gradle biomePreview pins.
+        assertNull(System.getProperty("latitude.terrainV2.enabled"),
+                "suite JVM must not carry -Dlatitude.terrainV2.enabled (static-init capture: defaults law)");
+        assertNull(System.getProperty("latitude.terrainV2.strength"),
+                "suite JVM must not carry -Dlatitude.terrainV2.strength (static-init capture: defaults law)");
+        assertTrue(LatitudeV2Flags.TERRAIN_V2_ENABLED,
+                "Phase 4 terrain ships ON (owner decision 2026-08-02)");
+        assertEquals(0.4, LatitudeV2Flags.TERRAIN_V2_STRENGTH, 1e-9,
+                "shipped strength is the live-calibrated 0.4 (Slice C candidate, TEST 27/30 confirmed)");
+        assertEquals(1.0, LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO, 1e-9,
+                "shipped ratio stays the symmetric 1.0 (the TEST 30 r=1 recipe)");
+        assertEquals(0.8, LatitudeV2Flags.TERRAIN_V2_GRIP_WIDTH, 1e-9,
+                "shipped grip width stays the C-3 calibrated 0.8");
+    }
+
+    @Test
+    void terrainLawGuardDefaults() {
+        // P2-8 guard provenance bits. On a clean suite JVM no terrain-law -D is present, so:
+        assertNull(System.getProperty("latitude.terrainV2.adoptJvmArgs"),
+                "suite JVM must not carry -Dlatitude.terrainV2.adoptJvmArgs (static-init capture)");
+        assertFalse(LatitudeV2Flags.TERRAIN_V2_ADOPT_JVM_ARGS,
+                "the re-stamp escape hatch must be per-run opt-in, default OFF");
+        assertFalse(LatitudeV2Flags.TERRAIN_LAW_ANY_EXPLICIT,
+                "a clean JVM has no explicit terrain-law -D, so provenance reads defaults-only");
     }
 
     @Test
