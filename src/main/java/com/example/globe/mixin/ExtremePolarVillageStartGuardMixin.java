@@ -6,20 +6,23 @@ import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
 import com.example.globe.world.LatitudeWorldgenScope;
+import com.example.globe.world.VillageTerrainSuitabilityPolicy;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.tags.StructureTags;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.chunk.ChunkGenerator;
-import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
@@ -30,8 +33,9 @@ import java.util.function.Predicate;
 
 /**
  * Rejects invalid fresh village starts before vanilla can register them. Villages are rejected
- * strictly beyond 80 degrees absolute latitude or when their declared climate conflicts with the
- * canonical Latitude band. Compatible/neutral villages and other structures are not affected.
+ * strictly beyond 80 degrees absolute latitude, when their declared climate conflicts with the
+ * canonical Latitude band, or when a bounded physical sample crosses cliff-scale terrain.
+ * Compatible/neutral villages on suitable terrain and other structures are not affected.
  */
 @Mixin(ChunkGenerator.class)
 public abstract class ExtremePolarVillageStartGuardMixin {
@@ -64,16 +68,65 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                 Registry<Structure> registry =
                         registryAccess.lookupOrThrow(Registries.STRUCTURE);
                 Identifier structureId = registry.getKey(structure);
-                if (structureId != null && structureId.getPath().startsWith("village")) {
+                boolean village = structureHolder.is(StructureTags.VILLAGE)
+                        || (structureId != null && structureId.getPath().contains("village"));
+                if (structureId != null && village) {
                     int radius = GlobeMod.borderRadiusForNoiseGenerator(noise);
+                    int blockX = chunkPos.getMiddleBlockX();
                     double absDeg = Math.abs((double) blockZ) * 90.0 / Math.max(1, radius);
                     LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
                     if (LatitudeBiomes.isBlockBeyondPolarVillageLimit(blockZ, radius)
                             || LatitudeBiomes.villageClimateVsBandMismatch(structureId.getPath(), band)) {
                         return StructureStart.INVALID_START;
                     }
+
+                    int[] terrainHeights = new int[VillageTerrainSuitabilityPolicy.SAMPLE_COUNT];
+                    int terrainIndex = 0;
+                    for (int dz = -VillageTerrainSuitabilityPolicy.SAMPLE_RADIUS_BLOCKS;
+                            dz <= VillageTerrainSuitabilityPolicy.SAMPLE_RADIUS_BLOCKS;
+                            dz += VillageTerrainSuitabilityPolicy.SAMPLE_STEP_BLOCKS) {
+                        for (int dx = -VillageTerrainSuitabilityPolicy.SAMPLE_RADIUS_BLOCKS;
+                                dx <= VillageTerrainSuitabilityPolicy.SAMPLE_RADIUS_BLOCKS;
+                                dx += VillageTerrainSuitabilityPolicy.SAMPLE_STEP_BLOCKS) {
+                            terrainHeights[terrainIndex++] = noise.getBaseHeight(
+                                    blockX + dx,
+                                    blockZ + dz,
+                                    Heightmap.Types.WORLD_SURFACE_WG,
+                                    heightAccessor,
+                                    randomState);
+                        }
+                    }
+                    if (!VillageTerrainSuitabilityPolicy.isSuitable(terrainHeights)) {
+                        return StructureStart.INVALID_START;
+                    }
+                    Registry<Biome> biomeRegistry =
+                            registryAccess.lookupOrThrow(Registries.BIOME);
+                    Holder<Biome> baseBiome = biomeSource.getNoiseBiome(
+                            Math.floorDiv(blockX, 4),
+                            Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
+                            Math.floorDiv(blockZ, 4),
+                            randomState.sampler());
+                    Holder<Biome> pickedBiome = LatitudeBiomes.pick(
+                            biomeRegistry,
+                            baseBiome,
+                            blockX,
+                            blockZ,
+                            LatitudeBiomes.SURFACE_CLASSIFY_Y,
+                            radius,
+                            randomState.sampler(),
+                            "VILLAGE_START",
+                            noise,
+                            randomState,
+                            heightAccessor);
+                    Holder<Biome> finalBiome = pickedBiome != null ? pickedBiome : baseBiome;
+                    Identifier finalBiomeId = biomeRegistry.getKey(finalBiome.value());
+                    if (finalBiomeId != null
+                            && LatitudeBiomes.villageVariantVsBiomeMismatch(
+                            structureId.getPath(), finalBiomeId.toString())) {
+                        return StructureStart.INVALID_START;
+                    }
                 }
-            } catch (Throwable ignored) {
+            } catch (RuntimeException ignored) {
                 // Registry unavailable — fail open (allow generation).
             }
         }

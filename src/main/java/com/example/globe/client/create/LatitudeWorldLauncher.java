@@ -64,6 +64,7 @@ public final class LatitudeWorldLauncher {
                                        WorldCreationContext holder,
                                        String worldName, String seed,
                                        GlobeWorldSize size, LatitudeBands.Band spawnZone,
+                                       boolean randomSpawnZone,
                                        GameType gameMode, boolean hardcore,
                                        Difficulty difficulty, boolean allowCommands,
                                        boolean startWithCompass, boolean bonusChest,
@@ -79,7 +80,7 @@ public final class LatitudeWorldLauncher {
         }
         LOGGER.info("[Latitude lifecycle] begin expedition — type={}, size={}, zone={}, {}ms since beginExpedition",
                 isLatitude ? "latitude" : worldTypeIdx == 1 ? "vanilla" : "superflat",
-                size.name(), spawnZone.id(), LatitudeClientState.elapsedSinceExpeditionMs());
+                size.name(), randomSpawnZone ? "random" : spawnZone.id(), LatitudeClientState.elapsedSinceExpeditionMs());
         try {
             // ── 1. Size preset resolution ──
             net.minecraft.resources.Identifier presetId;
@@ -212,7 +213,9 @@ public final class LatitudeWorldLauncher {
                 if (isLatitude) {
                     GlobePending.pendingGlobeRadius = size.borderRadiusBlocks;
                     GlobeWorldSizeSelection.set(size);
-                    GlobePending.set(spawnZone.id().toUpperCase(java.util.Locale.ROOT));
+                    GlobePending.set(randomSpawnZone
+                            ? "RANDOM"
+                            : spawnZone.id().toUpperCase(java.util.Locale.ROOT));
                     GlobePending.startWithCompass = startWithCompass;
                     LatitudeClientState.activateLatitudeLoading();
                     LOGGER.info("[Latitude lifecycle] bespoke overlay activated — {}ms since beginExpedition",

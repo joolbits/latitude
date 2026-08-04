@@ -4,9 +4,9 @@ import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
-import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import net.fabricmc.fabric.api.tag.convention.v2.ConventionalBiomeTags;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
@@ -71,6 +71,9 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     @Unique
     private static final boolean DEBUG_BIOME_PICK =
             Boolean.getBoolean("latitude.debugBiomePick");
+
+    @Unique
+    private static final int PICK_FAILURE_LOG_LIMIT = 256;
 
     @Unique
     private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_POPULATE_GATE_REJECT_LOGGED =
@@ -252,8 +255,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         RandomState noiseConfig = globe$noiseConfigTL.get();
         Long2LongOpenHashMap surfaceYCache = new Long2LongOpenHashMap();
         surfaceYCache.defaultReturnValue(Long.MIN_VALUE);
-        Long2IntOpenHashMap columnDecisionYCache = new Long2IntOpenHashMap();
-        columnDecisionYCache.defaultReturnValue(Integer.MIN_VALUE);
         Long2ObjectOpenHashMap<Holder<Biome>> columnPickCache = new Long2ObjectOpenHashMap<>();
         Long2ObjectOpenHashMap<Holder<Biome>> columnPickBase = new Long2ObjectOpenHashMap<>();
         Long2ObjectOpenHashMap<Holder<Biome>> columnBaseCache = new Long2ObjectOpenHashMap<>();
@@ -316,32 +317,23 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 return current;
             }
 
-            int colDecisionY = columnDecisionYCache.get(colKey);
-            if (colDecisionY == Integer.MIN_VALUE) {
-                colDecisionY = LatitudeBiomes.surfaceDecisionY(
-                        generator, noiseConfig, chunk, blockX, blockZ);
-                columnDecisionYCache.put(colKey, colDecisionY);
+            // Latitude's non-cave selection is column-based: caller Y is used only for a debug
+            // trace, while every physical decision uses the sampled surface column. Reuse one
+            // result down the full non-cave column instead of repeating the full climate/pool
+            // selection for every quart-Y cell.
+            Holder<Biome> cachedPick = columnPickCache.get(colKey);
+            if (cachedPick != null && columnPickBase.get(colKey) == base) {
+                return cachedPick;
             }
-
-            if (blockY >= colDecisionY - 16) {
-                Holder<Biome> cachedPick = columnPickCache.get(colKey);
-                if (cachedPick != null && columnPickBase.get(colKey) == base) {
-                    return cachedPick;
-                }
-                Holder<Biome> picked = globe$pickOrNull(
-                        biomes, base, blockX, blockZ, blockY, borderRadiusBlocks,
-                        sampler, generator, noiseConfig, chunk);
-                if (picked != null) {
-                    columnPickCache.put(colKey, picked);
-                    columnPickBase.put(colKey, base);
-                    return picked;
-                }
-                return pickSafeFallback(biomes, blockZ);
-            }
-
-            return globe$pickOrFallback(
+            Holder<Biome> picked = globe$pickOrNull(
                     biomes, base, blockX, blockZ, blockY, borderRadiusBlocks,
                     sampler, generator, noiseConfig, chunk);
+            if (picked == null) {
+                picked = pickSafeFallback(biomes, blockZ);
+            }
+            columnPickCache.put(colKey, picked);
+            columnPickBase.put(colKey, base);
+            return picked;
         };
 
         globe$logPopBio("ENTER", "installing Latitude resolver chunk=" + pos.x() + "," + pos.z() + " radius=" + borderRadiusBlocks);
@@ -359,7 +351,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             picked = LatitudeBiomes.pick(
                     biomes, base, blockX, blockZ, blockY, borderRadiusBlocks,
                     sampler, "MIXIN", generator, noiseConfig, chunk);
-        } catch (Throwable t) {
+        } catch (RuntimeException t) {
             globe$logPopBio("ERROR", t.getClass().getSimpleName() + ": " + t.getMessage());
             logPickFailOnce(blockX, blockZ, "exception", t.toString());
             if (DEBUG_BIOME_PICK) {
@@ -376,19 +368,11 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     }
 
     @Unique
-    private static Holder<Biome> globe$pickOrFallback(
-            Registry<Biome> biomes, Holder<Biome> base,
-            int blockX, int blockZ, int blockY, int borderRadiusBlocks,
-            Climate.Sampler sampler, NoiseBasedChunkGenerator generator,
-            RandomState noiseConfig, ChunkAccess chunk) {
-        Holder<Biome> picked = globe$pickOrNull(
-                biomes, base, blockX, blockZ, blockY, borderRadiusBlocks,
-                sampler, generator, noiseConfig, chunk);
-        return picked != null ? picked : pickSafeFallback(biomes, blockZ);
-    }
-
-    @Unique
     private static boolean isCaveBiome(Registry<Biome> biomes, Holder<Biome> entry) {
+        if (entry.is(ConventionalBiomeTags.IS_CAVE)
+                || entry.is(ConventionalBiomeTags.IS_UNDERGROUND)) {
+            return true;
+        }
         Identifier actual = biomes.getKey(entry.value());
         if (actual == null) {
             actual = entry.unwrapKey().map(key -> key.identifier()).orElse(null);
@@ -411,7 +395,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         try {
             pick = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "CAVE_CLAMP",
                     generator, noiseConfig, heightView);
-        } catch (Throwable t) {
+        } catch (RuntimeException t) {
             pick = null;
             logPickFailOnce(blockX, blockZ, "clamp_exception", t.toString());
             if (DEBUG_BIOME_PICK) {
@@ -532,6 +516,9 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     private static void logPickFailOnce(int blockX, int blockZ, String reason, String detail) {
         long key = (((long) blockX) << 32) ^ (blockZ & 0xFFFF_FFFFL);
         synchronized (DEBUG_PICK_FAIL_COLUMNS) {
+            if (DEBUG_PICK_FAIL_COLUMNS.size() >= PICK_FAILURE_LOG_LIMIT) {
+                return;
+            }
             if (DEBUG_PICK_FAIL_COLUMNS.putIfAbsent(key, System.nanoTime()) != Long.MIN_VALUE) {
                 return;
             }

@@ -27,10 +27,6 @@
       "required": false
     },
     {
-      "id": "terralith:birch_taiga",
-      "required": false
-    },
-    {
       "id": "terralith:sakura_grove",
       "required": false
     },

@@ -17,8 +17,11 @@ import net.minecraft.world.level.biome.Climate;
  */
 public final class OceanDistanceField {
 
-    private static final int CELL_SIZE = 256;
-    private static final int MAX_SEARCH_CELLS = 64; // 64 cells * 256 = 16384 blocks cap
+    static final int GRID_CELL_SIZE_BLOCKS = 256;
+    // Every gameplay consumer only distinguishes the near-coast bands at 64, 192, and
+    // 384 blocks. Searching four cells (1024 blocks) therefore preserves each decision
+    // boundary while keeping a vanilla /locate scan from recursively exploring a whole globe.
+    private static final int MAX_SEARCH_CELLS = 4;
     private static final double OCEAN_LIKE_THRESHOLD = -0.19; // continentalness below this is treated as ocean
 
     private final long worldSeed;
@@ -36,12 +39,12 @@ public final class OceanDistanceField {
             return Integer.MAX_VALUE;
         }
         // Identify surrounding cells for bilinear smoothing.
-        int cellX = floorDiv(blockX, CELL_SIZE);
-        int cellZ = floorDiv(blockZ, CELL_SIZE);
-        int localX = Math.floorMod(blockX, CELL_SIZE);
-        int localZ = Math.floorMod(blockZ, CELL_SIZE);
-        double fx = localX / (double) CELL_SIZE;
-        double fz = localZ / (double) CELL_SIZE;
+        int cellX = floorDiv(blockX, GRID_CELL_SIZE_BLOCKS);
+        int cellZ = floorDiv(blockZ, GRID_CELL_SIZE_BLOCKS);
+        int localX = Math.floorMod(blockX, GRID_CELL_SIZE_BLOCKS);
+        int localZ = Math.floorMod(blockZ, GRID_CELL_SIZE_BLOCKS);
+        double fx = localX / (double) GRID_CELL_SIZE_BLOCKS;
+        double fz = localZ / (double) GRID_CELL_SIZE_BLOCKS;
 
         int d00 = cellDistance(cellX, cellZ, sampler);
         int d10 = cellDistance(cellX + 1, cellZ, sampler);
@@ -51,7 +54,7 @@ public final class OceanDistanceField {
         double i1 = lerp(d00, d10, fx);
         double i2 = lerp(d01, d11, fx);
         double interp = lerp(i1, i2, fz);
-        return (int) Math.round(interp * CELL_SIZE);
+        return (int) Math.round(interp * GRID_CELL_SIZE_BLOCKS);
     }
 
     private synchronized int cellDistance(int cx, int cz, Climate.Sampler sampler) {
@@ -99,8 +102,8 @@ public final class OceanDistanceField {
         if (oceanFlagCache.containsKey(key)) {
             return oceanFlagCache.get(key);
         }
-        int sampleX = cx * CELL_SIZE + CELL_SIZE / 2;
-        int sampleZ = cz * CELL_SIZE + CELL_SIZE / 2;
+        int sampleX = cx * GRID_CELL_SIZE_BLOCKS + GRID_CELL_SIZE_BLOCKS / 2;
+        int sampleZ = cz * GRID_CELL_SIZE_BLOCKS + GRID_CELL_SIZE_BLOCKS / 2;
         int nx = sampleX >> 2;
         int nz = sampleZ >> 2;
         Climate.TargetPoint p = sampler.sample(nx, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, nz);

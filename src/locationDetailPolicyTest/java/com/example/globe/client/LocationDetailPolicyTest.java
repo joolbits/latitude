@@ -62,22 +62,22 @@ public final class LocationDetailPolicyTest {
     private static void compositionCoversAllModesInBiomeThenZoneOrder() {
         assertEquals(
                 null,
-                LocationDetailPolicy.compose(LocationDetailPolicy.Mode.OFF, "Plains", "Tropics"),
+                LocationDetailPolicy.compose(LocationDetailPolicy.Mode.OFF, "Plains", "Tropical"),
                 "Off composes no location detail");
         assertEquals(
                 "Plains",
-                LocationDetailPolicy.compose(LocationDetailPolicy.Mode.BIOME, "Plains", "Tropics"),
+                LocationDetailPolicy.compose(LocationDetailPolicy.Mode.BIOME, "Plains", "Tropical"),
                 "Biome composes only biome");
         assertEquals(
-                "Tropics",
-                LocationDetailPolicy.compose(LocationDetailPolicy.Mode.ZONE, "Plains", "Tropics"),
+                "Tropical",
+                LocationDetailPolicy.compose(LocationDetailPolicy.Mode.ZONE, "Plains", "Tropical"),
                 "Zone composes only zone");
         assertEquals(
-                "Plains \u00b7 Tropics",
+                "Plains \u00b7 Tropical",
                 LocationDetailPolicy.compose(
                         LocationDetailPolicy.Mode.BIOME_AND_ZONE,
                         "Plains",
-                        "Tropics"),
+                        "Tropical"),
                 "combined detail composes biome before zone as one string");
     }
 
@@ -211,6 +211,12 @@ public final class LocationDetailPolicyTest {
                 hud.contains("LocationDetailPolicy.compose( cfg.locationDetailMode(), biomeLabel(client, cfg), displayZoneName(zoneKey))"),
                 "live biome and zone labels compose through the shared policy");
         assertTrue(
+                hud.contains("case \"EQUATOR\", \"TROPICAL\" -> \"Tropical\";")
+                        && hud.contains("case \"SUBTROPICAL\" -> \"Subtropical\";")
+                        && !hud.contains("\"Tropics\"")
+                        && !hud.contains("\"Subtropics\""),
+                "runtime and preview HUD use the canonical Tropical and Subtropical labels");
+        assertTrue(
                 hud.contains("LocationDetailPolicy.biomeLabel(")
                         && hud.contains("cfg.showCustomBiomeSource"),
                 "runtime biome id uses the optional provider-aware label helper");
@@ -295,6 +301,12 @@ public final class LocationDetailPolicyTest {
                         && studio.contains("LatitudeConfig.hudSnapEnabled = value")
                         && studio.contains("v ? \"SNAP\" : \"FREE\""),
                 "HUD Studio exposes the existing grid/free placement policy");
+        assertTrue(
+                studio.contains("case \"EQUATOR\", \"TROPICAL\" -> \"Tropical\";")
+                        && studio.contains("case \"SUBTROPICAL\" -> \"Subtropical\";")
+                        && !studio.contains("\"Tropics\"")
+                        && !studio.contains("\"Subtropics\""),
+                "HUD Studio uses the canonical Tropical and Subtropical labels");
         assertTrue(
                 studio.contains("cfg.setLocationDetailMode(value)")
                         && studio.contains("CompassHud.computeLocationDetailBounds(mc, cfg)")

@@ -2,9 +2,14 @@ package com.example.globe.world;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,6 +26,7 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -394,6 +400,14 @@ public final class LatitudeBiomes {
             Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForWorldgen", "true"));
     private static volatile long WORLD_SEED = 0L;
     private static volatile WorldgenPolicyVersion ACTIVE_WORLDGEN_POLICY = WorldgenPolicyVersion.MODERN_1_3;
+    /** Birth-locked V1 roster. Null means a legacy world or a deliberately fail-closed V1 load. */
+    private static volatile BiomeSelectionProfile ACTIVE_PROVIDER_TICKET_PROFILE = null;
+    /** Fresh-world-only V2 vanilla land coverage. Existing V1 worlds never receive this plan. */
+    private static volatile VanillaBiomeCoveragePlan ACTIVE_VANILLA_COVERAGE_PLAN = null;
+    /** Fresh-world-only V2 vanilla surface/water coverage. Existing V1 worlds never receive this plan. */
+    private static volatile VanillaSurfaceWaterCoveragePlan ACTIVE_SURFACE_WATER_COVERAGE_PLAN = null;
+    /** Birth-locked V3 size-aware targets. Null for every legacy/V1/V2 world. */
+    private static volatile VanillaBiomeRepresentationProfile ACTIVE_VANILLA_REPRESENTATION_PROFILE = null;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
     private static volatile boolean ACTIVE_WORLDGEN_AUTHORITY = false;
     private static OceanDistanceField OCEAN_DISTANCE_FIELD = null;
@@ -523,6 +537,45 @@ public final class LatitudeBiomes {
     private static final ThreadLocal<String> LAST_SELECTION_PATH = new ThreadLocal<>();
     private static final ThreadLocal<BiomeAdmission> LAST_BIOME_ADMISSION = new ThreadLocal<>();
     private static final ThreadLocal<WarmPoolMembershipSnapshot> LAST_WARM_POOL_MEMBERSHIP_SNAPSHOT = new ThreadLocal<>();
+    // BiomeSource.findBiomeHorizontal() can call the collection picker hundreds of thousands of
+    // times for one vanilla /locate. The source collection and its tag membership are immutable
+    // for a live world, so cache the already-sorted membership by source identity instead of
+    // rebuilding the same lists at every searched coordinate.
+    private static final Map<Collection<Holder<Biome>>, Map<TagKey<Biome>, List<Holder<Biome>>>> SOURCE_TAG_ENTRY_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<Registry<Biome>, Map<TagKey<Biome>, List<Holder<Biome>>>> REGISTRY_TAG_ENTRY_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<List<Holder<Biome>>, BiomeProviderSelectionPolicy.Pool> TAG_SELECTION_POOL_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<List<Holder<Biome>>, List<Holder<Biome>>> NO_MANGROVE_TAG_ENTRY_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<List<Holder<Biome>>, List<Holder<Biome>>> NO_SWAMP_TAG_ENTRY_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<List<Holder<Biome>>, List<Holder<Biome>>> SHALLOW_OCEAN_TAG_ENTRY_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    // V1 may never re-scan a registry/source collection to rebuild its birth-locked route pool.
+    // These caches are keyed by the live identity and are cleared on every context transition.
+    private static final Map<Registry<Biome>, Map<BiomeRoute, List<Holder<Biome>>>> PROVIDER_TICKET_REGISTRY_ROUTE_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<Collection<Holder<Biome>>, Map<BiomeRoute, List<Holder<Biome>>>> PROVIDER_TICKET_SOURCE_ROUTE_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<Collection<Holder<Biome>>, Map<String, Holder<Biome>>> VANILLA_COVERAGE_SOURCE_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<Registry<Biome>, Map<Integer, List<Holder<Biome>>>> ALLOWED_LAND_POOL_REGISTRY_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<Collection<Holder<Biome>>, Map<Integer, List<Holder<Biome>>>> ALLOWED_LAND_POOL_SOURCE_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    // The band enforcer is called for every final land choice. Cache the terrain-filtered and
+    // reroll variants as well as the base pool so V1 does not allocate one short-lived list per
+    // sampled biome column.
+    private static final Map<Registry<Biome>, Map<Integer, List<Holder<Biome>>>> FILTERED_LAND_POOL_REGISTRY_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<Collection<Holder<Biome>>, Map<Integer, List<Holder<Biome>>>> FILTERED_LAND_POOL_SOURCE_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<Registry<Biome>, Map<Integer, List<Holder<Biome>>>> REROLL_LAND_POOL_REGISTRY_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<Collection<Holder<Biome>>, Map<Integer, List<Holder<Biome>>>> REROLL_LAND_POOL_SOURCE_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
     private static final String PATH_TAG_PICK = "tag-based pick";
     private static final String PATH_FALLBACK_PICK = "explicit fallback list pick";
     private static final String PATH_RETURN_BASE = "return base";
@@ -631,13 +684,106 @@ public final class LatitudeBiomes {
      * radius/seed pair while an overworld is starting.
      */
     public static synchronized void activateWorldgenContext(int radiusBlocks, long seed) {
+        activateWorldgenContext(radiusBlocks, seed, ACTIVE_WORLDGEN_POLICY, null);
+    }
+
+    public static synchronized void activateWorldgenContext(int radiusBlocks, long seed,
+                                                             WorldgenPolicyVersion policy,
+                                                             BiomeSelectionProfile providerTicketProfile) {
+        activateWorldgenContext(radiusBlocks, seed, policy, providerTicketProfile, null);
+    }
+
+    public static synchronized void activateWorldgenContext(int radiusBlocks, long seed,
+                                                             WorldgenPolicyVersion policy,
+                                                             BiomeSelectionProfile providerTicketProfile,
+                                                             Climate.Sampler sampler) {
+        activateWorldgenContext(radiusBlocks, seed, policy, providerTicketProfile, sampler, null, 63);
+    }
+
+    public static synchronized void activateWorldgenContext(int radiusBlocks, long seed,
+                                                             WorldgenPolicyVersion policy,
+                                                             BiomeSelectionProfile providerTicketProfile,
+                                                             Climate.Sampler sampler,
+                                                             BiomeSource donorSource,
+                                                             int seaLevel) {
+        activateWorldgenContext(radiusBlocks, seed, policy, providerTicketProfile, null,
+                sampler, donorSource, seaLevel);
+    }
+
+    public static synchronized void activateWorldgenContext(int radiusBlocks, long seed,
+                                                             WorldgenPolicyVersion policy,
+                                                             BiomeSelectionProfile providerTicketProfile,
+                                                             VanillaBiomeRepresentationProfile representationProfile,
+                                                             Climate.Sampler sampler,
+                                                             BiomeSource donorSource,
+                                                             int seaLevel) {
         ACTIVE_WORLDGEN_AUTHORITY = false;
+        ACTIVE_WORLDGEN_POLICY = policy != null ? policy : WorldgenPolicyVersion.MODERN_1_3;
+        ACTIVE_PROVIDER_TICKET_PROFILE = isProviderTicketPolicy(ACTIVE_WORLDGEN_POLICY)
+                ? providerTicketProfile
+                : null;
+        ACTIVE_VANILLA_REPRESENTATION_PROFILE =
+                ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
+                        ? representationProfile : null;
         ACTIVE_RADIUS_BLOCKS = Math.max(0, radiusBlocks);
         WORLD_SEED = seed;
         OCEAN_DISTANCE_FIELD = new OceanDistanceField(seed);
+        clearTagSelectionCaches();
         PALE_GARDEN_ANCHOR_CACHE = null;
         PROVINCE_AUTHORITY = null;
         rebuildProvinceAuthority();
+        boolean exactV2 = ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE;
+        boolean sizeAwareV3 = ACTIVE_WORLDGEN_POLICY
+                == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
+                && ACTIVE_VANILLA_REPRESENTATION_PROFILE != null;
+        Map<String, BiomeRoute> landTargets = sizeAwareV3
+                ? ACTIVE_VANILLA_REPRESENTATION_PROFILE.landTargets()
+                : VanillaBiomeCoveragePlan.requiredRoutes();
+        ACTIVE_VANILLA_COVERAGE_PLAN = (exactV2 || sizeAwareV3)
+                && ACTIVE_PROVIDER_TICKET_PROFILE != null
+                && sampler != null
+                ? VanillaBiomeCoveragePlan.build(
+                        ACTIVE_RADIUS_BLOCKS,
+                        WORLD_SEED,
+                        ACTIVE_PROVIDER_TICKET_PROFILE,
+                        landTargets,
+                        sizeAwareV3,
+                        (biomeId, route, x, z) -> vanillaCoverageRouteEligible(
+                                biomeId, route, x, z, sampler))
+                : null;
+        if (ACTIVE_VANILLA_COVERAGE_PLAN != null && !ACTIVE_VANILLA_COVERAGE_PLAN.complete()) {
+            LOGGER.error("[Latitude] Fresh-world vanilla coverage plan is incomplete; missing route-managed biomes: {} diagnostics={}",
+                    ACTIVE_VANILLA_COVERAGE_PLAN.missingBiomeIds(),
+                    ACTIVE_VANILLA_COVERAGE_PLAN.missingDiagnostics());
+        }
+        Map<String, VanillaSurfaceWaterCoveragePlan.Route> surfaceTargets = sizeAwareV3
+                ? ACTIVE_VANILLA_REPRESENTATION_PROFILE.surfaceWaterTargets()
+                : VanillaSurfaceWaterCoveragePlan.requirements();
+        ACTIVE_SURFACE_WATER_COVERAGE_PLAN = (exactV2 || sizeAwareV3)
+                && ACTIVE_PROVIDER_TICKET_PROFILE != null
+                && sampler != null
+                && donorSource != null
+                ? VanillaSurfaceWaterCoveragePlan.build(
+                        ACTIVE_RADIUS_BLOCKS,
+                        WORLD_SEED,
+                        seaLevel,
+                        surfaceTargets,
+                        sizeAwareV3,
+                        (biomeId, route, x, z) -> surfaceWaterRouteEligible(
+                                biomeId, route, x, z, sampler, donorSource))
+                : null;
+        if (ACTIVE_SURFACE_WATER_COVERAGE_PLAN != null && !ACTIVE_SURFACE_WATER_COVERAGE_PLAN.complete()) {
+            LOGGER.error("[Latitude] Fresh-world surface/water coverage plan is incomplete; missing route-managed biomes: {} diagnostics={}",
+                    ACTIVE_SURFACE_WATER_COVERAGE_PLAN.missingBiomeIds(),
+                    ACTIVE_SURFACE_WATER_COVERAGE_PLAN.missingDiagnostics());
+        }
+        if (sizeAwareV3) {
+            LOGGER.info("[Latitude] V3 {} representation: landTargets={} omittedExact={} omissions={}",
+                    ACTIVE_VANILLA_REPRESENTATION_PROFILE.worldSize(),
+                    landTargets.size(),
+                    ACTIVE_VANILLA_REPRESENTATION_PROFILE.omittedExactIds().size(),
+                    ACTIVE_VANILLA_REPRESENTATION_PROFILE.omittedExactIds());
+        }
         ACTIVE_WORLDGEN_AUTHORITY = ACTIVE_RADIUS_BLOCKS > 0;
     }
 
@@ -651,13 +797,284 @@ public final class LatitudeBiomes {
         ACTIVE_RADIUS_BLOCKS = 0;
         WORLD_SEED = 0L;
         OCEAN_DISTANCE_FIELD = null;
+        clearTagSelectionCaches();
         PALE_GARDEN_ANCHOR_CACHE = null;
         PROVINCE_AUTHORITY = null;
         ACTIVE_WORLDGEN_POLICY = WorldgenPolicyVersion.MODERN_1_3;
+        ACTIVE_PROVIDER_TICKET_PROFILE = null;
+        ACTIVE_VANILLA_COVERAGE_PLAN = null;
+        ACTIVE_SURFACE_WATER_COVERAGE_PLAN = null;
+        ACTIVE_VANILLA_REPRESENTATION_PROFILE = null;
     }
 
     public static boolean hasActiveWorldgenAuthority() {
         return ACTIVE_WORLDGEN_AUTHORITY && ACTIVE_RADIUS_BLOCKS > 0;
+    }
+
+    private static void clearTagSelectionCaches() {
+        SOURCE_TAG_ENTRY_CACHE.clear();
+        REGISTRY_TAG_ENTRY_CACHE.clear();
+        TAG_SELECTION_POOL_CACHE.clear();
+        NO_MANGROVE_TAG_ENTRY_CACHE.clear();
+        NO_SWAMP_TAG_ENTRY_CACHE.clear();
+        SHALLOW_OCEAN_TAG_ENTRY_CACHE.clear();
+        PROVIDER_TICKET_REGISTRY_ROUTE_CACHE.clear();
+        PROVIDER_TICKET_SOURCE_ROUTE_CACHE.clear();
+        VANILLA_COVERAGE_SOURCE_CACHE.clear();
+        ALLOWED_LAND_POOL_REGISTRY_CACHE.clear();
+        ALLOWED_LAND_POOL_SOURCE_CACHE.clear();
+        FILTERED_LAND_POOL_REGISTRY_CACHE.clear();
+        FILTERED_LAND_POOL_SOURCE_CACHE.clear();
+        REROLL_LAND_POOL_REGISTRY_CACHE.clear();
+        REROLL_LAND_POOL_SOURCE_CACHE.clear();
+    }
+
+    private static boolean providerTicketActive() {
+        return isProviderTicketPolicy(ACTIVE_WORLDGEN_POLICY)
+                && ACTIVE_PROVIDER_TICKET_PROFILE != null;
+    }
+
+    private static boolean providerTicketPolicyActive() {
+        return isProviderTicketPolicy(ACTIVE_WORLDGEN_POLICY);
+    }
+
+    private static boolean isProviderTicketPolicy(WorldgenPolicyVersion policy) {
+        return policy == WorldgenPolicyVersion.PROVIDER_TICKET_V1
+                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE
+                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE;
+    }
+
+    private static boolean vanillaCoverageRouteEligible(String biomeId, BiomeRoute route,
+                                                         int blockX, int blockZ,
+                                                         Climate.Sampler sampler) {
+        if (sampler == null || route == null) return false;
+        Climate.TargetPoint point = sampler.sample(
+                blockX >> 2, SURFACE_CLASSIFY_Y >> 2, blockZ >> 2);
+        double continentalness = Climate.unquantizeCoord(point.continentalness());
+        if (continentalness <= -0.05) return false;
+        int band = authoritativeLandBandIndex(blockX, blockZ, ACTIVE_RADIUS_BLOCKS);
+        boolean mountain = isMountainLike(sampler, blockX, blockZ);
+        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+        return switch (route) {
+            case TROPICAL_HUMID_LOWLAND -> band == BAND_TROPICAL && !mountain;
+            case SUBTROPICAL_HUMID_LOWLAND -> band == BAND_SUBTROPICAL && !mountain
+                    && province != ProvinceAuthority.Province.WARM_DRY;
+            case TEMPERATE_LOWLAND -> band == BAND_TEMPERATE && !mountain;
+            case TEMPERATE_WETLAND -> band == BAND_TEMPERATE && !mountain
+                    && evaluateSwamp(blockX, blockZ, sampler).allow();
+            case TEMPERATE_UPLAND -> band == BAND_TEMPERATE && mountain;
+            case COLD_UPLAND -> band >= BAND_SUBPOLAR && mountain;
+            case WARM_TRANSITION -> band == BAND_SUBTROPICAL && !mountain
+                    && province != ProvinceAuthority.Province.WARM_WET;
+            case WARM_UPLAND -> band == BAND_SUBTROPICAL && mountain
+                    && province != ProvinceAuthority.Province.WARM_WET;
+            case ARID_LOWLAND -> band == BAND_SUBTROPICAL && !mountain
+                    && (province == ProvinceAuthority.Province.WARM_DRY
+                    || aridHotspotHere(WORLD_SEED, blockX, blockZ));
+            case ARID_UPLAND -> band == BAND_SUBTROPICAL && mountain
+                    && (province == ProvinceAuthority.Province.WARM_DRY
+                    || aridHotspotHere(WORLD_SEED, blockX, blockZ));
+            case SUBPOLAR_LOWLAND -> band == BAND_SUBPOLAR && !mountain;
+            case POLAR_LOWLAND -> band == BAND_POLAR && !mountain;
+        };
+    }
+
+    private static boolean surfaceWaterRouteEligible(
+            String biomeId,
+            VanillaSurfaceWaterCoveragePlan.Route route,
+            int blockX,
+            int blockZ,
+            Climate.Sampler sampler,
+            BiomeSource donorSource) {
+        if (sampler == null || donorSource == null) return false;
+        Holder<Biome> donor = donorSource.getNoiseBiome(
+                blockX >> 2, SURFACE_CLASSIFY_Y >> 2, blockZ >> 2, sampler);
+        return surfaceWaterRouteEligible(
+                biomeId, route, donor, blockX, blockZ, sampler);
+    }
+
+    private static boolean surfaceWaterRouteEligible(
+            String biomeId,
+            VanillaSurfaceWaterCoveragePlan.Route route,
+            Holder<Biome> donor,
+            int blockX,
+            int blockZ,
+            Climate.Sampler sampler) {
+        if (route == null || donor == null || sampler == null) return false;
+        int band = authoritativeLandBandIndex(blockX, blockZ, ACTIVE_RADIUS_BLOCKS);
+        boolean deep = isDeepOcean(donor);
+        return switch (route) {
+            case WARM_SHALLOW_OCEAN -> isOcean(donor) && !deep && band == BAND_TROPICAL;
+            case LUKEWARM_SHALLOW_OCEAN -> isOcean(donor) && !deep && band == BAND_SUBTROPICAL;
+            case LUKEWARM_DEEP_OCEAN -> isOcean(donor) && deep && band == BAND_SUBTROPICAL;
+            case TEMPERATE_SHALLOW_OCEAN -> isOcean(donor) && !deep && band == BAND_TEMPERATE;
+            case TEMPERATE_DEEP_OCEAN -> isOcean(donor) && deep && band == BAND_TEMPERATE;
+            case COLD_SHALLOW_OCEAN -> isOcean(donor) && !deep && band == BAND_SUBPOLAR;
+            case COLD_DEEP_OCEAN -> isOcean(donor) && deep && band == BAND_SUBPOLAR;
+            case FROZEN_SHALLOW_OCEAN -> isOcean(donor) && !deep && band == BAND_POLAR;
+            case FROZEN_DEEP_OCEAN -> isOcean(donor) && deep && band == BAND_POLAR;
+            case TEMPERATE_BEACH -> isBeachLike(donor) && band == BAND_TEMPERATE;
+            case COLD_SNOWY_BEACH -> isBeachLike(donor) && band >= BAND_SUBPOLAR;
+            case ROCKY_SHORE -> {
+                boolean inBand = band >= BAND_TEMPERATE;
+                boolean donorBeach = isBeachLike(donor);
+                Climate.TargetPoint shorePoint = sampler.sample(
+                        blockX >> 2, SURFACE_CLASSIFY_Y >> 2, blockZ >> 2);
+                double shoreErosion = Climate.unquantizeCoord(shorePoint.erosion());
+                double shoreWeirdness = Climate.unquantizeCoord(shorePoint.weirdness());
+                boolean rockyCoastSignal = rockyShoreClimateSignal(
+                        shoreErosion, shoreWeirdness);
+                yield donorBeach && inBand && rockyCoastSignal;
+            }
+            case TEMPERATE_RIVER -> isRiver(donor) && !shouldFreezeRiver(blockX, blockZ);
+            case COLD_RIVER -> isRiver(donor) && shouldFreezeRiver(blockX, blockZ);
+            case WARM_COASTAL_MANGROVE -> !isOcean(donor) && !isRiver(donor) && !isBeachLike(donor)
+                    && band <= BAND_SUBTROPICAL
+                    && evaluateMangrove(blockX, blockZ, 0, 0, 0,
+                            sampler, true, false, null).allow();
+            case ISOLATED_MUSHROOM_ISLAND -> isOcean(donor) && deep
+                    && band == BAND_TEMPERATE
+                    && isGenuineOpenOcean(blockX, blockZ, sampler);
+        };
+    }
+
+    static boolean rockyShoreClimateSignal(double erosion, double weirdness) {
+        // Beaches necessarily sit in the coast continentalness transition, so requiring the
+        // inland continentalness term from isMountainLike() makes rocky shores impossible. Keep
+        // the two terrain-shape terms that actually describe an eroded, high-relief coastline.
+        return erosion < -0.25 && Math.abs(weirdness) > 0.25;
+    }
+
+    private static Holder<Biome> resolveVanillaCoverageBiome(
+            Collection<Holder<Biome>> biomes, String biomeId) {
+        Map<String, Holder<Biome>> resolved;
+        synchronized (VANILLA_COVERAGE_SOURCE_CACHE) {
+            resolved = VANILLA_COVERAGE_SOURCE_CACHE.get(biomes);
+            if (resolved == null) {
+                Map<String, Holder<Biome>> found = new HashMap<>();
+                for (Holder<Biome> entry : biomes) {
+                    String id = biomeId(entry);
+                    if ((ACTIVE_VANILLA_REPRESENTATION_PROFILE != null
+                                    && ACTIVE_VANILLA_REPRESENTATION_PROFILE.landTargets().containsKey(id))
+                            || VanillaBiomeCoveragePlan.requiredRoutes().containsKey(id)
+                            || VanillaSurfaceWaterCoveragePlan.requirements().containsKey(id)) {
+                        found.put(id, entry);
+                    }
+                }
+                resolved = Map.copyOf(found);
+                VANILLA_COVERAGE_SOURCE_CACHE.put(biomes, resolved);
+            }
+        }
+        return resolved.get(biomeId);
+    }
+
+    private static Holder<Biome> applyV2SurfaceWaterCoverage(
+            Registry<Biome> biomes,
+            VanillaSurfaceWaterCoveragePlan.Family family,
+            Holder<Biome> donor,
+            Holder<Biome> fallback,
+            int blockX,
+            int blockZ,
+            Climate.Sampler sampler) {
+        VanillaSurfaceWaterCoveragePlan plan = ACTIVE_SURFACE_WATER_COVERAGE_PLAN;
+        if (plan == null) return fallback;
+        VanillaSurfaceWaterCoveragePlan.Anchor anchor = plan.match(family, blockX, blockZ);
+        if (anchor == null || (anchor.route().family() == VanillaSurfaceWaterCoveragePlan.Family.MUSHROOM
+                && !plan.isMushroomLand(blockX, blockZ))
+                || !surfaceWaterRouteEligible(anchor.biomeId(), anchor.route(), donor,
+                        blockX, blockZ, sampler)) return fallback;
+        try {
+            Holder<Biome> target = biome(biomes, anchor.biomeId());
+            setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "vanilla_surface_water_coverage_v2", target);
+            return target;
+        } catch (Throwable ignored) {
+            return fallback;
+        }
+    }
+
+    private static Holder<Biome> applyV2SurfaceWaterCoverage(
+            Collection<Holder<Biome>> biomes,
+            VanillaSurfaceWaterCoveragePlan.Family family,
+            Holder<Biome> donor,
+            Holder<Biome> fallback,
+            int blockX,
+            int blockZ,
+            Climate.Sampler sampler) {
+        VanillaSurfaceWaterCoveragePlan plan = ACTIVE_SURFACE_WATER_COVERAGE_PLAN;
+        if (plan == null) return fallback;
+        VanillaSurfaceWaterCoveragePlan.Anchor anchor = plan.match(family, blockX, blockZ);
+        if (anchor == null || (anchor.route().family() == VanillaSurfaceWaterCoveragePlan.Family.MUSHROOM
+                && !plan.isMushroomLand(blockX, blockZ))
+                || !surfaceWaterRouteEligible(anchor.biomeId(), anchor.route(), donor,
+                        blockX, blockZ, sampler)) return fallback;
+        Holder<Biome> target = resolveVanillaCoverageBiome(biomes, anchor.biomeId());
+        if (target == null) return fallback;
+        setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "vanilla_surface_water_coverage_v2", target);
+        return target;
+    }
+
+    public static double mushroomIslandDensity(double originalDensity,
+                                                int blockX, int blockY, int blockZ) {
+        VanillaSurfaceWaterCoveragePlan plan = ACTIVE_SURFACE_WATER_COVERAGE_PLAN;
+        return plan != null ? plan.mushroomDensity(originalDensity, blockX, blockY, blockZ)
+                : originalDensity;
+    }
+
+    public static boolean isMushroomIslandSolid(int blockX, int blockY, int blockZ) {
+        VanillaSurfaceWaterCoveragePlan plan = ACTIVE_SURFACE_WATER_COVERAGE_PLAN;
+        return plan != null && plan.isMushroomSolid(blockX, blockY, blockZ);
+    }
+
+    /** Constant-cost locate fallback for exact identities reserved by the fresh-world V2 plan. */
+    public static VanillaSurfaceWaterCoveragePlan.Anchor nearestPlannedSurfaceWaterCoverageAnchor(
+            Collection<String> biomeIds, int originX, int originZ) {
+        VanillaSurfaceWaterCoveragePlan plan = ACTIVE_SURFACE_WATER_COVERAGE_PLAN;
+        return plan != null ? plan.nearestAnchorFor(biomeIds, originX, originZ) : null;
+    }
+
+    private static Holder<Biome> applyVanillaCoverage(
+            Registry<Biome> biomes,
+            Holder<Biome> base,
+            Holder<Biome> out,
+            int blockX,
+            int blockZ,
+            Climate.Sampler sampler) {
+        VanillaBiomeCoveragePlan plan = ACTIVE_VANILLA_COVERAGE_PLAN;
+        if (plan == null || sampler == null || isOcean(base) || isRiver(base) || isBeachLike(base)
+                || isOcean(out) || isRiver(out) || isBeachLike(out)) return out;
+        for (VanillaBiomeCoveragePlan.Anchor anchor : plan.matches(blockX, blockZ)) {
+            if (!vanillaCoverageRouteEligible(
+                    anchor.biomeId(), anchor.route(), blockX, blockZ, sampler)) continue;
+            try {
+                Holder<Biome> target = biome(biomes, anchor.biomeId());
+                setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "vanilla_coverage_v2", target);
+                return target;
+            } catch (Throwable ignored) {
+                // Keep checking route-distinct reservations that cover this column.
+            }
+        }
+        return out;
+    }
+
+    private static Holder<Biome> applyVanillaCoverage(
+            Collection<Holder<Biome>> biomes,
+            Holder<Biome> base,
+            Holder<Biome> out,
+            int blockX,
+            int blockZ,
+            Climate.Sampler sampler) {
+        VanillaBiomeCoveragePlan plan = ACTIVE_VANILLA_COVERAGE_PLAN;
+        if (plan == null || sampler == null || isOcean(base) || isRiver(base) || isBeachLike(base)
+                || isOcean(out) || isRiver(out) || isBeachLike(out)) return out;
+        for (VanillaBiomeCoveragePlan.Anchor anchor : plan.matches(blockX, blockZ)) {
+            if (!vanillaCoverageRouteEligible(
+                    anchor.biomeId(), anchor.route(), blockX, blockZ, sampler)) continue;
+            Holder<Biome> target = resolveVanillaCoverageBiome(biomes, anchor.biomeId());
+            if (target == null) continue;
+            setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "vanilla_coverage_v2", target);
+            return target;
+        }
+        return out;
     }
 
     public static void setRadius(int radius) {
@@ -1336,20 +1753,49 @@ public final class LatitudeBiomes {
     private static int previewHeight(NoiseBasedChunkGenerator generator, RandomState noiseConfig, LevelHeightAccessor heightView,
                                      int blockX, int blockZ) {
         long chunkKey = net.minecraft.world.level.ChunkPos.pack(blockX >> 4, blockZ >> 4);
-        long cachedChunk = PREVIEW_HEIGHT_CACHE_CHUNK.get();
-        Long2IntOpenHashMap cache = PREVIEW_HEIGHT_CACHE.get();
-        if (chunkKey != cachedChunk) {
-            cache.clear();
-            PREVIEW_HEIGHT_CACHE_CHUNK.set(chunkKey);
+        PreviewHeightCache owner = PREVIEW_HEIGHT_CACHE.get();
+        if (!owner.matches(generator, noiseConfig, heightView, chunkKey)) {
+            owner.reset(generator, noiseConfig, heightView, chunkKey);
         }
         long key = (((long) blockX) << 32) ^ (blockZ & 0xffffffffL);
-        int cached = cache.getOrDefault(key, Integer.MIN_VALUE);
+        int cached = owner.heights.getOrDefault(key, Integer.MIN_VALUE);
         if (cached != Integer.MIN_VALUE) {
             return cached;
         }
         int value = generator.getBaseHeight(blockX, blockZ, Heightmap.Types.WORLD_SURFACE_WG, heightView, noiseConfig);
-        cache.put(key, value);
+        owner.heights.put(key, value);
         return value;
+    }
+
+    private static final class PreviewHeightCache {
+        private final Long2IntOpenHashMap heights = new Long2IntOpenHashMap();
+        private NoiseBasedChunkGenerator generator;
+        private RandomState noiseConfig;
+        private LevelHeightAccessor heightView;
+        private long chunkKey = Long.MIN_VALUE;
+
+        private boolean matches(
+                NoiseBasedChunkGenerator candidateGenerator,
+                RandomState candidateNoiseConfig,
+                LevelHeightAccessor candidateHeightView,
+                long candidateChunkKey) {
+            return generator == candidateGenerator
+                    && noiseConfig == candidateNoiseConfig
+                    && heightView == candidateHeightView
+                    && chunkKey == candidateChunkKey;
+        }
+
+        private void reset(
+                NoiseBasedChunkGenerator newGenerator,
+                RandomState newNoiseConfig,
+                LevelHeightAccessor newHeightView,
+                long newChunkKey) {
+            heights.clear();
+            generator = newGenerator;
+            noiseConfig = newNoiseConfig;
+            heightView = newHeightView;
+            chunkKey = newChunkKey;
+        }
     }
 
     private static int previewSeaLevel(NoiseBasedChunkGenerator generator) {
@@ -2269,6 +2715,7 @@ public final class LatitudeBiomes {
     private static final long PALE_GARDEN_REGION_SHAPE_SALT = 0x7061_6C65_5F73_6861L; // "pale_sha"
     private static final long PALE_GARDEN_ANCHOR_CANDIDATE_SALT = 0x7061_6C65_5F63_616EL; // "pale_can"
     private static final int PALE_GARDEN_ANCHOR_CANDIDATE_COUNT = 64;
+    private static final int PALE_GARDEN_V3_ANCHOR_GRID_SIDE = 16;
     private static final double PALE_GARDEN_REGION_RADIUS_FRAC = 0.18;
     private static final int PALE_GARDEN_REGION_MIN_RADIUS_BLOCKS = 720;
     private static final double PALE_GARDEN_REGION_WOBBLE_FRAC = 0.18;
@@ -2280,10 +2727,22 @@ public final class LatitudeBiomes {
     private static final long PALE_GARDEN_CORE_SHAPE_SALT = 0x7061_6C65_5F63_6F72L; // "pale_cor"
     private static final double PALE_GARDEN_CORE_RADIUS_FRAC = 0.50; // fraction of outer base radius
     private static final double PALE_GARDEN_CORE_WOBBLE_FRAC = 0.12;
-    // Minimum ocean distance for a core cell to survive as pale_garden.
-    // Core cells closer than this to ocean revert to dark_forest (landlocked veto).
+    private static final int PALE_GARDEN_CORE_MIN_RADIUS_BLOCKS = 192;
+    private static final int PALE_GARDEN_BAND_EDGE_PADDING_BLOCKS = 64;
+    // The chosen anchor must leave this much ocean clearance beyond the entire core.
     private static final int PALE_GARDEN_MIN_OCEAN_DISTANCE_BLOCKS = 384;
-    private record PaleGardenAnchor(long worldSeed, int radius, Climate.Sampler sampler, int x, int z, boolean landlocked) {
+    // The distance field samples one point per grid cell and therefore cannot see a sub-cell
+    // ocean pocket. Reserve one complete cell when sizing the core; the exact base-biome guard
+    // below remains the final no-overwrite gate.
+    private static final int PALE_GARDEN_OCEAN_FIELD_UNCERTAINTY_BLOCKS =
+            OceanDistanceField.GRID_CELL_SIZE_BLOCKS;
+    private record PaleGardenAnchor(
+            long worldSeed,
+            int radius,
+            int x,
+            int z,
+            boolean landlocked,
+            double coreRadiusLimit) {
     }
     private static volatile PaleGardenAnchor PALE_GARDEN_ANCHOR_CACHE = null;
 
@@ -2402,6 +2861,7 @@ public final class LatitudeBiomes {
     private static final TagKey<Biome> LAT_TEMPERATE_SECONDARY = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_temperate_secondary"));
     private static final TagKey<Biome> LAT_TEMPERATE_ACCENT = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_temperate_accent"));
     private static final TagKey<Biome> LAT_TEMPERATE_MOUNTAIN = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_temperate_mountain"));
+    private static final TagKey<Biome> LAT_TEMPERATE_WETLAND = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_temperate_wetland"));
 
     private static final TagKey<Biome> LAT_SUBPOLAR_PRIMARY = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_subpolar_primary"));
     private static final TagKey<Biome> LAT_SUBPOLAR_SECONDARY = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_subpolar_secondary"));
@@ -2524,18 +2984,8 @@ public final class LatitudeBiomes {
     private static final int PREVIEW_HEIGHT_MARGIN_BLOCKS = 25;
     private static final int TEMPERATE_MOUNTAIN_MIN_HEIGHT_ABOVE_SEA = 56;
     private static final int TEMPERATE_MOUNTAIN_MIN_RUGGED_DELTA = WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST;
-    // Temperate "amplified plains" fix: the terrain-compatibility reroll (plains-on-steep → hills/peaks) ran
-    // only for SUBPOLAR/POLAR. Extend it to TEMPERATE, but ONLY on genuinely rugged/high columns so gently
-    // rolling temperate plains survive. Tunable live via -D to dial the threshold in against Terralith relief.
-    private static final int TEMPERATE_PLAINS_RUGGED_RELIEF =
-            Integer.getInteger("latitude.temperatePlainsRelief", 6);
-    private static final int TEMPERATE_PLAINS_HIGH_ABOVE_SEA =
-            Integer.getInteger("latitude.temperatePlainsHighAboveSea", 40);
-
-    private static final ThreadLocal<Long2IntOpenHashMap> PREVIEW_HEIGHT_CACHE =
-            ThreadLocal.withInitial(Long2IntOpenHashMap::new);
-    private static final ThreadLocal<Long> PREVIEW_HEIGHT_CACHE_CHUNK =
-            ThreadLocal.withInitial(() -> Long.MIN_VALUE);
+    private static final ThreadLocal<PreviewHeightCache> PREVIEW_HEIGHT_CACHE =
+            ThreadLocal.withInitial(PreviewHeightCache::new);
     private static final long UPLAND_ROLL_SALT = 0x1CEB0D03L;
     private static final long UPLAND_POOL_SALT = 0x1CEB0D04L;
     private static final String[] TEMPERATE_UPLAND_BIOMES = {
@@ -2695,6 +3145,9 @@ public final class LatitudeBiomes {
             if (!beachMountainNoiseLike) {
                 Holder<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, beachBandIndex);
                 out = quarantineUnknownCustomLandBiome(biomeRegistry, out, base, blockX, blockZ, beachBandIndex, false);
+                out = applyV2SurfaceWaterCoverage(
+                        biomeRegistry, VanillaSurfaceWaterCoveragePlan.Family.SHORE,
+                        base, out, blockX, blockZ, sampler);
                 debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
                 return out;
             }
@@ -2730,6 +3183,8 @@ public final class LatitudeBiomes {
                 hasPreviewTerrainInputs,
                 callerContext);
         boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
+        boolean terrainEvidenceAvailable = hasPreviewTerrainInputs
+                || (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && mountainNoiseLike);
         // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
         // satisfy the terrain gate as a substitute for the missing preview terrain inputs.
         // Double-gated: !hasPreviewTerrainInputs (only SOURCE/ATLAS_SAMPLER paths, per call-site audit)
@@ -2756,6 +3211,17 @@ public final class LatitudeBiomes {
         int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
         boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean oceanAuthority = oceanDistance == 0;
+        // A donor ocean label cannot own a mountain column. Reuse the surface height already
+        // computed for terrain gates; the +16 threshold is Latitude's existing maximum coastal
+        // relief allowance, so beaches and low sea stacks remain ocean-compatible.
+        boolean clearlyRaisedLand = OceanTerrainCompatibilityPolicy.isClearlyRaisedLand(
+                hasPreviewTerrainInputs,
+                terrainGateHeight,
+                seaLevel,
+                BEACH_SHORTCUT_MAX_SEA_LEVEL_DELTA);
+        if (clearlyRaisedLand) {
+            oceanAuthority = false;
+        }
         // Veto coarse ODF ocean authority when real terrain is clearly raised land
         if (oceanAuthority && !base.is(BiomeTags.IS_OCEAN)
                 && generator != null && noiseConfig != null && heightView != null) {
@@ -2767,10 +3233,34 @@ public final class LatitudeBiomes {
             }
         }
 
-        if (base.is(BiomeTags.IS_RIVER)) {
+        Holder<Biome> contiguousPaleGarden = contiguousPaleGardenCoreOverride(
+                biomeRegistry, base, blockX, blockZ, effectiveRadius, sampler);
+        if (contiguousPaleGarden != null) {
+            debugPick(blockX, blockZ, effectiveRadius, t, band, base, contiguousPaleGarden, false, false, null);
+            return contiguousPaleGarden;
+        }
+
+        Holder<Biome> v2MushroomIsland = applyV2SurfaceWaterCoverage(
+                biomeRegistry, VanillaSurfaceWaterCoveragePlan.Family.MUSHROOM,
+                base, base, blockX, blockZ, sampler);
+        if (v2MushroomIsland != base) {
+            debugPick(blockX, blockZ, effectiveRadius, t, band, base, v2MushroomIsland, false, false, null);
+            return v2MushroomIsland;
+        }
+
+        boolean raisedMountainRiver = base.is(BiomeTags.IS_RIVER)
+                && TerrainBiomeCohesionPolicy.shouldReplaceRiverWithLand(
+                        hasPreviewTerrainInputs,
+                        terrainGateHeight,
+                        seaLevel,
+                        polarMountainNoiseLike);
+        if (base.is(BiomeTags.IS_RIVER) && !raisedMountainRiver) {
             if (shouldFreezeRiver(blockX, blockZ)) {
                 try {
                     Holder<Biome> out = biome(biomeRegistry, "minecraft:frozen_river");
+                    out = applyV2SurfaceWaterCoverage(
+                            biomeRegistry, VanillaSurfaceWaterCoveragePlan.Family.RIVER,
+                            base, out, blockX, blockZ, sampler);
                     debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
                     return out;
                 } catch (Throwable ignored) {
@@ -2780,6 +3270,9 @@ public final class LatitudeBiomes {
             } else {
                 try {
                     Holder<Biome> out = biome(biomeRegistry, "minecraft:river");
+                    out = applyV2SurfaceWaterCoverage(
+                            biomeRegistry, VanillaSurfaceWaterCoveragePlan.Family.RIVER,
+                            base, out, blockX, blockZ, sampler);
                     debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
                     return out;
                 } catch (Throwable ignored) {
@@ -2789,7 +3282,7 @@ public final class LatitudeBiomes {
             }
         }
 
-        if (base.is(BiomeTags.IS_OCEAN) || oceanAuthority) {
+        if ((base.is(BiomeTags.IS_OCEAN) && !clearlyRaisedLand) || oceanAuthority) {
             Holder<Biome> oceanBase;
             if (base.is(BiomeTags.IS_OCEAN)) {
                 oceanBase = base;
@@ -2804,7 +3297,12 @@ public final class LatitudeBiomes {
             if (oceanPick == null || !oceanPick.is(BiomeTags.IS_OCEAN)) {
                 oceanPick = firstPresentOcean(biomeRegistry);
             }
-            Holder<Biome> out = mushroomIslandOverride(biomeRegistry, oceanPick, blockX, blockZ, sampler);
+            Holder<Biome> out = applyV2SurfaceWaterCoverage(
+                    biomeRegistry, VanillaSurfaceWaterCoveragePlan.Family.OCEAN,
+                    oceanBase, oceanPick, blockX, blockZ, sampler);
+            if (ACTIVE_SURFACE_WATER_COVERAGE_PLAN == null) {
+                out = mushroomIslandOverride(biomeRegistry, out, blockX, blockZ, sampler);
+            }
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
             return out;
         }
@@ -2817,14 +3315,19 @@ public final class LatitudeBiomes {
         String subtropicalSwampSource = null;
         Boolean subtropicalSwampEvaluateAllow = null;
         Boolean subtropicalPostEnforceSwampAllow = null;
-        if (chosen == null && (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) && sampler != null) {
+        if (chosen == null
+                && (landBandIndex == BAND_TROPICAL
+                    || landBandIndex == BAND_SUBTROPICAL
+                    || landBandIndex == BAND_TEMPERATE)
+                && sampler != null) {
             int noiseX = blockX >> 2;
             int noiseZ = blockZ >> 2;
             Climate.TargetPoint p = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
             double cont = Climate.unquantizeCoord(p.continentalness());
             double erosion = Climate.unquantizeCoord(p.erosion());
             double weird = Climate.unquantizeCoord(p.weirdness());
-            boolean aridBlocked = isAridTropicalStepSymmetric(blockX, blockZ, t);
+            boolean aridBlocked = landBandIndex != BAND_TEMPERATE
+                    && isAridTropicalStepSymmetric(blockX, blockZ, t);
             boolean swampPatch = swampPatchHere(WORLD_SEED, blockX, blockZ);
             boolean swampPatchOk = swampOkInPatchScaled(cont, erosion, weird);
             double wetlandNoise = wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ);
@@ -2837,7 +3340,16 @@ public final class LatitudeBiomes {
             && swampPatchOk
             && wetlandNoise < wetlandThreshold) {
                 try {
-                    chosen = biome(biomeRegistry, SWAMP_ID);
+                    Holder<Biome> swampBase = biome(biomeRegistry, SWAMP_ID);
+                    chosen = landBandIndex == BAND_TEMPERATE
+                            ? pickFromTagNoiseOrBase(
+                                    biomeRegistry,
+                                    LAT_TEMPERATE_WETLAND,
+                                    swampBase,
+                                    blockX,
+                                    blockZ,
+                                    landBandIndex)
+                            : swampBase;
                     if (landBandIndex == BAND_SUBTROPICAL && !mountainLike && isSwampCandidate(chosen)) {
                         subtropicalSwampSource = "prepassSwampPatch";
                     }
@@ -2895,35 +3407,34 @@ public final class LatitudeBiomes {
                 || isBiomeId(chosen, "minecraft:old_growth_pine_taiga"))) {
             chosen = base;
         }
-        if (skipPreview && shouldApplyTerrainGate(landBandIndex, preview.robustDelta, preview.centerHeight, seaLevel) && chosen != null) {
-            int gateHeight = preview.centerHeight;
-            int gateDelta = preview.robustDelta;
-            if (generator != null && noiseConfig != null && heightView != null) {
-                gateHeight = skipPreview && hasPreviewTerrainInputs
-                        ? columnDecisionY
-                        : previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
-            }
+        boolean forceTemperateUpland = landBandIndex == BAND_TEMPERATE
+                && TerrainBiomeCohesionPolicy.shouldUseTemperateUplandFamily(
+                        terrainEvidenceAvailable,
+                        terrainGateHeight,
+                        terrainGateDelta,
+                        seaLevel);
+        if (forceTemperateUpland) {
+            chosen = pickFromTagNoiseOrBase(
+                    biomeRegistry,
+                    LAT_TEMPERATE_MOUNTAIN,
+                    base,
+                    blockX,
+                    blockZ,
+                    landBandIndex);
+        } else if (shouldApplyTerrainGate(
+                landBandIndex,
+                terrainGateDelta,
+                terrainGateHeight,
+                seaLevel,
+                terrainEvidenceAvailable) && chosen != null) {
             chosen = applyTerrainCompatibilityGate(
                     biomeRegistry,
                     chosen,
                     landBandIndex,
                     blockX,
                     blockZ,
-                    gateHeight,
-                    gateDelta,
-                    seaLevel,
-                    oceanDistance,
-                    mountainNoiseLike,
-                    mountainLike);
-        } else if (!skipPreview && shouldApplyTerrainGate(landBandIndex, preview.robustDelta, preview.centerHeight, seaLevel) && chosen != null) {
-            chosen = applyTerrainCompatibilityGate(
-                    biomeRegistry,
-                    chosen,
-                    landBandIndex,
-                    blockX,
-                    blockZ,
-                    preview.centerHeight,
-                    preview.robustDelta,
+                    terrainGateHeight,
+                    terrainGateDelta,
                     seaLevel,
                     oceanDistance,
                     mountainNoiseLike,
@@ -3124,7 +3635,15 @@ public final class LatitudeBiomes {
                 }
             }
         }
-        out = enforcePaleGardenRegion(biomeRegistry, out, base, blockX, blockZ, landBandIndex, effectiveRadius, oceanDistance, sampler);
+        out = enforcePaleGardenRegion(
+                biomeRegistry,
+                out,
+                base,
+                blockX,
+                blockZ,
+                landBandIndex,
+                effectiveRadius,
+                sampler);
         out = softenTemperateWarmEdgeTaigaJump(biomeRegistry, base, out, blockX, blockZ, effectiveRadius, bandIndex, landBandIndex, mountainLike);
         Holder<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
@@ -3305,6 +3824,60 @@ public final class LatitudeBiomes {
                 swampFallbackCalled,
                 swampFallbackReturned,
                 out);
+        out = applyFinalAridLatitudeLaw(
+                biomeRegistry,
+                out,
+                blockZ,
+                effectiveRadius);
+        out = enforceFinalWetlandAuthority(
+                biomeRegistry,
+                out,
+                blockX,
+                blockZ,
+                columnDecisionY,
+                preview,
+                seaLevel,
+                sampler,
+                landBandIndex,
+                mountainLike,
+                oceanDistance,
+                hasReliableSurface,
+                hasPreviewTerrainInputs,
+                heightView);
+        out = applyFinalWetlandIdentityLaw(
+                biomeRegistry,
+                out,
+                columnDecisionY,
+                preview,
+                seaLevel,
+                hasReliableSurface,
+                hasPreviewTerrainInputs,
+                landBandIndex,
+                clearlyRaisedLand,
+                oceanDistance);
+        if (TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland(
+                forceTemperateUpland,
+                out != null && out.is(LAT_TEMPERATE_MOUNTAIN))) {
+            Holder<Biome> finalTerrainUpland = pickTemperateUplandBiome(
+                    biomeRegistry,
+                    blockX,
+                    blockZ);
+            if (finalTerrainUpland != null) {
+                out = finalTerrainUpland;
+            }
+        }
+        out = applyVanillaCoverage(
+                biomeRegistry, base, out, blockX, blockZ, sampler);
+        if (ACTIVE_SURFACE_WATER_COVERAGE_PLAN != null) {
+            MangroveDecision v2Mangrove = evaluateMangroveWithSurface(
+                    blockX, blockZ, columnDecisionY, preview, seaLevel, sampler, nearOcean,
+                    hasReliableSurface, hasPreviewTerrainInputs, heightView);
+            if (v2Mangrove.allow()) {
+                out = applyV2SurfaceWaterCoverage(
+                        biomeRegistry, VanillaSurfaceWaterCoveragePlan.Family.MANGROVE,
+                        base, out, blockX, blockZ, sampler);
+            }
+        }
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -3354,6 +3927,9 @@ public final class LatitudeBiomes {
             if (!beachMountainNoiseLike) {
                 Holder<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, beachBandIndex);
                 out = quarantineUnknownCustomLandBiome(biomePool, out, base, blockX, blockZ, beachBandIndex, false);
+                out = applyV2SurfaceWaterCoverage(
+                        biomePool, VanillaSurfaceWaterCoveragePlan.Family.SHORE,
+                        base, out, blockX, blockZ, sampler);
                 debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
                 return out;
             }
@@ -3389,6 +3965,8 @@ public final class LatitudeBiomes {
                 hasPreviewTerrainInputs,
                 callerContext);
         boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
+        boolean terrainEvidenceAvailable = hasPreviewTerrainInputs
+                || (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && mountainNoiseLike);
         // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
         // satisfy the terrain gate as a substitute for the missing preview terrain inputs.
         // Double-gated: !hasPreviewTerrainInputs (only SOURCE/ATLAS_SAMPLER paths, per call-site audit)
@@ -3415,6 +3993,15 @@ public final class LatitudeBiomes {
         int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
         boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean oceanAuthority = oceanDistance == 0;
+        // Keep the collection-backed picker in exact parity with the registry-backed runtime path.
+        boolean clearlyRaisedLand = OceanTerrainCompatibilityPolicy.isClearlyRaisedLand(
+                hasPreviewTerrainInputs,
+                terrainGateHeight,
+                seaLevel,
+                BEACH_SHORTCUT_MAX_SEA_LEVEL_DELTA);
+        if (clearlyRaisedLand) {
+            oceanAuthority = false;
+        }
         // Veto coarse ODF ocean authority when real terrain is clearly raised land
         if (oceanAuthority && !base.is(BiomeTags.IS_OCEAN)
                 && generator != null && noiseConfig != null && heightView != null) {
@@ -3426,20 +4013,47 @@ public final class LatitudeBiomes {
             }
         }
 
-        if (base.is(BiomeTags.IS_RIVER)) {
+        Holder<Biome> contiguousPaleGarden = contiguousPaleGardenCoreOverride(
+                biomePool, base, blockX, blockZ, effectiveRadius, sampler);
+        if (contiguousPaleGarden != null) {
+            debugPick(blockX, blockZ, effectiveRadius, t, band, base, contiguousPaleGarden, false, false, null);
+            return contiguousPaleGarden;
+        }
+
+        Holder<Biome> v2MushroomIsland = applyV2SurfaceWaterCoverage(
+                biomePool, VanillaSurfaceWaterCoveragePlan.Family.MUSHROOM,
+                base, base, blockX, blockZ, sampler);
+        if (v2MushroomIsland != base) {
+            debugPick(blockX, blockZ, effectiveRadius, t, band, base, v2MushroomIsland, false, false, null);
+            return v2MushroomIsland;
+        }
+
+        boolean raisedMountainRiver = base.is(BiomeTags.IS_RIVER)
+                && TerrainBiomeCohesionPolicy.shouldReplaceRiverWithLand(
+                        hasPreviewTerrainInputs,
+                        terrainGateHeight,
+                        seaLevel,
+                        polarMountainNoiseLike);
+        if (base.is(BiomeTags.IS_RIVER) && !raisedMountainRiver) {
             if (shouldFreezeRiver(blockX, blockZ)) {
                 Holder<Biome> frozen = entryById(biomePool, "minecraft:frozen_river");
                 Holder<Biome> out = frozen != null ? frozen : base;
+                out = applyV2SurfaceWaterCoverage(
+                        biomePool, VanillaSurfaceWaterCoveragePlan.Family.RIVER,
+                        base, out, blockX, blockZ, sampler);
                 debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
                 return out;
             }
             Holder<Biome> river = entryById(biomePool, "minecraft:river");
             Holder<Biome> out = river != null ? river : base;
+            out = applyV2SurfaceWaterCoverage(
+                    biomePool, VanillaSurfaceWaterCoveragePlan.Family.RIVER,
+                    base, out, blockX, blockZ, sampler);
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
             return out;
         }
 
-        if (base.is(BiomeTags.IS_OCEAN) || oceanAuthority) {
+        if ((base.is(BiomeTags.IS_OCEAN) && !clearlyRaisedLand) || oceanAuthority) {
             Holder<Biome> oceanBase = base.is(BiomeTags.IS_OCEAN)
                     ? base
                     : entryById(biomePool, "minecraft:ocean");
@@ -3450,7 +4064,12 @@ public final class LatitudeBiomes {
             if (oceanPick == null || !oceanPick.is(BiomeTags.IS_OCEAN)) {
                 oceanPick = firstPresentOcean(biomePool);
             }
-            Holder<Biome> out = mushroomIslandOverride(biomePool, oceanPick, blockX, blockZ, sampler);
+            Holder<Biome> out = applyV2SurfaceWaterCoverage(
+                    biomePool, VanillaSurfaceWaterCoveragePlan.Family.OCEAN,
+                    oceanBase, oceanPick, blockX, blockZ, sampler);
+            if (ACTIVE_SURFACE_WATER_COVERAGE_PLAN == null) {
+                out = mushroomIslandOverride(biomePool, out, blockX, blockZ, sampler);
+            }
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
             return out;
         }
@@ -3460,14 +4079,19 @@ public final class LatitudeBiomes {
         }
         boolean forcedBadlands = false;
         Holder<Biome> chosen = null;
-        if (chosen == null && (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) && sampler != null) {
+        if (chosen == null
+                && (landBandIndex == BAND_TROPICAL
+                    || landBandIndex == BAND_SUBTROPICAL
+                    || landBandIndex == BAND_TEMPERATE)
+                && sampler != null) {
             int noiseX = blockX >> 2;
             int noiseZ = blockZ >> 2;
             Climate.TargetPoint p = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
             double cont = Climate.unquantizeCoord(p.continentalness());
             double erosion = Climate.unquantizeCoord(p.erosion());
             double weird = Climate.unquantizeCoord(p.weirdness());
-            boolean aridBlocked = isAridTropicalStepSymmetric(blockX, blockZ, t);
+            boolean aridBlocked = landBandIndex != BAND_TEMPERATE
+                    && isAridTropicalStepSymmetric(blockX, blockZ, t);
             boolean swampPatch = swampPatchHere(WORLD_SEED, blockX, blockZ);
             boolean swampPatchOk = swampOkInPatchScaled(cont, erosion, weird);
             double wetlandNoise = wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ);
@@ -3479,7 +4103,18 @@ public final class LatitudeBiomes {
             && swampPatch
             && swampPatchOk
             && wetlandNoise < wetlandThreshold) {
-                chosen = entryById(biomePool, SWAMP_ID);
+                Holder<Biome> swampBase = entryById(biomePool, SWAMP_ID);
+                if (swampBase != null) {
+                    chosen = landBandIndex == BAND_TEMPERATE
+                            ? pickFromTagNoiseOrBase(
+                                    biomePool,
+                                    LAT_TEMPERATE_WETLAND,
+                                    swampBase,
+                                    blockX,
+                                    blockZ,
+                                    landBandIndex)
+                            : swampBase;
+                }
             }
         }
         if (chosen == null) {
@@ -3525,35 +4160,34 @@ public final class LatitudeBiomes {
                 || isBiomeId(chosen, "minecraft:old_growth_pine_taiga"))) {
             chosen = base;
         }
-        if (skipPreview && shouldApplyTerrainGate(landBandIndex, preview.robustDelta, preview.centerHeight, seaLevel) && chosen != null) {
-            int gateHeight = preview.centerHeight;
-            int gateDelta = preview.robustDelta;
-            if (generator != null && noiseConfig != null && heightView != null) {
-                gateHeight = skipPreview && hasPreviewTerrainInputs
-                        ? columnDecisionY
-                        : previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
-            }
+        boolean forceTemperateUpland = landBandIndex == BAND_TEMPERATE
+                && TerrainBiomeCohesionPolicy.shouldUseTemperateUplandFamily(
+                        terrainEvidenceAvailable,
+                        terrainGateHeight,
+                        terrainGateDelta,
+                        seaLevel);
+        if (forceTemperateUpland) {
+            chosen = pickFromTagNoiseOrBase(
+                    biomePool,
+                    LAT_TEMPERATE_MOUNTAIN,
+                    base,
+                    blockX,
+                    blockZ,
+                    landBandIndex);
+        } else if (shouldApplyTerrainGate(
+                landBandIndex,
+                terrainGateDelta,
+                terrainGateHeight,
+                seaLevel,
+                terrainEvidenceAvailable) && chosen != null) {
             chosen = applyTerrainCompatibilityGate(
                     biomePool,
                     chosen,
                     landBandIndex,
                     blockX,
                     blockZ,
-                    gateHeight,
-                    gateDelta,
-                    seaLevel,
-                    oceanDistance,
-                    mountainNoiseLike,
-                    mountainLike);
-        } else if (!skipPreview && shouldApplyTerrainGate(landBandIndex, preview.robustDelta, preview.centerHeight, seaLevel) && chosen != null) {
-            chosen = applyTerrainCompatibilityGate(
-                    biomePool,
-                    chosen,
-                    landBandIndex,
-                    blockX,
-                    blockZ,
-                    preview.centerHeight,
-                    preview.robustDelta,
+                    terrainGateHeight,
+                    terrainGateDelta,
                     seaLevel,
                     oceanDistance,
                     mountainNoiseLike,
@@ -3754,7 +4388,15 @@ public final class LatitudeBiomes {
                 }
             }
         }
-        out = enforcePaleGardenRegion(biomePool, out, base, blockX, blockZ, landBandIndex, effectiveRadius, oceanDistance, sampler);
+        out = enforcePaleGardenRegion(
+                biomePool,
+                out,
+                base,
+                blockX,
+                blockZ,
+                landBandIndex,
+                effectiveRadius,
+                sampler);
         out = softenTemperateWarmEdgeTaigaJump(biomePool, base, out, blockX, blockZ, effectiveRadius, bandIndex, landBandIndex, mountainLike);
         Holder<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
@@ -3902,8 +4544,262 @@ public final class LatitudeBiomes {
                 swampFallbackCalled,
                 swampFallbackReturned,
                 out);
+        out = applyFinalAridLatitudeLaw(
+                biomePool,
+                out,
+                blockZ,
+                effectiveRadius);
+        out = enforceFinalWetlandAuthority(
+                biomePool,
+                out,
+                blockX,
+                blockZ,
+                columnDecisionY,
+                preview,
+                seaLevel,
+                sampler,
+                landBandIndex,
+                mountainLike,
+                oceanDistance,
+                hasReliableSurface,
+                hasPreviewTerrainInputs,
+                heightView);
+        out = applyFinalWetlandIdentityLaw(
+                biomePool,
+                out,
+                columnDecisionY,
+                preview,
+                seaLevel,
+                hasReliableSurface,
+                hasPreviewTerrainInputs,
+                landBandIndex,
+                clearlyRaisedLand,
+                oceanDistance);
+        if (TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland(
+                forceTemperateUpland,
+                out != null && out.is(LAT_TEMPERATE_MOUNTAIN))) {
+            Holder<Biome> finalTerrainUpland = pickTemperateUplandBiome(
+                    biomePool,
+                    blockX,
+                    blockZ);
+            if (finalTerrainUpland != null) {
+                out = finalTerrainUpland;
+            }
+        }
+        out = applyVanillaCoverage(
+                biomePool, base, out, blockX, blockZ, sampler);
+        if (ACTIVE_SURFACE_WATER_COVERAGE_PLAN != null) {
+            MangroveDecision v2Mangrove = evaluateMangroveWithSurface(
+                    blockX, blockZ, columnDecisionY, preview, seaLevel, sampler, nearOcean,
+                    hasReliableSurface, hasPreviewTerrainInputs, heightView);
+            if (v2Mangrove.allow()) {
+                out = applyV2SurfaceWaterCoverage(
+                        biomePool, VanillaSurfaceWaterCoveragePlan.Family.MANGROVE,
+                        base, out, blockX, blockZ, sampler);
+            }
+        }
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
+    }
+
+    private static Holder<Biome> applyFinalAridLatitudeLaw(
+            Registry<Biome> biomes,
+            Holder<Biome> out,
+            int blockZ,
+            int effectiveRadius) {
+        AridLatitudePolicy.Replacement replacement = AridLatitudePolicy.replacementFor(
+                isAridFamily(out),
+                blockZ,
+                effectiveRadius,
+                BADLANDS_LAT_RAMP_LOW_DEG,
+                ARID_POLEWARD_RAMP_HIGH_DEG);
+        if (replacement == AridLatitudePolicy.Replacement.KEEP) {
+            return out;
+        }
+        String fallbackId = replacement == AridLatitudePolicy.Replacement.SAVANNA
+                ? "minecraft:savanna"
+                : "minecraft:plains";
+        try {
+            return biome(biomes, fallbackId);
+        } catch (Throwable ignored) {
+            return out;
+        }
+    }
+
+    private static Holder<Biome> applyFinalAridLatitudeLaw(
+            Collection<Holder<Biome>> biomes,
+            Holder<Biome> out,
+            int blockZ,
+            int effectiveRadius) {
+        AridLatitudePolicy.Replacement replacement = AridLatitudePolicy.replacementFor(
+                isAridFamily(out),
+                blockZ,
+                effectiveRadius,
+                BADLANDS_LAT_RAMP_LOW_DEG,
+                ARID_POLEWARD_RAMP_HIGH_DEG);
+        if (replacement == AridLatitudePolicy.Replacement.KEEP) {
+            return out;
+        }
+        String fallbackId = replacement == AridLatitudePolicy.Replacement.SAVANNA
+                ? "minecraft:savanna"
+                : "minecraft:plains";
+        Holder<Biome> fallback = entryById(biomes, fallbackId);
+        return fallback != null ? fallback : out;
+    }
+
+    /**
+     * Final wetland authority after every selector, quarantine, and fallback has run.
+     * Earlier gates may replace a rejected mangrove with a swamp, or a late custom-biome
+     * quarantine may reroll into a wetland. Revalidating here guarantees that every final
+     * swamp satisfies Latitude's climate/coastal gate and every directly selected mangrove
+     * satisfies its coastal and surface rules. The identity law below may still promote an
+     * already-valid coastal swamp to mangrove.
+     */
+    private static Holder<Biome> enforceFinalWetlandAuthority(
+            Registry<Biome> biomes,
+            Holder<Biome> out,
+            int blockX,
+            int blockZ,
+            int columnDecisionY,
+            PreviewTerrain preview,
+            int seaLevel,
+            Climate.Sampler sampler,
+            int landBandIndex,
+            boolean mountainLike,
+            int oceanDistance,
+            boolean hasReliableSurface,
+            boolean hasPreviewTerrainInputs,
+            LevelHeightAccessor heightView) {
+        boolean valid = true;
+        if (isMangroveCandidate(out)) {
+            MangroveDecision mangrove = evaluateMangroveWithSurface(
+                    blockX,
+                    blockZ,
+                    columnDecisionY,
+                    preview,
+                    seaLevel,
+                    sampler,
+                    oceanDistance >= 0 && oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS,
+                    hasReliableSurface,
+                    hasPreviewTerrainInputs,
+                    heightView);
+            valid = !mountainLike && oceanDistance >= 0 && mangrove.allow();
+        } else if (isSwampCandidate(out)) {
+            valid = !mountainLike
+                    && oceanDistance >= 0
+                    && (landBandIndex == BAND_TEMPERATE
+                        || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE)
+                    && evaluateSwamp(blockX, blockZ, sampler).allow();
+        }
+        if (valid) {
+            return out;
+        }
+        Holder<Biome> fallback = safeVanillaFallbackForBand(biomes, landBandIndex);
+        return fallback != null ? fallback : out;
+    }
+
+    private static Holder<Biome> enforceFinalWetlandAuthority(
+            Collection<Holder<Biome>> biomes,
+            Holder<Biome> out,
+            int blockX,
+            int blockZ,
+            int columnDecisionY,
+            PreviewTerrain preview,
+            int seaLevel,
+            Climate.Sampler sampler,
+            int landBandIndex,
+            boolean mountainLike,
+            int oceanDistance,
+            boolean hasReliableSurface,
+            boolean hasPreviewTerrainInputs,
+            LevelHeightAccessor heightView) {
+        boolean valid = true;
+        if (isMangroveCandidate(out)) {
+            MangroveDecision mangrove = evaluateMangroveWithSurface(
+                    blockX,
+                    blockZ,
+                    columnDecisionY,
+                    preview,
+                    seaLevel,
+                    sampler,
+                    oceanDistance >= 0 && oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS,
+                    hasReliableSurface,
+                    hasPreviewTerrainInputs,
+                    heightView);
+            valid = !mountainLike && oceanDistance >= 0 && mangrove.allow();
+        } else if (isSwampCandidate(out)) {
+            valid = !mountainLike
+                    && oceanDistance >= 0
+                    && (landBandIndex == BAND_TEMPERATE
+                        || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE)
+                    && evaluateSwamp(blockX, blockZ, sampler).allow();
+        }
+        if (valid) {
+            return out;
+        }
+        Holder<Biome> fallback = safeVanillaFallbackForBand(biomes, landBandIndex);
+        return fallback != null ? fallback : out;
+    }
+
+    private static Holder<Biome> applyFinalWetlandIdentityLaw(
+            Registry<Biome> biomes,
+            Holder<Biome> out,
+            int columnDecisionY,
+            PreviewTerrain preview,
+            int seaLevel,
+            boolean hasReliableSurface,
+            boolean hasPreviewTerrainInputs,
+            int landBandIndex,
+            boolean clearlyRaisedLand,
+            int oceanDistance) {
+        boolean finalBiomeIsSwamp = isBiomeId(out, SWAMP_ID);
+        boolean lowlandTerrain = hasReliableSurface
+                ? preview.centerHeight <= seaLevel + MANGROVE_MAX_Y_ABOVE_SEA
+                    && preview.robustDelta <= MANGROVE_MAX_ROBUST_DELTA
+                : hasPreviewTerrainInputs
+                    && columnDecisionY <= seaLevel + MANGROVE_MAX_Y_ABOVE_SEA;
+        if (!WetlandIdentityPolicy.shouldUseMangrove(
+                finalBiomeIsSwamp,
+                landBandIndex,
+                BAND_SUBTROPICAL,
+                clearlyRaisedLand,
+                oceanDistance,
+                MANGROVE_COASTAL_MAX_BLOCKS,
+                lowlandTerrain)) {
+            return out;
+        }
+        return mangroveOverride(biomes, out);
+    }
+
+    private static Holder<Biome> applyFinalWetlandIdentityLaw(
+            Collection<Holder<Biome>> biomes,
+            Holder<Biome> out,
+            int columnDecisionY,
+            PreviewTerrain preview,
+            int seaLevel,
+            boolean hasReliableSurface,
+            boolean hasPreviewTerrainInputs,
+            int landBandIndex,
+            boolean clearlyRaisedLand,
+            int oceanDistance) {
+        boolean finalBiomeIsSwamp = isBiomeId(out, SWAMP_ID);
+        boolean lowlandTerrain = hasReliableSurface
+                ? preview.centerHeight <= seaLevel + MANGROVE_MAX_Y_ABOVE_SEA
+                    && preview.robustDelta <= MANGROVE_MAX_ROBUST_DELTA
+                : hasPreviewTerrainInputs
+                    && columnDecisionY <= seaLevel + MANGROVE_MAX_Y_ABOVE_SEA;
+        if (!WetlandIdentityPolicy.shouldUseMangrove(
+                finalBiomeIsSwamp,
+                landBandIndex,
+                BAND_SUBTROPICAL,
+                clearlyRaisedLand,
+                oceanDistance,
+                MANGROVE_COASTAL_MAX_BLOCKS,
+                lowlandTerrain)) {
+            return out;
+        }
+        Holder<Biome> mangrove = entryById(biomes, MANGROVE_ID);
+        return mangrove != null ? mangrove : out;
     }
 
     private static Holder<Biome> pickTropicalGradient(Registry<Biome> biomes, Holder<Biome> base, int blockX, int blockZ, double t) {
@@ -3947,10 +4843,9 @@ public final class LatitudeBiomes {
             int roll = weightedRoll(blockX, blockZ, 0x7A22);
             TagKey<Biome> tag = weightedTagForRoll(102, roll,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
-            List<Holder<Biome>> candidates = new ArrayList<>();
-            for (Holder<Biome> entry : biomes.getTagOrEmpty(tag)) {
-                candidates.add(entry);
-            }
+            // Route through the V1 birth profile so this optional override cannot re-admit a
+            // descriptorless custom tag entry after the main provider-ticket selection.
+            List<Holder<Biome>> candidates = entriesForTag(biomes, tag);
             Holder<Biome> forced = maybePickWsavStep2SecondaryOverride(biomes, step, plateauLike, candidates);
             if (forced != null) {
                 return blockNewSubtropicalNonMountainWindswept(base, forced, mountainLike, BAND_SUBTROPICAL);
@@ -4159,16 +5054,7 @@ public final class LatitudeBiomes {
     }
 
     private static Holder<Biome> pickShallowTropicalOcean(Registry<Biome> biomes, int blockX, int blockZ) {
-        List<Holder<Biome>> entries = new ArrayList<>();
-        for (Holder<Biome> entry : biomes.getTagOrEmpty(LAT_OCEAN_TROPICAL)) {
-            if (!isDeepOcean(entry)) {
-                entries.add(entry);
-            }
-        }
-
-        entries.sort(Comparator.comparing(entry -> entry.unwrapKey()
-                .map(key -> key.identifier().toString())
-                .orElse("")));
+        List<Holder<Biome>> entries = filterShallowOcean(entriesForTag(biomes, LAT_OCEAN_TROPICAL));
 
         int size = entries.size();
         if (size <= 0) {
@@ -4178,27 +5064,15 @@ public final class LatitudeBiomes {
                     "minecraft:lukewarm_ocean");
         }
 
-        int scaleBlocks = 2048;
-        long seed = 0L;
-        long salted = seed ^ (0x9E3779B97F4A7C15L * 20L);
-        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
-        }
         setSelectionPath(PATH_TAG_PICK);
-        Holder<Biome> out = entries.get(idx);
+        Holder<Biome> out = selectProviderDiverseTagEntry(
+                entries, LAT_OCEAN_TROPICAL, blockX, blockZ, 20, 0L);
         setAdmission(BiomeAdmissionKind.LATITUDE_TAG, LAT_OCEAN_TROPICAL.location().toString(), out);
         return out;
     }
 
     private static Holder<Biome> pickShallowTropicalOcean(Collection<Holder<Biome>> biomes, int blockX, int blockZ) {
-        List<Holder<Biome>> entries = entriesForTag(biomes, LAT_OCEAN_TROPICAL).stream()
-                .filter(entry -> !isDeepOcean(entry))
-                .sorted(Comparator.comparing(entry -> entry.unwrapKey()
-                        .map(key -> key.identifier().toString())
-                        .orElse("")))
-                .toList();
+        List<Holder<Biome>> entries = filterShallowOcean(entriesForTag(biomes, LAT_OCEAN_TROPICAL));
 
         int size = entries.size();
         if (size <= 0) {
@@ -4206,16 +5080,9 @@ public final class LatitudeBiomes {
             return pickFromFallbacks(biomes, entryById(biomes, "minecraft:warm_ocean"), "minecraft:warm_ocean", "minecraft:lukewarm_ocean");
         }
 
-        int scaleBlocks = 2048;
-        long seed = 0L;
-        long salted = seed ^ (0x9E3779B97F4A7C15L * 20L);
-        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
-        }
         setSelectionPath(PATH_TAG_PICK);
-        Holder<Biome> out = entries.get(idx);
+        Holder<Biome> out = selectProviderDiverseTagEntry(
+                entries, LAT_OCEAN_TROPICAL, blockX, blockZ, 20, 0L);
         setAdmission(BiomeAdmissionKind.LATITUDE_TAG, LAT_OCEAN_TROPICAL.location().toString(), out);
         return out;
     }
@@ -5205,16 +6072,9 @@ public final class LatitudeBiomes {
             return pickFromFallbacks(biomes, base, fallbackOptions);
         }
 
-        int scaleBlocks = 2048;
-        long seed = 0L;
-        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex);
-        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
-        }
         setSelectionPath(PATH_TAG_PICK);
-        Holder<Biome> out = entries.get(idx);
+        Holder<Biome> out = selectProviderDiverseTagEntry(
+                entries, tag, blockX, blockZ, bandIndex, 0L);
         setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
         return out;
     }
@@ -5232,16 +6092,9 @@ public final class LatitudeBiomes {
             return base;
         }
 
-        int scaleBlocks = 2048;
-        long seed = 0L;
-        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex) ^ extraSalt;
-        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
-        }
         setSelectionPath(PATH_TAG_PICK);
-        Holder<Biome> out = entries.get(idx);
+        Holder<Biome> out = selectProviderDiverseTagEntry(
+                entries, tag, blockX, blockZ, bandIndex, extraSalt);
         Holder<Biome> guarded = guardWarmMediumSparseJungleExplicitTag(biomes, tag, out, blockX, blockZ, bandIndex);
         if (!sameBiomeId(out, guarded)) {
             return guarded;
@@ -5252,14 +6105,7 @@ public final class LatitudeBiomes {
 
     private static Holder<Biome> pickFromTagNoiseOrBaseFilteredSwamp(Registry<Biome> biomes, TagKey<Biome> tag, Holder<Biome> base,
                                                                             int blockX, int blockZ, int bandIndex, long extraSalt, boolean disallowSwamp) {
-        List<Holder<Biome>> entries = new ArrayList<>();
-        for (Holder<Biome> entry : biomes.getTagOrEmpty(tag)) {
-            entries.add(entry);
-        }
-
-        entries.sort(Comparator.comparing(entry -> entry.unwrapKey()
-                .map(key -> key.identifier().toString())
-                .orElse("")));
+        List<Holder<Biome>> entries = entriesForTag(biomes, tag);
 
         if (disallowSwamp) {
             entries = filterSwamp(entries);
@@ -5272,16 +6118,9 @@ public final class LatitudeBiomes {
             return base;
         }
 
-        int scaleBlocks = 2048;
-        long seed = 0L;
-        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex) ^ extraSalt;
-        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
-        }
         setSelectionPath(PATH_TAG_PICK);
-        Holder<Biome> out = entries.get(idx);
+        Holder<Biome> out = selectProviderDiverseTagEntry(
+                entries, tag, blockX, blockZ, bandIndex, extraSalt);
         Holder<Biome> guarded = guardWarmMediumSparseJungleExplicitTag(biomes, tag, out, blockX, blockZ, bandIndex);
         if (!sameBiomeId(out, guarded)) {
             return guarded;
@@ -5292,14 +6131,7 @@ public final class LatitudeBiomes {
 
     private static Holder<Biome> pickFromTagNoiseOrBaseFiltered(Registry<Biome> biomes, TagKey<Biome> tag, Holder<Biome> base,
                                                                        int blockX, int blockZ, int bandIndex, long extraSalt, boolean disallowMangrove) {
-        List<Holder<Biome>> entries = new ArrayList<>();
-        for (Holder<Biome> entry : biomes.getTagOrEmpty(tag)) {
-            entries.add(entry);
-        }
-
-        entries.sort(Comparator.comparing(entry -> entry.unwrapKey()
-                .map(key -> key.identifier().toString())
-                .orElse("")));
+        List<Holder<Biome>> entries = entriesForTag(biomes, tag);
 
         if (disallowMangrove) {
             entries = filterMangrove(entries);
@@ -5312,16 +6144,9 @@ public final class LatitudeBiomes {
             return base;
         }
 
-        int scaleBlocks = 2048;
-        long seed = 0L;
-        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex) ^ extraSalt;
-        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
-        }
         setSelectionPath(PATH_TAG_PICK);
-        Holder<Biome> out = entries.get(idx);
+        Holder<Biome> out = selectProviderDiverseTagEntry(
+                entries, tag, blockX, blockZ, bandIndex, extraSalt);
         Holder<Biome> guarded = guardWarmMediumSparseJungleExplicitTag(biomes, tag, out, blockX, blockZ, bandIndex);
         if (!sameBiomeId(out, guarded)) {
             return guarded;
@@ -5398,16 +6223,9 @@ public final class LatitudeBiomes {
             return base;
         }
 
-        int scaleBlocks = 2048;
-        long seed = 0L;
-        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex) ^ extraSalt;
-        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
-        }
         setSelectionPath(PATH_TAG_PICK);
-        Holder<Biome> out = entries.get(idx);
+        Holder<Biome> out = selectProviderDiverseTagEntry(
+                entries, tag, blockX, blockZ, bandIndex, extraSalt);
         Holder<Biome> guarded = guardWarmMediumSparseJungleExplicitTag(biomes, tag, out, blockX, blockZ, bandIndex);
         if (!sameBiomeId(out, guarded)) {
             return guarded;
@@ -5425,16 +6243,9 @@ public final class LatitudeBiomes {
             return base;
         }
 
-        int scaleBlocks = 2048;
-        long seed = 0L;
-        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex);
-        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
-        }
         setSelectionPath(PATH_TAG_PICK);
-        Holder<Biome> pick = entries.get(idx);
+        Holder<Biome> pick = selectProviderDiverseTagEntry(
+                entries, tag, blockX, blockZ, bandIndex, 0L);
         if (bandIndex == BAND_TROPICAL && isBiomeId(pick, "minecraft:sparse_jungle")) {
             double openness = tropicalOpennessNoise(blockX, blockZ);
             double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
@@ -5470,7 +6281,110 @@ public final class LatitudeBiomes {
         return base;
     }
 
+    private static Holder<Biome> selectProviderDiverseTagEntry(
+            List<Holder<Biome>> entries,
+            TagKey<Biome> tag,
+            int blockX,
+            int blockZ,
+            int bandIndex,
+            long extraSalt) {
+        BiomeRoute providerRoute = providerTicketRoute(tag);
+        return selectProviderDiverseEntry(
+                entries,
+                providerTicketActive() && providerRoute != null ? providerRoute.name() : tag.location().toString(),
+                blockX,
+                blockZ,
+                bandIndex,
+                extraSalt,
+                true);
+    }
+
+    private static Holder<Biome> selectProviderDiverseEntry(
+            List<Holder<Biome>> entries,
+            String sourceKey,
+            int blockX,
+            int blockZ,
+            int bandIndex,
+            long extraSalt,
+            boolean cachePool) {
+        BiomeProviderSelectionPolicy.Pool pool = null;
+        if (cachePool) {
+            synchronized (TAG_SELECTION_POOL_CACHE) {
+                pool = TAG_SELECTION_POOL_CACHE.get(entries);
+            }
+        }
+        if (pool == null) {
+            List<String> biomeIds = new ArrayList<>(entries.size());
+            for (Holder<Biome> entry : entries) {
+                biomeIds.add(biomeId(entry));
+            }
+            BiomeProviderSelectionPolicy.Pool created = BiomeProviderSelectionPolicy.createPool(biomeIds);
+            if (cachePool) {
+                synchronized (TAG_SELECTION_POOL_CACHE) {
+                    BiomeProviderSelectionPolicy.Pool existing = TAG_SELECTION_POOL_CACHE.putIfAbsent(entries, created);
+                    pool = existing != null ? existing : created;
+                }
+            } else {
+                pool = created;
+            }
+        }
+        int index = BiomeProviderSelectionPolicy.selectIndex(
+                pool,
+                WORLD_SEED,
+                blockX,
+                blockZ,
+                bandIndex,
+                sourceKey,
+                extraSalt);
+        String selectedId = pool.ids().get(index);
+        for (Holder<Biome> entry : entries) {
+            if (selectedId.equals(biomeId(entry))) return entry;
+        }
+        return entries.get(0);
+    }
+
+    private static List<Holder<Biome>> entriesForTag(Registry<Biome> biomes, TagKey<Biome> tag) {
+        BiomeRoute providerRoute = providerTicketRoute(tag);
+        if (providerRoute != null && providerTicketPolicyActive()) {
+            return entriesForProviderTicketRoute(biomes, providerRoute);
+        }
+        synchronized (REGISTRY_TAG_ENTRY_CACHE) {
+            Map<TagKey<Biome>, List<Holder<Biome>>> byTag = REGISTRY_TAG_ENTRY_CACHE.get(biomes);
+            if (byTag != null) {
+                List<Holder<Biome>> cached = byTag.get(tag);
+                if (cached != null) {
+                    return cached;
+                }
+            }
+        }
+        List<Holder<Biome>> entries = new ArrayList<>();
+        for (Holder<Biome> entry : biomes.getTagOrEmpty(tag)) {
+            entries.add(entry);
+        }
+        entries.sort(Comparator.comparing(LatitudeBiomes::biomeId));
+        List<Holder<Biome>> immutableEntries = List.copyOf(entries);
+        synchronized (REGISTRY_TAG_ENTRY_CACHE) {
+            Map<TagKey<Biome>, List<Holder<Biome>>> byTag = REGISTRY_TAG_ENTRY_CACHE.computeIfAbsent(
+                    biomes, ignored -> new HashMap<>());
+            List<Holder<Biome>> existing = byTag.putIfAbsent(tag, immutableEntries);
+            return existing != null ? existing : immutableEntries;
+        }
+    }
+
     private static List<Holder<Biome>> entriesForTag(Collection<Holder<Biome>> biomes, TagKey<Biome> tag) {
+        BiomeRoute providerRoute = providerTicketRoute(tag);
+        if (providerRoute != null && providerTicketPolicyActive()) {
+            return entriesForProviderTicketRoute(biomes, providerRoute);
+        }
+        synchronized (SOURCE_TAG_ENTRY_CACHE) {
+            Map<TagKey<Biome>, List<Holder<Biome>>> byTag = SOURCE_TAG_ENTRY_CACHE.get(biomes);
+            if (byTag != null) {
+                List<Holder<Biome>> cached = byTag.get(tag);
+                if (cached != null) {
+                    return cached;
+                }
+            }
+        }
         List<Holder<Biome>> entries = new ArrayList<>();
         for (Holder<Biome> entry : biomes) {
             if (entry.is(tag)) {
@@ -5481,7 +6395,82 @@ public final class LatitudeBiomes {
         entries.sort(Comparator.comparing(entry -> entry.unwrapKey()
                 .map(key -> key.identifier().toString())
                 .orElse("")));
-        return entries;
+        List<Holder<Biome>> immutableEntries = List.copyOf(entries);
+        synchronized (SOURCE_TAG_ENTRY_CACHE) {
+            Map<TagKey<Biome>, List<Holder<Biome>>> byTag = SOURCE_TAG_ENTRY_CACHE.computeIfAbsent(
+                    biomes, ignored -> new HashMap<>());
+            List<Holder<Biome>> existing = byTag.putIfAbsent(tag, immutableEntries);
+            return existing != null ? existing : immutableEntries;
+        }
+    }
+
+    private static BiomeRoute providerTicketRoute(TagKey<Biome> tag) {
+        return switch (tag.location().getPath()) {
+            case "lat_equator_primary", "lat_equator_secondary", "lat_equator_accent",
+                    "lat_tropics_primary", "lat_tropics_secondary", "lat_tropics_accent" -> BiomeRoute.TROPICAL_HUMID_LOWLAND;
+            case "lat_subtropical_humid_primary", "lat_subtropical_humid_secondary", "lat_subtropical_humid_accent" -> BiomeRoute.SUBTROPICAL_HUMID_LOWLAND;
+            case "lat_temperate_primary", "lat_temperate_secondary", "lat_temperate_accent" -> BiomeRoute.TEMPERATE_LOWLAND;
+            case "lat_temperate_wetland" -> BiomeRoute.TEMPERATE_WETLAND;
+            case "lat_temperate_mountain" -> BiomeRoute.TEMPERATE_UPLAND;
+            case "lat_arid_primary", "lat_arid_secondary", "lat_arid_accent" -> BiomeRoute.ARID_LOWLAND;
+            case "lat_trans_arid_tropics_1_primary", "lat_trans_arid_tropics_1_secondary", "lat_trans_arid_tropics_1_accent",
+                    "lat_trans_arid_tropics_2_primary", "lat_trans_arid_tropics_2_secondary", "lat_trans_arid_tropics_2_accent" -> BiomeRoute.WARM_TRANSITION;
+            case "lat_subpolar_primary", "lat_subpolar_secondary", "lat_subpolar_accent" -> BiomeRoute.SUBPOLAR_LOWLAND;
+            case "lat_polar_primary", "lat_polar_secondary", "lat_polar_accent" -> BiomeRoute.POLAR_LOWLAND;
+            default -> null;
+        };
+    }
+
+    private static List<Holder<Biome>> entriesForProviderTicketRoute(Registry<Biome> biomes, BiomeRoute route) {
+        BiomeSelectionProfile profile = ACTIVE_PROVIDER_TICKET_PROFILE;
+        if (profile == null) return List.of();
+        synchronized (PROVIDER_TICKET_REGISTRY_ROUTE_CACHE) {
+            Map<BiomeRoute, List<Holder<Biome>>> byRoute = PROVIDER_TICKET_REGISTRY_ROUTE_CACHE.get(biomes);
+            if (byRoute != null) {
+                List<Holder<Biome>> cached = byRoute.get(route);
+                if (cached != null) return cached;
+            }
+        }
+        List<Holder<Biome>> resolved = new ArrayList<>();
+        for (String id : profile.entries(route)) {
+            try {
+                Holder<Biome> entry = biome(biomes, id);
+                if (entry != null) resolved.add(entry);
+            } catch (Throwable ignored) {
+                // A removed optional mod cannot be replaced by a new custom biome.
+            }
+        }
+        List<Holder<Biome>> immutable = List.copyOf(resolved);
+        synchronized (PROVIDER_TICKET_REGISTRY_ROUTE_CACHE) {
+            Map<BiomeRoute, List<Holder<Biome>>> byRoute = PROVIDER_TICKET_REGISTRY_ROUTE_CACHE.computeIfAbsent(
+                    biomes, ignored -> new EnumMap<>(BiomeRoute.class));
+            List<Holder<Biome>> existing = byRoute.putIfAbsent(route, immutable);
+            return existing != null ? existing : immutable;
+        }
+    }
+
+    private static List<Holder<Biome>> entriesForProviderTicketRoute(Collection<Holder<Biome>> biomes, BiomeRoute route) {
+        BiomeSelectionProfile profile = ACTIVE_PROVIDER_TICKET_PROFILE;
+        if (profile == null) return List.of();
+        synchronized (PROVIDER_TICKET_SOURCE_ROUTE_CACHE) {
+            Map<BiomeRoute, List<Holder<Biome>>> byRoute = PROVIDER_TICKET_SOURCE_ROUTE_CACHE.get(biomes);
+            if (byRoute != null) {
+                List<Holder<Biome>> cached = byRoute.get(route);
+                if (cached != null) return cached;
+            }
+        }
+        List<Holder<Biome>> resolved = new ArrayList<>();
+        for (Holder<Biome> entry : biomes) {
+            if (profile.contains(route, biomeId(entry))) resolved.add(entry);
+        }
+        resolved.sort(Comparator.comparing(LatitudeBiomes::biomeId));
+        List<Holder<Biome>> immutable = List.copyOf(resolved);
+        synchronized (PROVIDER_TICKET_SOURCE_ROUTE_CACHE) {
+            Map<BiomeRoute, List<Holder<Biome>>> byRoute = PROVIDER_TICKET_SOURCE_ROUTE_CACHE.computeIfAbsent(
+                    biomes, ignored -> new EnumMap<>(BiomeRoute.class));
+            List<Holder<Biome>> existing = byRoute.putIfAbsent(route, immutable);
+            return existing != null ? existing : immutable;
+        }
     }
 
     private static List<TagKey<Biome>> landBandTags(int bandIndex) {
@@ -5507,7 +6496,8 @@ public final class LatitudeBiomes {
                     LAT_TEMPERATE_PRIMARY,
                     LAT_TEMPERATE_SECONDARY,
                     LAT_TEMPERATE_ACCENT,
-                    LAT_TEMPERATE_MOUNTAIN);
+                    LAT_TEMPERATE_MOUNTAIN,
+                    LAT_TEMPERATE_WETLAND);
             case BAND_SUBPOLAR -> List.of(
                     LAT_SUBPOLAR_PRIMARY,
                     LAT_SUBPOLAR_SECONDARY,
@@ -5540,10 +6530,20 @@ public final class LatitudeBiomes {
     }
 
     private static List<Holder<Biome>> allowedLandPool(Registry<Biome> biomes, int bandIndex) {
+        synchronized (ALLOWED_LAND_POOL_REGISTRY_CACHE) {
+            Map<Integer, List<Holder<Biome>>> byBand = ALLOWED_LAND_POOL_REGISTRY_CACHE.get(biomes);
+            if (byBand != null) {
+                List<Holder<Biome>> cached = byBand.get(bandIndex);
+                if (cached != null) return cached;
+            }
+        }
         List<Holder<Biome>> allowed = new ArrayList<>();
         Set<Identifier> seen = new HashSet<>();
         for (TagKey<Biome> tag : landBandTags(bandIndex)) {
-            for (Holder<Biome> entry : biomes.getTagOrEmpty(tag)) {
+            // V1 must not re-admit a descriptorless custom biome through a late land-pool
+            // rewrite. The route resolver supplies the saved birth-profile rows; raw tags remain
+            // only for legacy policies.
+            for (Holder<Biome> entry : entriesForTag(biomes, tag)) {
                 addAllowedEntry(allowed, seen, entry);
             }
         }
@@ -5555,10 +6555,23 @@ public final class LatitudeBiomes {
             }
         }
         allowed.sort(Comparator.comparing(LatitudeBiomes::biomeId));
-        return allowed;
+        List<Holder<Biome>> immutable = List.copyOf(allowed);
+        synchronized (ALLOWED_LAND_POOL_REGISTRY_CACHE) {
+            Map<Integer, List<Holder<Biome>>> byBand = ALLOWED_LAND_POOL_REGISTRY_CACHE.computeIfAbsent(
+                    biomes, ignored -> new HashMap<>());
+            List<Holder<Biome>> existing = byBand.putIfAbsent(bandIndex, immutable);
+            return existing != null ? existing : immutable;
+        }
     }
 
     private static List<Holder<Biome>> allowedLandPool(Collection<Holder<Biome>> biomes, int bandIndex) {
+        synchronized (ALLOWED_LAND_POOL_SOURCE_CACHE) {
+            Map<Integer, List<Holder<Biome>>> byBand = ALLOWED_LAND_POOL_SOURCE_CACHE.get(biomes);
+            if (byBand != null) {
+                List<Holder<Biome>> cached = byBand.get(bandIndex);
+                if (cached != null) return cached;
+            }
+        }
         List<Holder<Biome>> allowed = new ArrayList<>();
         Set<Identifier> seen = new HashSet<>();
         for (TagKey<Biome> tag : landBandTags(bandIndex)) {
@@ -5573,7 +6586,13 @@ public final class LatitudeBiomes {
             }
         }
         allowed.sort(Comparator.comparing(LatitudeBiomes::biomeId));
-        return allowed;
+        List<Holder<Biome>> immutable = List.copyOf(allowed);
+        synchronized (ALLOWED_LAND_POOL_SOURCE_CACHE) {
+            Map<Integer, List<Holder<Biome>>> byBand = ALLOWED_LAND_POOL_SOURCE_CACHE.computeIfAbsent(
+                    biomes, ignored -> new HashMap<>());
+            List<Holder<Biome>> existing = byBand.putIfAbsent(bandIndex, immutable);
+            return existing != null ? existing : immutable;
+        }
     }
 
     private static void addAllowedEntry(List<Holder<Biome>> allowed, Set<Identifier> seen, Holder<Biome> entry) {
@@ -5630,6 +6649,106 @@ public final class LatitudeBiomes {
         return out;
     }
 
+    private static int landPoolVariantKey(int bandIndex, boolean mountainLike) {
+        return (bandIndex << 1) | (mountainLike ? 1 : 0);
+    }
+
+    private static List<Holder<Biome>> filteredAllowedLandPool(Registry<Biome> biomes,
+                                                                 int bandIndex,
+                                                                 boolean mountainLike) {
+        if (!providerTicketActive()) {
+            return filteredAllowedLandPool(allowedLandPool(biomes, bandIndex), bandIndex, mountainLike);
+        }
+        int key = landPoolVariantKey(bandIndex, mountainLike);
+        synchronized (FILTERED_LAND_POOL_REGISTRY_CACHE) {
+            Map<Integer, List<Holder<Biome>>> variants = FILTERED_LAND_POOL_REGISTRY_CACHE.get(biomes);
+            if (variants != null) {
+                List<Holder<Biome>> cached = variants.get(key);
+                if (cached != null) return cached;
+            }
+        }
+        List<Holder<Biome>> resolved = List.copyOf(filteredAllowedLandPool(
+                allowedLandPool(biomes, bandIndex), bandIndex, mountainLike));
+        synchronized (FILTERED_LAND_POOL_REGISTRY_CACHE) {
+            Map<Integer, List<Holder<Biome>>> variants = FILTERED_LAND_POOL_REGISTRY_CACHE.computeIfAbsent(
+                    biomes, ignored -> new HashMap<>());
+            List<Holder<Biome>> existing = variants.putIfAbsent(key, resolved);
+            return existing != null ? existing : resolved;
+        }
+    }
+
+    private static List<Holder<Biome>> filteredAllowedLandPool(Collection<Holder<Biome>> biomes,
+                                                                 int bandIndex,
+                                                                 boolean mountainLike) {
+        if (!providerTicketActive()) {
+            return filteredAllowedLandPool(allowedLandPool(biomes, bandIndex), bandIndex, mountainLike);
+        }
+        int key = landPoolVariantKey(bandIndex, mountainLike);
+        synchronized (FILTERED_LAND_POOL_SOURCE_CACHE) {
+            Map<Integer, List<Holder<Biome>>> variants = FILTERED_LAND_POOL_SOURCE_CACHE.get(biomes);
+            if (variants != null) {
+                List<Holder<Biome>> cached = variants.get(key);
+                if (cached != null) return cached;
+            }
+        }
+        List<Holder<Biome>> resolved = List.copyOf(filteredAllowedLandPool(
+                allowedLandPool(biomes, bandIndex), bandIndex, mountainLike));
+        synchronized (FILTERED_LAND_POOL_SOURCE_CACHE) {
+            Map<Integer, List<Holder<Biome>>> variants = FILTERED_LAND_POOL_SOURCE_CACHE.computeIfAbsent(
+                    biomes, ignored -> new HashMap<>());
+            List<Holder<Biome>> existing = variants.putIfAbsent(key, resolved);
+            return existing != null ? existing : resolved;
+        }
+    }
+
+    private static List<Holder<Biome>> rerollLandPoolForBand(Registry<Biome> biomes,
+                                                              int bandIndex,
+                                                              boolean mountainLike) {
+        if (!providerTicketActive()) {
+            return rerollLandPoolForBand(filteredAllowedLandPool(biomes, bandIndex, mountainLike), bandIndex, mountainLike);
+        }
+        int key = landPoolVariantKey(bandIndex, mountainLike);
+        synchronized (REROLL_LAND_POOL_REGISTRY_CACHE) {
+            Map<Integer, List<Holder<Biome>>> variants = REROLL_LAND_POOL_REGISTRY_CACHE.get(biomes);
+            if (variants != null) {
+                List<Holder<Biome>> cached = variants.get(key);
+                if (cached != null) return cached;
+            }
+        }
+        List<Holder<Biome>> resolved = List.copyOf(rerollLandPoolForBand(
+                filteredAllowedLandPool(biomes, bandIndex, mountainLike), bandIndex, mountainLike));
+        synchronized (REROLL_LAND_POOL_REGISTRY_CACHE) {
+            Map<Integer, List<Holder<Biome>>> variants = REROLL_LAND_POOL_REGISTRY_CACHE.computeIfAbsent(
+                    biomes, ignored -> new HashMap<>());
+            List<Holder<Biome>> existing = variants.putIfAbsent(key, resolved);
+            return existing != null ? existing : resolved;
+        }
+    }
+
+    private static List<Holder<Biome>> rerollLandPoolForBand(Collection<Holder<Biome>> biomes,
+                                                              int bandIndex,
+                                                              boolean mountainLike) {
+        if (!providerTicketActive()) {
+            return rerollLandPoolForBand(filteredAllowedLandPool(biomes, bandIndex, mountainLike), bandIndex, mountainLike);
+        }
+        int key = landPoolVariantKey(bandIndex, mountainLike);
+        synchronized (REROLL_LAND_POOL_SOURCE_CACHE) {
+            Map<Integer, List<Holder<Biome>>> variants = REROLL_LAND_POOL_SOURCE_CACHE.get(biomes);
+            if (variants != null) {
+                List<Holder<Biome>> cached = variants.get(key);
+                if (cached != null) return cached;
+            }
+        }
+        List<Holder<Biome>> resolved = List.copyOf(rerollLandPoolForBand(
+                filteredAllowedLandPool(biomes, bandIndex, mountainLike), bandIndex, mountainLike));
+        synchronized (REROLL_LAND_POOL_SOURCE_CACHE) {
+            Map<Integer, List<Holder<Biome>>> variants = REROLL_LAND_POOL_SOURCE_CACHE.computeIfAbsent(
+                    biomes, ignored -> new HashMap<>());
+            List<Holder<Biome>> existing = variants.putIfAbsent(key, resolved);
+            return existing != null ? existing : resolved;
+        }
+    }
+
     private static Holder<Biome> quarantineUnknownCustomLandBiome(Registry<Biome> biomes,
                                                                   Holder<Biome> candidate,
                                                                   Holder<Biome> base,
@@ -5640,12 +6759,12 @@ public final class LatitudeBiomes {
         if (!isCustomBiome(candidate)) {
             return candidate;
         }
-        List<Holder<Biome>> allowedPool = filteredAllowedLandPool(allowedLandPool(biomes, bandIndex), bandIndex, mountainLike);
+        List<Holder<Biome>> allowedPool = filteredAllowedLandPool(biomes, bandIndex, mountainLike);
         if (isInAllowedLandPool(allowedPool, candidate)) {
             setAllowedPoolAdmissionIfNeeded(candidate, "quarantine_allowed_land_pool");
             return candidate;
         }
-        List<Holder<Biome>> rerollPool = rerollLandPoolForBand(allowedPool, bandIndex, mountainLike);
+        List<Holder<Biome>> rerollPool = rerollLandPoolForBand(biomes, bandIndex, mountainLike);
         if (!rerollPool.isEmpty()) {
             Holder<Biome> out = pickFromAllowedLandPool(rerollPool, blockX, blockZ, bandIndex);
             setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "reroute_allowed_land_pool", out);
@@ -5671,12 +6790,12 @@ public final class LatitudeBiomes {
         if (!isCustomBiome(candidate)) {
             return candidate;
         }
-        List<Holder<Biome>> allowedPool = filteredAllowedLandPool(allowedLandPool(biomes, bandIndex), bandIndex, mountainLike);
+        List<Holder<Biome>> allowedPool = filteredAllowedLandPool(biomes, bandIndex, mountainLike);
         if (isInAllowedLandPool(allowedPool, candidate)) {
             setAllowedPoolAdmissionIfNeeded(candidate, "quarantine_allowed_land_pool");
             return candidate;
         }
-        List<Holder<Biome>> rerollPool = rerollLandPoolForBand(allowedPool, bandIndex, mountainLike);
+        List<Holder<Biome>> rerollPool = rerollLandPoolForBand(biomes, bandIndex, mountainLike);
         if (!rerollPool.isEmpty()) {
             Holder<Biome> out = pickFromAllowedLandPool(rerollPool, blockX, blockZ, bandIndex);
             setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "reroute_allowed_land_pool", out);
@@ -5700,11 +6819,11 @@ public final class LatitudeBiomes {
                                                             int bandIndex,
                                                             boolean mountainLike) {
         List<Holder<Biome>> preFilterPool = allowedLandPool(biomes, bandIndex);
-        List<Holder<Biome>> allowedPool = filteredAllowedLandPool(preFilterPool, bandIndex, mountainLike);
+        List<Holder<Biome>> allowedPool = filteredAllowedLandPool(biomes, bandIndex, mountainLike);
         Holder<Biome> out = candidate;
         if (!allowedPool.isEmpty() && !isInAllowedLandPool(allowedPool, candidate)) {
             maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
-            List<Holder<Biome>> rerollPool = rerollLandPoolForBand(allowedPool, bandIndex, mountainLike);
+            List<Holder<Biome>> rerollPool = rerollLandPoolForBand(biomes, bandIndex, mountainLike);
             out = pickFromAllowedLandPool(rerollPool, blockX, blockZ, bandIndex);
             recordWarmDryPath("DIRECT_POOL_PICK", candidate, out, blockX, blockZ, bandIndex, warmProvinceClass(blockX, blockZ, bandIndex));
         } else {
@@ -5722,11 +6841,11 @@ public final class LatitudeBiomes {
                                                             int bandIndex,
                                                             boolean mountainLike) {
         List<Holder<Biome>> preFilterPool = allowedLandPool(biomes, bandIndex);
-        List<Holder<Biome>> allowedPool = filteredAllowedLandPool(preFilterPool, bandIndex, mountainLike);
+        List<Holder<Biome>> allowedPool = filteredAllowedLandPool(biomes, bandIndex, mountainLike);
         Holder<Biome> out = candidate;
         if (!allowedPool.isEmpty() && !isInAllowedLandPool(allowedPool, candidate)) {
             maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
-            List<Holder<Biome>> rerollPool = rerollLandPoolForBand(allowedPool, bandIndex, mountainLike);
+            List<Holder<Biome>> rerollPool = rerollLandPoolForBand(biomes, bandIndex, mountainLike);
             out = pickFromAllowedLandPool(rerollPool, blockX, blockZ, bandIndex);
             recordWarmDryPath("DIRECT_POOL_PICK", candidate, out, blockX, blockZ, bandIndex, warmProvinceClass(blockX, blockZ, bandIndex));
         } else {
@@ -5743,7 +6862,6 @@ public final class LatitudeBiomes {
                                                                 int blockZ,
                                                                 int bandIndex,
                                                                 int effectiveRadius,
-                                                                int oceanDistance,
                                                                 Climate.Sampler sampler) {
         if (bandIndex != BAND_TEMPERATE) {
             return candidate;
@@ -5767,20 +6885,8 @@ public final class LatitudeBiomes {
             }
             return candidate;
         }
-        // Inside dark-forest container: inner core => pale_garden (if landlocked), ring => dark_forest.
-        boolean inCore = paleGardenCoreHit(WORLD_SEED, blockX, blockZ, effectiveRadius, sampler);
-        if (inCore) {
-            // Landlocked veto: beach cells or cells too close to ocean become dark_forest instead.
-            boolean tooWet = isBeachLike(base)
-                    || (oceanDistance >= 0 && oceanDistance < PALE_GARDEN_MIN_OCEAN_DISTANCE_BLOCKS);
-            if (!tooWet) {
-                try {
-                    return biome(biomes, "minecraft:pale_garden");
-                } catch (Throwable ignored) {
-                    return candidate;
-                }
-            }
-        }
+        // The early authority override has already returned the proven landlocked core. The
+        // remaining outer container is dark forest, without repeating the core shape calculation.
         try {
             return biome(biomes, "minecraft:dark_forest");
         } catch (Throwable ignored) {
@@ -5795,7 +6901,6 @@ public final class LatitudeBiomes {
                                                                 int blockZ,
                                                                 int bandIndex,
                                                                 int effectiveRadius,
-                                                                int oceanDistance,
                                                                 Climate.Sampler sampler) {
         if (bandIndex != BAND_TEMPERATE) {
             return candidate;
@@ -5819,19 +6924,48 @@ public final class LatitudeBiomes {
             }
             return candidate;
         }
-        // Inside dark-forest container: inner core => pale_garden (if landlocked), ring => dark_forest.
-        boolean inCore = paleGardenCoreHit(WORLD_SEED, blockX, blockZ, effectiveRadius, sampler);
-        if (inCore) {
-            // Landlocked veto: beach cells or cells too close to ocean become dark_forest instead.
-            boolean tooWet = isBeachLike(base)
-                    || (oceanDistance >= 0 && oceanDistance < PALE_GARDEN_MIN_OCEAN_DISTANCE_BLOCKS);
-            if (!tooWet) {
-                Holder<Biome> paleGarden = entryById(biomes, "minecraft:pale_garden");
-                return paleGarden != null ? paleGarden : candidate;
-            }
-        }
+        // The early authority override has already returned the proven landlocked core. The
+        // remaining outer container is dark forest, without repeating the core shape calculation.
         Holder<Biome> darkForest = entryById(biomes, "minecraft:dark_forest");
         return darkForest != null ? darkForest : candidate;
+    }
+
+    private static Holder<Biome> contiguousPaleGardenCoreOverride(
+            Registry<Biome> biomes,
+            Holder<Biome> base,
+            int blockX,
+            int blockZ,
+            int effectiveRadius,
+            Climate.Sampler sampler) {
+        if (base == null || base.is(BiomeTags.IS_OCEAN)) {
+            return null;
+        }
+        if (!paleGardenCoreAuthorityHit(
+                WORLD_SEED, blockX, blockZ, effectiveRadius, sampler)) {
+            return null;
+        }
+        try {
+            return biome(biomes, "minecraft:pale_garden");
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static Holder<Biome> contiguousPaleGardenCoreOverride(
+            Collection<Holder<Biome>> biomes,
+            Holder<Biome> base,
+            int blockX,
+            int blockZ,
+            int effectiveRadius,
+            Climate.Sampler sampler) {
+        if (base == null || base.is(BiomeTags.IS_OCEAN)) {
+            return null;
+        }
+        if (!paleGardenCoreAuthorityHit(
+                WORLD_SEED, blockX, blockZ, effectiveRadius, sampler)) {
+            return null;
+        }
+        return entryById(biomes, "minecraft:pale_garden");
     }
 
     private static List<Holder<Biome>> removeTemperateMountainFamily(List<Holder<Biome>> pool) {
@@ -5881,7 +7015,8 @@ public final class LatitudeBiomes {
     }
 
     private static boolean isTemperateMountainFamilyBiome(Holder<Biome> entry) {
-        return isBiomeId(entry, "minecraft:stony_peaks")
+        return entry.is(LAT_TEMPERATE_MOUNTAIN)
+                || isBiomeId(entry, "minecraft:stony_peaks")
                 || isBiomeId(entry, "minecraft:grove")
                 || isBiomeId(entry, "minecraft:meadow")
                 || isBiomeId(entry, "minecraft:windswept_hills")
@@ -5899,15 +7034,14 @@ public final class LatitudeBiomes {
             throw new IllegalStateException("allowedPool must not be empty");
         }
 
-        int scaleBlocks = 2048;
-        long seed = 0L;
-        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex);
-        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
-        }
-        Holder<Biome> out = allowedPool.get(idx);
+        Holder<Biome> out = selectProviderDiverseEntry(
+                allowedPool,
+                "globe:allowed_land_pool",
+                blockX,
+                blockZ,
+                bandIndex,
+                0L,
+                false);
         setAdmission(BiomeAdmissionKind.LATITUDE_ALLOWED_POOL, "allowed_land_pool", out);
         return out;
     }
@@ -5943,15 +7077,19 @@ public final class LatitudeBiomes {
      * rugged/high columns, so the fix targets dramatic Terralith terrain (the "amplified plains" report)
      * without erasing gently-rolling temperate plains. TROPICAL/SUBTROPICAL are unaffected.
      */
-    private static boolean shouldApplyTerrainGate(int bandIndex, int robustDelta, int centerHeight, int seaLevel) {
-        if (bandIndex >= BAND_SUBPOLAR) {
-            return true;
-        }
-        if (bandIndex == BAND_TEMPERATE) {
-            return robustDelta >= TEMPERATE_PLAINS_RUGGED_RELIEF
-                    || centerHeight >= seaLevel + TEMPERATE_PLAINS_HIGH_ABOVE_SEA;
-        }
-        return false;
+    private static boolean shouldApplyTerrainGate(
+            int bandIndex,
+            int robustDelta,
+            int centerHeight,
+            int seaLevel,
+            boolean terrainEvidenceAvailable) {
+        return TerrainBiomeCohesionPolicy.shouldApplyLandGate(
+                bandIndex == BAND_TEMPERATE,
+                bandIndex >= BAND_SUBPOLAR,
+                terrainEvidenceAvailable,
+                centerHeight,
+                robustDelta,
+                seaLevel);
     }
 
     private static Holder<Biome> applyTerrainCompatibilityGate(Registry<Biome> biomes,
@@ -6324,6 +7462,100 @@ public final class LatitudeBiomes {
         return (warmDeclared && coldBand) || (coldDeclared && warmBand);
     }
 
+    /**
+     * Returns true when a named vanilla village variant clearly conflicts with Latitude's final
+     * surface-biome family at the start chunk. Unknown structure variants and unclassified
+     * provider biomes fail open.
+     */
+    public static boolean villageVariantVsBiomeMismatch(
+            String structurePath,
+            String biomeId) {
+        if (structurePath == null || biomeId == null) {
+            return false;
+        }
+        String structure = structurePath.toLowerCase(java.util.Locale.ROOT);
+        if (!structure.contains("village")) {
+            return false;
+        }
+
+        VillageBiomeFamily declared;
+        if (structure.contains("savanna")) {
+            declared = VillageBiomeFamily.SAVANNA;
+        } else if (structure.contains("desert")
+                || structure.contains("badlands")
+                || structure.contains("mesa")) {
+            declared = VillageBiomeFamily.ARID;
+        } else if (structure.contains("snowy")
+                || structure.contains("frozen")
+                || structure.contains("ice")) {
+            declared = VillageBiomeFamily.SNOWY;
+        } else if (structure.contains("taiga")) {
+            declared = VillageBiomeFamily.TAIGA;
+        } else if (structure.contains("plains")) {
+            declared = VillageBiomeFamily.TEMPERATE_OPEN;
+        } else {
+            return false;
+        }
+
+        VillageBiomeFamily actual = villageBiomeFamily(biomeId);
+        if (actual == null) {
+            return false;
+        }
+        return declared != actual;
+    }
+
+    /** Descriptor families are authoritative for reviewed optional biomes; vanilla keeps its ID law. */
+    private static VillageBiomeFamily villageBiomeFamily(String biomeId) {
+        BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(biomeId);
+        if (descriptor != null) {
+            return switch (descriptor.family()) {
+                case JUNGLE -> VillageBiomeFamily.JUNGLE;
+                case WETLAND -> VillageBiomeFamily.WETLAND;
+                case SAVANNA -> VillageBiomeFamily.SAVANNA;
+                case ARID -> VillageBiomeFamily.ARID;
+                case TAIGA -> VillageBiomeFamily.TAIGA;
+                case POLAR -> VillageBiomeFamily.SNOWY;
+                case FOREST, UPLAND -> VillageBiomeFamily.TEMPERATE_OPEN;
+            };
+        }
+        String biome = biomeId.toLowerCase(java.util.Locale.ROOT);
+        VillageBiomeFamily actual;
+        if (biome.contains("jungle")) {
+            actual = VillageBiomeFamily.JUNGLE;
+        } else if (biome.contains("mangrove") || biome.contains("swamp")) {
+            actual = VillageBiomeFamily.WETLAND;
+        } else if (biome.contains("savanna")) {
+            actual = VillageBiomeFamily.SAVANNA;
+        } else if (biome.contains("desert")
+                || biome.contains("badlands")
+                || biome.contains("mesa")) {
+            actual = VillageBiomeFamily.ARID;
+        } else if (biome.contains("snowy")
+                || biome.contains("frozen")
+                || biome.contains("ice_spikes")) {
+            actual = VillageBiomeFamily.SNOWY;
+        } else if (biome.contains("taiga")) {
+            actual = VillageBiomeFamily.TAIGA;
+        } else if (biome.contains("plains")
+                || biome.contains("meadow")
+                || biome.contains("forest")) {
+            actual = VillageBiomeFamily.TEMPERATE_OPEN;
+        } else {
+            return null;
+        }
+        return actual;
+    }
+
+    private enum VillageBiomeFamily {
+        ARID,
+        SAVANNA,
+        SNOWY,
+        TAIGA,
+        TEMPERATE_OPEN,
+        JUNGLE,
+        WETLAND
+    }
+
     private static boolean isFlatPolarShelfBannedMountainPick(Holder<Biome> candidate) {
         return isBiomeId(candidate, "minecraft:jagged_peaks")
                 || isBiomeId(candidate, "minecraft:frozen_peaks")
@@ -6383,6 +7615,7 @@ public final class LatitudeBiomes {
 
     private static boolean isPlainsFamily(Holder<Biome> candidate) {
         return isBiomeId(candidate, "minecraft:plains")
+                || isBiomeId(candidate, "minecraft:sunflower_plains")
                 || isBiomeId(candidate, "minecraft:snowy_plains");
     }
 
@@ -6757,18 +7990,34 @@ public final class LatitudeBiomes {
         if (entries.isEmpty()) {
             return entries;
         }
+        synchronized (NO_MANGROVE_TAG_ENTRY_CACHE) {
+            List<Holder<Biome>> cached = NO_MANGROVE_TAG_ENTRY_CACHE.get(entries);
+            if (cached != null) {
+                return cached;
+            }
+        }
         List<Holder<Biome>> filtered = new ArrayList<>(entries.size());
         for (Holder<Biome> entry : entries) {
             if (!isMangroveCandidate(entry)) {
                 filtered.add(entry);
             }
         }
-        return filtered;
+        List<Holder<Biome>> immutableFiltered = List.copyOf(filtered);
+        synchronized (NO_MANGROVE_TAG_ENTRY_CACHE) {
+            List<Holder<Biome>> existing = NO_MANGROVE_TAG_ENTRY_CACHE.putIfAbsent(entries, immutableFiltered);
+            return existing != null ? existing : immutableFiltered;
+        }
     }
 
     private static List<Holder<Biome>> filterSwamp(List<Holder<Biome>> entries) {
         if (entries.isEmpty()) {
             return entries;
+        }
+        synchronized (NO_SWAMP_TAG_ENTRY_CACHE) {
+            List<Holder<Biome>> cached = NO_SWAMP_TAG_ENTRY_CACHE.get(entries);
+            if (cached != null) {
+                return cached;
+            }
         }
         List<Holder<Biome>> filtered = new ArrayList<>(entries.size());
         for (Holder<Biome> entry : entries) {
@@ -6776,7 +8025,34 @@ public final class LatitudeBiomes {
                 filtered.add(entry);
             }
         }
-        return filtered;
+        List<Holder<Biome>> immutableFiltered = List.copyOf(filtered);
+        synchronized (NO_SWAMP_TAG_ENTRY_CACHE) {
+            List<Holder<Biome>> existing = NO_SWAMP_TAG_ENTRY_CACHE.putIfAbsent(entries, immutableFiltered);
+            return existing != null ? existing : immutableFiltered;
+        }
+    }
+
+    private static List<Holder<Biome>> filterShallowOcean(List<Holder<Biome>> entries) {
+        if (entries.isEmpty()) {
+            return entries;
+        }
+        synchronized (SHALLOW_OCEAN_TAG_ENTRY_CACHE) {
+            List<Holder<Biome>> cached = SHALLOW_OCEAN_TAG_ENTRY_CACHE.get(entries);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        List<Holder<Biome>> filtered = new ArrayList<>(entries.size());
+        for (Holder<Biome> entry : entries) {
+            if (!isDeepOcean(entry)) {
+                filtered.add(entry);
+            }
+        }
+        List<Holder<Biome>> immutableFiltered = List.copyOf(filtered);
+        synchronized (SHALLOW_OCEAN_TAG_ENTRY_CACHE) {
+            List<Holder<Biome>> existing = SHALLOW_OCEAN_TAG_ENTRY_CACHE.putIfAbsent(entries, immutableFiltered);
+            return existing != null ? existing : immutableFiltered;
+        }
     }
 
     private static Holder<Biome> entryById(Collection<Holder<Biome>> biomes, String id) {
@@ -8146,6 +9422,9 @@ public final class LatitudeBiomes {
         }
         int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
         radius = Math.max(1, radius);
+        if (authoritativeTropicalAridBan(blockX, blockZ, radius)) {
+            return true;
+        }
         double latDeg = Math.min(90.0, Math.abs((double) blockZ) / (double) radius * 90.0);
         double latGate = smoothstep((latDeg - BADLANDS_LAT_RAMP_LOW_DEG)
                 / (BADLANDS_LAT_RAMP_HIGH_DEG - BADLANDS_LAT_RAMP_LOW_DEG));
@@ -8199,6 +9478,9 @@ public final class LatitudeBiomes {
         }
         int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
         radius = Math.max(1, radius);
+        if (authoritativeTropicalAridBan(blockX, blockZ, radius)) {
+            return true;
+        }
         double latDeg = Math.min(90.0, Math.abs((double) blockZ) / (double) radius * 90.0);
         if (latDeg >= DESERT_LAT_RAMP_HIGH_DEG) {
             return false; // mid-subtropical desert belt and beyond: keep all desert
@@ -8210,6 +9492,11 @@ public final class LatitudeBiomes {
         int keepScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radius * 0.28));
         double keepNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ DESERT_LAT_KEEP_SALT, blockX, blockZ, keepScale);
         return keepNoise >= latGate; // demote where keepNoise >= latGate (all of tropics; ramped subtropics)
+    }
+
+    /** Canonical-band guard shared by the final registry and collection rewrite paths. */
+    static boolean authoritativeTropicalAridBan(int blockX, int blockZ, int radius) {
+        return authoritativeLandBandIndex(blockX, blockZ, Math.max(1, radius)) == BAND_TROPICAL;
     }
 
     /**
@@ -8520,7 +9807,7 @@ public final class LatitudeBiomes {
     }
 
     private static boolean isSwampCandidate(Holder<Biome> entry) {
-        return isBiomeId(entry, SWAMP_ID);
+        return !isMangroveCandidate(entry) && isFlatWetlandBiome(entry);
     }
 
     private static boolean shouldTryMangroveOverride(Holder<Biome> entry, int bandIndex) {
@@ -8842,6 +10129,113 @@ public final class LatitudeBiomes {
         return new SwampDecision(swampOk, cont, erosion, weirdness, swampOk);
     }
 
+    /**
+     * Cheap necessary-condition filter for the tick-sliced wetland locator.
+     *
+     * <p>A final swamp must pass {@link #evaluateSwamp}. A final mangrove either passes
+     * {@link #evaluateMangrove} directly or is promoted by the final identity law from a
+     * swamp that already passed {@code evaluateSwamp}. Surface gates are intentionally
+     * disabled here, which admits extra candidates but cannot hide a real wetland. Every
+     * admitted point is still checked by the complete terrain-aware biome resolver.
+     */
+    public static boolean isPotentialWetlandLocateCandidate(
+            int blockX,
+            int blockZ,
+            int borderRadiusBlocks,
+            Climate.Sampler sampler,
+            boolean includeSwamp,
+            boolean includeMangrove) {
+        if (sampler == null || (!includeSwamp && !includeMangrove)) {
+            return false;
+        }
+        int noiseX = blockX >> 2;
+        int noiseZ = blockZ >> 2;
+        Climate.TargetPoint point = sampler.sample(
+                noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
+        double cont = Climate.unquantizeCoord(point.continentalness());
+        double erosion = Climate.unquantizeCoord(point.erosion());
+        double weirdness = Climate.unquantizeCoord(point.weirdness());
+        int landBandIndex = authoritativeLandBandIndex(blockX, blockZ, borderRadiusBlocks);
+        boolean swampClimate = (includeSwamp || includeMangrove)
+                && swampOkForSize(cont, erosion, weirdness);
+        int radiusHint = ACTIVE_RADIUS_BLOCKS > 0
+                ? ACTIVE_RADIUS_BLOCKS
+                : (REFERENCE_DIAMETER_BLOCKS / 2);
+        double absLatDeg = latitudeDegreesFromRadius(blockZ, Math.max(1, radiusHint));
+        boolean directMangroveClimate = includeMangrove
+                && absLatDeg <= MANGROVE_MAX_ABS_LAT_DEG
+                && cont < MANGROVE_CONTINENTALNESS_MAX
+                && erosion > 0.12
+                && Math.abs(weirdness) < 0.40;
+        if (!swampClimate && !directMangroveClimate) {
+            return false;
+        }
+
+        int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
+        boolean swampPotential = swampClimate
+                && oceanDistance >= 0
+                && (landBandIndex == BAND_TEMPERATE
+                    || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE);
+        if (swampPotential
+                && LatitudeLocateBudgetPolicy.allowsSwampProxyForTarget(
+                        includeSwamp,
+                        includeMangrove,
+                        landBandIndex,
+                        BAND_SUBTROPICAL)) {
+            return true;
+        }
+        if (!directMangroveClimate || oceanDistance < 0
+                || oceanDistance > MANGROVE_COASTAL_MAX_BLOCKS) {
+            return false;
+        }
+        return oceanDistance <= 64 || allowMangrovePatch(blockX, blockZ);
+    }
+
+    /** Exact direct-mangrove broad phase, excluding only the expensive surface-height gates. */
+    public static boolean isPotentialDirectMangroveLocateCandidate(
+            int blockX,
+            int blockZ,
+            Climate.Sampler sampler) {
+        if (sampler == null) {
+            return false;
+        }
+        int radiusHint = ACTIVE_RADIUS_BLOCKS > 0
+                ? ACTIVE_RADIUS_BLOCKS
+                : (REFERENCE_DIAMETER_BLOCKS / 2);
+        if (latitudeDegreesFromRadius(blockZ, Math.max(1, radiusHint))
+                > MANGROVE_MAX_ABS_LAT_DEG) {
+            return false;
+        }
+        Climate.TargetPoint point = sampler.sample(
+                blockX >> 2,
+                SURFACE_CLASSIFY_Y >> 2,
+                blockZ >> 2);
+        double cont = Climate.unquantizeCoord(point.continentalness());
+        double erosion = Climate.unquantizeCoord(point.erosion());
+        double weirdness = Climate.unquantizeCoord(point.weirdness());
+        if (cont >= MANGROVE_CONTINENTALNESS_MAX
+                || erosion <= 0.12
+                || Math.abs(weirdness) >= 0.40) {
+            return false;
+        }
+        int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
+        return oceanDistance >= 0
+                && oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS
+                && (oceanDistance <= 64 || allowMangrovePatch(blockX, blockZ));
+    }
+
+    /**
+     * Whether the coarse ocean authority may be overturned by exact raised-terrain evidence.
+     * The source preview can rewrite deep ocean to a non-ocean biome such as mushroom fields,
+     * so callers must retain the authority signal independently of the preview biome ID.
+     */
+    public static boolean hasWetlandLocateOceanAuthority(
+            int blockX,
+            int blockZ,
+            Climate.Sampler sampler) {
+        return sampler != null && oceanDistanceBlocks(blockX, blockZ, sampler) == 0;
+    }
+
     private static double rarePatchWorldScale() {
         int radius = ACTIVE_RADIUS_BLOCKS;
         if (radius <= 0) {
@@ -9014,6 +10408,7 @@ public final class LatitudeBiomes {
             }
             case WARM_MEDIUM -> {
                 if (isSavannaFamily(pick)) return pick;
+                if (isCustomBiome(pick)) return pick;
                 Holder<Biome> savanna = entryById(biomes, "minecraft:savanna");
                 if (savanna != null) return savanna;
                 Holder<Biome> plateau = entryById(biomes, "minecraft:savanna_plateau");
@@ -9059,8 +10454,7 @@ public final class LatitudeBiomes {
         PaleGardenAnchor cached = PALE_GARDEN_ANCHOR_CACHE;
         if (cached != null
                 && cached.worldSeed() == worldSeed
-                && cached.radius() == radius
-                && cached.sampler() == sampler) {
+                && cached.radius() == radius) {
             return cached;
         }
         return selectPaleGardenAnchor(worldSeed, radius, sampler);
@@ -9070,15 +10464,15 @@ public final class LatitudeBiomes {
         PaleGardenAnchor cached = PALE_GARDEN_ANCHOR_CACHE;
         if (cached != null
                 && cached.worldSeed() == worldSeed
-                && cached.radius() == radius
-                && cached.sampler() == sampler) {
+                && cached.radius() == radius) {
             return cached;
         }
 
         int temperateMinAbsZ = bandBoundaryBlocks(1, radius);
         int temperateMaxAbsZ = bandBoundaryBlocks(2, radius);
         if (temperateMaxAbsZ <= temperateMinAbsZ) {
-            PaleGardenAnchor fallback = new PaleGardenAnchor(worldSeed, radius, sampler, 0, 0, false);
+            PaleGardenAnchor fallback = new PaleGardenAnchor(
+                    worldSeed, radius, 0, 0, false, 0.0);
             PALE_GARDEN_ANCHOR_CACHE = fallback;
             return fallback;
         }
@@ -9105,52 +10499,119 @@ public final class LatitudeBiomes {
         int fallbackZ = fallbackAbsZ * hemisphereSign;
         int bestX = fallbackX;
         int bestZ = fallbackZ;
-        int bestDistance = Integer.MIN_VALUE;
+        double bestCoreRadiusLimit = Double.NEGATIVE_INFINITY;
+        double requestedMaxCoreRadius = paleGardenRequestedMaxCoreRadius(radius);
+        double maximumBandSafeCoreRadius = Math.min(
+                requestedMaxCoreRadius,
+                (temperateSpan / 2.0) - PALE_GARDEN_BAND_EDGE_PADDING_BLOCKS);
 
         if (sampler != null) {
-            for (int candidateIndex = 0; candidateIndex < PALE_GARDEN_ANCHOR_CANDIDATE_COUNT; candidateIndex++) {
+            boolean sizeAwareV3 = ACTIVE_WORLDGEN_POLICY
+                    == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE;
+            int candidateCount = sizeAwareV3
+                    ? 1 + 2 * PALE_GARDEN_V3_ANCHOR_GRID_SIDE * PALE_GARDEN_V3_ANCHOR_GRID_SIDE
+                    : PALE_GARDEN_ANCHOR_CANDIDATE_COUNT;
+            for (int candidateIndex = 0; candidateIndex < candidateCount; candidateIndex++) {
                 long sequence = 0x9E37_79B9_7F4A_7C15L * (long) candidateIndex;
-                int candidateX = candidateIndex == 0
-                        ? fallbackX
-                        : minAnchorX + (int) Math.floor(toUnitDouble(mix64(
-                        worldSeed ^ PALE_GARDEN_ANCHOR_CANDIDATE_SALT ^ sequence ^ PALE_GARDEN_REGION_ANCHOR_X_SALT)) * (double) xSpan);
-                int candidateAbsZ = candidateIndex == 0
-                        ? fallbackAbsZ
-                        : minAnchorAbsZ + (int) Math.floor(toUnitDouble(mix64(
-                        worldSeed ^ PALE_GARDEN_ANCHOR_CANDIDATE_SALT ^ Long.rotateLeft(sequence, 23) ^ PALE_GARDEN_REGION_ANCHOR_Z_SALT)) * (double) zSpan);
-                int candidateZ = candidateAbsZ * hemisphereSign;
+                int candidateX;
+                int candidateAbsZ;
+                if (candidateIndex == 0) {
+                    candidateX = fallbackX;
+                    candidateAbsZ = fallbackAbsZ;
+                } else if (sizeAwareV3) {
+                    // Compact worlds cannot afford a lucky-or-unlucky random probe cloud. Visit
+                    // every cell in a fixed grid in both hemispheres, with world-seeded jitter
+                    // inside each cell. The seed's preferred hemisphere wins ties, but a viable
+                    // inland temperate province on the other side of the equator is never ignored.
+                    int pairedIndex = candidateIndex - 1;
+                    int gridIndex = pairedIndex / 2;
+                    int gridX = gridIndex % PALE_GARDEN_V3_ANCHOR_GRID_SIDE;
+                    int gridZ = gridIndex / PALE_GARDEN_V3_ANCHOR_GRID_SIDE;
+                    int candidateHemisphereSign = (pairedIndex & 1) == 0
+                            ? hemisphereSign : -hemisphereSign;
+                    double jitterX = toUnitDouble(mix64(
+                            worldSeed ^ PALE_GARDEN_ANCHOR_CANDIDATE_SALT ^ sequence
+                                    ^ PALE_GARDEN_REGION_ANCHOR_X_SALT));
+                    double jitterZ = toUnitDouble(mix64(
+                            worldSeed ^ PALE_GARDEN_ANCHOR_CANDIDATE_SALT
+                                    ^ Long.rotateLeft(sequence, 23)
+                                    ^ PALE_GARDEN_REGION_ANCHOR_Z_SALT));
+                    candidateX = minAnchorX + (int) Math.floor(
+                            ((gridX + jitterX) / PALE_GARDEN_V3_ANCHOR_GRID_SIDE) * xSpan);
+                    candidateAbsZ = minAnchorAbsZ + (int) Math.floor(
+                            ((gridZ + jitterZ) / PALE_GARDEN_V3_ANCHOR_GRID_SIDE) * zSpan);
+                    candidateAbsZ *= candidateHemisphereSign;
+                } else {
+                    candidateX = minAnchorX + (int) Math.floor(toUnitDouble(mix64(
+                            worldSeed ^ PALE_GARDEN_ANCHOR_CANDIDATE_SALT ^ sequence
+                                    ^ PALE_GARDEN_REGION_ANCHOR_X_SALT)) * (double) xSpan);
+                    candidateAbsZ = minAnchorAbsZ + (int) Math.floor(toUnitDouble(mix64(
+                            worldSeed ^ PALE_GARDEN_ANCHOR_CANDIDATE_SALT
+                                    ^ Long.rotateLeft(sequence, 23)
+                                    ^ PALE_GARDEN_REGION_ANCHOR_Z_SALT)) * (double) zSpan);
+                }
+                int candidateZ = sizeAwareV3 && candidateIndex > 0
+                        ? candidateAbsZ : candidateAbsZ * hemisphereSign;
                 int candidateOceanDistance = paleGardenAnchorClearance(candidateX, candidateZ, radius, sampler);
-                if (candidateOceanDistance > bestDistance) {
-                    bestDistance = candidateOceanDistance;
+                int candidateBandClearance = Math.min(
+                        candidateAbsZ - temperateMinAbsZ,
+                        temperateMaxAbsZ - candidateAbsZ);
+                double candidateCoreRadiusLimit = PaleGardenCohesionPolicy.maximumCoreRadius(
+                        requestedMaxCoreRadius,
+                        candidateOceanDistance,
+                        PALE_GARDEN_MIN_OCEAN_DISTANCE_BLOCKS
+                                + PALE_GARDEN_OCEAN_FIELD_UNCERTAINTY_BLOCKS,
+                        candidateBandClearance,
+                        PALE_GARDEN_BAND_EDGE_PADDING_BLOCKS);
+                if (candidateCoreRadiusLimit > bestCoreRadiusLimit) {
+                    bestCoreRadiusLimit = candidateCoreRadiusLimit;
                     bestX = candidateX;
                     bestZ = candidateZ;
                 }
-                if (candidateOceanDistance >= PALE_GARDEN_MIN_OCEAN_DISTANCE_BLOCKS) {
-                    PaleGardenAnchor selected = new PaleGardenAnchor(worldSeed, radius, sampler, candidateX, candidateZ, true);
-                    PALE_GARDEN_ANCHOR_CACHE = selected;
-                    return selected;
+                if (bestCoreRadiusLimit >= maximumBandSafeCoreRadius) {
+                    break;
                 }
             }
         }
 
-        PaleGardenAnchor fallback = new PaleGardenAnchor(worldSeed, radius, sampler, bestX, bestZ, false);
-        PALE_GARDEN_ANCHOR_CACHE = fallback;
-        return fallback;
+        if (!Double.isFinite(bestCoreRadiusLimit)) {
+            int fallbackAbsZForClearance = Math.abs(fallbackZ);
+            int fallbackBandClearance = Math.min(
+                    fallbackAbsZForClearance - temperateMinAbsZ,
+                    temperateMaxAbsZ - fallbackAbsZForClearance);
+            bestCoreRadiusLimit = Math.min(
+                    requestedMaxCoreRadius,
+                    fallbackBandClearance - PALE_GARDEN_BAND_EDGE_PADDING_BLOCKS);
+        }
+        double selectedCoreRadiusLimit = Math.max(0.0, bestCoreRadiusLimit);
+        boolean landlocked = sampler != null
+                && selectedCoreRadiusLimit >= PALE_GARDEN_CORE_MIN_RADIUS_BLOCKS;
+        PaleGardenAnchor selected = new PaleGardenAnchor(
+                worldSeed,
+                radius,
+                bestX,
+                bestZ,
+                landlocked,
+                selectedCoreRadiusLimit);
+        PALE_GARDEN_ANCHOR_CACHE = selected;
+        return selected;
+    }
+
+    private static double paleGardenRequestedMaxCoreRadius(int radius) {
+        double outerBaseRadius = Math.max(
+                PALE_GARDEN_REGION_MIN_RADIUS_BLOCKS,
+                radius * PALE_GARDEN_REGION_RADIUS_FRAC);
+        double coreBaseRadius = outerBaseRadius * PALE_GARDEN_CORE_RADIUS_FRAC;
+        return coreBaseRadius * (1.0 + PALE_GARDEN_CORE_WOBBLE_FRAC);
     }
 
     private static int paleGardenAnchorClearance(int candidateX, int candidateZ, int radius, Climate.Sampler sampler) {
         if (authoritativeLandBandIndex(candidateX, candidateZ, radius) != BAND_TEMPERATE) {
             return -1;
         }
-        double outerBaseRadius = Math.max(PALE_GARDEN_REGION_MIN_RADIUS_BLOCKS, radius * PALE_GARDEN_REGION_RADIUS_FRAC);
-        int probeOffset = Math.max(64, Math.min(256, (int) Math.round(
-                outerBaseRadius * PALE_GARDEN_CORE_RADIUS_FRAC * 0.50)));
-        int clearance = oceanDistanceBlocks(candidateX, candidateZ, sampler);
-        clearance = Math.min(clearance, oceanDistanceBlocks(candidateX + probeOffset, candidateZ, sampler));
-        clearance = Math.min(clearance, oceanDistanceBlocks(candidateX - probeOffset, candidateZ, sampler));
-        clearance = Math.min(clearance, oceanDistanceBlocks(candidateX, candidateZ + probeOffset, sampler));
-        clearance = Math.min(clearance, oceanDistanceBlocks(candidateX, candidateZ - probeOffset, sampler));
-        return clearance;
+        // The policy converts this center value into a conservative whole-core radius using the
+        // coarse distance field's Manhattan-to-Euclidean bound, without four redundant probes.
+        return oceanDistanceBlocks(candidateX, candidateZ, sampler);
     }
 
     private static boolean paleGardenRegionHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint, Climate.Sampler sampler) {
@@ -9177,17 +10638,15 @@ public final class LatitudeBiomes {
         return (dx * dx + dz * dz) <= (regionRadius * regionRadius);
     }
 
-    // Tests whether the given block is inside the pale_garden INNER CORE, which is
-    // nested at the same anchor center as the outer dark-forest container but uses
-    // a proportionally smaller radius and lighter wobble amplitude.
-    private static boolean paleGardenCoreHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint, Climate.Sampler sampler) {
-        PaleGardenAnchor anchor = paleGardenAnchor(worldSeed, effectiveRadiusHint, sampler);
+    // Tests whether an already-bounded point is inside the pale_garden INNER CORE, which is nested
+    // at the same anchor center as the outer dark-forest container but uses a smaller radius and
+    // lighter wobble amplitude.
+    private static boolean paleGardenCoreHit(
+            long worldSeed,
+            double dx,
+            double dz,
+            PaleGardenAnchor anchor) {
         int radius = anchor.radius();
-        int anchorX = anchor.x();
-        int anchorZ = anchor.z();
-
-        double dx = (double) blockX - (double) anchorX;
-        double dz = (double) blockZ - (double) anchorZ;
         double theta = Math.atan2(dz, dx);
         int shapeX = (int) Math.round(Math.cos(theta) * PALE_GARDEN_REGION_ANGLE_SAMPLE_BLOCKS);
         int shapeZ = (int) Math.round(Math.sin(theta) * PALE_GARDEN_REGION_ANGLE_SAMPLE_BLOCKS);
@@ -9198,11 +10657,39 @@ public final class LatitudeBiomes {
                 PALE_GARDEN_REGION_WOBBLE_SCALE_BLOCKS);
         double shapeSigned = (shapeNoise * 2.0) - 1.0;
         double outerBaseRadius = Math.max(PALE_GARDEN_REGION_MIN_RADIUS_BLOCKS, radius * PALE_GARDEN_REGION_RADIUS_FRAC);
-        double coreBaseRadius = outerBaseRadius * PALE_GARDEN_CORE_RADIUS_FRAC;
+        double requestedCoreBaseRadius = outerBaseRadius * PALE_GARDEN_CORE_RADIUS_FRAC;
+        double coreBaseRadius = PaleGardenCohesionPolicy.baseRadiusPreservingWobble(
+                requestedCoreBaseRadius,
+                PALE_GARDEN_CORE_WOBBLE_FRAC,
+                anchor.coreRadiusLimit());
         double coreRadius = coreBaseRadius * (1.0 + shapeSigned * PALE_GARDEN_CORE_WOBBLE_FRAC);
         coreRadius = Math.max(coreBaseRadius * (1.0 - PALE_GARDEN_CORE_WOBBLE_FRAC), coreRadius);
+        // Numerical guard only; the scaled base retains the intended shape below this ceiling.
+        coreRadius = Math.min(coreRadius, anchor.coreRadiusLimit());
 
         return (dx * dx + dz * dz) <= (coreRadius * coreRadius);
+    }
+
+    private static boolean paleGardenCoreAuthorityHit(
+            long worldSeed,
+            int blockX,
+            int blockZ,
+            int effectiveRadiusHint,
+            Climate.Sampler sampler) {
+        PaleGardenAnchor anchor = paleGardenAnchor(worldSeed, effectiveRadiusHint, sampler);
+        if (!anchor.landlocked() || anchor.coreRadiusLimit() <= 0.0) {
+            return false;
+        }
+
+        double dx = (double) blockX - (double) anchor.x();
+        double dz = (double) blockZ - (double) anchor.z();
+        // Ordinary biome samples stop here. atan2 and shape noise are only needed inside the
+        // core's maximum possible square.
+        if (Math.abs(dx) > anchor.coreRadiusLimit()
+                || Math.abs(dz) > anchor.coreRadiusLimit()) {
+            return false;
+        }
+        return paleGardenCoreHit(worldSeed, dx, dz, anchor);
     }
 
     private static double wetlandThresholdForBand(int bandIndex, double t) {
@@ -9291,7 +10778,8 @@ public final class LatitudeBiomes {
             }
         }
         if (isSwampCandidate(out)) {
-            boolean inlandSwamp = oceanDistance < 0 || oceanDistance > SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE;
+            boolean inlandSwamp = bandIndex != BAND_TEMPERATE
+                    && (oceanDistance < 0 || oceanDistance > SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE);
             if (mountainLike || inlandSwamp) {
                 out = pickSwampFallback(biomes, base, blockX, blockZ, t, bandIndex);
             }
@@ -9316,7 +10804,8 @@ public final class LatitudeBiomes {
             }
         }
         if (isSwampCandidate(out)) {
-            boolean inlandSwamp = oceanDistance < 0 || oceanDistance > SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE;
+            boolean inlandSwamp = bandIndex != BAND_TEMPERATE
+                    && (oceanDistance < 0 || oceanDistance > SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE);
             if (mountainLike || inlandSwamp) {
                 out = pickSwampFallback(biomes, base, blockX, blockZ, t, bandIndex);
             }
@@ -9856,14 +11345,7 @@ public final class LatitudeBiomes {
     }
 
     private static Holder<Biome> pickFromTagNoiseOrFallback(Registry<Biome> biomes, TagKey<Biome> tag, int blockX, int blockZ, int bandIndex, String... fallbackOptions) {
-        List<Holder<Biome>> entries = new ArrayList<>();
-        for (Holder<Biome> entry : biomes.getTagOrEmpty(tag)) {
-            entries.add(entry);
-        }
-
-        entries.sort(Comparator.comparing(entry -> entry.unwrapKey()
-                .map(key -> key.identifier().toString())
-                .orElse("")));
+        List<Holder<Biome>> entries = entriesForTag(biomes, tag);
 
         int size = entries.size();
         if (size <= 0) {
@@ -9871,29 +11353,15 @@ public final class LatitudeBiomes {
             return pickFrom(biomes, blockX, blockZ, bandIndex, fallbackOptions);
         }
 
-        int scaleBlocks = 2048;
-        long seed = 0L;
-        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex);
-        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
-        }
         setSelectionPath(PATH_TAG_PICK);
-        Holder<Biome> out = entries.get(idx);
+        Holder<Biome> out = selectProviderDiverseTagEntry(
+                entries, tag, blockX, blockZ, bandIndex, 0L);
         setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
         return out;
     }
 
     private static Holder<Biome> pickFromTagNoiseOrBase(Registry<Biome> biomes, TagKey<Biome> tag, Holder<Biome> base, int blockX, int blockZ, int bandIndex) {
-        List<Holder<Biome>> entries = new ArrayList<>();
-        for (Holder<Biome> entry : biomes.getTagOrEmpty(tag)) {
-            entries.add(entry);
-        }
-
-        entries.sort(Comparator.comparing(entry -> entry.unwrapKey()
-                .map(key -> key.identifier().toString())
-                .orElse("")));
+        List<Holder<Biome>> entries = entriesForTag(biomes, tag);
 
         int size = entries.size();
         if (size <= 0) {
@@ -9902,16 +11370,9 @@ public final class LatitudeBiomes {
             return base;
         }
 
-        int scaleBlocks = 2048;
-        long seed = 0L;
-        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex);
-        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
-        }
         setSelectionPath(PATH_TAG_PICK);
-        Holder<Biome> pick = entries.get(idx);
+        Holder<Biome> pick = selectProviderDiverseTagEntry(
+                entries, tag, blockX, blockZ, bandIndex, 0L);
         if (bandIndex == BAND_TROPICAL && isBiomeId(pick, "minecraft:sparse_jungle")) {
             double openness = tropicalOpennessNoise(blockX, blockZ);
             double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);

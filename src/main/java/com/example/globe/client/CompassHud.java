@@ -626,7 +626,7 @@ public final class CompassHud {
         return "1\u00b0S";
     }
 
-    // The preview latitude is 1°S, so Plains + Tropics is a coherent biome/zone sample.
+    // The preview latitude is 1°S, so Plains + Tropical is a coherent biome/zone sample.
     private static String sampleLocationDetail(CompassHudConfig cfg, boolean respectFollow) {
         if (respectFollow && !cfg.zoneFollowsCompass) {
             return null;
@@ -634,7 +634,7 @@ public final class CompassHud {
         String previewBiome = LocationDetailPolicy.studioPreviewBiomeLabel(
                 "minecraft:plains",
                 cfg.showCustomBiomeSource);
-        return LocationDetailPolicy.compose(cfg.locationDetailMode(), previewBiome, "Tropics");
+        return LocationDetailPolicy.compose(cfg.locationDetailMode(), previewBiome, "Tropical");
     }
 
     private static String analogLatitudeText(Minecraft client, CompassHudConfig cfg) {
@@ -946,8 +946,8 @@ public final class CompassHud {
     private static String displayZoneName(String zoneKey) {
         if (zoneKey == null) return "Temperate";
         return switch (zoneKey) {
-            case "EQUATOR", "TROPICAL" -> "Tropics";
-            case "SUBTROPICAL" -> "Subtropics";
+            case "EQUATOR", "TROPICAL" -> "Tropical";
+            case "SUBTROPICAL" -> "Subtropical";
             case "TEMPERATE" -> "Temperate";
             case "SUBPOLAR" -> "Subpolar";
             case "POLAR" -> "Polar";

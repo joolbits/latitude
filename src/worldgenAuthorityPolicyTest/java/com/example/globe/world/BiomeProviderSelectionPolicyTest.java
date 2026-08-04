@@ -1,0 +1,833 @@
+package com.example.globe.world;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+
+/** Deterministic provider-ticket, descriptor admission, and fresh-world coverage checks. */
+final class BiomeProviderSelectionPolicyTest {
+    // Fixed before sampling.  Points are 4,096 blocks apart, well beyond both coherent fields.
+    private static final long[] AUDIT_SEEDS = {
+            3L, 17L, 41L, 59L, 71L, 101L, 131L, 173L,
+            211L, 241L, 281L, 313L, 353L, 401L, 431L, 461L
+    };
+    private static final int[] NONADJACENT_POINTS = {
+            -32_768, -28_672, -24_576, -20_480, -16_384, -12_288, -8_192, -4_096,
+            0, 4_096, 8_192, 12_288, 16_384, 20_480, 24_576, 28_672, 32_768
+    };
+
+    private BiomeProviderSelectionPolicyTest() {}
+
+    static void run() throws Exception {
+        descriptorAdmissionIsClosedAndCanonical();
+        wetlandDescriptorsHaveOnlyAnOwnedLowlandRoute();
+        climateLowlandDescriptorsRemainRouteBounded();
+        everySupportedStackGetsEqualRouteTickets();
+        selectionIsWorldSeededAndCoherent();
+        routeSelectionCannotFallBackToAnUnclassifiedTag();
+        providerTicketHotPathCachesAndInvalidates();
+        providerProfileCompatibilityIsBirthLocked();
+        vanillaCoverageIsCompleteAndWorldSizeSafe();
+        surfaceWaterCoverageIsCompleteAndWorldSizeSafe();
+        sizeAwareVanillaRepresentationIsClosedAndBirthLocked();
+        vanillaCoverageIsV2OnlyAndClearsWithContext();
+    }
+
+    private static void descriptorAdmissionIsClosedAndCanonical() {
+        List<String> reversedRegistry = new ArrayList<>(registryFor(Set.of("biomesoplenty", "terralith")));
+        reversedRegistry.add("terralith:amethyst_canyon");
+        reversedRegistry.add("clifftree:temperate_grove");
+        reversedRegistry.add("unreviewed:random_desert");
+        List<String> normalRegistry = new ArrayList<>(reversedRegistry);
+        java.util.Collections.reverse(reversedRegistry);
+
+        BiomeSelectionProfile normal = BiomeSelectionProfile.capture(normalRegistry);
+        BiomeSelectionProfile reversed = BiomeSelectionProfile.capture(reversedRegistry);
+        assertEquals(normal.encode(), reversed.encode(), "registry order cannot change the birth profile");
+        assertTrue(normal.providers().equals(List.of("biomesoplenty", "minecraft", "terralith")),
+                "only explicitly supported providers enter the roster");
+        for (BiomeRoute route : BiomeRoute.values()) {
+            assertFalse(normal.contains(route, "terralith:amethyst_canyon"),
+                    "unreviewed warm upland identity receives no ticket");
+            assertFalse(normal.contains(route, "clifftree:temperate_grove"),
+                    "unsupported provider receives no ticket");
+            assertFalse(normal.contains(route, "unreviewed:random_desert"),
+                    "an unknown custom biome receives no ticket");
+            for (String id : normal.entries(route)) {
+                BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
+                assertTrue(descriptor != null && descriptor.routes().contains(route),
+                        "every selected row has one matching verified descriptor: " + id);
+            }
+        }
+        assertEquals(normal.encode(), BiomeSelectionProfile.decode(normal.encode()).encode(),
+                "profile serialization is canonical");
+        assertThrows(() -> BiomeSelectionProfile.decode("provider_ticket_v1\nTEMPERATE_LOWLAND|terralith:amethyst_canyon"),
+                "a descriptorless saved row is rejected");
+        assertThrows(() -> BiomeSelectionProfile.decode("provider_ticket_v1\nTEMPERATE_LOWLAND|minecraft:forest\nTEMPERATE_LOWLAND|minecraft:forest"),
+                "duplicate saved route rows are rejected");
+    }
+
+    private static void wetlandDescriptorsHaveOnlyAnOwnedLowlandRoute() {
+        for (String id : List.of(
+                "biomesoplenty:bog",
+                "biomesoplenty:muskeg",
+                "terralith:ice_marsh")) {
+            BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
+            assertTrue(descriptor != null, "admitted wetland has an explicit descriptor: " + id);
+            assertEquals(Set.of(BiomeRoute.TEMPERATE_WETLAND), descriptor.routes(),
+                    "wetland has no generic dry, highland, or fallback route: " + id);
+            assertEquals(BiomeDescriptorLedger.Terrain.WETLAND, descriptor.terrain(),
+                    "wetland is never admitted as ordinary land: " + id);
+            assertEquals(BiomeDescriptorLedger.Water.WETLAND, descriptor.water(),
+                    "wetland requires the wetland water authority: " + id);
+        }
+        assertTrue(BiomeDescriptorLedger.descriptor("biomesoplenty:bayou") == null,
+                "warm bayou remains closed until Latitude owns a warm-wetland route");
+        assertTrue(BiomeDescriptorLedger.descriptor("biomesoplenty:floodplain") == null,
+                "tropical floodplain remains closed until Latitude owns a warm-wetland route");
+    }
+
+    private static void climateLowlandDescriptorsRemainRouteBounded() {
+        assertClimateLowland(BiomeRoute.TROPICAL_HUMID_LOWLAND, BiomeDescriptorLedger.Family.JUNGLE,
+                "biomesoplenty:fungal_jungle");
+        assertClimateLowland(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND, BiomeDescriptorLedger.Family.FOREST,
+                "biomesoplenty:redwood_forest", "biomesoplenty:mystic_grove");
+        assertClimateLowland(BiomeRoute.TEMPERATE_LOWLAND, BiomeDescriptorLedger.Family.FOREST,
+                "biomesoplenty:lavender_field", "biomesoplenty:overgrown_greens",
+                "terralith:moonlight_grove", "terralith:moonlight_valley");
+        assertClimateLowland(BiomeRoute.WARM_TRANSITION, BiomeDescriptorLedger.Family.FOREST,
+                "biomesoplenty:mediterranean_forest", "terralith:brushland");
+        assertClimateLowland(BiomeRoute.WARM_TRANSITION, BiomeDescriptorLedger.Family.ARID,
+                "terralith:hot_shrubland", "terralith:shrubland");
+        assertAridLowland("biomesoplenty:lush_desert");
+        assertClimateLowland(BiomeRoute.SUBPOLAR_LOWLAND, BiomeDescriptorLedger.Family.TAIGA,
+                "biomesoplenty:field", "biomesoplenty:pumpkin_patch",
+                "terralith:lush_valley", "terralith:shield", "terralith:shield_clearing",
+                "terralith:yosemite_lowlands");
+        assertColdLowland("biomesoplenty:auroral_garden", "biomesoplenty:snowblossom_grove",
+                "biomesoplenty:wintry_origin_valley", "terralith:cold_shrubland",
+                "terralith:snowy_cherry_grove");
+    }
+
+    private static void assertClimateLowland(
+            BiomeRoute route,
+            BiomeDescriptorLedger.Family family,
+            String... ids) {
+        for (String id : ids) {
+            assertDescriptor(id, Set.of(route), BiomeDescriptorLedger.Terrain.LOWLAND, family);
+        }
+    }
+
+    private static void assertAridLowland(String... ids) {
+        for (String id : ids) {
+            assertDescriptor(id, Set.of(BiomeRoute.ARID_LOWLAND), BiomeDescriptorLedger.Terrain.ARID,
+                    BiomeDescriptorLedger.Family.ARID);
+        }
+    }
+
+    private static void assertColdLowland(String... ids) {
+        for (String id : ids) {
+            assertDescriptor(id, Set.of(BiomeRoute.SUBPOLAR_LOWLAND, BiomeRoute.POLAR_LOWLAND),
+                    BiomeDescriptorLedger.Terrain.LOWLAND, BiomeDescriptorLedger.Family.POLAR);
+        }
+    }
+
+    private static void assertDescriptor(
+            String id,
+            Set<BiomeRoute> routes,
+            BiomeDescriptorLedger.Terrain terrain,
+            BiomeDescriptorLedger.Family family) {
+        BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
+        assertTrue(descriptor != null, "climate biome has an explicit descriptor: " + id);
+        assertEquals(routes, descriptor.routes(), "climate biome has only its verified route: " + id);
+        assertEquals(terrain, descriptor.terrain(), "climate biome has its verified terrain class: " + id);
+        assertEquals(BiomeDescriptorLedger.Water.LAND, descriptor.water(),
+                "climate land biome cannot enter a wetland or coastal route: " + id);
+        assertEquals(family, descriptor.family(), "climate biome preserves village-family cohesion: " + id);
+    }
+
+    /**
+     * Uses vanilla-only, vanilla+BOP, vanilla+Terralith, and the combined supported stack.
+     * The four-sigma bounds are binomial bounds declared before any world/map sample is run.
+     */
+    private static void everySupportedStackGetsEqualRouteTickets() {
+        for (Set<String> stack : List.of(
+                Set.<String>of(),
+                Set.of("biomesoplenty"),
+                Set.of("terralith"),
+                Set.of("biomesoplenty", "terralith"))) {
+            BiomeSelectionProfile profile = BiomeSelectionProfile.capture(registryFor(stack));
+            for (BiomeRoute route : BiomeRoute.values()) {
+                List<String> ids = profile.entries(route);
+                if (ids.isEmpty()) continue;
+                BiomeProviderSelectionPolicy.Pool pool = BiomeProviderSelectionPolicy.createPool(ids);
+                Map<String, Integer> providerCounts = new HashMap<>();
+                Map<String, Integer> biomeCounts = new HashMap<>();
+                int samples = 0;
+                for (long seed : AUDIT_SEEDS) {
+                    for (int x : NONADJACENT_POINTS) {
+                        for (int z : NONADJACENT_POINTS) {
+                            String id = BiomeProviderSelectionPolicy.selectId(pool, seed, x, z, 2, route.name(), 0L);
+                            providerCounts.merge(namespace(id), 1, Integer::sum);
+                            biomeCounts.merge(id, 1, Integer::sum);
+                            samples++;
+                        }
+                    }
+                }
+                List<String> providers = profile.providers(route);
+                assertEquals(providers.size(), pool.providers().size(), "route roster and pool agree: " + route);
+                for (String provider : providers) {
+                    assertWithinFourSigma(providerCounts, provider, samples, 1.0 / providers.size(),
+                            "equal provider ticket for " + route + " / " + provider);
+                    int providerSamples = providerCounts.getOrDefault(provider, 0);
+                    List<String> providerIds = ids.stream().filter(id -> namespace(id).equals(provider)).toList();
+                    for (String id : providerIds) {
+                        assertWithinFourSigma(biomeCounts, id, providerSamples, 1.0 / providerIds.size(),
+                                "equal winning-provider biome ticket for " + route + " / " + id);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void selectionIsWorldSeededAndCoherent() {
+        BiomeSelectionProfile profile = BiomeSelectionProfile.capture(registryFor(Set.of("biomesoplenty", "terralith")));
+        BiomeProviderSelectionPolicy.Pool pool = BiomeProviderSelectionPolicy.createPool(profile.entries(BiomeRoute.TEMPERATE_LOWLAND));
+        Set<String> reached = new HashSet<>();
+        int compared = 0;
+        int changedSeed = 0;
+        int neighborMatches = 0;
+        for (int x = -20_000; x <= 20_000; x += 128) {
+            for (int z = -20_000; z <= 20_000; z += 128) {
+                String first = BiomeProviderSelectionPolicy.selectId(pool, AUDIT_SEEDS[0], x, z, 2, BiomeRoute.TEMPERATE_LOWLAND.name(), 0L);
+                String otherSeed = BiomeProviderSelectionPolicy.selectId(pool, AUDIT_SEEDS[1], x, z, 2, BiomeRoute.TEMPERATE_LOWLAND.name(), 0L);
+                String neighbor = BiomeProviderSelectionPolicy.selectId(pool, AUDIT_SEEDS[0], x + 16, z, 2, BiomeRoute.TEMPERATE_LOWLAND.name(), 0L);
+                reached.add(first);
+                if (!first.equals(otherSeed)) changedSeed++;
+                if (first.equals(neighbor)) neighborMatches++;
+                compared++;
+            }
+        }
+        assertTrue(reached.containsAll(pool.ids()), "every admitted temperate identity remains reachable");
+        assertGreaterThan(0.35, changedSeed / (double) compared, "world seed materially changes identity provinces");
+        assertGreaterThan(0.90, neighborMatches / (double) compared, "neighboring chunks remain coherent, not confetti");
+    }
+
+    private static void routeSelectionCannotFallBackToAnUnclassifiedTag() throws Exception {
+        String source = Files.readString(Path.of("src/main/java/com/example/globe/world/LatitudeBiomes.java")).replaceAll("\\s+", " ");
+        assertEquals(2, occurrences(source, "entriesForProviderTicketRoute(biomes, providerRoute)"),
+                "registry and collection routes resolve the saved descriptor profile before tag contents");
+        assertTrue(source.contains("for (Holder<Biome> entry : entriesForTag(biomes, tag))"),
+                "late registry land-pool rewrites cannot re-admit descriptorless tag entries");
+        assertTrue(source.contains("ACTIVE_PROVIDER_TICKET_PROFILE = isProviderTicketPolicy(ACTIVE_WORLDGEN_POLICY)"),
+                "V1 and V2 cannot silently use the mutable tag pool when their birth profile is absent");
+        assertTrue(source.contains("BiomeProviderSelectionPolicy.selectIndex("),
+                "the live biome selector invokes the two-stage provider policy");
+    }
+
+    /** Source-level guard for the hot path: first context-bound use may resolve, later picks may not. */
+    private static void providerTicketHotPathCachesAndInvalidates() throws Exception {
+        String source = Files.readString(Path.of("src/main/java/com/example/globe/world/LatitudeBiomes.java"));
+        for (String cache : List.of(
+                "PROVIDER_TICKET_REGISTRY_ROUTE_CACHE",
+                "PROVIDER_TICKET_SOURCE_ROUTE_CACHE",
+                "ALLOWED_LAND_POOL_REGISTRY_CACHE",
+                "ALLOWED_LAND_POOL_SOURCE_CACHE",
+                "FILTERED_LAND_POOL_REGISTRY_CACHE",
+                "FILTERED_LAND_POOL_SOURCE_CACHE",
+                "REROLL_LAND_POOL_REGISTRY_CACHE",
+                "REROLL_LAND_POOL_SOURCE_CACHE")) {
+            assertTrue(source.contains(cache + ".clear();"),
+                    "context cleanup invalidates " + cache);
+        }
+        String registryRoute = method(source,
+                "private static List<Holder<Biome>> entriesForProviderTicketRoute(Registry<Biome> biomes, BiomeRoute route)");
+        String collectionRoute = method(source,
+                "private static List<Holder<Biome>> entriesForProviderTicketRoute(Collection<Holder<Biome>> biomes, BiomeRoute route)");
+        String registryLandPool = method(source,
+                "private static List<Holder<Biome>> allowedLandPool(Registry<Biome> biomes, int bandIndex)");
+        String collectionLandPool = method(source,
+                "private static List<Holder<Biome>> allowedLandPool(Collection<Holder<Biome>> biomes, int bandIndex)");
+        String registryFiltered = method(source,
+                "private static List<Holder<Biome>> filteredAllowedLandPool(Registry<Biome> biomes,");
+        String collectionFiltered = method(source,
+                "private static List<Holder<Biome>> filteredAllowedLandPool(Collection<Holder<Biome>> biomes,");
+        String registryReroll = method(source,
+                "private static List<Holder<Biome>> rerollLandPoolForBand(Registry<Biome> biomes,");
+        String collectionReroll = method(source,
+                "private static List<Holder<Biome>> rerollLandPoolForBand(Collection<Holder<Biome>> biomes,");
+        for (String body : List.of(registryRoute, collectionRoute, registryLandPool, collectionLandPool)) {
+            assertTrue(body.indexOf("if (cached != null) return cached;") < body.indexOf("new ArrayList"),
+                    "cache hit returns before allocation/traversal");
+            assertTrue(body.contains("putIfAbsent"), "first context-bound resolution publishes one immutable pool");
+        }
+        assertFalse(registryRoute.contains("getTagOrEmpty"), "route cache never traverses raw registry tags");
+        assertFalse(collectionRoute.contains("entry.is(tag)"), "route cache never traverses source tags after its first resolution");
+        assertTrue(registryLandPool.contains("entriesForTag(biomes, tag)"),
+                "registry late pool shares the descriptor-resolved route cache");
+        assertTrue(collectionLandPool.contains("entriesForTag(biomes, tag)"),
+                "collection late pool shares the descriptor-resolved route cache");
+        for (String body : List.of(registryFiltered, collectionFiltered, registryReroll, collectionReroll)) {
+            assertTrue(body.indexOf("if (cached != null) return cached;") < body.indexOf("List.copyOf"),
+                    "terrain pool cache hit returns before filtered-pool allocation");
+            assertTrue(body.contains("putIfAbsent"), "first context-bound terrain variant publishes one immutable pool");
+        }
+        assertTrue(source.contains("List<Holder<Biome>> candidates = entriesForTag(biomes, tag);"),
+                "tropical override cannot bypass the descriptor-resolved tag path");
+    }
+
+    private static void providerProfileCompatibilityIsBirthLocked() throws Exception {
+        BiomeSelectionProfile bornWithBop = BiomeSelectionProfile.capture(
+                registryFor(Set.of("biomesoplenty")));
+        BiomeSelectionProfile reloaded = BiomeSelectionProfile.decode(bornWithBop.encode());
+        assertEquals(bornWithBop.encode(), reloaded.encode(),
+                "reload preserves the exact birth-time provider roster and route rows");
+
+        List<String> registryAfterAddingTerralith =
+                registryFor(Set.of("biomesoplenty", "terralith"));
+        assertTrue(reloaded.missingIds(registryAfterAddingTerralith).isEmpty(),
+                "adding a provider later does not invalidate the locked profile");
+        for (BiomeRoute route : BiomeRoute.values()) {
+            assertTrue(reloaded.entries(route).stream().noneMatch(id -> id.startsWith("terralith:")),
+                    "a later provider receives no ticket in an existing world: " + route);
+        }
+
+        List<String> missingAfterRemovingBop = reloaded.missingIds(registryFor(Set.of()));
+        assertTrue(!missingAfterRemovingBop.isEmpty()
+                        && missingAfterRemovingBop.stream().allMatch(id -> id.startsWith("biomesoplenty:")),
+                "removing a locked provider is detected without inventing replacement custom IDs");
+        String mod = Files.readString(Path.of("src/main/java/com/example/globe/GlobeMod.java"));
+        assertTrue(mod.contains("No new provider is substituted")
+                        && mod.contains("removing biome mods can still leave saved chunks unreadable"),
+                "the live compatibility warning states both the closed fallback and saved-ID risk");
+    }
+
+    private static void vanillaCoverageIsCompleteAndWorldSizeSafe() {
+        BiomeSelectionProfile vanilla = BiomeSelectionProfile.capture(registryFor(Set.of()));
+        assertTrue(VanillaBiomeCoveragePlan.verifiedCounterparts().isEmpty(),
+                "no custom biome silently substitutes for a vanilla biome");
+        for (Map.Entry<String, BiomeRoute> requirement
+                : VanillaBiomeCoveragePlan.requiredRoutes().entrySet()) {
+            BiomeDescriptorLedger.Descriptor descriptor =
+                    BiomeDescriptorLedger.descriptor(requirement.getKey());
+            assertTrue(descriptor != null && descriptor.provider().equals("minecraft"),
+                    "every guaranteed identity is an explicit vanilla descriptor: " + requirement.getKey());
+            assertTrue(descriptor.routes().contains(requirement.getValue()),
+                    "every guaranteed identity owns its exact coverage route: " + requirement.getKey());
+        }
+
+        int[] radii = {3_750, 5_000, 7_500, 10_000, 15_000, 20_000};
+        long[] seeds = {3L, 41L, 131L, 461L};
+        for (int radius : radii) {
+            for (long seed : seeds) {
+                VanillaBiomeCoveragePlan plan = VanillaBiomeCoveragePlan.build(
+                        radius, seed, vanilla,
+                        (id, route, x, z) -> insideSyntheticRoute(route, x, z, radius));
+                assertTrue(plan.complete(),
+                        "every route-managed vanilla biome gets an anchor at radius=" + radius
+                                + " seed=" + seed + " missing=" + plan.missingBiomeIds());
+                assertEquals(VanillaBiomeCoveragePlan.requiredRoutes().size(), plan.anchors().size(),
+                        "one coherent anchor exists per required identity");
+                Set<String> ids = new HashSet<>();
+                for (VanillaBiomeCoveragePlan.Anchor anchor : plan.anchors()) {
+                    assertTrue(ids.add(anchor.biomeId()), "coverage identities are unique");
+                    assertTrue(anchor.radiusBlocks() >= 64,
+                            "coverage is a province, not a one-chunk token");
+                    assertTrue(plan.matches(anchor.blockX(), anchor.blockZ()).contains(anchor),
+                            "each guaranteed province remains reachable at its center even when a "
+                                    + "mutually-exclusive physical route shares the map area");
+                    assertTrue(insideSyntheticRoute(
+                                    anchor.route(), anchor.blockX(), anchor.blockZ(), radius),
+                            "anchor remains in its declared climate/terrain route");
+                    long centerDistanceSquared = (long) anchor.blockX() * anchor.blockX()
+                            + (long) anchor.blockZ() * anchor.blockZ();
+                    long safeRadius = radius - anchor.radiusBlocks() - 48L;
+                    assertTrue(centerDistanceSquared <= safeRadius * safeRadius,
+                            "the whole province remains inside the circular world border");
+                }
+            }
+        }
+
+        // Real mountain ridges are materially narrower than lowland climate provinces. The
+        // coverage planner must fit a substantial six-chunk-radius upland province into a
+        // coherent ridge instead of requiring a fourteen-chunk-radius disk and omitting every
+        // mountain identity, as the live TEST 31 seed did.
+        int liveRadius = 10_000;
+        long liveSeed = 1_266_034_320_117_822_817L;
+        VanillaBiomeCoveragePlan narrowRidgePlan = VanillaBiomeCoveragePlan.build(
+                liveRadius,
+                liveSeed,
+                vanilla,
+                (id, route, x, z) -> {
+                    if (!insideSyntheticRoute(route, x, z, liveRadius)) return false;
+                    if (!isUplandRoute(route)) return true;
+                    int stripe = Math.floorMod(x, 512);
+                    return stripe <= 96 || stripe >= 416;
+                });
+        assertTrue(narrowRidgePlan.complete(),
+                "narrow but coherent upland ridges must not omit required vanilla identities: "
+                        + narrowRidgePlan.missingBiomeIds());
+        for (VanillaBiomeCoveragePlan.Anchor anchor : narrowRidgePlan.anchors()) {
+            if (isUplandRoute(anchor.route())) {
+                assertEquals(64, anchor.radiusBlocks(),
+                        "upland reservations use a ridge-scale coherent radius");
+            }
+        }
+        List<VanillaBiomeCoveragePlan.Anchor> occupiedRidge = List.of(
+                new VanillaBiomeCoveragePlan.Anchor(
+                        "minecraft:cherry_grove", BiomeRoute.TEMPERATE_UPLAND,
+                        0, 0, 64, 17L));
+        assertTrue(VanillaBiomeCoveragePlan.hasDistinctVisibleCore(
+                        occupiedRidge, BiomeRoute.TEMPERATE_UPLAND, 96, 0),
+                "same-route ridge provinces may share their outer shoulders when the later "
+                        + "identity retains a distinct two-chunk core");
+        assertTrue(!VanillaBiomeCoveragePlan.hasDistinctVisibleCore(
+                        occupiedRidge, BiomeRoute.TEMPERATE_UPLAND, 16, 0),
+                "a later same-route reservation cannot be hidden inside an earlier province");
+        VanillaBiomeCoveragePlan impossibleLand = VanillaBiomeCoveragePlan.build(
+                liveRadius, liveSeed, vanilla, (id, route, x, z) -> false);
+        VanillaBiomeCoveragePlan.SearchStats landStats =
+                impossibleLand.missingDiagnostics().get("minecraft:windswept_hills");
+        assertTrue(landStats != null && landStats.centerEligible() == 0,
+                "land-plan diagnostics distinguish absent eligible terrain from topology/capacity");
+    }
+
+    private static void vanillaCoverageIsV2OnlyAndClearsWithContext() throws Exception {
+        String biomes = Files.readString(
+                Path.of("src/main/java/com/example/globe/world/LatitudeBiomes.java"))
+                .replaceAll("\\s+", " ");
+        String state = Files.readString(
+                Path.of("src/main/java/com/example/globe/world/LatitudeWorldState.java"))
+                .replaceAll("\\s+", " ");
+        String mod = Files.readString(Path.of("src/main/java/com/example/globe/GlobeMod.java"))
+                .replaceAll("\\s+", " ");
+        assertTrue(biomes.contains("boolean exactV2 = ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE")
+                        && biomes.contains("PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE"),
+                "V2 keeps exact coverage while only V3 consumes the saved size-aware contract");
+        assertTrue(biomes.contains("ACTIVE_VANILLA_COVERAGE_PLAN = null;"),
+                "world/context cleanup clears the coverage plan");
+        assertTrue(biomes.contains("ACTIVE_SURFACE_WATER_COVERAGE_PLAN = null;"),
+                "world/context cleanup clears the surface/water coverage plan");
+        assertTrue(state.contains("policy == WorldgenPolicyVersion.PROVIDER_TICKET_V1")
+                        && state.contains("policy == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE")
+                        && state.contains("policy == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE"),
+                "saved V1/V2 profiles remain readable without adopting V3 behavior");
+        assertTrue(mod.contains(
+                        "WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE"),
+                "only freshly UI-created worlds opt into V3 size-aware coverage");
+        assertTrue(mod.contains("randomState().sampler()"),
+                "fresh and reloaded V2 plans use the live world climate sampler");
+        assertTrue(mod.contains("donorBiomeSource(generator)"),
+                "surface/water plans resolve against the original donor geography");
+    }
+
+    private static void sizeAwareVanillaRepresentationIsClosedAndBirthLocked() throws Exception {
+        BiomeSelectionProfile providers = BiomeSelectionProfile.capture(
+                registryFor(Set.of("biomesoplenty", "terralith")));
+        Set<String> classifiedSurface = new HashSet<>(VanillaBiomeCoveragePlan.requiredRoutes().keySet());
+        classifiedSurface.addAll(VanillaSurfaceWaterCoveragePlan.requirements().keySet());
+        classifiedSurface.add("minecraft:pale_garden");
+        assertEquals(51, classifiedSurface.size(),
+                "all 51 vanilla Overworld surface identities are classified by land, water, or Pale Garden authority");
+        assertEquals(Set.of("minecraft:deep_dark", "minecraft:dripstone_caves",
+                        "minecraft:lush_caves", "minecraft:sulfur_caves"),
+                VanillaBiomeRepresentationProfile.nativeUndergroundIds(),
+                "the four underground identities are explicitly classified outside the surface planner");
+
+        int[] radii = {3_750, 5_000, 7_500, 10_000, 15_000, 20_000};
+        long[] seeds = {3L, 41L, 131L, 461L};
+        boolean customRepresentativeObserved = false;
+        for (int radius : radii) {
+            for (long seed : seeds) {
+                VanillaBiomeRepresentationProfile profile =
+                        VanillaBiomeRepresentationProfile.capture(radius, seed, providers);
+                VanillaBiomeRepresentationProfile reloaded =
+                        VanillaBiomeRepresentationProfile.decode(profile.encode());
+                assertEquals(profile.encode(), reloaded.encode(),
+                        "representation profile is byte-stable through reload");
+                assertTrue(profile.landTargets().keySet().containsAll(
+                                VanillaBiomeRepresentationProfile.mandatoryLandIds()),
+                        "mandatory exact gameplay identities are never omitted");
+                assertTrue(profile.hasCherryGameplayRepresentation(),
+                        "Cherry Grove is exact or replaced only by a verified cherry-resource counterpart");
+                assertEquals(VanillaSurfaceWaterCoveragePlan.requirements(),
+                        profile.surfaceWaterTargets(),
+                        "surface/water hard authorities stay exact at every size");
+
+                Set<String> accounted = new HashSet<>(profile.landTargets().keySet());
+                accounted.addAll(profile.omittedExactIds().keySet());
+                assertTrue(accounted.containsAll(VanillaBiomeCoveragePlan.requiredRoutes().keySet()),
+                        "every old exact land target is selected or truthfully reported as omitted");
+                for (Map.Entry<String, VanillaBiomeRepresentationProfile.Omission> omission
+                        : profile.omittedExactIds().entrySet()) {
+                    VanillaBiomeRepresentationProfile.Omission decision = omission.getValue();
+                    String replacement = decision.representativeId();
+                    assertTrue(profile.landTargets().containsKey(replacement),
+                            "every omission names a selected representative");
+                    assertTrue(VanillaBiomeRepresentationProfile.areApprovedEquivalents(
+                                    omission.getKey(), decision),
+                            "every compact compromise belongs to one closed, explicit equivalence group");
+                    if (decision.compromise()
+                            == VanillaBiomeRepresentationProfile.Compromise.APPROVED_GAMEPLAY_COUNTERPART
+                            && !"minecraft:cherry_grove".equals(omission.getKey())) {
+                        assertEquals(VanillaBiomeCoveragePlan.requiredRoutes().get(omission.getKey()),
+                                profile.landTargets().get(replacement),
+                                "a gameplay counterpart stays in the omitted biome's physical route");
+                    }
+                }
+                if (profile.worldSize().compact()) {
+                    assertTrue(profile.landTargets().size() <= profile.worldSize().compactLandBudget(),
+                            "compact targets respect the predeclared capacity budget");
+                    assertTrue(!profile.omittedExactIds().isEmpty(),
+                            "compact profiles report their exact-ID compromises");
+                    customRepresentativeObserved |= profile.targetTiers().entrySet().stream()
+                            .anyMatch(entry -> entry.getValue()
+                                    == VanillaBiomeRepresentationProfile.Tier.REPRESENTATION_FAMILY
+                                    && !entry.getKey().startsWith("minecraft:"));
+                } else {
+                    assertEquals(VanillaBiomeCoveragePlan.requiredRoutes(), profile.landTargets(),
+                            "Regular/Large/Massive retain every exact V2 land target");
+                    assertTrue(profile.omittedExactIds().isEmpty(),
+                            "full-size profiles do not claim omissions");
+                }
+
+                VanillaBiomeCoveragePlan plan = VanillaBiomeCoveragePlan.build(
+                        radius, seed, providers, profile.landTargets(), profile.worldSize().compact(),
+                        (id, route, x, z) -> insideSyntheticRoute(route, x, z, radius));
+                assertTrue(plan.complete(),
+                        "size-aware land targets fit as coherent provinces: " + plan.missingBiomeIds());
+                assertEquals(profile.landTargets().keySet(),
+                        plan.anchors().stream().map(VanillaBiomeCoveragePlan.Anchor::biomeId)
+                                .collect(java.util.stream.Collectors.toSet()),
+                        "the actual planner realizes exactly the saved land targets");
+                if (profile.worldSize().compact()) {
+                    for (VanillaBiomeCoveragePlan.Anchor anchor : plan.anchors()) {
+                        if (anchor.route() == BiomeRoute.ARID_LOWLAND) {
+                            assertTrue(anchor.radiusBlocks() <= 160,
+                                    "compact Desert and Badlands-family reservations leave room "
+                                            + "for distinct substantial cores");
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(customRepresentativeObserved,
+                "an explicitly approved custom variant can represent its vanilla family");
+        assertTrue(VanillaBiomeRepresentationProfile.areApprovedEquivalents(
+                        "minecraft:savanna",
+                        new VanillaBiomeRepresentationProfile.Omission(
+                                "biomesoplenty:lush_savanna",
+                                VanillaBiomeRepresentationProfile.Compromise.REPRESENTATION_FAMILY)),
+                "BOP Lush Savanna is an explicit lowland-savanna representative");
+        assertTrue(!VanillaBiomeRepresentationProfile.areApprovedEquivalents(
+                        "minecraft:savanna",
+                        new VanillaBiomeRepresentationProfile.Omission(
+                                "terralith:hot_shrubland",
+                                VanillaBiomeRepresentationProfile.Compromise.REPRESENTATION_FAMILY)),
+                "a biome cannot substitute merely because its descriptor is warm and dry");
+        assertTrue(VanillaBiomeRepresentationProfile.areApprovedEquivalents(
+                        "minecraft:eroded_badlands",
+                        new VanillaBiomeRepresentationProfile.Omission(
+                                "minecraft:badlands",
+                                VanillaBiomeRepresentationProfile.Compromise.REPRESENTATION_FAMILY)),
+                "compact worlds may report an omitted terrain variant when its biome family remains represented");
+        VanillaBiomeRepresentationProfile terralithCompact =
+                VanillaBiomeRepresentationProfile.capture(5_000, 41L, providers);
+        assertTrue(!terralithCompact.landTargets().containsKey("minecraft:cherry_grove")
+                        && Set.of("terralith:sakura_grove", "terralith:sakura_valley").stream()
+                        .anyMatch(terralithCompact.landTargets()::containsKey),
+                "Terralith Sakura terrain supplies the verified compact cherry-resource counterpart");
+        VanillaBiomeRepresentationProfile vanillaCompact =
+                VanillaBiomeRepresentationProfile.capture(5_000, 41L,
+                        BiomeSelectionProfile.capture(registryFor(Set.of("biomesoplenty"))));
+        assertTrue(vanillaCompact.landTargets().containsKey("minecraft:cherry_grove")
+                        && !vanillaCompact.omittedExactIds().containsKey("minecraft:cherry_grove"),
+                "without a verified provider counterpart, vanilla Cherry Grove stays exact");
+        LatitudeBiomes.clearWorldgenContext();
+        assertTrue(LatitudeBiomes.authoritativeTropicalAridBan(0, 0, 5_000),
+                "the final arid guard rejects the canonical tropical band");
+        assertTrue(!LatitudeBiomes.authoritativeTropicalAridBan(0, 2_500, 5_000),
+                "the final arid guard does not erase valid non-tropical arid geography");
+
+        String state = Files.readString(Path.of(
+                "src/main/java/com/example/globe/world/LatitudeWorldState.java"));
+        String mod = Files.readString(Path.of("src/main/java/com/example/globe/GlobeMod.java"));
+        assertTrue(state.contains("vanilla_representation_profile")
+                        && state.contains("PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE"),
+                "V3 profile and policy are persisted without changing legacy/V1/V2 identities");
+        assertTrue(mod.contains("VanillaBiomeRepresentationProfile.capture(pendingRadius, seed, profile)")
+                        && mod.contains("PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE"),
+                "only the trusted fresh-world path captures the V3 birth profile");
+        assertThrows(() -> VanillaBiomeRepresentationProfile.decode(
+                        VanillaBiomeRepresentationProfile.FORMAT
+                                + "\nSIZE|ITTY_BITTY\nLAND|TEMPERATE_LOWLAND|REPRESENTATION_FAMILY|terralith:caldera"),
+                "a custom biome cannot be admitted through a mismatched route");
+    }
+
+    private static void surfaceWaterCoverageIsCompleteAndWorldSizeSafe() throws Exception {
+        Set<String> exactRequired = Set.of(
+                "minecraft:ocean", "minecraft:deep_ocean",
+                "minecraft:cold_ocean", "minecraft:deep_cold_ocean",
+                "minecraft:frozen_ocean", "minecraft:deep_frozen_ocean",
+                "minecraft:lukewarm_ocean", "minecraft:deep_lukewarm_ocean",
+                "minecraft:warm_ocean", "minecraft:beach", "minecraft:snowy_beach",
+                "minecraft:stony_shore", "minecraft:river", "minecraft:frozen_river",
+                "minecraft:mangrove_swamp", "minecraft:mushroom_fields");
+        assertEquals(exactRequired, VanillaSurfaceWaterCoveragePlan.requirements().keySet(),
+                "V2 surface/water contract owns exactly the requested vanilla identities");
+        assertTrue(VanillaSurfaceWaterCoveragePlan.verifiedCounterparts().isEmpty(),
+                "no custom biome is counted as a vanilla surface/water substitute");
+
+        int[] radii = {3_750, 5_000, 7_500, 10_000, 15_000, 20_000};
+        long[] seeds = {3L, 41L, 131L, 461L};
+        for (int radius : radii) {
+            for (long seed : seeds) {
+                VanillaSurfaceWaterCoveragePlan.CandidateEvaluator evaluator =
+                        (id, route, x, z) -> insideSyntheticSurfaceWaterRoute(route, x, z, radius);
+                VanillaSurfaceWaterCoveragePlan plan = VanillaSurfaceWaterCoveragePlan.build(
+                        radius, seed, 63, evaluator);
+                VanillaSurfaceWaterCoveragePlan reloaded = VanillaSurfaceWaterCoveragePlan.build(
+                        radius, seed, 63, evaluator);
+                assertTrue(plan.complete(),
+                        "all surface/water identities fit radius=" + radius + " seed=" + seed
+                                + " missing=" + plan.missingBiomeIds());
+                assertEquals(exactRequired.size(), plan.anchors().size(),
+                        "one coherent surface/water province exists per identity");
+                assertEquals(plan.stableFingerprint(), reloaded.stableFingerprint(),
+                        "reload reconstructs the identical birth-locked surface/water plan");
+                Set<String> ids = new HashSet<>();
+                for (VanillaSurfaceWaterCoveragePlan.Anchor anchor : plan.anchors()) {
+                    assertTrue(ids.add(anchor.biomeId()), "surface/water identities are unique");
+                    assertTrue(anchor.radiusBlocks() >= 128,
+                            "surface/water coverage is a province, not a token chunk");
+                    int expectedRouteScale = switch (anchor.route().family()) {
+                        case SHORE, RIVER -> 128;
+                        case MANGROVE -> 128;
+                        case MUSHROOM -> Math.max(192, Math.min(384, radius / 18));
+                        case OCEAN -> Math.max(128, Math.min(320, radius / 18));
+                    };
+                    assertEquals(expectedRouteScale, anchor.radiusBlocks(),
+                            "surface/water reservations use the physical feature's own scale");
+                    assertTrue(plan.match(anchor.route().family(), anchor.blockX(), anchor.blockZ()) == anchor,
+                            "the actual family-order selector reaches every anchor center");
+                    assertTrue(insideSyntheticSurfaceWaterRoute(
+                                    anchor.route(), anchor.blockX(), anchor.blockZ(), radius),
+                            "surface/water anchor remains in its declared physical route");
+                    long centerDistanceSquared = (long) anchor.blockX() * anchor.blockX()
+                            + (long) anchor.blockZ() * anchor.blockZ();
+                    long safeRadius = radius - anchor.radiusBlocks() - 48L;
+                    assertTrue(centerDistanceSquared <= safeRadius * safeRadius,
+                            "the whole surface/water province remains inside the border");
+                }
+                assertEquals(exactRequired, ids, "no required exact ID is omitted");
+
+                VanillaSurfaceWaterCoveragePlan.Anchor mushroom = plan.anchors().stream()
+                        .filter(a -> a.route().family() == VanillaSurfaceWaterCoveragePlan.Family.MUSHROOM)
+                        .findFirst().orElseThrow();
+                VanillaSurfaceWaterCoveragePlan.Anchor plannedLocate = plan.nearestAnchorFor(
+                        Set.of("minecraft:mushroom_fields"),
+                        -mushroom.blockX(),
+                        -mushroom.blockZ());
+                assertEquals(mushroom, plannedLocate,
+                        "a required planned biome remains directly locatable even when its compact province "
+                                + "falls outside the ordinary bounded scan");
+                assertTrue(plan.nearestAnchorFor(Set.of("minecraft:the_void"), 0, 0) == null,
+                        "planned locate cannot invent an unreserved biome identity");
+                assertTrue(plan.mushroomDensity(-1.0, mushroom.blockX(), 64, mushroom.blockZ()) > -1.0,
+                        "reserved Mushroom Fields gains real above-water density");
+                assertTrue(plan.isMushroomSolid(mushroom.blockX(), 64, mushroom.blockZ()),
+                        "reserved Mushroom Fields materializes a solid block above sea level");
+                assertTrue(!plan.isMushroomSolid(mushroom.blockX(), 256, mushroom.blockZ()),
+                        "reserved Mushroom Fields does not fill air above its planned surface");
+                assertEquals(-1.0, plan.mushroomDensity(-1.0,
+                                mushroom.blockX() + mushroom.radiusBlocks() * 2, 64, mushroom.blockZ()),
+                        "density outside the reserved island remains byte-for-byte unchanged");
+
+                VanillaSurfaceWaterCoveragePlan compactPlan = VanillaSurfaceWaterCoveragePlan.build(
+                        radius, seed, 63, VanillaSurfaceWaterCoveragePlan.requirements(),
+                        radius <= 7_500, evaluator);
+                assertTrue(compactPlan.complete(),
+                        "V3 compact surface targets fit without weakening exact identities");
+                VanillaSurfaceWaterCoveragePlan.Anchor compactMushroom = compactPlan.anchors().stream()
+                        .filter(a -> a.route().family() == VanillaSurfaceWaterCoveragePlan.Family.MUSHROOM)
+                        .findFirst().orElseThrow();
+                assertEquals(radius <= 7_500
+                                ? 128 : Math.max(192, Math.min(384, radius / 18)),
+                        compactMushroom.radiusBlocks(),
+                        "V3 uses the compact substantial Mushroom Fields footprint only in compact worlds");
+                for (VanillaSurfaceWaterCoveragePlan.Anchor anchor : compactPlan.anchors()) {
+                    if (radius <= 7_500
+                            && anchor.route().family() == VanillaSurfaceWaterCoveragePlan.Family.OCEAN) {
+                        assertEquals(96, anchor.radiusBlocks(),
+                                "compact ocean variants use a substantial twelve-chunk diameter");
+                    }
+                }
+                double minimumLandEdge = Double.POSITIVE_INFINITY;
+                double maximumLandEdge = Double.NEGATIVE_INFINITY;
+                for (int bearing = 0; bearing < 24; bearing++) {
+                    double angle = bearing * Math.PI * 2.0 / 24.0;
+                    double edge = 0.0;
+                    for (int distance = 0; distance <= mushroom.radiusBlocks(); distance += 2) {
+                        int x = mushroom.blockX() + (int) Math.round(Math.cos(angle) * distance);
+                        int z = mushroom.blockZ() + (int) Math.round(Math.sin(angle) * distance);
+                        if (plan.isMushroomLand(x, z)) edge = distance;
+                    }
+                    minimumLandEdge = Math.min(minimumLandEdge, edge);
+                    maximumLandEdge = Math.max(maximumLandEdge, edge);
+                }
+                assertTrue(maximumLandEdge - minimumLandEdge >= mushroom.radiusBlocks() * 0.08,
+                        "Mushroom Fields shoreline must be visibly organic, not a circular density stamp");
+                for (int dz = -mushroom.radiusBlocks(); dz <= mushroom.radiusBlocks(); dz += 8) {
+                    for (int dx = -mushroom.radiusBlocks(); dx <= mushroom.radiusBlocks(); dx += 8) {
+                        int x = mushroom.blockX() + dx;
+                        int z = mushroom.blockZ() + dz;
+                        if (plan.isMushroomLand(x, z)) {
+                            assertTrue(plan.mushroomDensity(-100.0, x, 64, z) > 0.0,
+                                    "every Mushroom Fields label has solid terrain above sea level");
+                            assertTrue(plan.isMushroomSolid(x, 64, z),
+                                    "every Mushroom Fields label reaches the live solid-block authority");
+                        }
+                    }
+                }
+            }
+        }
+
+        String source = Files.readString(Path.of("src/main/java/com/example/globe/world/LatitudeBiomes.java"));
+        assertTrue(source.indexOf("Family.SHORE") < source.indexOf("return out;", source.indexOf("Family.SHORE")),
+                "shore coverage executes before the beach early return");
+        assertTrue(source.indexOf("Family.RIVER") < source.indexOf("return out;", source.indexOf("Family.RIVER")),
+                "river coverage executes before the river early return");
+        assertTrue(source.contains("if (ACTIVE_SURFACE_WATER_COVERAGE_PLAN == null)"),
+                "legacy random Mushroom Fields behavior is retained only when V2 has no plan");
+        assertTrue(LatitudeBiomes.rockyShoreClimateSignal(-0.30, 0.35),
+                "low-erosion coastline with strong terrain signal is eligible for Stony Shore");
+        assertTrue(!LatitudeBiomes.rockyShoreClimateSignal(-0.10, 0.35),
+                "ordinary gently eroded beach is not promoted to Stony Shore");
+        assertTrue(!LatitudeBiomes.rockyShoreClimateSignal(-0.30, 0.10),
+                "low erosion without strong terrain relief is not enough for Stony Shore");
+        assertEquals(-5598, LatitudeLocateBudgetPolicy.quartCenterBlock(-5600),
+                "negative locate coordinate returns the exact quart center evaluated by population");
+        assertEquals(102, LatitudeLocateBudgetPolicy.quartCenterBlock(100),
+                "vertical locate coordinate returns the exact quart center evaluated by population");
+        String densityMixin = Files.readString(
+                Path.of("src/main/java/com/example/globe/mixin/NoiseChunkMushroomIslandDensityMixin.java"));
+        String authorityMixin = Files.readString(
+                Path.of("src/main/java/com/example/globe/mixin/NoiseChunkGeneratorWorldgenAuthorityMixin.java"));
+        String mixins = Files.readString(Path.of("src/main/resources/globe.mixins.json"));
+        assertTrue(densityMixin.contains("LatitudeWorldgenScope.isActive()"),
+                "Mushroom island density is dimension/generator scoped");
+        assertTrue(densityMixin.contains("getInterpolatedState()Lnet/minecraft/world/level/block/state/BlockState;"),
+                "Mushroom island authority reaches the live chunk block-writing path");
+        for (String owner : List.of("doFill", "getBaseHeight", "getBaseColumn")) {
+            assertTrue(authorityMixin.contains(owner), "density authority covers " + owner);
+        }
+        assertTrue(mixins.contains("NoiseChunkMushroomIslandDensityMixin"),
+                "Mushroom island density hook is registered");
+        String locateSource = Files.readString(
+                Path.of("src/main/java/com/example/globe/world/LatitudeBiomeSource.java"));
+        assertTrue(locateSource.contains("findPlannedSurfaceWaterCoverage("),
+                "bounded locate has a constant-cost fallback to the birth plan");
+        assertTrue(locateSource.contains("plannedFallbackUsed"),
+                "locate telemetry distinguishes the direct birth-plan fallback");
+        VanillaSurfaceWaterCoveragePlan impossibleWater = VanillaSurfaceWaterCoveragePlan.build(
+                10_000, 41L, 63, (id, route, x, z) -> false);
+        VanillaSurfaceWaterCoveragePlan.SearchStats shoreStats =
+                impossibleWater.missingDiagnostics().get("minecraft:stony_shore");
+        assertTrue(shoreStats != null && shoreStats.centerEligible() == 0,
+                "surface-plan diagnostics distinguish absent eligible terrain from topology/capacity");
+
+    }
+
+    private static boolean insideSyntheticSurfaceWaterRoute(
+            VanillaSurfaceWaterCoveragePlan.Route route, int x, int z, int radius) {
+        double latitudeFraction = Math.abs(z) / (double) radius;
+        if ((long) x * x + (long) z * z >= (long) radius * radius) return false;
+        return latitudeFraction >= route.minimumLatitudeFraction()
+                && latitudeFraction <= route.maximumLatitudeFraction();
+    }
+
+    private static boolean insideSyntheticRoute(BiomeRoute route, int x, int z, int radius) {
+        double latitudeFraction = Math.abs(z) / (double) radius;
+        if ((long) x * x + (long) z * z >= (long) radius * radius) return false;
+        return switch (route) {
+            case TROPICAL_HUMID_LOWLAND -> latitudeFraction >= 0.04 && latitudeFraction <= 0.24;
+            case SUBTROPICAL_HUMID_LOWLAND, WARM_TRANSITION, WARM_UPLAND,
+                    ARID_LOWLAND, ARID_UPLAND -> latitudeFraction >= 0.27 && latitudeFraction <= 0.39;
+            case TEMPERATE_LOWLAND, TEMPERATE_WETLAND, TEMPERATE_UPLAND ->
+                    latitudeFraction >= 0.41 && latitudeFraction <= 0.56;
+            case SUBPOLAR_LOWLAND -> latitudeFraction >= 0.59 && latitudeFraction <= 0.73;
+            case POLAR_LOWLAND -> latitudeFraction >= 0.77 && latitudeFraction <= 0.91;
+            case COLD_UPLAND -> latitudeFraction >= 0.61 && latitudeFraction <= 0.89;
+        };
+    }
+
+    private static boolean isUplandRoute(BiomeRoute route) {
+        return route == BiomeRoute.TEMPERATE_UPLAND
+                || route == BiomeRoute.COLD_UPLAND
+                || route == BiomeRoute.WARM_UPLAND
+                || route == BiomeRoute.ARID_UPLAND;
+    }
+
+    private static List<String> registryFor(Set<String> optionalProviders) {
+        TreeSet<String> ids = new TreeSet<>();
+        for (BiomeDescriptorLedger.Descriptor descriptor : BiomeDescriptorLedger.descriptors()) {
+            if (descriptor.provider().equals("minecraft") || optionalProviders.contains(descriptor.provider())) {
+                ids.add(descriptor.biomeId());
+            }
+        }
+        return List.copyOf(ids);
+    }
+
+    private static String namespace(String id) { return id.substring(0, id.indexOf(':')); }
+
+    private static int occurrences(String value, String needle) {
+        int count = 0;
+        for (int at = value.indexOf(needle); at >= 0; at = value.indexOf(needle, at + needle.length())) count++;
+        return count;
+    }
+
+    private static String method(String source, String signature) {
+        int start = source.indexOf(signature);
+        if (start < 0) throw new AssertionError("missing method: " + signature);
+        int next = source.indexOf("\n    private static ", start + signature.length());
+        return source.substring(start, next >= 0 ? next : source.length());
+    }
+
+    private static void assertWithinFourSigma(Map<String, Integer> counts, String key, int samples, double expected, String message) {
+        int count = counts.getOrDefault(key, 0);
+        double observed = count / (double) samples;
+        double sigma = Math.sqrt(expected * (1.0 - expected) / samples);
+        if (Math.abs(observed - expected) > 4.0 * sigma) {
+            throw new AssertionError(message + ": expected=" + expected + " observed=" + observed + " samples=" + samples);
+        }
+    }
+
+    private static void assertThrows(ThrowingRunnable runnable, String message) {
+        try {
+            runnable.run();
+        } catch (IllegalArgumentException expected) {
+            return;
+        } catch (Exception unexpected) {
+            throw new AssertionError(message, unexpected);
+        }
+        throw new AssertionError(message);
+    }
+
+    private static void assertTrue(boolean condition, String message) { if (!condition) throw new AssertionError(message); }
+    private static void assertFalse(boolean condition, String message) { assertTrue(!condition, message); }
+    private static void assertEquals(Object expected, Object actual, String message) {
+        if (!expected.equals(actual)) throw new AssertionError(message + ": expected=" + expected + " actual=" + actual);
+    }
+    private static void assertGreaterThan(double floor, double actual, String message) {
+        if (!(actual > floor)) throw new AssertionError(message + ": floor=" + floor + " actual=" + actual);
+    }
+
+    @FunctionalInterface
+    private interface ThrowingRunnable { void run() throws Exception; }
+}

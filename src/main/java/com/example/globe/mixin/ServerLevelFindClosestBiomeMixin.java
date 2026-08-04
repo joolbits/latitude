@@ -29,27 +29,27 @@ public abstract class ServerLevelFindClosestBiomeMixin {
                     value = "INVOKE",
                     target = "Lnet/minecraft/world/level/chunk/ChunkGenerator;getBiomeSource()Lnet/minecraft/world/level/biome/BiomeSource;"
             ),
-            require = 0
+            require = 1
     )
     private BiomeSource globe$useLatitudeBiomeSourceForLocate(ChunkGenerator generator) {
         BiomeSource source = generator.getBiomeSource();
-        if (source instanceof LatitudeBiomeSource) {
-            return source;
-        }
         if (!(generator instanceof NoiseBasedChunkGenerator noise)
                 || !GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
             return source;
         }
         try {
+            BiomeSource rawSource = source instanceof LatitudeBiomeSource latitudeSource
+                    ? latitudeSource.original()
+                    : source;
             int radius = GlobeMod.borderRadiusForNoiseGenerator(noise);
             ServerLevel world = (ServerLevel) (Object) this;
             RandomState noiseConfig = world.getChunkSource().randomState();
             Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
-            BiomeSource wrapped = LatitudeBiomeSource.forLocate(source, biomeRegistry, radius,
+            BiomeSource wrapped = LatitudeBiomeSource.forLocate(rawSource, biomeRegistry, radius,
                     noise, noiseConfig, world);
             if (DEBUG_WORLDGEN_PATH && DEBUG_LOCATE_WRAP_LOGGED.compareAndSet(false, true)) {
                 GlobeMod.LOGGER.info("[Latitude] locate biome search using LatitudeBiomeSource source={} radius={} context=MIXIN",
-                        source.getClass().getName(), radius);
+                        rawSource.getClass().getName(), radius);
             }
             return wrapped;
         } catch (RuntimeException e) {

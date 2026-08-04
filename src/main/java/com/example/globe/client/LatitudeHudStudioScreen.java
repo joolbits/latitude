@@ -939,12 +939,12 @@ public class LatitudeHudStudioScreen extends Screen {
     /** Uppercase zone title word so the preview reads like the real title. */
     private static String zoneTitleWord(String zoneKey) {
         String name = switch (zoneKey) {
-            case "EQUATOR", "TROPICAL" -> "Tropics";
-            case "SUBTROPICAL" -> "Subtropics";
+            case "EQUATOR", "TROPICAL" -> "Tropical";
+            case "SUBTROPICAL" -> "Subtropical";
             case "TEMPERATE" -> "Temperate";
             case "SUBPOLAR" -> "Subpolar";
             case "POLAR" -> "Polar";
-            default -> zoneKey == null ? "Tropics" : zoneKey;
+            default -> zoneKey == null ? "Tropical" : zoneKey;
         };
         return name.toUpperCase(java.util.Locale.ROOT);
     }

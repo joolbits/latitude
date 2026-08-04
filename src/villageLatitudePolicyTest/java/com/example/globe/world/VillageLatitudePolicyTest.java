@@ -16,6 +16,8 @@ public final class VillageLatitudePolicyTest {
         activeRadiusOverridesFallbackAndFallbackCoversEarlyWorldgen();
         generationGuardRejectsInvalidStartsBeforeStore();
         climatePolicyClassifiesRepresentativeVillageIds();
+        biomeFamilyPolicyRejectsNamedVillageMismatches();
+        physicalTerrainPolicyRejectsCliffsideVillageStarts();
         climateMismatchRejectsInvalidStartsBeforeStore();
         staticIntegrationProofsHold();
         System.out.println("VILLAGE_LATITUDE_POLICY_TEST_PASS");
@@ -219,6 +221,120 @@ public final class VillageLatitudePolicyTest {
                 "non-village structure remains fail-open");
     }
 
+    private static void biomeFamilyPolicyRejectsNamedVillageMismatches() {
+        assertTrue(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_savanna", "minecraft:bamboo_jungle"),
+                "savanna village is rejected from bamboo jungle");
+        assertTrue(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_savanna", "terralith:tropical_jungle"),
+                "reviewed Terralith jungle uses its descriptor family for village safety");
+        assertFalse(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_savanna", "biomesoplenty:lush_savanna"),
+                "reviewed BOP lush savanna remains compatible with its named village family");
+        assertTrue(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_savanna", "biomesoplenty:scrubland"),
+                "a reviewed arid transition biome cannot inherit savanna compatibility by name guesswork");
+        assertFalse(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_savanna", "minecraft:windswept_savanna"),
+                "savanna village remains compatible with savanna terrain");
+        assertFalse(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_desert", "minecraft:badlands"),
+                "desert village remains compatible with the coherent desert-badlands family");
+        assertTrue(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_desert", "minecraft:mangrove_swamp"),
+                "desert village is rejected from mangrove coast");
+        assertFalse(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_taiga", "minecraft:old_growth_pine_taiga"),
+                "taiga village remains compatible with taiga terrain");
+        assertFalse(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_snowy", "minecraft:snowy_plains"),
+                "snowy village remains compatible with snowy terrain");
+        assertFalse(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_plains", "minecraft:meadow"),
+                "plains village remains compatible with open temperate terrain");
+        assertTrue(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_plains", "minecraft:bamboo_jungle"),
+                "plains village is rejected from bamboo jungle");
+        assertFalse(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_savanna", "example:mystery"),
+                "unknown provider biome remains fail-open");
+        assertFalse(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "desert_pyramid", "minecraft:bamboo_jungle"),
+                "non-village structure remains fail-open");
+    }
+
+    private static void physicalTerrainPolicyRejectsCliffsideVillageStarts() {
+        assertEquals(
+                25,
+                VillageTerrainSuitabilityPolicy.SAMPLE_COUNT,
+                "the production village terrain gate remains bounded to 25 height samples");
+
+        int[] gentle = {
+                72, 73, 74, 74, 75,
+                73, 74, 75, 76, 76,
+                74, 75, 76, 77, 78,
+                75, 76, 77, 78, 79,
+                76, 77, 78, 79, 80
+        };
+        assertTrue(
+                VillageTerrainSuitabilityPolicy.isSuitable(gentle),
+                "ordinary rolling village terrain remains eligible");
+
+        int[] exactTest19Footprint = {
+                63, 63, 69, 70, 75,
+                87, 69, 105, 79, 63,
+                112, 136, 135, 119, 102,
+                130, 120, 118, 126, 109,
+                119, 110, 111, 122, 119
+        };
+        assertFalse(
+                VillageTerrainSuitabilityPolicy.isSuitable(exactTest19Footprint),
+                "TEST 19's measured 73-block-relief cliff village is rejected before generation");
+
+        int[] neighborStepBoundary = new int[VillageTerrainSuitabilityPolicy.SAMPLE_COUNT];
+        java.util.Arrays.fill(neighborStepBoundary, 80);
+        neighborStepBoundary[1] = 104;
+        assertTrue(
+                VillageTerrainSuitabilityPolicy.isSuitable(neighborStepBoundary),
+                "an exact 24-block neighboring rise remains eligible");
+        neighborStepBoundary[1] = 105;
+        assertFalse(
+                VillageTerrainSuitabilityPolicy.isSuitable(neighborStepBoundary),
+                "the first block beyond the cliff-step allowance is rejected");
+
+        int[] totalReliefBoundary = {
+                63, 69, 75, 81, 87,
+                69, 75, 81, 87, 93,
+                75, 81, 87, 93, 99,
+                81, 87, 93, 99, 105,
+                87, 93, 99, 105, 111
+        };
+        assertTrue(
+                VillageTerrainSuitabilityPolicy.isSuitable(totalReliefBoundary),
+                "a broad 48-block hill across the full sample span remains eligible");
+        totalReliefBoundary[24] = 112;
+        assertFalse(
+                VillageTerrainSuitabilityPolicy.isSuitable(totalReliefBoundary),
+                "the first block beyond the broad-hill relief allowance is rejected");
+
+        assertTrue(
+                VillageTerrainSuitabilityPolicy.isSuitable(new int[]{70, 71}),
+                "incomplete terrain evidence fails open");
+    }
+
     private static void climateMismatchRejectsInvalidStartsBeforeStore() {
         int radius = 7_500;
         double coldBlockZ = radius * 52.0 / 90.0;
@@ -316,40 +432,11 @@ public final class VillageLatitudePolicyTest {
                 !vegetation.contains("isBlockBeyondPolarVillageLimit"),
                 "village limit cannot alter vegetation");
 
-        String placementGuard = normalize(read(
-                "src/main/java/com/example/globe/mixin/ExtremePolarVillageGuardMixin.java"));
-        assertTrue(
-                placementGuard.contains("@Mixin(StructureStart.class)")
-                        && placementGuard.contains("@Inject(method = \"placeInChunk(")
-                        && placementGuard.contains("at = @At(\"HEAD\"), cancellable = true")
-                        && placementGuard.contains("CallbackInfo ci"),
-                "legacy village placement guard still intercepts StructureStart.placeInChunk");
-        assertTrue(
-                placementGuard.contains("this.getChunkPos().getMiddleBlockZ()")
-                        && placementGuard.contains(
-                        "LatitudeBiomes.isBlockBeyondPolarVillageLimit(blockZ, GlobeMod.BORDER_RADIUS)")
-                        && !placementGuard.contains("isBlockInExtremePolarCap"),
-                "legacy placement guard retains the strict village-latitude predicate");
-        assertTrue(
-                placementGuard.contains(
-                        "structureId != null && structureId.getPath().startsWith(\"village\")")
-                        && placementGuard.contains("ci.cancel();"),
-                "legacy placement guard still cancels only village structures");
-        assertTrue(
-                placementGuard.contains("catch (Throwable ignored)")
-                        && placementGuard.contains("Registry unavailable — fail open (allow placement)."),
-                "legacy placement registry lookup retains fail-open behavior");
-        assertTrue(
-                !placementGuard.contains("@WrapOperation")
-                        && !placementGuard.contains("StructureStart.INVALID_START")
-                        && !placementGuard.contains("original.call("),
-                "legacy placement guard remains separate from generation-time invalidation");
-
         Path startGuardPath = Path.of(
                 "src/main/java/com/example/globe/mixin/ExtremePolarVillageStartGuardMixin.java");
         assertTrue(
                 Files.exists(startGuardPath),
-                "generation-time village start guard source must exist beside the legacy placement guard");
+                "generation-time village start guard source must exist");
         String startGuard = normalize(Files.readString(startGuardPath));
         assertTrue(
                 startGuard.contains("@Mixin(ChunkGenerator.class)")
@@ -367,15 +454,40 @@ public final class VillageLatitudePolicyTest {
                 "new start guard applies the strict village-latitude predicate with generator-specific radius authority");
         assertTrue(
                 startGuard.contains(
-                        "structureId != null && structureId.getPath().startsWith(\"village\")"),
-                "new start guard uses the same village registry classifier");
+                        "structureHolder.is(StructureTags.VILLAGE)")
+                        && startGuard.contains(
+                        "structureId.getPath().contains(\"village\")"),
+                "new start guard uses the vanilla village tag with a conservative modded-ID fallback");
         assertTrue(
                 startGuard.contains("LatitudeBands.fromAbsoluteLatitudeDeg(absDeg)")
                         && startGuard.contains(
                         "LatitudeBiomes.villageClimateVsBandMismatch(structureId.getPath(), band)"),
                 "generation-time owner applies the existing climate policy before start registration");
         assertTrue(
-                startGuard.contains("catch (Throwable ignored)")
+                startGuard.contains("biomeSource.getNoiseBiome(")
+                        && startGuard.contains("LatitudeBiomes.pick(")
+                        && startGuard.contains(
+                        "LatitudeBiomes.villageVariantVsBiomeMismatch( structureId.getPath(), finalBiomeId.toString())"),
+                "generation-time owner compares the named village variant with Latitude's final biome");
+        assertTrue(
+                startGuard.contains("VillageTerrainSuitabilityPolicy.SAMPLE_COUNT")
+                        && startGuard.contains(
+                        "dz = -VillageTerrainSuitabilityPolicy.SAMPLE_RADIUS_BLOCKS")
+                        && startGuard.contains(
+                        "dz <= VillageTerrainSuitabilityPolicy.SAMPLE_RADIUS_BLOCKS")
+                        && startGuard.contains(
+                        "dx = -VillageTerrainSuitabilityPolicy.SAMPLE_RADIUS_BLOCKS")
+                        && startGuard.contains(
+                        "dx <= VillageTerrainSuitabilityPolicy.SAMPLE_RADIUS_BLOCKS")
+                        && startGuard.contains("Heightmap.Types.WORLD_SURFACE_WG")
+                        && startGuard.contains("VillageTerrainSuitabilityPolicy.isSuitable(terrainHeights)"),
+                "generation-time owner samples one bounded physical footprint before village generation");
+        assertTrue(
+                startGuard.indexOf("LatitudeBiomes.villageClimateVsBandMismatch(")
+                        < startGuard.indexOf("int[] terrainHeights ="),
+                "cheap latitude and climate rejections run before the 25 physical height probes");
+        assertTrue(
+                startGuard.contains("catch (RuntimeException ignored)")
                         && startGuard.contains("Registry unavailable — fail open (allow generation)."),
                 "new start registry lookup retains fail-open behavior at generation time");
         assertTrue(
@@ -391,31 +503,31 @@ public final class VillageLatitudePolicyTest {
                         && !startGuard.contains("@Inject")
                         && !startGuard.contains("CallbackInfo")
                         && !startGuard.contains("ci.cancel();"),
-                "new generation guard does not replace or duplicate the legacy placement injection");
-
-        String climatePlacementGuard = normalize(read(
-                "src/main/java/com/example/globe/mixin/StructureBiomeMatchGuardMixin.java"));
-        assertTrue(
-                climatePlacementGuard.contains("@Mixin(StructureStart.class)")
-                        && climatePlacementGuard.contains("@Inject(method = \"placeInChunk(")
-                        && climatePlacementGuard.contains(
-                        "LatitudeBiomes.villageClimateVsBandMismatch(structureId.getPath(), band)")
-                        && climatePlacementGuard.contains("ci.cancel();"),
-                "historical stored climate-mismatched starts retain the late placement defense");
+                "fresh-start rejection never truncates a stored StructureStart during placement");
 
         String mixins = normalize(read("src/main/resources/globe.mixins.json"));
         assertTrue(
                 mixins.contains(
-                        "\"ExtremePolarVillageGuardMixin\", \"ExtremePolarVillageStartGuardMixin\", \"ExtremePolarVegetationGuardMixin\""),
-                "legacy placement and new generation guards are both registered adjacently");
+                        "\"ExtremePolarVillageStartGuardMixin\", \"ExtremePolarVegetationGuardMixin\""),
+                "fresh-start rejection is registered beside the vegetation guard");
         assertEquals(
-                1,
+                0,
                 occurrences(mixins, "\"ExtremePolarVillageGuardMixin\""),
-                "legacy placement guard is registered exactly once");
+                "the obsolete polar placement guard cannot truncate stored village starts");
+        assertEquals(
+                0,
+                occurrences(mixins, "\"StructureBiomeMatchGuardMixin\""),
+                "the obsolete climate placement guard cannot truncate stored village starts");
         assertEquals(
                 1,
                 occurrences(mixins, "\"ExtremePolarVillageStartGuardMixin\""),
                 "new generation guard is registered exactly once");
+        assertTrue(
+                Files.notExists(Path.of(
+                        "src/main/java/com/example/globe/mixin/ExtremePolarVillageGuardMixin.java"))
+                        && Files.notExists(Path.of(
+                        "src/main/java/com/example/globe/mixin/StructureBiomeMatchGuardMixin.java")),
+                "obsolete place-time implementations are removed rather than left as stale hooks");
 
         String globeMod = normalize(read("src/main/java/com/example/globe/GlobeMod.java"));
         assertTrue(
@@ -426,9 +538,9 @@ public final class VillageLatitudePolicyTest {
                 "new policy retains the current blockZ coordinate convention");
 
         assertEquals(
-                3,
+                2,
                 mainSourceOccurrences("isBlockBeyondPolarVillageLimit"),
-                "village predicate appears only at its declaration and the two complementary guards");
+                "village predicate appears only at its declaration and the fresh-start guard");
 
         String build = normalize(read("build.gradle"));
         assertTrue(

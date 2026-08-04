@@ -8,6 +8,14 @@
       "required": false
     },
     {
+      "id": "terralith:tropical_jungle",
+      "required": false
+    },
+    {
+      "id": "terralith:amethyst_rainforest",
+      "required": false
+    },
+    {
       "id": "byg:tropical_rainforest",
       "required": false
     },

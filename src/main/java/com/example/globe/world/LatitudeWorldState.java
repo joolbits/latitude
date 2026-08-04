@@ -12,11 +12,14 @@ import net.minecraft.world.level.saveddata.SavedDataType;
 public final class LatitudeWorldState extends SavedData {
     public enum WorldgenPolicyVersion {
         LEGACY_1_2_X,
-        MODERN_1_3
+        MODERN_1_3,
+        PROVIDER_TICKET_V1,
+        PROVIDER_TICKET_V2_COVERAGE,
+        PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
     }
 
     private static final Codec<WorldgenPolicyVersion> WORLDGEN_POLICY_CODEC = Codec.STRING.xmap(
-            WorldgenPolicyVersion::valueOf,
+            LatitudeWorldState::decodeWorldgenPolicy,
             Enum::name
     );
 
@@ -29,24 +32,37 @@ public final class LatitudeWorldState extends SavedData {
                     WORLDGEN_POLICY_CODEC.optionalFieldOf("worldgen_policy")
                             .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.worldgenPolicy)),
                     Codec.INT.optionalFieldOf("globe_radius", 0)
-                            .forGetter(LatitudeWorldState::getGlobeRadius)
-            ).apply(instance, (spawnPickerDismissed, worldgenPolicy, globeRadius) ->
-                    new LatitudeWorldState(spawnPickerDismissed, normalizeWorldgenPolicy(worldgenPolicy), globeRadius))),
+                            .forGetter(LatitudeWorldState::getGlobeRadius),
+                    Codec.STRING.optionalFieldOf("provider_ticket_profile")
+                            .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.providerTicketProfile)),
+                    Codec.STRING.optionalFieldOf("vanilla_representation_profile")
+                            .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.vanillaRepresentationProfile))
+            ).apply(instance, (spawnPickerDismissed, worldgenPolicy, globeRadius, providerTicketProfile,
+                                vanillaRepresentationProfile) ->
+                    new LatitudeWorldState(spawnPickerDismissed, normalizeWorldgenPolicy(worldgenPolicy),
+                            globeRadius, providerTicketProfile.orElse(null),
+                            vanillaRepresentationProfile.orElse(null)))),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
     );
 
     private boolean spawnPickerDismissed;
     private WorldgenPolicyVersion worldgenPolicy;
     private int globeRadius;
+    private String providerTicketProfile;
+    private String vanillaRepresentationProfile;
 
     public LatitudeWorldState() {
-        this(false, Optional.empty(), 0);
+        this(false, Optional.empty(), 0, null, null);
     }
 
-    private LatitudeWorldState(boolean spawnPickerDismissed, Optional<WorldgenPolicyVersion> worldgenPolicy, int globeRadius) {
+    private LatitudeWorldState(boolean spawnPickerDismissed, Optional<WorldgenPolicyVersion> worldgenPolicy,
+                               int globeRadius, String providerTicketProfile,
+                               String vanillaRepresentationProfile) {
         this.spawnPickerDismissed = spawnPickerDismissed;
         this.worldgenPolicy = normalizeWorldgenPolicy(worldgenPolicy).orElse(null);
         this.globeRadius = Math.max(0, globeRadius);
+        this.providerTicketProfile = providerTicketProfile;
+        this.vanillaRepresentationProfile = vanillaRepresentationProfile;
     }
 
     private static Optional<WorldgenPolicyVersion> normalizeWorldgenPolicy(Optional<WorldgenPolicyVersion> worldgenPolicy) {
@@ -57,6 +73,11 @@ public final class LatitudeWorldState extends SavedData {
         LatitudeWorldState state = world.getDataStorage().computeIfAbsent(STATE_TYPE);
         state.ensureWorldgenPolicy(world);
         return state;
+    }
+
+    /** Reads an existing Latitude state without creating or dirtying a vanilla save. */
+    public static LatitudeWorldState getIfPresent(ServerLevel world) {
+        return world.getDataStorage().get(STATE_TYPE);
     }
 
     public boolean isSpawnPickerDismissed() {
@@ -97,6 +118,52 @@ public final class LatitudeWorldState extends SavedData {
         }
     }
 
+    public Optional<BiomeSelectionProfile> getProviderTicketProfile() {
+        if (!isProviderTicketPolicy(getWorldgenPolicy())) return Optional.empty();
+        if (providerTicketProfile == null || providerTicketProfile.isBlank()) return Optional.empty();
+        try {
+            return Optional.of(BiomeSelectionProfile.decode(providerTicketProfile));
+        } catch (IllegalArgumentException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    public static boolean isProviderTicketPolicy(WorldgenPolicyVersion policy) {
+        return policy == WorldgenPolicyVersion.PROVIDER_TICKET_V1
+                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE
+                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE;
+    }
+
+    /** Captured once, only by the trusted fresh-world marker before spawn chunks exist. */
+    public void setProviderTicketProfile(BiomeSelectionProfile profile) {
+        String encoded = profile == null ? null : profile.encode();
+        if (!java.util.Objects.equals(providerTicketProfile, encoded)) {
+            providerTicketProfile = encoded;
+            setDirty();
+        }
+    }
+
+    public Optional<VanillaBiomeRepresentationProfile> getVanillaRepresentationProfile() {
+        if (getWorldgenPolicy() != WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
+                || vanillaRepresentationProfile == null || vanillaRepresentationProfile.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(VanillaBiomeRepresentationProfile.decode(vanillaRepresentationProfile));
+        } catch (IllegalArgumentException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    /** Captured once with the provider roster before fresh-world spawn chunks generate. */
+    public void setVanillaRepresentationProfile(VanillaBiomeRepresentationProfile profile) {
+        String encoded = profile == null ? null : profile.encode();
+        if (!java.util.Objects.equals(vanillaRepresentationProfile, encoded)) {
+            vanillaRepresentationProfile = encoded;
+            setDirty();
+        }
+    }
+
     private void ensureWorldgenPolicy(ServerLevel world) {
         if (worldgenPolicy == null) {
             setWorldgenPolicy(inferWorldgenPolicy(world));
@@ -105,9 +172,20 @@ public final class LatitudeWorldState extends SavedData {
         LatitudeBiomes.setWorldgenPolicy(worldgenPolicy);
     }
 
+    static WorldgenPolicyVersion decodeWorldgenPolicy(String encoded) {
+        if (encoded == null) {
+            return WorldgenPolicyVersion.LEGACY_1_2_X;
+        }
+        try {
+            return WorldgenPolicyVersion.valueOf(encoded);
+        } catch (IllegalArgumentException ignored) {
+            return WorldgenPolicyVersion.LEGACY_1_2_X;
+        }
+    }
+
     private static WorldgenPolicyVersion inferWorldgenPolicy(ServerLevel world) {
-        return world.getGameTime() < 100L
-                ? WorldgenPolicyVersion.MODERN_1_3
-                : WorldgenPolicyVersion.LEGACY_1_2_X;
+        // Missing policy means the save predates the policy field. New UI-created Latitude worlds
+        // are marked MODERN explicitly from GlobePending during their first overworld load.
+        return WorldgenPolicyVersion.LEGACY_1_2_X;
     }
 }

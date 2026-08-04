@@ -1,6 +1,14 @@
 {
   "replace": false,
   "values": [
-    "minecraft:flower_forest"
+    "minecraft:flower_forest",
+    {
+      "id": "biomesoplenty:rainforest",
+      "required": false
+    },
+    {
+      "id": "terralith:amethyst_canyon",
+      "required": false
+    }
   ]
 }
