@@ -33,7 +33,6 @@ public final class LatitudePlanisphereRenderer {
     private static final int MUTED = 0xFF8C8078;
     private static final int GRID_COLOR = 0x60FFFFFF; // semi-transparent white for latitude lines
     private static final int COMPACT_GRID_COLOR = 0x36D9E2E8;
-    private static final int COMPACT_RING_COLOR = 0xB0D4A74A;
     private static final float DISC_SCALE_BOOST = 1.15f;
     private static final float LABEL_BASE_SCALE = 0.90f;
     private static final float LABEL_MAX_SCALE = 1.10f;
@@ -262,14 +261,14 @@ public final class LatitudePlanisphereRenderer {
 
     /**
      * Render a compact latitude disc within a {@code size × size} pixel area.
-     * 5-band filled disc with a warm-gold ring outline on the selected band arc.
-     * No labels, no grid lines. Returns immediately if {@code size < 20}.
+     * Five-band filled disc with quiet latitude guides and selected-band edge emphasis.
+     * No labels or outer perimeter. Returns immediately if {@code size < 20}.
      *
      * @param context      draw context
      * @param x            top-left X of the bounding square
      * @param y            top-left Y of the bounding square
      * @param size         both width and height of the bounding square (pixels)
-     * @param selectedBand the currently selected latitude band
+     * @param selectedBand the currently selected latitude band, or {@code null} for Random
      */
     public static void renderCompact(GuiGraphicsExtractor context, int x, int y, int size, LatitudeBands.Band selectedBand) {
         if (size < 20) return;
@@ -313,29 +312,17 @@ public final class LatitudePlanisphereRenderer {
                 drawLatitudeLine(context, cx, cy, radius, -yOff, COMPACT_GRID_COLOR);
             }
         }
-        drawCircleOutline(context, cx, cy, radius, COMPACT_RING_COLOR);
-
         // ── Gold emphasis on selected band edges ──
-        int selLow  = (int) (radius * selectedBand.lowDeg()  / 90.0);
-        int selHigh = (int) (radius * selectedBand.highDeg() / 90.0);
-        drawLatitudeLine(context, cx, cy, radius,  selLow,  GOLD);
-        drawLatitudeLine(context, cx, cy, radius,  selHigh, GOLD);
-        drawLatitudeLine(context, cx, cy, radius, -selLow,  GOLD);
-        drawLatitudeLine(context, cx, cy, radius, -selHigh, GOLD);
-    }
-
-    private static void drawCircleOutline(
-            GuiGraphicsExtractor context,
-            int cx,
-            int cy,
-            int radius,
-            int color) {
-        for (int dy = -radius; dy <= radius; dy++) {
-            float frac = 1.0f - (float) (dy * dy) / (float) (radius * radius);
-            if (frac < 0) continue;
-            int halfW = Math.round((float) Math.sqrt(frac) * radius);
-            context.fill(cx - halfW, cy + dy, cx - halfW + 1, cy + dy + 1, color);
-            context.fill(cx + halfW - 1, cy + dy, cx + halfW, cy + dy + 1, color);
+        // Random deliberately leaves all five bands equally weighted rather than falsely highlighting the
+        // previously selected concrete band.
+        if (selectedBand != null) {
+            int selLow  = (int) (radius * selectedBand.lowDeg()  / 90.0);
+            int selHigh = (int) (radius * selectedBand.highDeg() / 90.0);
+            drawLatitudeLine(context, cx, cy, radius,  selLow,  GOLD);
+            drawLatitudeLine(context, cx, cy, radius,  selHigh, GOLD);
+            drawLatitudeLine(context, cx, cy, radius, -selLow,  GOLD);
+            drawLatitudeLine(context, cx, cy, radius, -selHigh, GOLD);
         }
     }
+
 }

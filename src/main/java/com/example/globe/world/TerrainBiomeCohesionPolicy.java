@@ -1,0 +1,77 @@
+package com.example.globe.world;
+
+/**
+ * Pure terrain/biome cohesion rules shared by both Latitude biome-picker paths.
+ *
+ * <p>The thresholds describe visibly raised terrain, not ordinary rolling ground:
+ * six blocks of robust local relief is already a steep biome-scale shoulder, while
+ * forty blocks above sea level is safely beyond a coastal or lowland shelf. A river
+ * is only rejected when real terrain evidence, that high elevation, and the climate
+ * sampler's mountain signal all agree; this keeps ordinary rivers and upland valleys.
+ */
+public final class TerrainBiomeCohesionPolicy {
+    static final int RUGGED_RELIEF_BLOCKS =
+            Integer.getInteger("latitude.temperatePlainsRelief", 6);
+    static final int HIGH_ABOVE_SEA_BLOCKS =
+            Integer.getInteger("latitude.temperatePlainsHighAboveSea", 40);
+
+    private TerrainBiomeCohesionPolicy() {
+    }
+
+    static boolean shouldApplyLandGate(
+            boolean temperateBand,
+            boolean colderBand,
+            boolean terrainEvidenceAvailable,
+            int surfaceY,
+            int robustRelief,
+            int seaLevel) {
+        if (colderBand) {
+            return true;
+        }
+        if (!temperateBand || !terrainEvidenceAvailable) {
+            return false;
+        }
+        return robustRelief >= RUGGED_RELIEF_BLOCKS
+                || surfaceY >= seaLevel + HIGH_ABOVE_SEA_BLOCKS;
+    }
+
+    /**
+     * High or genuinely rugged temperate terrain must use the dedicated upland pool. The old
+     * compatibility reroll could select another lowland-family biome (notably sunflower plains or
+     * flower forest), which made a real terrain gate visually inert.
+     */
+    static boolean shouldUseTemperateUplandFamily(
+            boolean terrainEvidenceAvailable,
+            int surfaceY,
+            int robustRelief,
+            int seaLevel) {
+        return shouldApplyLandGate(
+                true,
+                false,
+                terrainEvidenceAvailable,
+                surfaceY,
+                robustRelief,
+                seaLevel);
+    }
+
+    /**
+     * Final-return safeguard for the physical terrain authority. Intermediate climate and provider
+     * compatibility passes may legitimately rewrite a candidate, but they must not turn a measured
+     * high/rugged temperate column back into a lowland family.
+     */
+    static boolean shouldEnforceFinalTemperateUpland(
+            boolean forceTemperateUpland,
+            boolean finalBiomeInTemperateMountainTag) {
+        return forceTemperateUpland && !finalBiomeInTemperateMountainTag;
+    }
+
+    static boolean shouldReplaceRiverWithLand(
+            boolean terrainEvidenceAvailable,
+            int surfaceY,
+            int seaLevel,
+            boolean mountainNoiseLike) {
+        return terrainEvidenceAvailable
+                && mountainNoiseLike
+                && surfaceY >= seaLevel + HIGH_ABOVE_SEA_BLOCKS;
+    }
+}

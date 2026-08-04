@@ -228,8 +228,17 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Inject(method = "onClose", at = @At("HEAD"), cancellable = true)
     private void globe$clearLoadingFlag(CallbackInfo ci) {
         if (LatitudeClientState.isLatitudeWorldLoading()) {
-            ci.cancel();
-            return;
+            Minecraft client = Minecraft.getInstance();
+            if (client.level != null && client.player != null) {
+                ci.cancel();
+                return;
+            }
+            // Vanilla is closing the loading screen without a playable client world. This is an abort/error
+            // transition, not the render-warmup handoff, so release our flag and let vanilla show its next
+            // screen instead of trapping the player behind the overlay until the ten-minute fail-safe.
+            long clearedAt = LatitudeClientState.clearLatitudeLoadingState();
+            GLOBE_LOGGER.info("[LAT][LOADUI] loading close released without a playable world — {}ms since beginExpedition",
+                    clearedAt);
         }
         long sinceExpedition = LatitudeClientState.elapsedSinceExpeditionMs();
         if (sinceExpedition < 0L) {

@@ -1,6 +1,18 @@
 {
   "replace": false,
   "values": [
-    "minecraft:dark_forest"
+    "minecraft:dark_forest",
+    {
+      "id": "biomesoplenty:subtropics",
+      "required": false
+    },
+    {
+      "id": "terralith:tropical_jungle",
+      "required": false
+    },
+    {
+      "id": "terralith:amethyst_rainforest",
+      "required": false
+    }
   ]
 }

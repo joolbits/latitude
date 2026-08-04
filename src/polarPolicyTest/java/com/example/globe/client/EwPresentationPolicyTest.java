@@ -326,9 +326,11 @@ public final class EwPresentationPolicyTest {
                         && state.contains("EwPresentationPolicy.SKY_SAMPLE_COUNT")
                         && state.contains("EXPOSURE_RECOMPUTE_TICKS = 5"),
                 "live exposure shim uses the exact 13-sample five-tick cache policy");
-        assertTrue(overlay.contains("Sandstorm on the horizon, consider turning back.")
+        assertTrue(overlay.contains("Storms ahead. Low visibility; consider turning back.")
                         && overlay.contains("Zero visibility ahead. Turn around."),
                 "warning copy is exact");
+        assertTrue(!overlay.contains("Sandstorm on the horizon"),
+                "warning copy remains truthful outside sandstorm climates");
         assertTrue(!overlay.contains("ChatFormatting.BOLD"),
                 "east/west warnings are explicitly non-bold");
         assertTrue(overlay.contains("EW_WARNING_EPISODE.update")

@@ -9,6 +9,10 @@
     "minecraft:windswept_gravelly_hills",
     "minecraft:stony_peaks",
     {
+      "id": "terralith:caldera",
+      "required": false
+    },
+    {
       "id": "byg:howling_peaks",
       "required": false
     },

@@ -2,6 +2,9 @@ package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeWorldgenScope;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.llamalad7.mixinextras.sugar.Local;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -13,6 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
 import net.minecraft.core.Registry;
@@ -24,9 +28,11 @@ import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeGenerationSettings;
 import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.biome.FeatureSorter;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.levelgen.GenerationStep;
 import net.minecraft.world.level.levelgen.placement.PlacedFeature;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -139,39 +145,33 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
                 Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
                 List<Holder<Biome>> policyBiomes = latitude$taggedCustomPolicyBiomes(biomeRegistry);
                 this.globe$customBiomePolicyCount = policyBiomes.size();
-                if (policyBiomes.isEmpty()) {
-                    this.globe$customBiomeRetainIds = Set.of();
-                    latitude$logIndexResult("absent", 0, 0, 0, false, false);
-                    return;
-                }
-
-                List<FeatureSorter.StepFeatureData> currentIndex = this.featuresPerStep.get();
-                int[] currentCounts = latitude$countIndexedFeatures(policyBiomes, currentIndex);
-                this.globe$customBiomeFeatureCount = currentCounts[0];
-                this.globe$customBiomeIndexedCount = currentCounts[1];
-                if (currentCounts[0] == currentCounts[1]) {
-                    this.globe$customBiomeIndexSafe = true;
-                    this.globe$customBiomeRetainIds = latitude$biomeIds(policyBiomes);
-                    latitude$logIndexResult("already_safe", policyBiomes.size(), currentCounts[0], currentCounts[1], false, true);
-                    return;
-                }
-
                 List<Holder<Biome>> expandedBiomes = new ArrayList<>(this.biomeSource.possibleBiomes());
                 latitude$appendMissingPolicyBiomes(expandedBiomes, policyBiomes);
                 List<FeatureSorter.StepFeatureData> expandedIndex = FeatureSorter.buildFeaturesPerStep(
                         expandedBiomes,
-                        biome -> this.generationSettingsGetter.apply(biome).features(),
+                        this::latitude$featuresForScopedIndex,
                         true
                 );
                 int[] expandedCounts = latitude$countIndexedFeatures(policyBiomes, expandedIndex);
                 this.globe$customBiomeFeatureCount = expandedCounts[0];
                 this.globe$customBiomeIndexedCount = expandedCounts[1];
                 this.globe$customBiomeIndexSafe = expandedCounts[0] == expandedCounts[1];
+                // Always install the scoped index: even when no custom biome expansion is needed,
+                // this preserves the pre-1.5 feature ordering after frozen-river vegetation is
+                // removed from Latitude only rather than from the global biome registry.
+                this.featuresPerStep = () -> expandedIndex;
                 if (this.globe$customBiomeIndexSafe) {
-                    this.featuresPerStep = () -> expandedIndex;
                     this.globe$customBiomeRetainIds = latitude$biomeIds(policyBiomes);
+                } else {
+                    this.globe$customBiomeRetainIds = Set.of();
                 }
-                latitude$logIndexResult("expanded_once", policyBiomes.size(), expandedCounts[0], expandedCounts[1], true, this.globe$customBiomeIndexSafe);
+                latitude$logIndexResult(
+                        "scoped_index_rebuilt",
+                        policyBiomes.size(),
+                        expandedCounts[0],
+                        expandedCounts[1],
+                        true,
+                        this.globe$customBiomeIndexSafe);
             } catch (Exception e) {
                 this.globe$customBiomeIndexSafe = false;
                 this.globe$customBiomeRetainIds = Set.of();
@@ -182,6 +182,36 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
                 this.globe$customBiomeFeaturesIndexed = true;
             }
         }
+    }
+
+    @WrapOperation(
+            method = "applyBiomeDecoration(Lnet/minecraft/world/level/WorldGenLevel;Lnet/minecraft/world/level/chunk/ChunkAccess;Lnet/minecraft/world/level/StructureManager;)V",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/core/HolderSet;stream()Ljava/util/stream/Stream;"))
+    private Stream<Holder<PlacedFeature>> globe$omitFrozenRiverVegetationContribution(
+            HolderSet<PlacedFeature> features,
+            Operation<Stream<Holder<PlacedFeature>>> original,
+            @Local(name = "biome") Holder<Biome> biome,
+            @Local(name = "stepIndex") int stepIndex) {
+        if (LatitudeWorldgenScope.isActive()
+                && biome.is(Biomes.FROZEN_RIVER)
+                && stepIndex == GenerationStep.Decoration.VEGETAL_DECORATION.ordinal()) {
+            return Stream.empty();
+        }
+        return original.call(features);
+    }
+
+    @Unique
+    private List<HolderSet<PlacedFeature>> latitude$featuresForScopedIndex(Holder<Biome> biome) {
+        List<HolderSet<PlacedFeature>> features = this.generationSettingsGetter.apply(biome).features();
+        int vegetalStep = GenerationStep.Decoration.VEGETAL_DECORATION.ordinal();
+        if (!biome.is(Biomes.FROZEN_RIVER) || vegetalStep >= features.size()) {
+            return features;
+        }
+        List<HolderSet<PlacedFeature>> filtered = new ArrayList<>(features);
+        filtered.set(vegetalStep, HolderSet.empty());
+        return filtered;
     }
 
     @Redirect(

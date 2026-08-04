@@ -18,6 +18,14 @@
       "required": false
     },
     {
+      "id": "terralith:birch_taiga",
+      "required": false
+    },
+    {
+      "id": "terralith:lavender_forest",
+      "required": false
+    },
+    {
       "id": "byg:aspen_forest",
       "required": false
     },

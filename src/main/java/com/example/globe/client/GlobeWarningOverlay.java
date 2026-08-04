@@ -29,7 +29,7 @@ public final class GlobeWarningOverlay {
     private static final int POLAR_KEYLINE_RGB = 0x080609;
 
     private static final String EW_VISIBILITY_WARN_TEXT =
-            "Sandstorm on the horizon, consider turning back.";
+            "Storms ahead. Low visibility; consider turning back.";
     private static final String EW_VISIBILITY_DANGER_TEXT =
             "Zero visibility ahead. Turn around.";
     private static final int EW_KEYLINE_RGB = 0x080609;

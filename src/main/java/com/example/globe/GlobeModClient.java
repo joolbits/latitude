@@ -55,6 +55,9 @@ public class GlobeModClient implements ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             GlobeWarningOverlay.resetForDisconnect();
             GlobeClientState.resetForDisconnect();
+            // A failed/cancelled integrated-world load may disconnect before the normal client-ready tick.
+            // Never let that stale flag keep the next loading screen under Latitude's close hold.
+            LatitudeClientState.clearLatitudeLoadingState();
         });
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.GlobeStatePayload.ID, (payload, context) -> {

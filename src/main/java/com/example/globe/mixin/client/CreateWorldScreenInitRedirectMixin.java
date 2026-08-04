@@ -1,6 +1,7 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.create.LatitudeCreateWorldScreen;
+import com.example.globe.client.create.RecreatedWorldPresetCarrier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
@@ -34,13 +35,15 @@ public abstract class CreateWorldScreenInitRedirectMixin {
         Runnable onClose = () -> client.gui.setScreen(parent);
 
         WorldCreationUiState initialState = ((CreateWorldScreenMixin) (Object) this).getUiState();
-        if (!LatitudeCreateWorldScreen.canRepresent(initialState, this.recreated)) {
+        String recreatedPresetId = ((RecreatedWorldPresetCarrier) this).globe$getRecreatedWorldPresetId();
+        if (!LatitudeCreateWorldScreen.canRepresent(initialState, this.recreated, recreatedPresetId)) {
             LOGGER.info("[LAT][CWPATH] leaving unsupported create-world preset on vanilla screen: {}",
                     initialState.getWorldType());
             return;
         }
 
-        LatitudeCreateWorldScreen.openLoaded(client, onClose, parent, initialState, this.recreated);
+        LatitudeCreateWorldScreen.openLoaded(
+                client, onClose, parent, initialState, this.recreated, recreatedPresetId);
         ci.cancel();
     }
 

@@ -2,8 +2,12 @@ package com.example.globe;
 
 import net.fabricmc.api.ModInitializer;
 import com.example.globe.world.LatitudeBiomes;
-import com.example.globe.world.BiomeFeatureStripping;
+import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeWorldState;
+import com.example.globe.world.BiomeSelectionProfile;
+import com.example.globe.world.VanillaBiomeRepresentationProfile;
+import com.example.globe.world.SpawnSafetyPolicy;
+import com.example.globe.world.WorldgenGeneratorAuthorityPolicy;
 import com.example.globe.util.BiomeSamplerTools;
 import com.example.globe.util.BiomeSamplerTools.SamplerTemplate;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -13,8 +17,11 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
@@ -33,6 +40,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.BundleContents;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.border.WorldBorder;
 import net.minecraft.world.level.chunk.ChunkGenerator;
@@ -41,6 +49,7 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.level.storage.ServerLevelData;
 import net.fabricmc.loader.api.FabricLoader;
@@ -49,7 +58,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.EnumSet;
+import java.util.Set;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.Attributes;
 import java.util.jar.Manifest;
 import java.lang.reflect.Method;
@@ -72,6 +83,7 @@ public class GlobeMod implements ModInitializer {
     private static final int EW_WARNING_DISTANCE_BLOCKS = 500;
     private static final int EW_SPAWN_PADDING_BLOCKS = 64;
     private static final long SPAWN_SALT = 0x7A3E21B5D4C1F7A9L;
+    private static final Set<String> PROVIDER_PROFILE_WARNINGS = ConcurrentHashMap.newKeySet();
 
     public static final int POLE_START = 12000; // Legacy constant, use activePoleBandStartAbsZ for dynamic logic
 
@@ -101,6 +113,9 @@ public class GlobeMod implements ModInitializer {
     private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_LARGE_KEY = ResourceKey.create(net.minecraft.core.registries.Registries.NOISE_SETTINGS, GLOBE_SETTINGS_LARGE_ID);
     private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_MASSIVE_KEY = ResourceKey.create(net.minecraft.core.registries.Registries.NOISE_SETTINGS, GLOBE_SETTINGS_MASSIVE_ID);
 
+    /** Exact overworld generator for the currently loaded Latitude server. */
+    private static volatile NoiseBasedChunkGenerator activeLatitudeOverworldGenerator;
+
     @Override
     public void onInitialize() {
         LOGGER.info("{} initialized. Use the globe:globe world preset for deterministic terrain.", MOD_ID);
@@ -108,8 +123,6 @@ public class GlobeMod implements ModInitializer {
         logBuildMetadata("server");
 
         GlobeNet.registerPayloads();
-        BiomeFeatureStripping.init();
-
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             registerDevOnlyCommand(dispatcher);
         });
@@ -120,6 +133,7 @@ public class GlobeMod implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(GlobeMod::applyWorldBorder);
         registerDevOnlyHeadlessRunner();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+            activeLatitudeOverworldGenerator = null;
             LatitudeBiomes.clearWorldgenContext();
         });
 
@@ -133,7 +147,7 @@ public class GlobeMod implements ModInitializer {
             LOGGER.info("JOIN: player={}, isGlobeOverworld={}", handler.player.getName().getString(), isGlobe);
             ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe));
 
-            LatitudeWorldState worldState = LatitudeWorldState.get(overworld);
+            LatitudeWorldState worldState = isGlobe ? LatitudeWorldState.get(overworld) : null;
             boolean isBrandNewWorld = overworld.getGameTime() < 100L;
             boolean spawnAlreadyChosen = handler.player.entityTags().contains(SPAWN_CHOSEN_TAG);
 
@@ -154,16 +168,10 @@ public class GlobeMod implements ModInitializer {
             }
 
             if (isGlobe && !spawnAlreadyChosen && !worldState.isSpawnPickerDismissed() && isBrandNewWorld) {
-                // Legacy post-load spawn picker path is no longer used. Apply a spawn choice immediately
-                // (pending value from bespoke flow when present, otherwise fall back to TEMPERATE) and
-                // mark the picker dismissed so the old menu cannot reopen on first load or crash recovery.
-                String zoneToApply = pendingZone != null ? pendingZone : "TEMPERATE";
-
-                if (pendingZone == null) {
-                    LOGGER.info("No pending spawn zone from bespoke flow; defaulting to TEMPERATE and suppressing legacy picker");
-                }
-
-                applySpawnChoice(handler.player, zoneToApply);
+                // Initial creation either set a terrain-validated Latitude spawn or intentionally
+                // delegated to vanilla's safe-spawn routine. Never repeat a synchronous globe scan
+                // on the first player join: that can strand the client on the loading overlay.
+                LOGGER.info("[Latitude] Suppressing legacy post-load spawn relocation; retaining the initial safe spawn");
                 worldState.setSpawnPickerDismissed(true);
             }
         });
@@ -233,21 +241,40 @@ public class GlobeMod implements ModInitializer {
             return;
         }
 
-        LatitudeWorldState worldState = LatitudeWorldState.get(world);
         int pendingRadius = GlobePending.pendingGlobeRadius;
         GlobePending.pendingGlobeRadius = 0;
-        if (worldState.getGlobeRadius() <= 0 && pendingRadius > 0 && world.getGameTime() < 100L) {
-            worldState.setGlobeRadius(pendingRadius);
-            LOGGER.info("[Latitude] Recorded Globe world: border radius {} (from create-world selection)", pendingRadius);
-        }
 
         if (!isGlobeOverworld(world)) {
+            activeLatitudeOverworldGenerator = null;
             LatitudeBiomes.clearWorldgenContext();
             return;
         }
+        LatitudeWorldState worldState = LatitudeWorldState.get(world);
         long seed = server.getWorldGenSettings().options().seed();
+        if (worldState.getGlobeRadius() <= 0 && pendingRadius > 0 && world.getGameTime() < 100L) {
+            worldState.setGlobeRadius(pendingRadius);
+            BiomeSelectionProfile profile = BiomeSelectionProfile.capture(
+                    world.registryAccess().lookupOrThrow(Registries.BIOME).keySet().stream()
+                            .map(Identifier::toString).toList());
+            worldState.setProviderTicketProfile(profile);
+            worldState.setVanillaRepresentationProfile(
+                    VanillaBiomeRepresentationProfile.capture(pendingRadius, seed, profile));
+            worldState.setWorldgenPolicy(
+                    LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE);
+            LOGGER.info("[Latitude] Recorded Globe world: border radius {} (from create-world selection)", pendingRadius);
+        }
+        ChunkGenerator generator = world.getChunkSource().getGenerator();
+        activeLatitudeOverworldGenerator = generator instanceof NoiseBasedChunkGenerator noise
+                ? noise
+                : null;
         int radius = borderRadiusForGlobeOverworld(world);
-        LatitudeBiomes.activateWorldgenContext(radius, seed);
+        warnForProviderProfileDrift(world, worldState);
+        LatitudeBiomes.activateWorldgenContext(radius, seed, worldState.getWorldgenPolicy(),
+                worldState.getProviderTicketProfile().orElse(null),
+                worldState.getVanillaRepresentationProfile().orElse(null),
+                world.getChunkSource().randomState().sampler(),
+                donorBiomeSource(generator),
+                generator.getSeaLevel());
         LOGGER.info("[Latitude] Early init: province authority seeded before spawn-chunk generation (seed={} radius={})", seed, radius);
         setGlobeBorder(world, radius);
     }
@@ -262,13 +289,46 @@ public class GlobeMod implements ModInitializer {
             return;
         }
 
-        LatitudeWorldState.get(overworld);
+        ChunkGenerator generator = overworld.getChunkSource().getGenerator();
+        activeLatitudeOverworldGenerator = generator instanceof NoiseBasedChunkGenerator noise
+                ? noise
+                : null;
+
+        LatitudeWorldState worldState = LatitudeWorldState.get(overworld);
 
         int borderRadiusBlocks = borderRadiusForGlobeOverworld(overworld);
         long seed = overworld.getServer().getWorldGenSettings().options().seed();
-        LatitudeBiomes.activateWorldgenContext(borderRadiusBlocks, seed);
+        warnForProviderProfileDrift(overworld, worldState);
+        LatitudeBiomes.activateWorldgenContext(borderRadiusBlocks, seed, worldState.getWorldgenPolicy(),
+                worldState.getProviderTicketProfile().orElse(null),
+                worldState.getVanillaRepresentationProfile().orElse(null),
+                overworld.getChunkSource().randomState().sampler(),
+                donorBiomeSource(generator),
+                generator.getSeaLevel());
 
         setGlobeBorder(overworld, borderRadiusBlocks);
+    }
+
+    private static BiomeSource donorBiomeSource(ChunkGenerator generator) {
+        BiomeSource source = generator.getBiomeSource();
+        return source instanceof LatitudeBiomeSource latitude ? latitude.original() : source;
+    }
+
+    private static void warnForProviderProfileDrift(ServerLevel world, LatitudeWorldState state) {
+        if (!LatitudeWorldState.isProviderTicketPolicy(state.getWorldgenPolicy())) return;
+        Optional<BiomeSelectionProfile> profile = state.getProviderTicketProfile();
+        if (profile.isEmpty()) {
+            if (PROVIDER_PROFILE_WARNINGS.add("missing-profile:" + world.getServer().getWorldData().getLevelName())) {
+                LOGGER.warn("[Latitude] Provider-ticket world has no valid birth profile; new terrain will use only non-provider fallback. Removing biome mods can still leave saved chunks unreadable.");
+            }
+            return;
+        }
+        java.util.List<String> activeIds = world.registryAccess().lookupOrThrow(Registries.BIOME).keySet().stream()
+                .map(Identifier::toString).toList();
+        java.util.List<String> missing = profile.get().missingIds(activeIds);
+        if (!missing.isEmpty() && PROVIDER_PROFILE_WARNINGS.add(profile.get().encode() + missing)) {
+            LOGGER.warn("[Latitude] Provider-ticket birth profile is missing {} locked biome IDs: {}. No new provider is substituted; removing biome mods can still leave saved chunks unreadable.", missing.size(), missing);
+        }
     }
 
     private static void setGlobeBorder(ServerLevel overworld, int borderRadiusBlocks) {
@@ -364,7 +424,8 @@ public class GlobeMod implements ModInitializer {
     }
 
     private static boolean isGlobeOverworld(ServerLevel world) {
-        if (LatitudeWorldState.get(world).getGlobeRadius() > 0) {
+        LatitudeWorldState existingState = LatitudeWorldState.getIfPresent(world);
+        if (existingState != null && existingState.getGlobeRadius() > 0) {
             return true;
         }
         ChunkGenerator gen = world.getChunkSource().getGenerator();
@@ -382,20 +443,17 @@ public class GlobeMod implements ModInitializer {
                 || noise.stable(GLOBE_SETTINGS_MASSIVE_KEY));
     }
 
-    private static boolean hasInlineSettings(NoiseBasedChunkGenerator noise) {
-        Holder<NoiseGeneratorSettings> settings = noise != null ? noise.generatorSettings() : null;
-        return settings != null && settings.unwrapKey().isEmpty();
-    }
-
     public static boolean shouldApplyLatitudeWorldgen(NoiseBasedChunkGenerator noise) {
-        if (isGlobeNoiseGenerator(noise)) {
-            return true;
-        }
-        return LatitudeBiomes.hasActiveWorldgenAuthority() && hasInlineSettings(noise);
+        return WorldgenGeneratorAuthorityPolicy.shouldApply(
+                isGlobeNoiseGenerator(noise),
+                LatitudeBiomes.hasActiveWorldgenAuthority(),
+                noise,
+                activeLatitudeOverworldGenerator);
     }
 
     private static int borderRadiusForGlobeOverworld(ServerLevel world) {
-        int persisted = LatitudeWorldState.get(world).getGlobeRadius();
+        LatitudeWorldState existingState = LatitudeWorldState.getIfPresent(world);
+        int persisted = existingState != null ? existingState.getGlobeRadius() : 0;
         if (persisted > 0) {
             return persisted;
         }
@@ -412,7 +470,10 @@ public class GlobeMod implements ModInitializer {
         if (noise.stable(GLOBE_SETTINGS_REGULAR_KEY)) return BORDER_RADIUS;
         if (noise.stable(GLOBE_SETTINGS_LARGE_KEY)) return 10000;
         if (noise.stable(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
-        if (hasInlineSettings(noise) && LatitudeBiomes.hasActiveWorldgenAuthority()) {
+        if (WorldgenGeneratorAuthorityPolicy.isExactActiveOverworld(
+                LatitudeBiomes.hasActiveWorldgenAuthority(),
+                noise,
+                activeLatitudeOverworldGenerator)) {
             return LatitudeBiomes.getActiveRadiusBlocks();
         }
 
@@ -433,7 +494,7 @@ public class GlobeMod implements ModInitializer {
         }
 
         try {
-            SpawnChoice spawnChoice = resolveSpawnChoice(world, pendingZone);
+            SpawnChoice spawnChoice = resolveInitialSpawnChoice(world, pendingZone);
             BlockPos spawnPos = spawnChoice.pos();
             if (loadListener != null) {
                 loadListener.start(LevelLoadListener.Stage.PREPARE_GLOBAL_SPAWN, 0);
@@ -453,7 +514,10 @@ public class GlobeMod implements ModInitializer {
             }
             return true;
         } catch (RuntimeException e) {
-            LOGGER.warn("[Latitude] Early initial spawn failed; falling back to vanilla initial spawn", e);
+            // No unchecked Latitude coordinate is returned. Vanilla now performs its own normal
+            // safe-spawn selection, and the first join must not retry the expensive globe search.
+            LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
+            LOGGER.warn("[Latitude] Immediate terrain-validated initial spawn unavailable; delegating to vanilla safe spawn without post-join relocation", e);
             return false;
         }
     }
@@ -496,7 +560,16 @@ public class GlobeMod implements ModInitializer {
             return;
         }
 
-        SpawnChoice spawnChoice = resolveSpawnChoice(world, id);
+        SpawnChoice spawnChoice;
+        try {
+            spawnChoice = resolveSpawnChoice(world, id);
+        } catch (RuntimeException e) {
+            LOGGER.error(
+                    "[Latitude] No terrain-validated spawn was available for zone={}; keeping the player's current safe position",
+                    id,
+                    e);
+            return;
+        }
         LOGGER.info("Applying spawn choice: player={}, zoneId={}", player.getName().getString(), spawnChoice.zoneId());
 
         BlockPos clampedSpawnPos = spawnChoice.pos();
@@ -510,7 +583,25 @@ public class GlobeMod implements ModInitializer {
         LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
     }
 
+    private static SpawnChoice resolveInitialSpawnChoice(ServerLevel world, String id) {
+        return resolveSpawnChoice(
+                world,
+                id,
+                SpawnSafetyPolicy.INITIAL_SPAWN_TERRAIN_VALIDATION_BUDGET,
+                false,
+                true);
+    }
+
     private static SpawnChoice resolveSpawnChoice(ServerLevel world, String id) {
+        return resolveSpawnChoice(world, id, Integer.MAX_VALUE, true, true);
+    }
+
+    private static SpawnChoice resolveSpawnChoice(
+            ServerLevel world,
+            String id,
+            int terrainValidationBudget,
+            boolean prepareTeleportNeighbors,
+            boolean allowTerrainFallback) {
         String zoneId = id;
         long seed = world.getServer().getWorldGenSettings().options().seed();
         if (zoneId != null && zoneId.equals("RANDOM")) {
@@ -547,18 +638,36 @@ public class GlobeMod implements ModInitializer {
             RandomState noiseConfig = RandomState.create(
                     template.settings().value(), template.noiseParameters(), seed);
             Climate.Sampler sampler = noiseConfig.sampler();
-            spawnPos = findLandSpawn(world, template, sampler, radius, targetZ, seed);
+            spawnPos = findLandSpawn(
+                    world,
+                    template,
+                    sampler,
+                    radius,
+                    targetZ,
+                    seed,
+                    terrainValidationBudget,
+                    prepareTeleportNeighbors);
         } catch (Exception e) {
             LOGGER.warn("[Latitude] Biome probe failed, using fallback spawn", e);
             spawnPos = null;
         }
 
+        if (spawnPos == null && allowTerrainFallback) {
+            LOGGER.warn(
+                    "[Latitude] Could not find a validated biome-targeted spawn for zone={} targetZ={}; trying bounded terrain-safe fallback columns.",
+                    zoneId,
+                    targetZ);
+            spawnPos = findSafeFallbackSpawn(world, radius, targetZ, prepareTeleportNeighbors);
+        }
         if (spawnPos == null) {
-            LOGGER.warn("[Latitude] Could not find land spawn for zone={} targetZ={}. Falling back to (0, seaLevel+2).", zoneId, targetZ);
-            spawnPos = new BlockPos(0, world.getSeaLevel() + 2, targetZ);
+            throw new IllegalStateException(
+                    "No terrain-validated Latitude spawn was available for zone="
+                            + zoneId
+                            + " targetZ="
+                            + targetZ);
         }
 
-        return new SpawnChoice(zoneId, clampSpawnAwayFromEwWarning(spawnPos, radius), radius);
+        return new SpawnChoice(zoneId, spawnPos, radius);
     }
 
     public static void logBuildMetadata(String side) {
@@ -592,26 +701,18 @@ public class GlobeMod implements ModInitializer {
         LOGGER.info("[LAT][BUILD] side={} version={} commit={} branch={} dirty={} time={}", side, version, commit, branch, dirty, time);
     }
 
-    private static BlockPos clampSpawnAwayFromEwWarning(BlockPos spawnPos, int radiusBlocks) {
-        if (spawnPos == null || radiusBlocks <= 0) {
-            return spawnPos;
-        }
-
-        int absX = Math.abs(spawnPos.getX());
-        int safeMaxAbsX = Math.max(0, radiusBlocks - EW_WARNING_DISTANCE_BLOCKS - EW_SPAWN_PADDING_BLOCKS);
-        if (absX <= safeMaxAbsX) {
-            return spawnPos;
-        }
-
-        int clampedX = spawnPos.getX() >= 0 ? safeMaxAbsX : -safeMaxAbsX;
-        return new BlockPos(clampedX, spawnPos.getY(), spawnPos.getZ());
-    }
-
     private static BlockPos findLandSpawn(ServerLevel world, SamplerTemplate template,
                                           Climate.Sampler sampler,
-                                          int borderHalf, int targetZ, long seed) {
+                                          int borderHalf, int targetZ, long seed,
+                                          int terrainValidationBudget,
+                                          boolean prepareTeleportNeighbors) {
         final int margin = 320;
-        final int max = Math.max(0, borderHalf - margin);
+        final int maxAbsX = SpawnSafetyPolicy.safeSearchMaxAbsX(
+                borderHalf,
+                margin,
+                EW_WARNING_DISTANCE_BLOCKS,
+                EW_SPAWN_PADDING_BLOCKS);
+        final int maxAbsZ = Math.max(0, borderHalf - margin);
 
         final int samplesPerPass = 16;
         final int zJitter = 96;
@@ -624,22 +725,69 @@ public class GlobeMod implements ModInitializer {
         LatitudeBiomes.setWorldSeed(seed);
 
         RandomSource rng = RandomSource.create(seed ^ 0x9E3779B97F4A7C15L ^ (long) targetZ);
+        int terrainValidationAttempts = 0;
 
         for (int pass = 0; pass < 2; pass++) {
             for (int i = 0; i < samplesPerPass; i++) {
-                int x = rng.nextIntBetweenInclusive(-max, max);
+                int x = rng.nextIntBetweenInclusive(-maxAbsX, maxAbsX);
                 int z = pass == 0
                         ? targetZ
-                        : Mth.clamp(targetZ + rng.nextIntBetweenInclusive(-zJitter, zJitter), -max, max);
+                        : Mth.clamp(
+                                targetZ + rng.nextIntBetweenInclusive(-zJitter, zJitter),
+                                -maxAbsZ,
+                                maxAbsZ);
 
                 if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) {
                     continue;
                 }
 
-                BlockPos candidate = placeSafeY(world, x, z);
+                if (terrainValidationAttempts >= Math.max(0, terrainValidationBudget)) {
+                    return null;
+                }
+                terrainValidationAttempts++;
+                BlockPos candidate = placeSafeY(world, x, z, prepareTeleportNeighbors);
                 if (candidate != null) {
                     return candidate;
                 }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Bounded last-resort search used after both a normal no-candidate result and a biome-probe
+     * exception. It may relax the requested biome family, but never the physical safety checks.
+     */
+    private static BlockPos findSafeFallbackSpawn(
+            ServerLevel world,
+            int borderHalf,
+            int targetZ,
+            boolean prepareTeleportNeighbors) {
+        final int terrainMargin = 320;
+        for (SpawnSafetyPolicy.FallbackCandidate candidate :
+                SpawnSafetyPolicy.safeFallbackCandidates(
+                        borderHalf,
+                        targetZ,
+                        terrainMargin,
+                        EW_WARNING_DISTANCE_BLOCKS,
+                        EW_SPAWN_PADDING_BLOCKS,
+                        SpawnSafetyPolicy.FALLBACK_STEP_BLOCKS,
+                        SpawnSafetyPolicy.FALLBACK_MAX_RINGS)) {
+            try {
+                BlockPos validated = placeSafeY(
+                        world,
+                        candidate.x(),
+                        candidate.z(),
+                        prepareTeleportNeighbors);
+                if (validated != null) {
+                    return validated;
+                }
+            } catch (RuntimeException e) {
+                LOGGER.warn(
+                        "[Latitude] Safe fallback terrain probe failed at x={} z={}; continuing bounded search.",
+                        candidate.x(),
+                        candidate.z(),
+                        e);
             }
         }
         return null;
@@ -669,16 +817,21 @@ public class GlobeMod implements ModInitializer {
     }
 
     /**
-     * Generates exactly ONE chunk to get a safe spawn Y via heightmap.
+     * Generates exactly one candidate chunk to get a safe spawn Y via heightmap. Only after the
+     * column passes every safety check does it prepare the eight neighboring teleport chunks.
      * Returns a valid spawn BlockPos, or null if the terrain fails validation.
      */
-    private static BlockPos placeSafeY(ServerLevel world, int x, int z) {
-        int loadedChunks = loadSpawnTargetChunkRing(world, x, z);
+    private static BlockPos placeSafeY(
+            ServerLevel world,
+            int x,
+            int z,
+            boolean prepareTeleportNeighbors) {
+        loadSpawnTargetChunk(world, x, z);
 
-        BlockPos ground = world.getHeightmapPos(
+        BlockPos spawn = world.getHeightmapPos(
                 Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
                 new BlockPos(x, world.getMinY(), z));
-        BlockPos spawn = ground.above();
+        BlockPos ground = spawn.below();
 
         // Same validation as the old tryLandAt
         if (!world.getFluidState(spawn).isEmpty()) return null;
@@ -686,18 +839,38 @@ public class GlobeMod implements ModInitializer {
         if (!world.getBlockState(spawn).isAir()) return null;
         if (!world.getBlockState(spawn.above()).isAir()) return null;
         if (!world.getFluidState(ground).isEmpty()) return null;
+        BlockState groundState = world.getBlockState(ground);
+        Identifier groundBlockId = BuiltInRegistries.BLOCK.getKey(groundState.getBlock());
+        if (groundBlockId == null
+                || SpawnSafetyPolicy.isDangerousSurfaceId(groundBlockId.toString())) {
+            return null;
+        }
+        if (!groundState.isFaceSturdy(world, ground, Direction.UP)) return null;
 
+        int loadedNeighborChunks = prepareTeleportNeighbors
+                ? loadSpawnTargetNeighborRing(world, x, z)
+                : 0;
         LOGGER.info("[Latitude] Prepared spawn target surface: x={} y={} z={} loadedTeleportChunks={}",
-                x, spawn.getY(), z, loadedChunks);
+                x, spawn.getY(), z, loadedNeighborChunks + 1);
         return spawn;
     }
 
-    private static int loadSpawnTargetChunkRing(ServerLevel world, int x, int z) {
+    private static void loadSpawnTargetChunk(ServerLevel world, int x, int z) {
+        int chunkX = Math.floorDiv(x, 16);
+        int chunkZ = Math.floorDiv(z, 16);
+        world.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, true);
+    }
+
+    private static int loadSpawnTargetNeighborRing(ServerLevel world, int x, int z) {
         int chunkX = Math.floorDiv(x, 16);
         int chunkZ = Math.floorDiv(z, 16);
         int loadedChunks = 0;
-        for (int dz = -1; dz <= 1; dz++) {
-            for (int dx = -1; dx <= 1; dx++) {
+        int radius = SpawnSafetyPolicy.SPAWN_PREPARATION_NEIGHBOR_RADIUS_CHUNKS;
+        for (int dz = -radius; dz <= radius; dz++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                if (dx == 0 && dz == 0) {
+                    continue;
+                }
                 world.getChunkSource().getChunk(chunkX + dx, chunkZ + dz, ChunkStatus.FULL, true);
                 loadedChunks++;
             }
