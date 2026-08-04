@@ -1,8 +1,10 @@
 package com.example.globe.client.create;
 
+import com.example.globe.GlobeMod;
 import com.example.globe.client.GlobeWorldSize;
 import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.util.LatitudeBands;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.ChatFormatting;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
@@ -69,6 +71,17 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final double[] PREVIEW_LABEL_DEGREES = {0.0, 23.5, 35.0, 50.0, 66.5, 90.0};
 
     private static final GlobeWorldSize DEFAULT_SIZE = GlobeWorldSize.REGULAR;
+    private static final long ATLAS_SIZE_TRANSITION_MS = 180L;
+    /** A legible Regular-world reference, while Large and Ginormous still grow to the full preview bounds. */
+    private static final float ATLAS_REGULAR_REFERENCE_FRACTION = 0.65f;
+    /** Vanilla's nine-pixel UI font plus four points, with intentional tracking between letters. */
+    private static final float CREATE_TITLE_SCALE = 13.0f / 9.0f;
+    private static final String CREATE_TITLE_TEXT = "L A T I T U D E";
+    private static final float CREATE_VERSION_LABEL_SCALE = 0.67f;
+    private static final String CREATE_VERSION_LABEL = FabricLoader.getInstance()
+            .getModContainer(GlobeMod.MOD_ID)
+            .map(container -> "v" + container.getMetadata().getVersion().getFriendlyString())
+            .orElse("");
 
     // ── Band native colors (ARGB, indexed by Band.ordinal()) ──
     private static final int[] BAND_COLORS = {
@@ -136,6 +149,9 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     // ── Local UI state (fresh each open) ──
     private GlobeWorldSize selectedSize = DEFAULT_SIZE;
+    /** The outgoing display diameter while the Atlas eases to a newly selected size; unset before a user change. */
+    private int atlasTransitionFromDiameter = -1;
+    private long atlasTransitionStartedMs = -1L;
     private LatitudeBands.Band selectedZone = LatitudeBands.Band.TEMPERATE;
     // UI-only new-world choice. Existing saves never read or persist this flag; the launcher forwards the
     // already-supported RANDOM token, and the server resolves it to a concrete zone from the world seed.
@@ -703,6 +719,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int idx = selectedSize.ordinal() + delta;
         if (idx < 0) idx = sizes.length - 1;
         if (idx >= sizes.length) idx = 0;
+        long now = Util.getMillis();
+        atlasTransitionFromDiameter = animatedAtlasDiameter(now);
+        atlasTransitionStartedMs = now;
         selectedSize = sizes[idx];
         if (this.worldNameField != null) {
             worldNameInput = this.worldNameField.getValue();
@@ -770,7 +789,16 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private int getSmallWorldWarningHeight(int width) {
-        return wrapLineCount(SMALL_WORLD_WARNING.getString(), Math.max(40, width)) * uiFontHeight();
+        return wrapUiLines(SMALL_WORLD_WARNING.getString(), Math.max(40, Math.round(width / smallWorldWarningScale())))
+                .size() * smallWorldWarningLineHeight();
+    }
+
+    private float smallWorldWarningScale() {
+        return Math.max(0.5f, (uiFontHeight() - 2.0f) / uiFontHeight());
+    }
+
+    private int smallWorldWarningLineHeight() {
+        return Math.max(1, Math.round(uiFontHeight() * smallWorldWarningScale()));
     }
 
     private int computeZoneListTop() {
@@ -862,7 +890,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         int fieldH = worldNameField != null ? worldNameField.getHeight() : Math.max(16, scaledUi(16));
         int btnH = sizePrevBtn != null ? sizePrevBtn.getHeight() : Math.max(18, scaledUi(20));
         int stepperBtnW = sizePrevBtn != null ? sizePrevBtn.getWidth() : 20;
-        int contentTop = panelTop + scaledUi(8);
+        int contentTop = panelTop - scaledUi(4);
         int labelFieldGap = scaledUi(22);
         int fieldGap1 = scaledUi(38);
         int fieldGap2 = scaledUi(40);
@@ -870,11 +898,10 @@ public class LatitudeCreateWorldScreen extends Screen {
         int previewHeight = Math.max(scaledUi(150), Math.min(leftW - scaledUi(20) - SCROLLBAR_GUTTER, Math.max(scaledUi(170), panelBottom - panelTop - scaledUi(80))));
         int baseWorldY = contentTop + labelFieldGap;
         int baseSeedY = baseWorldY + fieldGap1;
-        int warningHeight = shouldShowSmallWorldWarning() ? getSmallWorldWarningHeight(inputW) : 0;
-        int warningGap = warningHeight > 0 ? scaledUi(4) : 0;
-        int baseSizeY = baseSeedY + fieldGap2 + warningHeight + warningGap;
+        int baseSizeY = baseSeedY + fieldGap2;
         int baseInputBottom = Math.max(baseSizeY + btnH, computeSizeLabelBottom(baseSizeY - 1, inputW - stepperBtnW * 2 - scaledUi(8))) + scaledUi(12);
-        int basePreviewTop = baseInputBottom + discGap + uiFontHeight();
+        // The compact-world note occupies the preview's existing breathing room. It never changes the Atlas anchor.
+        int basePreviewTop = baseInputBottom + discGap;
         int basePreviewBottom = basePreviewTop + previewHeight;
         leftViewportTop = panelTop + 4;
         leftViewportBottom = panelBottom - 4;
@@ -1445,7 +1472,13 @@ public class LatitudeCreateWorldScreen extends Screen {
         int headerBottom = tabbedMode ? tabStripY - 2 : panelTop;
         UiRect headerRect = new UiRect(titlePaneX, headerY, Math.max(1, titlePaneW), Math.max(1, headerBottom - headerY - 6));
         int headerLineY = headerRect.y;
-        if (drawCenteredBoundedText(context, "LATITUDE", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), GOLD, true, false)) {
+        int titleWidth = Math.round(uiTextWidth(CREATE_TITLE_TEXT) * CREATE_TITLE_SCALE);
+        int titleHeight = Math.round(uiFontHeight() * CREATE_TITLE_SCALE);
+        if (titleWidth <= headerRect.w && titleHeight <= headerRect.h) {
+            drawScaledText(context, CREATE_TITLE_TEXT, headerRect.x + (headerRect.w - titleWidth) / 2, headerLineY,
+                    CREATE_TITLE_SCALE, GOLD, true);
+            headerLineY += titleHeight + scaledUi(5);
+        } else if (drawCenteredBoundedText(context, "LATITUDE", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), GOLD, true, false)) {
             headerLineY += uiFontHeight() + scaledUi(6);
         }
         if (drawCenteredBoundedText(context, "New World", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), WARM_WHITE, true, false)) {
@@ -1472,20 +1505,15 @@ public class LatitudeCreateWorldScreen extends Screen {
         int labelColor = GOLD;
         int labelOff = scaledUi(10);
         int leftTextWidth = Math.max(24, leftW - 8 - SCROLLBAR_GUTTER);
-        if (shouldShowSmallWorldWarning()) {
-            int warningHeight = getSmallWorldWarningHeight(leftTextWidth);
-            int warningY = sizeFieldY - labelOff - warningHeight - scaledUi(2);
-            drawWrappedStyledTextBlock(context, SMALL_WORLD_WARNING, new UiRect(inputX, warningY, leftTextWidth, warningHeight), 0xFFF0A030, false, 2, true, true);
-        }
         drawBoundedText(context, "World Name", new UiRect(inputX, worldFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
         drawBoundedText(context, "Seed", new UiRect(inputX, seedFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
         drawBoundedText(context, "World Size", new UiRect(inputX, sizeFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
         renderSizeLabel(context, inputX + stepperBtnW + scaledUi(4), sizeFieldY - 1, leftTextWidth - stepperBtnW * 2 - scaledUi(8));
-        int separatorY = inputBottomY - 2;
-        context.fill(leftX + 4, separatorY, leftX + leftW - 4 - SCROLLBAR_GUTTER, separatorY + 1, PANEL_BORDER);
+        if (shouldShowSmallWorldWarning()) {
+            int warningHeight = getSmallWorldWarningHeight(leftTextWidth);
+            drawSmallWorldWarning(context, new UiRect(inputX, inputBottomY + scaledUi(3), leftTextWidth, warningHeight));
+        }
         boolean latWorld = isLatitudeWorld();
-        int planisphereLabelY = leftPreviewTopY - uiFontHeight() - scaledUi(6);
-        drawCenteredBoundedText(context, "ATLAS", new UiRect(leftX + 4, planisphereLabelY, leftTextWidth, uiFontHeight()), latWorld ? GOLD : DISABLED_COLOR, false, true);
         if (leftPreviewBottomY - leftPreviewTopY >= 30) {
             if (latWorld) {
                 renderPlanispherePreview(context, leftX + 4, leftPreviewTopY, leftX + leftW - 4 - SCROLLBAR_GUTTER, leftPreviewBottomY);
@@ -1510,7 +1538,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (rightClipRight > rightClipLeft) {
         context.enableScissor(rightClipLeft, spawnClipTop(), rightClipRight, rightViewportBottom);
         if (!threeCol) {
-        drawWrappedTextBlock(context, "Choose the climate where your journey begins", new UiRect(rightX + 4, rightSubtitleY, rightTextWidth, Math.max(uiFontHeight(), rightDividerY - rightSubtitleY - scaledUi(2))), latWorld ? MUTED : DISABLED_COLOR, false, 2, true, true);
+        drawWrappedTextBlock(context, "Choose the climate where your journey begins", new UiRect(rightX + 4, rightSubtitleY, rightTextWidth, Math.max(uiFontHeight(), rightDividerY - rightSubtitleY - scaledUi(2))), latWorld ? GOLD : DISABLED_COLOR, false, 2, true, true);
+        context.fill(rightX + 4, rightDividerY, rightX + rightW - 4 - SCROLLBAR_GUTTER, rightDividerY + 1, PANEL_BORDER);
         }
         if (latWorld) {
         int barInset = 4;
@@ -1602,6 +1631,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             drawHorizontalScrollbar(context);
         }
 
+        renderCreateVersionLabel(context);
         super.extractRenderState(context, mouseX, mouseY, delta);
     }
 
@@ -1625,53 +1655,79 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void renderPlanispherePreview(GuiGraphicsExtractor context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
         long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
-        String caption = formatDiameter(selectedSize.borderRadiusBlocks * 2) + " blocks";
-        float labelScale = previewLabelScale(selectedSize);
-        float captionScale = previewCaptionScale(selectedSize);
-        int labelHeight = scaledFontHeight(labelScale);
-        int captionHeight = scaledFontHeight(captionScale);
-        int maxLabelWidth = 0;
-        for (double deg : PREVIEW_LABEL_DEGREES) {
-            maxLabelWidth = Math.max(maxLabelWidth, scaledTextWidth(formatDegree(deg), labelScale));
+        // Regular is the visual reference size. Smaller worlds sit within its quiet underlay; larger worlds
+        // grow outward from it and retain a darkened Regular map as an honest scale comparison. Size changes
+        // interpolate their displayed diameter briefly so this relationship is visible instead of abrupt.
+        int inset = scaledUi(6);
+        int captionGap = scaledUi(9);
+        int captionHeight = uiFontHeight() * 2 + captionGap;
+        int availableWidth = areaRight - areaLeft - inset * 2;
+        int availableHeight = areaBottom - areaTop - inset * 2 - captionHeight;
+        int ginormousSide = Math.min(availableWidth, availableHeight);
+        if (ginormousSide < 8) return;
+
+        int selectedDiameter = selectedSize.borderRadiusBlocks * 2;
+        int displayedDiameter = animatedAtlasDiameter(Util.getMillis());
+        int regularDiameter = GlobeWorldSize.REGULAR.borderRadiusBlocks * 2;
+        int ginormousDiameter = GlobeWorldSize.MASSIVE.borderRadiusBlocks * 2;
+        int regularSide = Math.round(ginormousSide * ATLAS_REGULAR_REFERENCE_FRACTION);
+        boolean smallerThanRegular = displayedDiameter < regularDiameter;
+        boolean largerThanRegular = displayedDiameter > regularDiameter;
+        int atlasSide = regularSide;
+        if (largerThanRegular) {
+            float beyondRegular = (displayedDiameter - regularDiameter) / (float) (ginormousDiameter - regularDiameter);
+            atlasSide = Math.round(regularSide + (ginormousSide - regularSide) * beyondRegular);
         }
+        int atlasLeft = areaLeft + (areaRight - areaLeft - atlasSide) / 2;
+        int atlasTop = areaTop + inset + (availableHeight - atlasSide) / 2;
+        LatitudeBands.Band previewZone = randomZone ? null : selectedZone;
 
-        int labelPad = isTinyPreview(selectedSize) ? scaledUi(7) : scaledUi(6);
-        int captionGap = Math.max(4, captionHeight / 3);
-        int maxRadiusByWidth = Math.max(18, (areaRight - areaLeft - maxLabelWidth - labelPad) / 2);
-        int maxRadiusByHeight = Math.max(18, (areaBottom - areaTop - captionHeight - captionGap) / 2);
-        int radius = Math.round(Math.min(maxRadiusByWidth, maxRadiusByHeight) * previewDiscFill(selectedSize));
-        radius = Math.max(18, radius);
-
-        PreviewLayout layout = null;
-        while (radius >= 18) {
-            layout = computePreviewLayout(areaLeft, areaTop, areaRight, areaBottom, radius, labelScale, captionScale, caption);
-            if (layout != null) {
-                break;
+        if (smallerThanRegular) {
+            LatitudePlanisphereRenderer.renderRegularWorldUnderlay(context, atlasLeft, atlasTop, regularSide);
+            int selectedSide = Math.round(regularSide * displayedDiameter / (float) regularDiameter);
+            int selectedLeft = atlasLeft + (regularSide - selectedSide) / 2;
+            int selectedTop = atlasTop + (regularSide - selectedSide) / 2;
+            LatitudePlanisphereRenderer.renderCompact(context, selectedLeft, selectedTop, selectedSide, previewZone);
+        } else {
+            LatitudePlanisphereRenderer.renderCompact(context, atlasLeft, atlasTop, atlasSide, previewZone);
+            if (largerThanRegular) {
+                int referenceSide = Math.round(atlasSide * regularDiameter / (float) displayedDiameter);
+                int referenceLeft = atlasLeft + (atlasSide - referenceSide) / 2;
+                int referenceTop = atlasTop + (atlasSide - referenceSide) / 2;
+                LatitudePlanisphereRenderer.renderDarkenedRegularReference(context, referenceLeft, referenceTop, referenceSide);
             }
-            radius -= 2;
-        }
-        if (layout == null) {
-            return;
         }
 
-        LatitudePlanisphereRenderer.renderCompact(context,
-                layout.globeLeft,
-                layout.globeTop,
-                layout.globeDiameter,
-                randomZone ? null : selectedZone);
-
-        for (int i = 0; i < PREVIEW_LABEL_DEGREES.length; i++) {
-            double deg = PREVIEW_LABEL_DEGREES[i];
-            int color = !randomZone && isOnSelectedEdge(deg, selectedZone) ? GOLD : MUTED;
-            drawScaledText(context, formatDegree(deg), layout.labelX, layout.labelYs[i], layout.labelScale, color, false);
+        int captionY = atlasTop + atlasSide + captionGap;
+        String selectedCaption = SIZE_SHORT_NAMES[selectedSize.ordinal()] + " · " + formatDiameter(selectedDiameter) + " blocks";
+        drawCenteredBoundedText(context, selectedCaption,
+                new UiRect(areaLeft + inset, captionY, areaRight - areaLeft - inset * 2, uiFontHeight()), MUTED, false, true);
+        if (selectedDiameter != regularDiameter) {
+            drawCenteredBoundedText(context, "Regular reference · 20,000 blocks",
+                    new UiRect(areaLeft + inset, captionY + uiFontHeight(), areaRight - areaLeft - inset * 2, uiFontHeight()),
+                    smallerThanRegular ? 0x668C8078 : 0xAA8C8078, false, true);
         }
-        drawScaledText(context, caption, layout.captionX, layout.captionY, layout.captionScale, MUTED, false);
         if (DEBUG_UI_SWITCH_LAG && Util.getMillis() <= debugSwitchSampleDeadlineMs) {
             long elapsed = Util.getMillis() - dbgStart;
             if (elapsed >= 1L) {
                 LOGGER.info("[lat-ui] switchLag seq={} worldType={} section=planispherePreview ms={}", debugSwitchSeq, currentWorldTypeName(), elapsed);
             }
         }
+    }
+
+    private int animatedAtlasDiameter(long nowMs) {
+        int targetDiameter = selectedSize.borderRadiusBlocks * 2;
+        if (atlasTransitionStartedMs < 0L || atlasTransitionFromDiameter < 0) {
+            return targetDiameter;
+        }
+        float progress = Math.min(1.0f, Math.max(0.0f, (nowMs - atlasTransitionStartedMs) / (float) ATLAS_SIZE_TRANSITION_MS));
+        if (progress >= 1.0f) {
+            atlasTransitionStartedMs = -1L;
+            atlasTransitionFromDiameter = -1;
+            return targetDiameter;
+        }
+        float eased = 1.0f - (float) Math.pow(1.0f - progress, 3.0f);
+        return Math.round(atlasTransitionFromDiameter + (targetDiameter - atlasTransitionFromDiameter) * eased);
     }
 
     private void renderSpawnZoneDisabled(GuiGraphicsExtractor context) {
@@ -2042,6 +2098,37 @@ public class LatitudeCreateWorldScreen extends Screen {
         matrices.scale(scale, scale);
         context.text(this.font, text, 0, 0, color, shadow);
         matrices.popMatrix();
+    }
+
+    private void drawSmallWorldWarning(GuiGraphicsExtractor context, UiRect rect) {
+        float scale = smallWorldWarningScale();
+        int lineHeight = smallWorldWarningLineHeight();
+        List<net.minecraft.network.chat.FormattedText> lines = wrapUiLines(
+                SMALL_WORLD_WARNING.getString(), Math.max(40, Math.round(rect.w / scale)));
+        int maxLines = Math.min(lines.size(), Math.max(1, rect.h / lineHeight));
+        for (int i = 0; i < maxLines; i++) {
+            String line = lines.get(i).getString();
+            int scaledWidth = Math.round(uiTextWidth(line) * scale);
+            int x = rect.x + Math.max(0, (rect.w - scaledWidth) / 2);
+            int y = rect.y + i * lineHeight;
+            var matrices = context.pose();
+            matrices.pushMatrix();
+            matrices.translate((float) x, (float) y);
+            matrices.scale(scale, scale);
+            context.text(this.font, Component.literal(line).setStyle(SMALL_WORLD_WARNING.getStyle()), 0, 0, 0xFFF0A030, false);
+            matrices.popMatrix();
+        }
+    }
+
+    private void renderCreateVersionLabel(GuiGraphicsExtractor context) {
+        if (CREATE_VERSION_LABEL.isEmpty()) {
+            return;
+        }
+        int width = Math.round(uiTextWidth(CREATE_VERSION_LABEL) * CREATE_VERSION_LABEL_SCALE);
+        int height = Math.round(uiFontHeight() * CREATE_VERSION_LABEL_SCALE);
+        int x = context.guiWidth() - width - scaledUi(5);
+        int y = context.guiHeight() - height - scaledUi(5);
+        drawScaledText(context, CREATE_VERSION_LABEL, x, y, CREATE_VERSION_LABEL_SCALE, MUTED, false);
     }
 
     private static boolean isOnSelectedEdge(double deg, LatitudeBands.Band band) {

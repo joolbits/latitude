@@ -6,7 +6,7 @@ import java.util.Arrays;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 /**
- * Renders a live 2D latitude disc for the bespoke create-world screen.
+ * Renders a live square latitude map for the bespoke create-world screen.
  * Responds to zone and size selection.
  */
 public final class LatitudePlanisphereRenderer {
@@ -33,6 +33,8 @@ public final class LatitudePlanisphereRenderer {
     private static final int MUTED = 0xFF8C8078;
     private static final int GRID_COLOR = 0x60FFFFFF; // semi-transparent white for latitude lines
     private static final int COMPACT_GRID_COLOR = 0x36D9E2E8;
+    /** Exactly ten percent opacity: the Regular-world underlay must never read as the selection. */
+    static final int REGULAR_WORLD_UNDERLAY_ALPHA = 0x1A;
     private static final float DISC_SCALE_BOOST = 1.15f;
     private static final float LABEL_BASE_SCALE = 0.90f;
     private static final float LABEL_MAX_SCALE = 1.10f;
@@ -271,58 +273,98 @@ public final class LatitudePlanisphereRenderer {
      * @param selectedBand the currently selected latitude band, or {@code null} for Random
      */
     public static void renderCompact(GuiGraphicsExtractor context, int x, int y, int size, LatitudeBands.Band selectedBand) {
-        if (size < 20) return;
+        renderSquareMap(context, x, y, size, selectedBand, 0xFF, true);
+    }
 
-        int radius = size / 2;
-        int cx = x + radius;
-        int cy = y + radius;
+    /**
+     * Draws a Regular-world reference at exactly ten percent opacity for smaller world selections.
+     * It deliberately receives no selected band, so this layer can never imply a zone choice.
+     */
+    public static void renderRegularWorldUnderlay(GuiGraphicsExtractor context, int x, int y, int size) {
+        renderSquareMap(context, x, y, size, null, REGULAR_WORLD_UNDERLAY_ALPHA, false);
+    }
 
-        // ── Ocean base ──
-        fillCircle(context, cx, cy, radius, OCEAN_COLOR);
+    /**
+     * Draws a deliberately darkened Regular-world copy over a larger selected Atlas.
+     * This marks the familiar 20,000-block footprint without preserving the former full-Ginormous ghost.
+     */
+    public static void renderDarkenedRegularReference(GuiGraphicsExtractor context, int x, int y, int size) {
+        if (size < 8) return;
+        context.fill(x, y, x + size, y + size, 0xA0000000);
+        renderSquareMap(context, x, y, size, null, 0x78, false);
+    }
 
-        // ── Band fills ──
+    private static void renderSquareMap(GuiGraphicsExtractor context, int x, int y, int size,
+                                        LatitudeBands.Band selectedBand, int alpha, boolean showSelection) {
+        if (size < 8) return;
+
+        context.fill(x, y, x + size, y + size, multiplyAlpha(OCEAN_COLOR, alpha));
         LatitudeBands.Band[] bands = LatitudeBands.Band.values();
         for (int i = 0; i < bands.length; i++) {
             LatitudeBands.Band band = bands[i];
-            boolean selected = (band == selectedBand);
-            int baseColor = BAND_COLORS[i];
-
-            int fillColor;
+            boolean selected = showSelection && band == selectedBand;
+            int color = selected ? lifted(BAND_COLORS[i]) : BAND_COLORS[i];
+            drawSquareBand(context, x, y, size, band, multiplyAlpha(color, alpha));
             if (selected) {
-                int r = Math.min(255, (int) (((baseColor >> 16) & 0xFF) * 1.25f));
-                int g = Math.min(255, (int) (((baseColor >> 8) & 0xFF) * 1.25f));
-                int b = Math.min(255, (int) ((baseColor & 0xFF) * 1.25f));
-                fillColor = 0xFF000000 | (r << 16) | (g << 8) | b;
-            } else {
-                fillColor = (baseColor & 0x00FFFFFF) | (0x8C << 24);
+                drawSquareBand(context, x, y, size, band, multiplyAlpha(0xFFFFCC66, 0x26));
             }
-
-            int yLow  = (int) (radius * band.lowDeg()  / 90.0);
-            int yHigh = (int) (radius * band.highDeg() / 90.0);
-
-            fillBandStrip(context, cx, cy, radius, yLow,  yHigh,  fillColor);
-            fillBandStrip(context, cx, cy, radius, -yHigh, -yLow, fillColor);
         }
 
-        // ── Quiet geographic framework ──
+        int guideColor = multiplyAlpha(COMPACT_GRID_COLOR, alpha);
         for (double deg : new double[]{0.0, 23.5, 35.0, 50.0, 66.5}) {
-            int yOff = (int) Math.round(radius * deg / 90.0);
-            drawLatitudeLine(context, cx, cy, radius, yOff, COMPACT_GRID_COLOR);
+            int northY = latitudeY(y, size, deg);
+            context.fill(x, northY, x + size, northY + 1, guideColor);
             if (deg > 0.0) {
-                drawLatitudeLine(context, cx, cy, radius, -yOff, COMPACT_GRID_COLOR);
+                int southY = latitudeY(y, size, -deg);
+                context.fill(x, southY, x + size, southY + 1, guideColor);
             }
         }
-        // ── Gold emphasis on selected band edges ──
-        // Random deliberately leaves all five bands equally weighted rather than falsely highlighting the
-        // previously selected concrete band.
-        if (selectedBand != null) {
-            int selLow  = (int) (radius * selectedBand.lowDeg()  / 90.0);
-            int selHigh = (int) (radius * selectedBand.highDeg() / 90.0);
-            drawLatitudeLine(context, cx, cy, radius,  selLow,  GOLD);
-            drawLatitudeLine(context, cx, cy, radius,  selHigh, GOLD);
-            drawLatitudeLine(context, cx, cy, radius, -selLow,  GOLD);
-            drawLatitudeLine(context, cx, cy, radius, -selHigh, GOLD);
+        if (showSelection && selectedBand != null) {
+            int northEdge = latitudeY(y, size, selectedBand.highDeg());
+            int northInner = latitudeY(y, size, selectedBand.lowDeg());
+            int southInner = latitudeY(y, size, -selectedBand.lowDeg());
+            int southEdge = latitudeY(y, size, -selectedBand.highDeg());
+            drawHorizontalEdge(context, x, size, northEdge, GOLD);
+            drawHorizontalEdge(context, x, size, northInner, GOLD);
+            drawHorizontalEdge(context, x, size, southInner, GOLD);
+            drawHorizontalEdge(context, x, size, southEdge, GOLD);
         }
+        int border = multiplyAlpha(0xFFFFFFFF, alpha);
+        context.fill(x, y, x + size, y + 1, border);
+        context.fill(x, y + size - 1, x + size, y + size, border);
+        context.fill(x, y, x + 1, y + size, border);
+        context.fill(x + size - 1, y, x + size, y + size, border);
+    }
+
+    private static void drawSquareBand(GuiGraphicsExtractor context, int x, int y, int size,
+                                       LatitudeBands.Band band, int color) {
+        int northTop = latitudeY(y, size, band.highDeg());
+        int northBottom = latitudeY(y, size, band.lowDeg());
+        int southTop = latitudeY(y, size, -band.lowDeg());
+        int southBottom = latitudeY(y, size, -band.highDeg());
+        context.fill(x, northTop, x + size, northBottom, color);
+        context.fill(x, southTop, x + size, southBottom, color);
+    }
+
+    private static int latitudeY(int top, int size, double latitude) {
+        return top + (int) Math.round((90.0 - latitude) * size / 180.0);
+    }
+
+    private static void drawHorizontalEdge(GuiGraphicsExtractor context, int x, int size, int y, int color) {
+        context.fill(x, y, x + size, y + 1, color);
+    }
+
+    private static int multiplyAlpha(int color, int opacity) {
+        int sourceAlpha = (color >>> 24) & 0xFF;
+        int scaledAlpha = Math.round(sourceAlpha * (opacity & 0xFF) / 255.0f);
+        return (color & 0x00FFFFFF) | (scaledAlpha << 24);
+    }
+
+    private static int lifted(int color) {
+        int r = Math.min(255, (int) (((color >> 16) & 0xFF) * 1.25f));
+        int g = Math.min(255, (int) (((color >> 8) & 0xFF) * 1.25f));
+        int b = Math.min(255, (int) ((color & 0xFF) * 1.25f));
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 
 }
