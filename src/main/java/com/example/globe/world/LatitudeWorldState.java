@@ -15,7 +15,8 @@ public final class LatitudeWorldState extends SavedData {
         MODERN_1_3,
         PROVIDER_TICKET_V1,
         PROVIDER_TICKET_V2_COVERAGE,
-        PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
+        PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE,
+        PROVIDER_TICKET_V4_CAVE_COVERAGE
     }
 
     private static final Codec<WorldgenPolicyVersion> WORLDGEN_POLICY_CODEC = Codec.STRING.xmap(
@@ -36,12 +37,14 @@ public final class LatitudeWorldState extends SavedData {
                     Codec.STRING.optionalFieldOf("provider_ticket_profile")
                             .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.providerTicketProfile)),
                     Codec.STRING.optionalFieldOf("vanilla_representation_profile")
-                            .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.vanillaRepresentationProfile))
+                            .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.vanillaRepresentationProfile)),
+                    Codec.STRING.optionalFieldOf("cave_representation_profile")
+                            .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.caveRepresentationProfile))
             ).apply(instance, (spawnPickerDismissed, worldgenPolicy, globeRadius, providerTicketProfile,
-                                vanillaRepresentationProfile) ->
+                                vanillaRepresentationProfile, caveRepresentationProfile) ->
                     new LatitudeWorldState(spawnPickerDismissed, normalizeWorldgenPolicy(worldgenPolicy),
                             globeRadius, providerTicketProfile.orElse(null),
-                            vanillaRepresentationProfile.orElse(null)))),
+                            vanillaRepresentationProfile.orElse(null), caveRepresentationProfile.orElse(null)))),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
     );
 
@@ -50,19 +53,21 @@ public final class LatitudeWorldState extends SavedData {
     private int globeRadius;
     private String providerTicketProfile;
     private String vanillaRepresentationProfile;
+    private String caveRepresentationProfile;
 
     public LatitudeWorldState() {
-        this(false, Optional.empty(), 0, null, null);
+        this(false, Optional.empty(), 0, null, null, null);
     }
 
     private LatitudeWorldState(boolean spawnPickerDismissed, Optional<WorldgenPolicyVersion> worldgenPolicy,
                                int globeRadius, String providerTicketProfile,
-                               String vanillaRepresentationProfile) {
+                               String vanillaRepresentationProfile, String caveRepresentationProfile) {
         this.spawnPickerDismissed = spawnPickerDismissed;
         this.worldgenPolicy = normalizeWorldgenPolicy(worldgenPolicy).orElse(null);
         this.globeRadius = Math.max(0, globeRadius);
         this.providerTicketProfile = providerTicketProfile;
         this.vanillaRepresentationProfile = vanillaRepresentationProfile;
+        this.caveRepresentationProfile = caveRepresentationProfile;
     }
 
     private static Optional<WorldgenPolicyVersion> normalizeWorldgenPolicy(Optional<WorldgenPolicyVersion> worldgenPolicy) {
@@ -131,7 +136,8 @@ public final class LatitudeWorldState extends SavedData {
     public static boolean isProviderTicketPolicy(WorldgenPolicyVersion policy) {
         return policy == WorldgenPolicyVersion.PROVIDER_TICKET_V1
                 || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE
-                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE;
+                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
+                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE;
     }
 
     /** Captured once, only by the trusted fresh-world marker before spawn chunks exist. */
@@ -144,7 +150,8 @@ public final class LatitudeWorldState extends SavedData {
     }
 
     public Optional<VanillaBiomeRepresentationProfile> getVanillaRepresentationProfile() {
-        if (getWorldgenPolicy() != WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
+        if ((getWorldgenPolicy() != WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
+                && getWorldgenPolicy() != WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE)
                 || vanillaRepresentationProfile == null || vanillaRepresentationProfile.isBlank()) {
             return Optional.empty();
         }
@@ -160,6 +167,27 @@ public final class LatitudeWorldState extends SavedData {
         String encoded = profile == null ? null : profile.encode();
         if (!java.util.Objects.equals(vanillaRepresentationProfile, encoded)) {
             vanillaRepresentationProfile = encoded;
+            setDirty();
+        }
+    }
+
+    public Optional<CaveBiomeRepresentationProfile> getCaveRepresentationProfile() {
+        if (getWorldgenPolicy() != WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                || caveRepresentationProfile == null || caveRepresentationProfile.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(CaveBiomeRepresentationProfile.decode(caveRepresentationProfile));
+        } catch (IllegalArgumentException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    /** Captured once with the provider roster before fresh-world spawn chunks generate. */
+    public void setCaveRepresentationProfile(CaveBiomeRepresentationProfile profile) {
+        String encoded = profile == null ? null : profile.encode();
+        if (!java.util.Objects.equals(caveRepresentationProfile, encoded)) {
+            caveRepresentationProfile = encoded;
             setDirty();
         }
     }

@@ -567,14 +567,16 @@ public final class WorldgenAuthorityPolicyTest {
                 mod.contains("LatitudeWorldState worldState = isGlobe ? LatitudeWorldState.get(overworld) : null;"),
                 "joining a vanilla world cannot create Latitude saved state");
         assertTrue(
-                mod.contains("LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE"),
-                "new UI-created Latitude worlds explicitly lock size-aware V3 coverage before generation");
+                mod.contains("LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE"),
+                "new UI-created Latitude worlds explicitly lock size-aware V4 coverage before generation");
         assertTrue(
                 mod.indexOf("worldState.setProviderTicketProfile(profile);")
                         < mod.indexOf("worldState.setVanillaRepresentationProfile(")
                         && mod.indexOf("worldState.setVanillaRepresentationProfile(")
+                        < mod.indexOf("worldState.setCaveRepresentationProfile(")
+                        && mod.indexOf("worldState.setCaveRepresentationProfile(")
                         < mod.indexOf("LatitudeBiomes.activateWorldgenContext(radius, seed, worldState.getWorldgenPolicy()"),
-                "the provider roster and representation contract are captured before spawn-chunk biome authority activates");
+                "the provider roster and surface/cave representation contracts are captured before spawn-chunk biome authority activates");
     }
 
     private static void biomeColumnCacheIsWorldBoundAndAvoidsDuplicateVerticalPicks()
@@ -593,14 +595,14 @@ public final class WorldgenAuthorityPolicyTest {
         assertFalse(
                 populate.contains("columnDecisionYCache"),
                 "populate-biomes no longer performs a redundant surface decision solely for its cache gate");
-        int caveReturn = populate.indexOf("if (caveCurrent) { return current; }");
+        int caveReturn = populate.indexOf("if (caveCurrent) { return LatitudeBiomes.caveCoverageOverride(biomes, current, blockX, blockY, blockZ); }");
         int columnCache = populate.indexOf(
                 "Holder<Biome> cachedPick = columnPickCache.get(colKey);",
                 caveReturn);
         int pick = populate.indexOf("Holder<Biome> picked = globe$pickOrNull(", columnCache);
         assertTrue(
                 caveReturn >= 0 && columnCache > caveReturn && pick > columnCache,
-                "every non-cave quart-Y cell reuses one biome pick per column/base while caves pass through");
+                "every non-cave quart-Y cell reuses one biome pick per column/base while cave cells use their final V4 identity");
     }
 
     private static void frozenRiverVegetationIsScopedWithoutMutatingVanillaBiomes()

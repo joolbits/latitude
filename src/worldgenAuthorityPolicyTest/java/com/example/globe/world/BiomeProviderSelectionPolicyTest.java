@@ -36,6 +36,7 @@ final class BiomeProviderSelectionPolicyTest {
         vanillaCoverageIsCompleteAndWorldSizeSafe();
         surfaceWaterCoverageIsCompleteAndWorldSizeSafe();
         sizeAwareVanillaRepresentationIsClosedAndBirthLocked();
+        caveCoverageIsClosedAndWorldSizeSafe();
         vanillaCoverageIsV2OnlyAndClearsWithContext();
     }
 
@@ -398,6 +399,87 @@ final class BiomeProviderSelectionPolicyTest {
                 "land-plan diagnostics distinguish absent eligible terrain from topology/capacity");
     }
 
+    private static void caveCoverageIsClosedAndWorldSizeSafe() throws Exception {
+        List<String> required = List.of(
+                "minecraft:deep_dark", "minecraft:dripstone_caves",
+                "minecraft:lush_caves", "minecraft:sulfur_caves");
+        assertEquals(Set.copyOf(required), CaveBiomeRepresentationProfile.mandatoryIds().keySet(),
+                "the four native cave identities are mandatory, exact, and closed");
+
+        BiomeSelectionProfile combined = BiomeSelectionProfile.capture(
+                registryFor(Set.of("biomesoplenty", "terralith")));
+        for (String id : required) {
+            BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
+            assertTrue(descriptor != null && descriptor.terrain() == BiomeDescriptorLedger.Terrain.CAVE
+                            && descriptor.water() == BiomeDescriptorLedger.Water.UNDERGROUND,
+                    "native cave identity has one explicit underground descriptor: " + id);
+        }
+        assertTrue(BiomeDescriptorLedger.descriptor("biomesoplenty:crystalline_chasm") == null,
+                "a name-only BOP cave is excluded without verified cave-tag evidence");
+        assertTrue(BiomeDescriptorLedger.descriptor("terralith:amethyst_canyon") == null,
+                "a surface Terralith biome cannot enter through cave routing");
+        assertEquals(13L, combined.entries(BiomeRoute.CAVE_SHALLOW).stream()
+                        .filter(id -> !id.startsWith("minecraft:")).count()
+                        + combined.entries(BiomeRoute.CAVE_DEEP).stream()
+                        .filter(id -> !id.startsWith("minecraft:")).count(),
+                "only the explicit 2 BOP and 11 Terralith caves are eligible custom candidates");
+
+        int[] radii = {3_750, 5_000, 7_500, 10_000, 15_000, 20_000};
+        long[] seeds = {3L, 41L, 131L, 461L};
+        for (int radius : radii) {
+            for (long seed : seeds) {
+                CaveBiomeRepresentationProfile profile = CaveBiomeRepresentationProfile.capture(radius, combined);
+                assertEquals(profile.encode(), CaveBiomeRepresentationProfile.decode(profile.encode()).encode(),
+                        "cave profile is reload-stable at radius=" + radius + " seed=" + seed);
+                CaveBiomeCoveragePlan plan = CaveBiomeCoveragePlan.build(radius, seed, profile,
+                        (route, x, y, z) -> (long) x * x + (long) z * z < (long) radius * radius
+                                && y <= 96 && (route != BiomeRoute.CAVE_DEEP || y <= -16));
+                assertTrue(plan.complete(), "all mandatory and birth-present custom cave targets fit at radius="
+                        + radius + " seed=" + seed + " missing=" + plan.missingBiomeIds());
+                assertTrue(plan.anchors().stream().map(CaveBiomeCoveragePlan.Anchor::biomeId)
+                                .collect(java.util.stream.Collectors.toSet()).containsAll(required),
+                        "every native cave identity has a real-cave anchor at every world size");
+                for (CaveBiomeCoveragePlan.Anchor anchor : plan.anchors()) {
+                    assertTrue(anchor.y() <= 96, "cave reservation never reaches the surface: " + anchor.biomeId());
+                    assertTrue(anchor.route() != BiomeRoute.CAVE_DEEP || anchor.y() <= -16,
+                            "Deep Dark/deep custom caves stay below the deep threshold: " + anchor.biomeId());
+                    assertEquals(anchor, plan.match(anchor.x(), anchor.y(), anchor.z()),
+                            "each cave identity is reachable at its actual underground anchor");
+                    assertTrue(anchor.horizontalRadius() >= 80 && anchor.verticalRadius() == 24,
+                            "cave coverage is a compact underground region, not a one-cell token");
+                }
+                Map<String, BiomeRoute> showcase = profile.customShowcaseTargets(seed);
+                assertEquals(3, showcase.size(), "combined stack contributes one deterministic BOP shallow and Terralith shallow/deep showcase each");
+                assertTrue(showcase.entrySet().stream().anyMatch(entry -> entry.getKey().startsWith("biomesoplenty:")
+                                && entry.getValue() == BiomeRoute.CAVE_SHALLOW),
+                        "BOP cave selection remains shallow-only");
+                assertTrue(showcase.entrySet().stream().anyMatch(entry -> entry.getKey().startsWith("terralith:")
+                                && entry.getValue() == BiomeRoute.CAVE_DEEP),
+                        "Terralith deep cave selection remains below the deep threshold");
+            }
+        }
+
+        String biomes = Files.readString(Path.of("src/main/java/com/example/globe/world/LatitudeBiomes.java"));
+        String source = Files.readString(Path.of("src/main/java/com/example/globe/world/LatitudeBiomeSource.java"));
+        String mixin = Files.readString(Path.of("src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java"));
+        String state = Files.readString(Path.of("src/main/java/com/example/globe/world/LatitudeWorldState.java"));
+        String mod = Files.readString(Path.of("src/main/java/com/example/globe/GlobeMod.java"));
+        assertTrue(biomes.contains("ACTIVE_CAVE_COVERAGE_PLAN")
+                        && biomes.contains("isUndergroundCaveBiome(current)")
+                        && biomes.contains("blockY <= 96"),
+                "the V4 override is donor-cave-gated and cannot create a surface cave");
+        assertTrue(source.contains("LatitudeBiomes.caveCoverageOverride")
+                        && mixin.contains("return LatitudeBiomes.caveCoverageOverride(biomes, current, blockX, blockY, blockZ);"),
+                "biome-source, locate-preview, and chunk-population paths share final cave identity");
+        assertTrue(state.contains("PROVIDER_TICKET_V1") && state.contains("PROVIDER_TICKET_V2_COVERAGE")
+                        && state.contains("PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE")
+                        && state.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE"),
+                "legacy/V1/V2/V3 policies remain explicit alongside fresh-only V4");
+        assertTrue(mod.contains("CaveBiomeRepresentationProfile.capture(pendingRadius, profile)")
+                        && mod.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE"),
+                "only a newly created world captures the V4 cave profile before spawn generation");
+    }
+
     private static void vanillaCoverageIsV2OnlyAndClearsWithContext() throws Exception {
         String biomes = Files.readString(
                 Path.of("src/main/java/com/example/globe/world/LatitudeBiomes.java"))
@@ -408,19 +490,22 @@ final class BiomeProviderSelectionPolicyTest {
         String mod = Files.readString(Path.of("src/main/java/com/example/globe/GlobeMod.java"))
                 .replaceAll("\\s+", " ");
         assertTrue(biomes.contains("boolean exactV2 = ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE")
-                        && biomes.contains("PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE"),
-                "V2 keeps exact coverage while only V3 consumes the saved size-aware contract");
+                        && biomes.contains("PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE")
+                        && biomes.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE"),
+                "V2 keeps exact coverage while V3/V4 consume the saved size-aware surface contract");
         assertTrue(biomes.contains("ACTIVE_VANILLA_COVERAGE_PLAN = null;"),
                 "world/context cleanup clears the coverage plan");
         assertTrue(biomes.contains("ACTIVE_SURFACE_WATER_COVERAGE_PLAN = null;"),
                 "world/context cleanup clears the surface/water coverage plan");
+        assertTrue(biomes.contains("ACTIVE_CAVE_COVERAGE_PLAN = null;"),
+                "world/context cleanup clears birth-locked cave coverage");
         assertTrue(state.contains("policy == WorldgenPolicyVersion.PROVIDER_TICKET_V1")
                         && state.contains("policy == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE")
                         && state.contains("policy == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE"),
-                "saved V1/V2 profiles remain readable without adopting V3 behavior");
+                "saved V1/V2/V3 profiles remain readable without adopting V4 behavior");
         assertTrue(mod.contains(
-                        "WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE"),
-                "only freshly UI-created worlds opt into V3 size-aware coverage");
+                        "WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE"),
+                "only freshly UI-created worlds opt into V4 size-aware coverage");
         assertTrue(mod.contains("randomState().sampler()"),
                 "fresh and reloaded V2 plans use the live world climate sampler");
         assertTrue(mod.contains("donorBiomeSource(generator)"),
@@ -562,8 +647,8 @@ final class BiomeProviderSelectionPolicyTest {
                         && state.contains("PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE"),
                 "V3 profile and policy are persisted without changing legacy/V1/V2 identities");
         assertTrue(mod.contains("VanillaBiomeRepresentationProfile.capture(pendingRadius, seed, profile)")
-                        && mod.contains("PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE"),
-                "only the trusted fresh-world path captures the V3 birth profile");
+                        && mod.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE"),
+                "only the trusted fresh-world path captures the V4 surface/cave birth profiles");
         assertThrows(() -> VanillaBiomeRepresentationProfile.decode(
                         VanillaBiomeRepresentationProfile.FORMAT
                                 + "\nSIZE|ITTY_BITTY\nLAND|TEMPERATE_LOWLAND|REPRESENTATION_FAMILY|terralith:caldera"),
@@ -764,6 +849,7 @@ final class BiomeProviderSelectionPolicyTest {
             case SUBPOLAR_LOWLAND -> latitudeFraction >= 0.59 && latitudeFraction <= 0.73;
             case POLAR_LOWLAND -> latitudeFraction >= 0.77 && latitudeFraction <= 0.91;
             case COLD_UPLAND -> latitudeFraction >= 0.61 && latitudeFraction <= 0.89;
+            case CAVE_SHALLOW, CAVE_DEEP -> false;
         };
     }
 

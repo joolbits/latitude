@@ -19,9 +19,9 @@ import java.util.Set;
  * candidate.</p>
  */
 public final class BiomeDescriptorLedger {
-    public enum Terrain { LOWLAND, UPLAND, WETLAND, ARID }
-    public enum Water { LAND, WETLAND, COASTAL_BRACKISH }
-    public enum Family { JUNGLE, FOREST, WETLAND, ARID, SAVANNA, UPLAND, TAIGA, POLAR }
+    public enum Terrain { LOWLAND, UPLAND, WETLAND, ARID, CAVE }
+    public enum Water { LAND, WETLAND, COASTAL_BRACKISH, UNDERGROUND }
+    public enum Family { JUNGLE, FOREST, WETLAND, ARID, SAVANNA, UPLAND, TAIGA, POLAR, CAVE }
 
     public record Descriptor(
             String biomeId,
@@ -37,7 +37,15 @@ public final class BiomeDescriptorLedger {
             routes = Set.copyOf(routes == null ? Set.of() : routes);
             if (routes.isEmpty()) throw new IllegalArgumentException("descriptor needs at least one route: " + biomeId);
             if (terrain == null || water == null || family == null) throw new IllegalArgumentException("descriptor has null placement fields: " + biomeId);
-            if (water != Water.LAND && terrain != Terrain.WETLAND) throw new IllegalArgumentException("water descriptor must be wetland terrain: " + biomeId);
+            boolean caveRoute = routes.contains(BiomeRoute.CAVE_SHALLOW) || routes.contains(BiomeRoute.CAVE_DEEP);
+            if (terrain == Terrain.CAVE) {
+                if (water != Water.UNDERGROUND || !caveRoute || routes.stream().anyMatch(route -> route != BiomeRoute.CAVE_SHALLOW && route != BiomeRoute.CAVE_DEEP)) {
+                    throw new IllegalArgumentException("cave descriptor must own only underground cave routes: " + biomeId);
+                }
+            } else if (caveRoute || water == Water.UNDERGROUND) {
+                throw new IllegalArgumentException("surface descriptor cannot own underground cave routes: " + biomeId);
+            }
+            if (water != Water.LAND && water != Water.UNDERGROUND && terrain != Terrain.WETLAND) throw new IllegalArgumentException("water descriptor must be wetland terrain: " + biomeId);
             if (terrain == Terrain.WETLAND && !routes.contains(BiomeRoute.TEMPERATE_WETLAND)) throw new IllegalArgumentException("wetland needs wetland route: " + biomeId);
             if (terrain == Terrain.UPLAND
                     && !routes.contains(BiomeRoute.TEMPERATE_UPLAND)
@@ -124,6 +132,21 @@ public final class BiomeDescriptorLedger {
             d("terralith:snowy_maple_forest", r(BiomeRoute.SUBPOLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.TAIGA),
             d("terralith:cold_shrubland", r(BiomeRoute.SUBPOLAR_LOWLAND, BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
             d("terralith:snowy_cherry_grove", r(BiomeRoute.SUBPOLAR_LOWLAND, BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
+            // Underground is a separate, donor-cave-gated authority. These entries are never
+            // admitted through a surface tag or terrain route.
+            d("biomesoplenty:glowing_grotto", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("biomesoplenty:spider_nest", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("terralith:cave/andesite_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("terralith:cave/diorite_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("terralith:cave/fungal_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("terralith:cave/granite_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("terralith:cave/infested_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("terralith:cave/thermal_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("terralith:cave/underground_jungle", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("terralith:cave/deep_caves", r(BiomeRoute.CAVE_DEEP), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("terralith:cave/frostfire_caves", r(BiomeRoute.CAVE_DEEP), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("terralith:cave/mantle_caves", r(BiomeRoute.CAVE_DEEP), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("terralith:cave/tuff_caves", r(BiomeRoute.CAVE_DEEP), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
             // Vanilla is also a provider ticket.  Its explicit entries make a route's provider
             // roster independent of whatever optional-mod tags happen to be installed.
             d("minecraft:jungle", r(BiomeRoute.TROPICAL_HUMID_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.JUNGLE),
@@ -159,7 +182,11 @@ public final class BiomeDescriptorLedger {
             d("minecraft:snowy_taiga", r(BiomeRoute.SUBPOLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.TAIGA),
             d("minecraft:old_growth_spruce_taiga", r(BiomeRoute.SUBPOLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.TAIGA),
             d("minecraft:snowy_plains", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
-            d("minecraft:ice_spikes", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR)
+            d("minecraft:ice_spikes", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
+            d("minecraft:lush_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("minecraft:dripstone_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("minecraft:sulfur_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("minecraft:deep_dark", r(BiomeRoute.CAVE_DEEP), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE)
     );
 
     private static final Map<String, Descriptor> BY_ID = buildIndex();
@@ -169,6 +196,10 @@ public final class BiomeDescriptorLedger {
     public static Descriptor descriptor(String id) { return BY_ID.get(id); }
     public static Collection<Descriptor> descriptors() { return DESCRIPTORS; }
     public static boolean isSupportedProvider(String provider) { return DESCRIPTORS.stream().anyMatch(d -> d.provider().equals(provider)); }
+    public static boolean isCaveDescriptor(String id) {
+        Descriptor descriptor = descriptor(id);
+        return descriptor != null && descriptor.terrain() == Terrain.CAVE;
+    }
 
     public static List<String> validate(Collection<String> activeIds) {
         List<String> errors = new ArrayList<>();

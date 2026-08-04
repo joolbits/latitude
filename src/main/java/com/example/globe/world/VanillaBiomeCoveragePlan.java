@@ -196,6 +196,7 @@ public final class VanillaBiomeCoveragePlan {
             case SUBPOLAR_LOWLAND -> new double[]{0.60, 0.72};
             case POLAR_LOWLAND -> new double[]{0.78, 0.90};
             case COLD_UPLAND -> new double[]{0.62, 0.88};
+            case CAVE_SHALLOW, CAVE_DEEP -> throw new IllegalArgumentException("cave routes use CaveBiomeCoveragePlan");
         };
     }
 
@@ -213,6 +214,7 @@ public final class VanillaBiomeCoveragePlan {
             case ARID_LOWLAND -> compactRepresentation
                     ? Math.max(96, Math.min(160, worldRadius / 30))
                     : Math.max(96, Math.min(224, worldRadius / 30));
+            case CAVE_SHALLOW, CAVE_DEEP -> throw new IllegalArgumentException("cave routes use CaveBiomeCoveragePlan");
             default -> Math.max(96, Math.min(224, worldRadius / 30));
         };
     }

@@ -124,7 +124,10 @@ public final class LatitudeBiomeSource extends BiomeSource {
         int blockZ = (z << 2) + quartCenterOffset;
         int blockY = (y << 2) + quartCenterOffset;
         if (shouldPreserveCave(current, base, blockY)) {
-            return current;
+            if (biomeRegistry != null) {
+                return LatitudeBiomes.caveCoverageOverride(biomeRegistry, current, blockX, blockY, blockZ);
+            }
+            return LatitudeBiomes.caveCoverageOverride(biomes, current, blockX, blockY, blockZ);
         }
         if (biomeRegistry != null) {
             return LatitudeBiomes.pick(biomeRegistry, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler,
@@ -441,7 +444,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
         int blockZ = z << 2;
         int blockY = y << 2;
         if (shouldPreserveCave(current, base, blockY)) {
-            return current;
+            return LatitudeBiomes.caveCoverageOverride(biomes, current, blockX, blockY, blockZ);
         }
         Collection<Holder<Biome>> sourceCandidates = LatitudeBiomes.expandSourceCandidatePool(biomes);
         return LatitudeBiomes.pick(
