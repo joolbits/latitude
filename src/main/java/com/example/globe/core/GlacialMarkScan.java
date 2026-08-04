@@ -31,10 +31,14 @@ import java.util.Set;
 public final class GlacialMarkScan {
 
     private static final int OWNER_CHUNK_SIDE = 16;
-    private static final int ESCAPE_HORIZONTAL_MARGIN = 3;
+    /** Entry plus the longest eight-station descent and its untouched target opening. */
+    private static final int DESCENT_HORIZONTAL_MARGIN = 9;
+    private static final int MIN_DESCENT_STATIONS = 3;
+    private static final int MAX_DESCENT_STATIONS = 8;
     private static final int[][] CARDINAL_DIRECTIONS = {
         {1, 0}, {-1, 0}, {0, 1}, {0, -1}
     };
+    private static final List<String> AUTHORED_ROUTE_ACTION_WORDS = authoredRouteActionWords();
 
     /**
      * Sentinel height for a column the scan could not read -- its chunk was not loaded, so we must NOT
@@ -58,9 +62,10 @@ public final class GlacialMarkScan {
     /**
      * Highest inclusive Y a physical adapter must sample above its highest powder cover.
      *
-     * <p>A valid rising tail may end one block above that cover, retain a thin snow layer at {@code +2},
-     * and require measured air at {@code +3}. The world ceiling is exclusive. Long arithmetic and integer
-     * saturation keep malformed or extreme inputs from wrapping into a plausible low sample bound.
+     * <p>The scanner needs the cover itself plus the complete three-block headroom sample above it; therefore
+     * a highest cover at {@code Y} requires cells through {@code Y+3}. The world ceiling is exclusive. Long
+     * arithmetic and integer saturation keep malformed or extreme inputs from wrapping into a plausible low
+     * sample bound.
      */
     public static int physicalSampleMaxYInclusive(int maxCoverY, int worldMaxYExclusive) {
         long requiredTop = (long) maxCoverY + 3L;
@@ -88,7 +93,107 @@ public final class GlacialMarkScan {
         GRAVITY_SOLID,
         FLUID,
         BLOCK_ENTITY,
+        ORE,
+        BEDROCK,
+        DEEPSLATE,
+        MAGMA,
         UNLOADED
+    }
+
+    /** Saved-biome evidence for each measured floor and clear cell in an irregular authored cavern. */
+    public enum PhysicalBiomeKind {
+        GLACIAL_CAVES,
+        OTHER,
+        UNLOADED
+    }
+
+    /** The two physically distinct endpoints accepted by the shared scanner. */
+    public enum EndpointKind {
+        NATURAL_CAVE,
+        AUTHORED_CAVERN
+    }
+
+    /** Stable authored-endpoint failures exposed by the physical audit. */
+    public enum AuthoredCavernRejection {
+        AUTHORED_CAVERN_SIZE,
+        AUTHORED_CAVERN_SPAN,
+        AUTHORED_CAVERN_FILL,
+        AUTHORED_CAVERN_FULL_5X5,
+        AUTHORED_CAVERN_LOBES,
+        AUTHORED_CAVERN_THROAT,
+        AUTHORED_CAVERN_CLEAR_HEIGHT,
+        AUTHORED_CAVERN_BIOME,
+        AUTHORED_CAVERN_BEND,
+        AUTHORED_CAVERN_PORTAL,
+        AUTHORED_CAVERN_ABOVE_Y0,
+        AUTHORED_CAVERN_OWNER_NEIGHBOR,
+        AUTHORED_CAVERN_SHELL,
+        AUTHORED_CAVERN_HAZARD,
+        AUTHORED_ROUTE_RISE,
+        AUTHORED_ROUTE_REVERSE,
+        AUTHORED_ROUTE_DISCONNECTED
+    }
+
+    /** One two-wide station reconstructed from blocks, never from generator metadata. */
+    public record PhysicalRouteStation(
+            int floorY, int firstX, int firstZ, int secondX, int secondZ) {
+    }
+
+    /** Evidence that the reconstructed route obeys the downward, bounded-dogleg law. */
+    public record PhysicalRouteEvidence(
+            List<PhysicalRouteStation> stations,
+            int turns,
+            int initialHeadingX,
+            int initialHeadingZ,
+            boolean downwardOrLevel,
+            boolean neverReversesInitial) {
+        public PhysicalRouteEvidence {
+            stations = stations == null ? List.of() : List.copyOf(stations);
+        }
+    }
+
+    /** Independent measurements of an irregular cross-chunk authored cavern. */
+    public record PhysicalCavernEvidence(
+            int minX,
+            int maxX,
+            int minZ,
+            int maxZ,
+            int minFloorY,
+            int maxFloorY,
+            String direction,
+            int ownerChunkX,
+            int ownerChunkZ,
+            int neighbourChunkX,
+            int neighbourChunkZ,
+            int floorColumns,
+            int clearCells,
+            int stableSubstrateCells,
+            int stableCeilingCells,
+            int stablePerimeterCells,
+            int glacialBiomeCells,
+            int span,
+            int boundingArea,
+            double boundingFill,
+            int primaryLobeSpan,
+            int primaryLobeWidth,
+            int secondaryLobeSpan,
+            int secondaryLobeWidth,
+            int throatWidth,
+            int distinctClearHeights,
+            int passageDirections,
+            boolean bent,
+            boolean crossesOwnerNeighbour,
+            boolean contractPassed) {
+    }
+
+    /** Per-trap proof retained for JSON audits and human-readable command diagnostics. */
+    public record PhysicalTrapEvidence(
+            int mouthX,
+            int mouthY,
+            int mouthZ,
+            EndpointKind endpointKind,
+            PhysicalRouteEvidence route,
+            PhysicalCavernEvidence cavern) {
     }
 
     /**
@@ -107,12 +212,29 @@ public final class GlacialMarkScan {
             int validEscapeRoutes,
             int partialComponents,
             int unsafeComponents,
-            Map<String, Integer> rejectionReasons) {
+            Map<String, Integer> rejectionReasons,
+            List<PhysicalTrapEvidence> validTrapEvidence) {
 
         public PhysicalScanReport {
             rejectionReasons = rejectionReasons == null
                     ? Map.of() : java.util.Collections.unmodifiableMap(
                             new LinkedHashMap<>(rejectionReasons));
+            validTrapEvidence = validTrapEvidence == null ? List.of() : List.copyOf(validTrapEvidence);
+        }
+
+        /** Keeps the existing command adapter source- and behavior-compatible. */
+        public PhysicalScanReport(
+                int candidates,
+                int validTraps,
+                int encounters,
+                int coverColumns,
+                int cushionMatches,
+                int validEscapeRoutes,
+                int partialComponents,
+                int unsafeComponents,
+                Map<String, Integer> rejectionReasons) {
+            this(candidates, validTraps, encounters, coverColumns, cushionMatches, validEscapeRoutes,
+                    partialComponents, unsafeComponents, rejectionReasons, List.of());
         }
     }
 
@@ -134,7 +256,15 @@ public final class GlacialMarkScan {
         }
     }
 
-    private record EscapeCheck(boolean valid, PhysicalRejection rejection) {
+    private record EscapeCheck(
+            boolean valid, PhysicalRejection rejection, PhysicalTrapEvidence evidence) {
+    }
+
+    private record HorizontalBounds(int minX, int maxXExclusive, int minZ, int maxZExclusive) {
+        boolean contains(SurfaceCover cover) {
+            return cover.x() >= minX && cover.x() < maxXExclusive
+                    && cover.z() >= minZ && cover.z() < maxZExclusive;
+        }
     }
 
     /**
@@ -143,23 +273,70 @@ public final class GlacialMarkScan {
      * <p>Candidate identity is a cardinally connected component of top-surface powder snow whose adjacent
      * covers differ by at most one block. Normal-snow gaps are intentionally absent from that component: they
      * are camouflage, not missing authored roof cells. Every powder cover must then have a clear fall of at
-     * least {@code minimumDrop} blocks to a powder-snow cushion on dry, non-gravity support. Finally, a bounded
-     * walking flood-fill must find a two-block-high cardinal route from the landing level, with at most one
-     * block of rise per step, to a two- or three-column snow mining tail whose final three-block column reaches
-     * an intact full-snow surface (optionally beneath a thin layer). The route may touch the fall volume only
-     * at its landing doorway.
+     * least {@code minimumDrop} blocks to a powder-snow cushion on dry, non-gravity support. Finally, the
+     * scanner must reconstruct a two-wide, three-high, downward-or-level route which never rises or reverses,
+     * turns at most twice, and ends directly in either connected natural cave space or a measured irregular
+     * cross-chunk glacial cavern. The route may touch the fall volume only at its landing doorway.
      *
      * <p>No generator plan, authored rectangle, shoulder list, or route metadata participates in the result.
      * Out-of-volume and ragged cells read as {@link PhysicalCellKind#UNLOADED}; candidates too close to that
      * boundary are rejected rather than speculatively accepted. Escape search is restricted to the component
-     * bounding box plus {@value #ESCAPE_HORIZONTAL_MARGIN} cells, keeping repeated scans bounded.
+     * bounding box plus {@value #DESCENT_HORIZONTAL_MARGIN} cells, keeping repeated scans bounded.
      *
      * @param cells measured cells indexed {@code [x][y][z]}, with Y increasing upward
      * @param minimumDrop minimum uninterrupted passable cells between cover and cushion
      */
     public static PhysicalScanReport scanPhysicalTrapVolume(
             PhysicalCellKind[][][] cells, int minimumDrop) {
-        return scanPhysicalTrapVolume(cells, minimumDrop, null);
+        return scanPhysicalTrapVolume(cells, null, minimumDrop, 0, null, null);
+    }
+
+    /**
+     * Full physical scan with cave-biome evidence. Natural endpoints retain their historical block-only law;
+     * authored endpoints are independently reconstructed as irregular cross-chunk glacial caverns.
+     */
+    public static PhysicalScanReport scanPhysicalTrapVolume(
+            PhysicalCellKind[][][] cells, PhysicalBiomeKind[][][] biomes, int minimumDrop) {
+        return scanPhysicalTrapVolume(cells, biomes, minimumDrop, 0, null, null);
+    }
+
+    /**
+     * Scan candidates whose measured powder mouth intersects the requested horizontal rectangle. The cells
+     * outside that rectangle remain available as physical halo and endpoint evidence.
+     */
+    public static PhysicalScanReport scanPhysicalTrapVolumeInHorizontalBounds(
+            PhysicalCellKind[][][] cells,
+            PhysicalBiomeKind[][][] biomes,
+            int minimumDrop,
+            int minX,
+            int maxXExclusive,
+            int minZ,
+            int maxZExclusive) {
+        if (minX >= maxXExclusive || minZ >= maxZExclusive) {
+            throw new IllegalArgumentException("horizontal target bounds must be non-empty");
+        }
+        return scanPhysicalTrapVolume(cells, biomes, minimumDrop, 0, null,
+                new HorizontalBounds(minX, maxXExclusive, minZ, maxZExclusive));
+    }
+
+    /**
+     * Horizontal-bounds scan whose array index zero corresponds to {@code worldMinY}. Authored caverns use
+     * this offset to prove that every floor and clear cell is physically above world Y=0.
+     */
+    public static PhysicalScanReport scanPhysicalTrapVolumeInHorizontalBounds(
+            PhysicalCellKind[][][] cells,
+            PhysicalBiomeKind[][][] biomes,
+            int minimumDrop,
+            int worldMinY,
+            int minX,
+            int maxXExclusive,
+            int minZ,
+            int maxZExclusive) {
+        if (minX >= maxXExclusive || minZ >= maxZExclusive) {
+            throw new IllegalArgumentException("horizontal target bounds must be non-empty");
+        }
+        return scanPhysicalTrapVolume(cells, biomes, minimumDrop, worldMinY, null,
+                new HorizontalBounds(minX, maxXExclusive, minZ, maxZExclusive));
     }
 
     /**
@@ -172,11 +349,17 @@ public final class GlacialMarkScan {
      */
     public static PhysicalScanReport scanPhysicalTrapVolumeAt(
             PhysicalCellKind[][][] cells, int minimumDrop, int anchorX, int anchorZ) {
-        return scanPhysicalTrapVolume(cells, minimumDrop, new int[]{anchorX, anchorZ});
+        return scanPhysicalTrapVolume(cells, null, minimumDrop, 0,
+                new int[]{anchorX, anchorZ}, null);
     }
 
     private static PhysicalScanReport scanPhysicalTrapVolume(
-            PhysicalCellKind[][][] cells, int minimumDrop, int[] anchor) {
+            PhysicalCellKind[][][] cells,
+            PhysicalBiomeKind[][][] biomes,
+            int minimumDrop,
+            int worldMinY,
+            int[] anchor,
+            HorizontalBounds targetBounds) {
         if (minimumDrop < 1) {
             throw new IllegalArgumentException("minimumDrop must be positive");
         }
@@ -221,6 +404,11 @@ public final class GlacialMarkScan {
                             cover -> cover.x() == anchor[0] && cover.z() == anchor[1]))
                     .toList();
         }
+        if (targetBounds != null) {
+            components = components.stream()
+                    .filter(component -> component.stream().anyMatch(targetBounds::contains))
+                    .toList();
+        }
         int validTraps = 0;
         int coverColumns = 0;
         int cushionMatches = 0;
@@ -228,6 +416,7 @@ public final class GlacialMarkScan {
         int partialComponents = 0;
         int unsafeComponents = 0;
         Map<String, Integer> reasons = new LinkedHashMap<>();
+        List<PhysicalTrapEvidence> evidence = new ArrayList<>();
 
         for (List<SurfaceCover> component : components) {
             PhysicalRejection rejection = camouflageRejection(
@@ -239,13 +428,15 @@ public final class GlacialMarkScan {
                 drops = dropCheck.drops();
             }
             if (rejection == null) {
-                EscapeCheck escape = checkEscape(cells, bounds, component, drops, surfaceY);
-                rejection = escape.rejection();
-                if (escape.valid()) {
+                EscapeCheck descent = checkDescent(
+                        cells, biomes, bounds, component, drops, worldMinY);
+                rejection = descent.rejection();
+                if (descent.valid()) {
                     validTraps++;
                     coverColumns += component.size();
                     cushionMatches += drops.size();
                     validEscapeRoutes++;
+                    evidence.add(descent.evidence());
                     continue;
                 }
             }
@@ -270,7 +461,8 @@ public final class GlacialMarkScan {
                 validEscapeRoutes,
                 partialComponents,
                 unsafeComponents,
-                reasons);
+                reasons,
+                evidence);
     }
 
     private record VolumeBounds(int xSize, int ySize, int zSize) {
@@ -347,10 +539,10 @@ public final class GlacialMarkScan {
         int minY = component.stream().mapToInt(SurfaceCover::y).min().orElse(UNLOADED);
         int maxY = component.stream().mapToInt(SurfaceCover::y).max().orElse(UNLOADED);
 
-        if (minX - ESCAPE_HORIZONTAL_MARGIN < 0
-                || minZ - ESCAPE_HORIZONTAL_MARGIN < 0
-                || maxX + ESCAPE_HORIZONTAL_MARGIN >= bounds.xSize()
-                || maxZ + ESCAPE_HORIZONTAL_MARGIN >= bounds.zSize()
+        if (minX - DESCENT_HORIZONTAL_MARGIN < 0
+                || minZ - DESCENT_HORIZONTAL_MARGIN < 0
+                || maxX + DESCENT_HORIZONTAL_MARGIN >= bounds.xSize()
+                || maxZ + DESCENT_HORIZONTAL_MARGIN >= bounds.zSize()
                 || minY <= 1 || maxY >= bounds.ySize() - 1) {
             return new PhysicalRejection("UNLOADED_OR_SCAN_BOUNDARY", false);
         }
@@ -500,31 +692,31 @@ public final class GlacialMarkScan {
         return new DropCheck(drops, null);
     }
 
-    private static EscapeCheck checkEscape(
+    private static EscapeCheck checkDescent(
             PhysicalCellKind[][][] cells,
+            PhysicalBiomeKind[][][] biomes,
             VolumeBounds bounds,
             List<SurfaceCover> component,
             List<DropColumn> drops,
-            int[][] surfaceY) {
+            int worldMinY) {
         int minX = component.stream().mapToInt(SurfaceCover::x).min().orElse(0)
-                - ESCAPE_HORIZONTAL_MARGIN;
+                - DESCENT_HORIZONTAL_MARGIN;
         int maxX = component.stream().mapToInt(SurfaceCover::x).max().orElse(0)
-                + ESCAPE_HORIZONTAL_MARGIN;
+                + DESCENT_HORIZONTAL_MARGIN;
         int minZ = component.stream().mapToInt(SurfaceCover::z).min().orElse(0)
-                - ESCAPE_HORIZONTAL_MARGIN;
+                - DESCENT_HORIZONTAL_MARGIN;
         int maxZ = component.stream().mapToInt(SurfaceCover::z).max().orElse(0)
-                + ESCAPE_HORIZONTAL_MARGIN;
+                + DESCENT_HORIZONTAL_MARGIN;
         if (minX < 0 || minZ < 0 || maxX >= bounds.xSize() || maxZ >= bounds.zSize()) {
             return new EscapeCheck(false,
-                    new PhysicalRejection("UNLOADED_OR_SCAN_BOUNDARY", false));
+                    new PhysicalRejection("UNLOADED_OR_SCAN_BOUNDARY", false), null);
         }
 
         Map<Long, DropColumn> dropByColumn = new LinkedHashMap<>();
         for (DropColumn drop : drops) {
             dropByColumn.put(packHorizontal(drop.x(), drop.z()), drop);
         }
-        ArrayDeque<WalkNode> queue = new ArrayDeque<>();
-        Set<WalkNode> visited = new HashSet<>();
+        int lowestLanding = drops.stream().mapToInt(DropColumn::cushionY).min().orElse(0);
         for (DropColumn drop : drops) {
             for (int[] direction : CARDINAL_DIRECTIONS) {
                 int x = drop.x() + direction[0];
@@ -532,212 +724,966 @@ public final class GlacialMarkScan {
                 if (dropByColumn.containsKey(packHorizontal(x, z))) {
                     continue;
                 }
-                for (int feetY = drop.cushionY() - 1;
-                        feetY <= drop.cushionY() + 1; feetY++) {
-                    WalkNode entry = new WalkNode(x, feetY, z);
-                    if (insideEscapeBounds(entry, minX, maxX, minZ, maxZ, bounds.ySize())
-                            && isWalkNode(cells, entry)
-                            && visited.add(entry)) {
-                        queue.addLast(entry);
+                for (int[] forward : CARDINAL_DIRECTIONS) {
+                    int widthX = -forward[1];
+                    int widthZ = forward[0];
+                    for (int widthSign : new int[]{-1, 1}) {
+                        for (int stations = MIN_DESCENT_STATIONS;
+                                stations <= MAX_DESCENT_STATIONS; stations++) {
+                            PhysicalRouteEvidence route = descendingRouteToNaturalCave(cells, bounds, dropByColumn,
+                                    x, drop.cushionY() - 1, z,
+                                    forward[0], forward[1], widthX * widthSign, widthZ * widthSign,
+                                    minX, maxX, minZ, maxZ, lowestLanding, stations);
+                            if (route != null) {
+                                SurfaceCover mouth = canonicalMouth(component);
+                                return new EscapeCheck(true, null, new PhysicalTrapEvidence(
+                                        mouth.x(), mouth.y(), mouth.z(), EndpointKind.NATURAL_CAVE,
+                                        route, null));
+                            }
+                        }
                     }
                 }
             }
         }
-        if (queue.isEmpty()) {
+
+        // The natural law above is intentionally first and unchanged. Legacy command callers deliberately
+        // omit biome evidence, which also keeps their historical MISSING_DESCENT rejection byte-for-byte.
+        if (biomes == null) {
             return new EscapeCheck(false,
-                    new PhysicalRejection("MISSING_ESCAPE", false));
+                    new PhysicalRejection("MISSING_DESCENT", false), null);
         }
 
-        while (!queue.isEmpty()) {
-            WalkNode current = queue.removeFirst();
+        // Only a failed natural search may use the distinct authored-cavern reconstruction, whose biome,
+        // geometry, cross-chunk, and shell evidence cannot impersonate nature.
+        PhysicalRejection bestAuthoredRejection = null;
+        SurfaceCover mouth = canonicalMouth(component);
+        for (DropColumn drop : drops) {
+            for (int[] outward : CARDINAL_DIRECTIONS) {
+                int entryX = drop.x() + outward[0];
+                int entryZ = drop.z() + outward[1];
+                if (dropByColumn.containsKey(packHorizontal(entryX, entryZ))) {
+                    continue;
+                }
+                int widthX = -outward[1];
+                int widthZ = outward[0];
+                for (int widthSign : new int[]{-1, 1}) {
+                    RouteFootprint start = RouteFootprint.of(
+                            entryX, entryZ,
+                            entryX + widthX * widthSign, entryZ + widthZ * widthSign);
+                    AuthoredSearch authored = findAuthoredCavern(
+                            cells, biomes, bounds, dropByColumn, start,
+                            drop.cushionY() - 1, outward[0], outward[1],
+                            worldMinY, mouth);
+                    if (authored.evidence() != null) {
+                        PhysicalTrapEvidence evidence = new PhysicalTrapEvidence(
+                                mouth.x(), mouth.y(), mouth.z(), EndpointKind.AUTHORED_CAVERN,
+                                authored.evidence().route(), authored.evidence().cavern());
+                        return new EscapeCheck(true, null, evidence);
+                    }
+                    bestAuthoredRejection = preferredAuthoredRejection(
+                            bestAuthoredRejection, authored.rejection());
+                }
+            }
+        }
+        return new EscapeCheck(false, bestAuthoredRejection == null
+                ? new PhysicalRejection("MISSING_DESCENT", false) : bestAuthoredRejection, null);
+    }
+
+    private static PhysicalRouteEvidence descendingRouteToNaturalCave(
+            PhysicalCellKind[][][] cells, VolumeBounds bounds, Map<Long, DropColumn> drops,
+            int entryX, int entryFloorY, int entryZ, int forwardX, int forwardZ, int widthX, int widthZ,
+            int minX, int maxX, int minZ, int maxZ, int lowestLanding, int stations) {
+        List<PhysicalRouteStation> routeStations = new ArrayList<>(stations);
+        for (int station = 0; station < stations; station++) {
+            int x = entryX + forwardX * station;
+            int z = entryZ + forwardZ * station;
+            int floorY = entryFloorY - station;
+            if (drops.containsKey(packHorizontal(x, z))
+                    || drops.containsKey(packHorizontal(x + widthX, z + widthZ))
+                    || !isThreeHighDescentStation(cells, bounds, x, floorY, z)
+                    || !isThreeHighDescentStation(cells, bounds, x + widthX, floorY, z + widthZ)) {
+                return null;
+            }
+            routeStations.add(new PhysicalRouteStation(
+                    floorY, x, z, x + widthX, z + widthZ));
+        }
+        int targetX = entryX + forwardX * stations;
+        int targetZ = entryZ + forwardZ * stations;
+        int targetFloorY = entryFloorY - stations;
+        if (targetFloorY >= lowestLanding
+                || !insideDescentBounds(targetX, targetFloorY, targetZ, minX, maxX, minZ, maxZ, bounds)
+                || !insideDescentBounds(targetX + widthX, targetFloorY, targetZ + widthZ,
+                        minX, maxX, minZ, maxZ, bounds)
+                || !isNaturalCaveColumn(cells, targetX, targetFloorY, targetZ)
+                || !isNaturalCaveColumn(cells, targetX + widthX, targetFloorY, targetZ + widthZ)) {
+            return null;
+        }
+        if (connectedNaturalCaveFloors(cells, bounds, targetX, targetFloorY, targetZ,
+                targetX + widthX, targetZ + widthZ) < 8) {
+            return null;
+        }
+        return new PhysicalRouteEvidence(
+                routeStations, 0, forwardX, forwardZ, true, true);
+    }
+
+    private record RouteFootprint(int firstX, int firstZ, int secondX, int secondZ) {
+        static RouteFootprint of(int firstX, int firstZ, int secondX, int secondZ) {
+            if (firstX > secondX || (firstX == secondX && firstZ > secondZ)) {
+                return new RouteFootprint(secondX, secondZ, firstX, firstZ);
+            }
+            return new RouteFootprint(firstX, firstZ, secondX, secondZ);
+        }
+
+        RouteFootprint translate(int dx, int dz) {
+            return of(firstX + dx, firstZ + dz, secondX + dx, secondZ + dz);
+        }
+
+        Set<Long> columns() {
+            return Set.of(packHorizontal(firstX, firstZ), packHorizontal(secondX, secondZ));
+        }
+    }
+
+    private record AuthoredPath(List<RouteFootprint> footprints, int turns) {
+        AuthoredPath {
+            footprints = List.copyOf(footprints);
+        }
+    }
+
+    private record CavernFloor(int x, int y, int z, int clearHeight) {
+    }
+
+    private record CavernColumnProbe(CavernFloor floor, PhysicalRejection rejection) {
+    }
+
+    private record CavernCheck(
+            PhysicalCavernEvidence evidence, PhysicalRejection rejection) {
+    }
+
+    private record AuthoredEvidence(
+            PhysicalRouteEvidence route, PhysicalCavernEvidence cavern) {
+    }
+
+    private record AuthoredSearch(AuthoredEvidence evidence, PhysicalRejection rejection) {
+    }
+
+    private record Voxel(int x, int y, int z) {
+    }
+
+    private record LobeDimensions(int span, int width, int area) {
+    }
+
+    private record LobeMetrics(
+            int primarySpan,
+            int primaryWidth,
+            int secondarySpan,
+            int secondaryWidth,
+            int throatWidth,
+            boolean bent) {
+    }
+
+    private static AuthoredSearch findAuthoredCavern(
+            PhysicalCellKind[][][] cells,
+            PhysicalBiomeKind[][][] biomes,
+            VolumeBounds bounds,
+            Map<Long, DropColumn> drops,
+            RouteFootprint start,
+            int entryFloorY,
+            int initialX,
+            int initialZ,
+            int worldMinY,
+            SurfaceCover mouth) {
+        if (!isRouteFootprint(cells, bounds, drops, start, entryFloorY)) {
+            return new AuthoredSearch(null, null);
+        }
+        PhysicalRejection best = null;
+        for (String actionWord : AUTHORED_ROUTE_ACTION_WORDS) {
+            List<AuthoredPath> paths = List.of(new AuthoredPath(List.of(start), 0));
+            char previousAction = 'F';
+            for (int actionIndex = 0; actionIndex < actionWord.length() && !paths.isEmpty(); actionIndex++) {
+                char action = actionWord.charAt(actionIndex);
+                int headingX = actionHeadingX(initialX, initialZ, action);
+                int headingZ = actionHeadingZ(initialX, initialZ, action);
+                boolean turn = action != previousAction;
+                int stationIndex = actionIndex + 1;
+                int floorY = entryFloorY - Math.min(stationIndex, 5);
+                List<AuthoredPath> expanded = new ArrayList<>();
+                for (AuthoredPath path : paths) {
+                    RouteFootprint current = path.footprints().getLast();
+                    List<RouteFootprint> candidates = turn
+                            ? turnFootprints(current, headingX, headingZ)
+                            : List.of(current.translate(headingX, headingZ));
+                    Set<Long> occupied = new HashSet<>();
+                    path.footprints().forEach(footprint -> occupied.addAll(footprint.columns()));
+                    for (RouteFootprint next : candidates) {
+                        if (next.columns().stream().anyMatch(occupied::contains)
+                                || !isRouteFootprint(cells, bounds, drops, next, floorY)) {
+                            continue;
+                        }
+                        int turns = path.turns() + (turn ? 1 : 0);
+                        if (turns > 2) {
+                            continue;
+                        }
+                        List<RouteFootprint> stations = new ArrayList<>(path.footprints());
+                        stations.add(next);
+                        expanded.add(new AuthoredPath(stations, turns));
+                    }
+                }
+                paths = List.copyOf(expanded);
+                previousAction = action;
+            }
+            for (AuthoredPath path : paths) {
+                RouteFootprint terminal = path.footprints().getLast();
+                int floorY = entryFloorY - 5;
+                Set<Long> routeColumns = new HashSet<>();
+                path.footprints().forEach(footprint -> routeColumns.addAll(footprint.columns()));
+                List<PhysicalRouteStation> stations = new ArrayList<>();
+                for (int index = 0; index < path.footprints().size(); index++) {
+                    RouteFootprint footprint = path.footprints().get(index);
+                    stations.add(new PhysicalRouteStation(
+                            entryFloorY - Math.min(index, 5),
+                            footprint.firstX(), footprint.firstZ(),
+                            footprint.secondX(), footprint.secondZ()));
+                }
+                PhysicalRouteEvidence route = new PhysicalRouteEvidence(
+                        stations, path.turns(), initialX, initialZ,
+                        routeNeverRises(stations), true);
+                char finalAction = actionWord.charAt(actionWord.length() - 1);
+                int portalDx = actionHeadingX(initialX, initialZ, finalAction);
+                int portalDz = actionHeadingZ(initialX, initialZ, finalAction);
+                if (!authoredPortalFollowsFinalHeading(
+                        portalDx, portalDz, portalDx, portalDz)) {
+                    throw new IllegalStateException("authored portal heading invariant failed");
+                }
+                RouteFootprint portal = terminal.translate(portalDx, portalDz);
+                if (!portal.columns().stream().anyMatch(routeColumns::contains)) {
+                    for (int[] neighbourDirection : CARDINAL_DIRECTIONS) {
+                        CavernCheck checked = validateCavern(
+                                cells, biomes, bounds, portal, floorY, route,
+                                routeColumns, mouth, neighbourDirection[0], neighbourDirection[1],
+                                worldMinY);
+                        if (checked.evidence() != null) {
+                            return new AuthoredSearch(
+                                    new AuthoredEvidence(route, checked.evidence()), null);
+                        }
+                        best = preferredAuthoredRejection(best, checked.rejection());
+                    }
+                }
+            }
+        }
+        if (best == null) {
+            best = diagnoseAuthoredRoute(cells, bounds, drops, start, entryFloorY, initialX, initialZ);
+        }
+        return new AuthoredSearch(null, best);
+    }
+
+    private static SurfaceCover canonicalMouth(List<SurfaceCover> component) {
+        return component.stream().min(Comparator.comparingInt(SurfaceCover::x)
+                .thenComparingInt(SurfaceCover::z)
+                .thenComparingInt(SurfaceCover::y)).orElseThrow();
+    }
+
+    private static boolean isRouteFootprint(
+            PhysicalCellKind[][][] cells,
+            VolumeBounds bounds,
+            Map<Long, DropColumn> drops,
+            RouteFootprint footprint,
+            int floorY) {
+        return !drops.containsKey(packHorizontal(footprint.firstX(), footprint.firstZ()))
+                && !drops.containsKey(packHorizontal(footprint.secondX(), footprint.secondZ()))
+                && isThreeHighDescentStation(
+                        cells, bounds, footprint.firstX(), floorY, footprint.firstZ())
+                && isThreeHighDescentStation(
+                        cells, bounds, footprint.secondX(), floorY, footprint.secondZ());
+    }
+
+    private static List<RouteFootprint> turnFootprints(
+            RouteFootprint current, int headingX, int headingZ) {
+        Set<RouteFootprint> result = new HashSet<>();
+        for (int[] anchor : new int[][]{
+                {current.firstX(), current.firstZ()},
+                {current.secondX(), current.secondZ()}}) {
+            int firstX = anchor[0] + headingX;
+            int firstZ = anchor[1] + headingZ;
+            for (int sign : new int[]{-1, 1}) {
+                result.add(RouteFootprint.of(
+                        firstX, firstZ,
+                        firstX - headingZ * sign, firstZ + headingX * sign));
+            }
+        }
+        return result.stream().sorted(Comparator.comparingInt(RouteFootprint::firstX)
+                .thenComparingInt(RouteFootprint::firstZ)
+                .thenComparingInt(RouteFootprint::secondX)
+                .thenComparingInt(RouteFootprint::secondZ)).toList();
+    }
+
+    private static int actionHeadingX(int initialX, int initialZ, char action) {
+        return switch (action) {
+            case 'F' -> initialX;
+            case 'L' -> -initialZ;
+            case 'R' -> initialZ;
+            default -> throw new IllegalArgumentException("unknown authored route action " + action);
+        };
+    }
+
+    private static int actionHeadingZ(int initialX, int initialZ, char action) {
+        return switch (action) {
+            case 'F' -> initialZ;
+            case 'L' -> initialX;
+            case 'R' -> -initialX;
+            default -> throw new IllegalArgumentException("unknown authored route action " + action);
+        };
+    }
+
+    static boolean authoredPortalFollowsFinalHeading(
+            int finalHeadingX, int finalHeadingZ, int portalDx, int portalDz) {
+        return Math.abs(finalHeadingX) + Math.abs(finalHeadingZ) == 1
+                && portalDx == finalHeadingX && portalDz == finalHeadingZ;
+    }
+
+    private static List<String> authoredRouteActionWords() {
+        List<String> words = new ArrayList<>();
+        for (int moves = 5; moves <= 11; moves++) {
+            List<String> sameLength = new ArrayList<>();
+            sameLength.add("F".repeat(moves));
+            for (char side : new char[]{'L', 'R'}) {
+                for (int first = 0; first < moves; first++) {
+                    int second = moves - first;
+                    sameLength.add("F".repeat(first) + String.valueOf(side).repeat(second));
+                }
+                for (int first = 0; first <= moves - 2; first++) {
+                    for (int middle = 1; middle <= moves - first - 1; middle++) {
+                        int last = moves - first - middle;
+                        sameLength.add("F".repeat(first)
+                                + String.valueOf(side).repeat(middle) + "F".repeat(last));
+                    }
+                }
+            }
+            sameLength.sort(String::compareTo);
+            words.addAll(sameLength);
+        }
+        return List.copyOf(words);
+    }
+
+    private static CavernCheck validateCavern(
+            PhysicalCellKind[][][] cells,
+            PhysicalBiomeKind[][][] biomes,
+            VolumeBounds bounds,
+            RouteFootprint portal,
+            int portalFloorY,
+            PhysicalRouteEvidence route,
+            Set<Long> routeColumns,
+            SurfaceCover mouth,
+            int neighbourDx,
+            int neighbourDz,
+            int worldMinY) {
+        int ownerChunkX = Math.floorDiv(mouth.x(), OWNER_CHUNK_SIDE);
+        int ownerChunkZ = Math.floorDiv(mouth.z(), OWNER_CHUNK_SIDE);
+        int neighbourChunkX = ownerChunkX + neighbourDx;
+        int neighbourChunkZ = ownerChunkZ + neighbourDz;
+
+        Map<Long, CavernFloor> floors = new LinkedHashMap<>();
+        ArrayDeque<CavernFloor> queue = new ArrayDeque<>();
+        PhysicalRejection bestRejectedColumn = null;
+        for (long packed : portal.columns()) {
+            int x = (int) (packed >> 32);
+            int z = (int) packed;
+            if (!insideOwnerNeighbour(x, z, ownerChunkX, ownerChunkZ,
+                    neighbourChunkX, neighbourChunkZ)) {
+                return new CavernCheck(null, authoredRejection(
+                        AuthoredCavernRejection.AUTHORED_CAVERN_OWNER_NEIGHBOR, false));
+            }
+            CavernColumnProbe probe = probeCavernColumn(
+                    cells, biomes, bounds, x, portalFloorY, z, worldMinY);
+            if (probe.floor() == null) {
+                PhysicalRejection rejection = probe.rejection() == null
+                        ? authoredRejection(AuthoredCavernRejection.AUTHORED_CAVERN_PORTAL, false)
+                        : probe.rejection();
+                return new CavernCheck(null, rejection);
+            }
+            floors.put(packHorizontal(x, z), probe.floor());
+            queue.addLast(probe.floor());
+        }
+
+        while (!queue.isEmpty() && floors.size() <= 1024) {
+            CavernFloor current = queue.removeFirst();
             for (int[] direction : CARDINAL_DIRECTIONS) {
                 int nx = current.x() + direction[0];
                 int nz = current.z() + direction[1];
-                if (dropByColumn.containsKey(packHorizontal(nx, nz))) {
+                long packed = packHorizontal(nx, nz);
+                if (floors.containsKey(packed) || routeColumns.contains(packed)
+                        || !insideOwnerNeighbour(nx, nz, ownerChunkX, ownerChunkZ,
+                                neighbourChunkX, neighbourChunkZ)) {
                     continue;
                 }
-                for (int deltaY : new int[]{0, 1, -1}) {
-                    WalkNode next = new WalkNode(nx, current.feetY() + deltaY, nz);
-                    if (!insideEscapeBounds(
-                            next, minX, maxX, minZ, maxZ, bounds.ySize())
-                            || !isWalkNode(cells, next) || !visited.add(next)) {
-                        continue;
+                CavernFloor next = null;
+                for (int dy : new int[]{0, -1, 1}) {
+                    CavernColumnProbe probe = probeCavernColumn(
+                            cells, biomes, bounds, nx, current.y() + dy, nz, worldMinY);
+                    if (probe.floor() != null) {
+                        next = probe.floor();
+                        break;
                     }
+                    if (looksLikeCavernColumn(cells, nx, current.y() + dy, nz)) {
+                        bestRejectedColumn = preferredAuthoredRejection(
+                                bestRejectedColumn, probe.rejection());
+                    }
+                }
+                if (next != null) {
+                    floors.put(packed, next);
                     queue.addLast(next);
                 }
             }
         }
+        if (bestRejectedColumn != null) {
+            return new CavernCheck(null, bestRejectedColumn);
+        }
 
-        Set<Long> doorwayColumns = new HashSet<>();
-        for (WalkNode node : visited) {
+        List<CavernFloor> component = List.copyOf(floors.values());
+        PhysicalRejection secondNeighbour = secondNeighbourContinuationRejection(
+                cells, biomes, bounds, component, ownerChunkX, ownerChunkZ,
+                neighbourChunkX, neighbourChunkZ, worldMinY);
+        if (secondNeighbour != null) {
+            return new CavernCheck(null, secondNeighbour);
+        }
+        if (component.size() < 96) {
+            return new CavernCheck(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_SIZE, false));
+        }
+        int minX = component.stream().mapToInt(CavernFloor::x).min().orElse(0);
+        int maxX = component.stream().mapToInt(CavernFloor::x).max().orElse(0);
+        int minZ = component.stream().mapToInt(CavernFloor::z).min().orElse(0);
+        int maxZ = component.stream().mapToInt(CavernFloor::z).max().orElse(0);
+        int minFloorY = component.stream().mapToInt(CavernFloor::y).min().orElse(0);
+        int maxFloorY = component.stream().mapToInt(CavernFloor::y).max().orElse(0);
+        int spanX = maxX - minX + 1;
+        int spanZ = maxZ - minZ + 1;
+        int span = Math.max(spanX, spanZ);
+        if (span < 18) {
+            return new CavernCheck(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_SPAN, false));
+        }
+        int boundingArea = spanX * spanZ;
+        double fill = component.size() / (double) boundingArea;
+        if (fill < 0.45 || fill > 0.75) {
+            return new CavernCheck(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_FILL, false));
+        }
+        Set<Long> floorColumns = Set.copyOf(floors.keySet());
+        if (containsFilledFiveByFive(floorColumns, minX, maxX, minZ, maxZ)) {
+            return new CavernCheck(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_FULL_5X5, false));
+        }
+
+        Set<Integer> heights = new HashSet<>();
+        component.forEach(floor -> heights.add(floor.clearHeight()));
+        if (heights.size() < 3 || heights.stream().anyMatch(height -> height < 4 || height > 7)) {
+            return new CavernCheck(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_CLEAR_HEIGHT, false));
+        }
+        LobeMetrics lobes = measureLobes(component, floorColumns, spanX >= spanZ);
+        if (lobes == null) {
+            return new CavernCheck(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_LOBES, false));
+        }
+        if (lobes.throatWidth() < 3 || lobes.throatWidth() > 5) {
+            return new CavernCheck(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_THROAT, false));
+        }
+        if (!lobes.bent()) {
+            return new CavernCheck(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_BEND, false));
+        }
+
+        int ownerFloors = 0;
+        int neighbourFloors = 0;
+        for (CavernFloor floor : component) {
+            int chunkX = Math.floorDiv(floor.x(), OWNER_CHUNK_SIDE);
+            int chunkZ = Math.floorDiv(floor.z(), OWNER_CHUNK_SIDE);
+            if (chunkX == ownerChunkX && chunkZ == ownerChunkZ) {
+                ownerFloors++;
+            } else if (chunkX == neighbourChunkX && chunkZ == neighbourChunkZ) {
+                neighbourFloors++;
+            } else {
+                return new CavernCheck(null, authoredRejection(
+                        AuthoredCavernRejection.AUTHORED_CAVERN_OWNER_NEIGHBOR, false));
+            }
+        }
+        boolean crosses = ownerFloors > 0 && neighbourFloors > 0;
+        if (!crosses) {
+            return new CavernCheck(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_OWNER_NEIGHBOR, false));
+        }
+
+        Set<Voxel> volume = new HashSet<>();
+        int clearCells = 0;
+        for (CavernFloor floor : component) {
+            volume.add(new Voxel(floor.x(), floor.y(), floor.z()));
+            for (int dy = 1; dy <= floor.clearHeight(); dy++) {
+                volume.add(new Voxel(floor.x(), floor.y() + dy, floor.z()));
+                clearCells++;
+            }
+        }
+        Set<Voxel> routeVolume = new HashSet<>();
+        for (PhysicalRouteStation station : route.stations()) {
+            for (int[] xz : new int[][]{
+                    {station.firstX(), station.firstZ()},
+                    {station.secondX(), station.secondZ()}}) {
+                for (int dy = 0; dy <= 3; dy++) {
+                    routeVolume.add(new Voxel(xz[0], station.floorY() + dy, xz[1]));
+                }
+            }
+        }
+        Set<Voxel> perimeter = new HashSet<>();
+        for (Voxel cell : volume) {
             for (int[] direction : CARDINAL_DIRECTIONS) {
-                DropColumn adjacent = dropByColumn.get(packHorizontal(
-                        node.x() + direction[0], node.z() + direction[1]));
-                if (adjacent == null) {
+                Voxel neighbour = new Voxel(
+                        cell.x() + direction[0], cell.y(), cell.z() + direction[1]);
+                if (!volume.contains(neighbour) && !routeVolume.contains(neighbour)) {
+                    perimeter.add(neighbour);
+                }
+            }
+            for (int dx = -2; dx <= 2; dx++) {
+                for (int dy = -2; dy <= 2; dy++) {
+                    for (int dz = -2; dz <= 2; dz++) {
+                        if (physicalCellAt(cells, cell.x() + dx, cell.y() + dy, cell.z() + dz)
+                                == PhysicalCellKind.MAGMA) {
+                            return new CavernCheck(null, authoredRejection(
+                                    AuthoredCavernRejection.AUTHORED_CAVERN_HAZARD, true));
+                        }
+                    }
+                }
+            }
+        }
+        for (Voxel probe : perimeter) {
+            PhysicalCellKind kind = physicalCellAt(cells, probe.x(), probe.y(), probe.z());
+            if (kind == PhysicalCellKind.UNLOADED) {
+                return new CavernCheck(null,
+                        new PhysicalRejection("UNLOADED_OR_SCAN_BOUNDARY", false));
+            }
+            if (isCavernHazard(kind)) {
+                return new CavernCheck(null, authoredRejection(
+                        AuthoredCavernRejection.AUTHORED_CAVERN_HAZARD, true));
+            }
+            if (!isDryStableSupport(kind)) {
+                return new CavernCheck(null, authoredRejection(
+                        AuthoredCavernRejection.AUTHORED_CAVERN_SHELL, false));
+            }
+        }
+
+        int passageDirections = passageDirections(floorColumns);
+        if (passageDirections < 2) {
+            return new CavernCheck(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_BEND, false));
+        }
+        int glacialBiomeCells = component.stream()
+                .mapToInt(floor -> floor.clearHeight() + 1).sum();
+        String direction = neighbourDx > 0 ? "EAST" : neighbourDx < 0 ? "WEST"
+                : neighbourDz > 0 ? "SOUTH" : "NORTH";
+        return new CavernCheck(new PhysicalCavernEvidence(
+                minX, maxX, minZ, maxZ, minFloorY, maxFloorY,
+                direction, ownerChunkX, ownerChunkZ, neighbourChunkX, neighbourChunkZ,
+                component.size(), clearCells, component.size(), component.size(), perimeter.size(),
+                glacialBiomeCells, span, boundingArea, fill,
+                lobes.primarySpan(), lobes.primaryWidth(),
+                lobes.secondarySpan(), lobes.secondaryWidth(), lobes.throatWidth(),
+                heights.size(), passageDirections, true, true, true), null);
+    }
+
+    private static CavernColumnProbe probeCavernColumn(
+            PhysicalCellKind[][][] cells,
+            PhysicalBiomeKind[][][] biomes,
+            VolumeBounds bounds,
+            int x,
+            int floorY,
+            int z,
+            int worldMinY) {
+        if (!insideVolume(bounds, x, floorY, z)) {
+            return new CavernColumnProbe(null,
+                    new PhysicalRejection("UNLOADED_OR_SCAN_BOUNDARY", false));
+        }
+        if ((long) worldMinY + floorY <= 0L) {
+            return new CavernColumnProbe(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_ABOVE_Y0, false));
+        }
+        PhysicalCellKind floor = physicalCellAt(cells, x, floorY, z);
+        if (isCavernHazard(floor)) {
+            return new CavernColumnProbe(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_HAZARD, true));
+        }
+        if (floor != PhysicalCellKind.SNOW_BLOCK) {
+            return new CavernColumnProbe(null, null);
+        }
+        PhysicalCellKind substrate = physicalCellAt(cells, x, floorY - 1, z);
+        if (isCavernHazard(substrate)) {
+            return new CavernColumnProbe(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_HAZARD, true));
+        }
+        if (!isDryStableSupport(substrate)) {
+            return new CavernColumnProbe(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_SHELL, false));
+        }
+        int clearHeight = 0;
+        for (int dy = 1; dy <= 8; dy++) {
+            PhysicalCellKind kind = physicalCellAt(cells, x, floorY + dy, z);
+            if (isPassable(kind)) {
+                clearHeight++;
+                continue;
+            }
+            if (isCavernHazard(kind)) {
+                return new CavernColumnProbe(null, authoredRejection(
+                        AuthoredCavernRejection.AUTHORED_CAVERN_HAZARD, true));
+            }
+            break;
+        }
+        if (clearHeight < 4 || clearHeight > 7) {
+            return new CavernColumnProbe(null, authoredRejection(
+                    AuthoredCavernRejection.AUTHORED_CAVERN_CLEAR_HEIGHT, false));
+        }
+        PhysicalCellKind ceiling = physicalCellAt(cells, x, floorY + clearHeight + 1, z);
+        if (!isDryStableSupport(ceiling)) {
+            return new CavernColumnProbe(null, isCavernHazard(ceiling)
+                    ? authoredRejection(AuthoredCavernRejection.AUTHORED_CAVERN_HAZARD, true)
+                    : authoredRejection(AuthoredCavernRejection.AUTHORED_CAVERN_SHELL, false));
+        }
+        for (int dy = 0; dy <= clearHeight; dy++) {
+            PhysicalBiomeKind biome = physicalBiomeAt(biomes, x, floorY + dy, z);
+            if (biome == PhysicalBiomeKind.UNLOADED) {
+                return new CavernColumnProbe(null,
+                        new PhysicalRejection("UNLOADED_OR_SCAN_BOUNDARY", false));
+            }
+            if (biome != PhysicalBiomeKind.GLACIAL_CAVES) {
+                return new CavernColumnProbe(null, authoredRejection(
+                        AuthoredCavernRejection.AUTHORED_CAVERN_BIOME, false));
+            }
+        }
+        return new CavernColumnProbe(new CavernFloor(x, floorY, z, clearHeight), null);
+    }
+
+    private static boolean looksLikeCavernColumn(
+            PhysicalCellKind[][][] cells, int x, int floorY, int z) {
+        PhysicalCellKind floor = physicalCellAt(cells, x, floorY, z);
+        return floor == PhysicalCellKind.SNOW_BLOCK
+                || isCavernHazard(floor)
+                || (isPassable(physicalCellAt(cells, x, floorY + 1, z))
+                        && isPassable(physicalCellAt(cells, x, floorY + 2, z))
+                        && isPassable(physicalCellAt(cells, x, floorY + 3, z)));
+    }
+
+    private static boolean insideOwnerNeighbour(
+            int x, int z, int ownerChunkX, int ownerChunkZ,
+            int neighbourChunkX, int neighbourChunkZ) {
+        int chunkX = Math.floorDiv(x, OWNER_CHUNK_SIDE);
+        int chunkZ = Math.floorDiv(z, OWNER_CHUNK_SIDE);
+        return (chunkX == ownerChunkX && chunkZ == ownerChunkZ)
+                || (chunkX == neighbourChunkX && chunkZ == neighbourChunkZ);
+    }
+
+    private static PhysicalRejection secondNeighbourContinuationRejection(
+            PhysicalCellKind[][][] cells, PhysicalBiomeKind[][][] biomes, VolumeBounds bounds,
+            List<CavernFloor> component, int ownerChunkX, int ownerChunkZ,
+            int neighbourChunkX, int neighbourChunkZ, int worldMinY) {
+        for (CavernFloor floor : component) {
+            for (int[] direction : CARDINAL_DIRECTIONS) {
+                int nx = floor.x() + direction[0];
+                int nz = floor.z() + direction[1];
+                if (insideOwnerNeighbour(nx, nz, ownerChunkX, ownerChunkZ,
+                        neighbourChunkX, neighbourChunkZ)) {
                     continue;
                 }
-                if (node.feetY() == adjacent.cushionY()
-                        || node.feetY() == adjacent.cushionY() + 1) {
-                    doorwayColumns.add(packHorizontal(node.x(), node.z()));
-                } else if (node.feetY() > adjacent.cushionY() + 1
-                        && node.feetY() < adjacent.coverY()) {
-                    return new EscapeCheck(false,
-                            new PhysicalRejection("ESCAPE_SHORTCUT_TO_FALL", true));
+                for (int dy : new int[]{0, -1, 1}) {
+                    if (probeCavernColumn(cells, biomes, bounds, nx, floor.y() + dy, nz,
+                            worldMinY).floor() != null) {
+                        return authoredRejection(
+                                AuthoredCavernRejection.AUTHORED_CAVERN_OWNER_NEIGHBOR, false);
+                    }
                 }
             }
         }
-        if (doorwayColumns.size() != 1) {
-            return new EscapeCheck(false,
-                    new PhysicalRejection(
-                            doorwayColumns.isEmpty()
-                                    ? "MISSING_ESCAPE" : "ESCAPE_SHORTCUT_TO_FALL",
-                            doorwayColumns.size() > 1));
-        }
-
-        boolean reachedSurfaceTailZone = false;
-        for (WalkNode node : visited) {
-            int localSurfaceY = surfaceY[node.x()][node.z()];
-            if (localSurfaceY != UNLOADED
-                    && localSurfaceY - node.feetY() >= 0
-                    && localSurfaceY - node.feetY() <= 4) {
-                reachedSurfaceTailZone = true;
-            }
-        }
-        TailEvidence tail = new TailEvidence();
-        for (WalkNode node : visited) {
-            if (searchMineableTail(
-                    cells, surfaceY, dropByColumn, node, 0, new HashSet<>(), tail)) {
-                return new EscapeCheck(true, null);
-            }
-        }
-        if (tail.brokenPlug) {
-            return new EscapeCheck(false,
-                    new PhysicalRejection("OPEN_SURFACE_PLUG", false));
-        }
-        return new EscapeCheck(false, new PhysicalRejection(
-                reachedSurfaceTailZone || tail.started
-                        ? "MISSING_ESCAPE_TAIL" : "MISSING_ESCAPE",
-                false));
+        return null;
     }
 
-    private static final class TailEvidence {
-        private boolean started;
-        private boolean brokenPlug;
-    }
-
-    /**
-     * Virtually mine two or three cardinal snow columns. Each column is three blocks tall and the next base
-     * rises by one, matching the physical staircase a player can open with ordinary mining.
-     */
-    private static boolean searchMineableTail(
-            PhysicalCellKind[][][] cells,
-            int[][] surfaceY,
-            Map<Long, DropColumn> dropByColumn,
-            WalkNode previous,
-            int length,
-            Set<Long> usedColumns,
-            TailEvidence evidence) {
-        int nextFeetY = length == 0 ? previous.feetY() : previous.feetY() + 1;
-        for (int[] direction : CARDINAL_DIRECTIONS) {
-            int nextX = previous.x() + direction[0];
-            int nextZ = previous.z() + direction[1];
-            long key = packHorizontal(nextX, nextZ);
-            if (usedColumns.contains(key) || dropByColumn.containsKey(key)) {
-                continue;
+    private static boolean containsFilledFiveByFive(
+            Set<Long> floors, int minX, int maxX, int minZ, int maxZ) {
+        for (int x = minX; x <= maxX - 4; x++) {
+            for (int z = minZ; z <= maxZ - 4; z++) {
+                boolean filled = true;
+                for (int dx = 0; dx < 5 && filled; dx++) {
+                    for (int dz = 0; dz < 5; dz++) {
+                        if (!floors.contains(packHorizontal(x + dx, z + dz))) {
+                            filled = false;
+                            break;
+                        }
+                    }
+                }
+                if (filled) {
+                    return true;
+                }
             }
-            if (!isMineableSnowColumn(cells, nextX, nextFeetY, nextZ)) {
-                evidence.brokenPlug |= isOpenedSurfaceTailColumn(
-                        cells, surfaceY, nextX, nextFeetY, nextZ);
-                continue;
-            }
-            evidence.started = true;
-            usedColumns.add(key);
-            WalkNode mined = new WalkNode(nextX, nextFeetY, nextZ);
-            int nextLength = length + 1;
-            if (nextLength >= 2
-                    && isIntactSurfaceTailColumn(cells, surfaceY, mined)) {
-                return true;
-            }
-            if (nextLength < 3 && searchMineableTail(
-                    cells, surfaceY, dropByColumn, mined, nextLength, usedColumns, evidence)) {
-                return true;
-            }
-            usedColumns.remove(key);
         }
         return false;
     }
 
-    private static boolean isMineableSnowColumn(
-            PhysicalCellKind[][][] cells, int x, int feetY, int z) {
-        return isDryStableSupport(physicalCellAt(cells, x, feetY - 1, z))
-                && physicalCellAt(cells, x, feetY, z) == PhysicalCellKind.SNOW_BLOCK
-                && physicalCellAt(cells, x, feetY + 1, z) == PhysicalCellKind.SNOW_BLOCK
-                && physicalCellAt(cells, x, feetY + 2, z) == PhysicalCellKind.SNOW_BLOCK;
+    private static LobeMetrics measureLobes(
+            List<CavernFloor> component, Set<Long> floors, boolean majorX) {
+        Map<Integer, Set<Integer>> slices = new LinkedHashMap<>();
+        for (CavernFloor floor : component) {
+            int major = majorX ? floor.x() : floor.z();
+            int minor = majorX ? floor.z() : floor.x();
+            slices.computeIfAbsent(major, ignored -> new HashSet<>()).add(minor);
+        }
+        List<Integer> coordinates = slices.keySet().stream().sorted().toList();
+        LobeMetrics best = null;
+        int bestArea = -1;
+        for (int coordinate : coordinates) {
+            int throatWidth = slices.get(coordinate).size();
+            if (throatWidth < 3 || throatWidth > 5
+                    || !slices.containsKey(coordinate - 1)
+                    || !slices.containsKey(coordinate + 1)
+                    || !throatJoinsBothSides(slices, coordinate)) {
+                continue;
+            }
+            List<CavernFloor> first = component.stream()
+                    .filter(floor -> (majorX ? floor.x() : floor.z()) < coordinate).toList();
+            List<CavernFloor> second = component.stream()
+                    .filter(floor -> (majorX ? floor.x() : floor.z()) > coordinate).toList();
+            LobeDimensions firstDimensions = lobeDimensions(first, majorX);
+            LobeDimensions secondDimensions = lobeDimensions(second, majorX);
+            boolean fits = lobeFits(firstDimensions, 8, 7) && lobeFits(secondDimensions, 6, 5)
+                    || lobeFits(secondDimensions, 8, 7) && lobeFits(firstDimensions, 6, 5);
+            if (!fits) {
+                continue;
+            }
+            LobeDimensions primary = firstDimensions.area() >= secondDimensions.area()
+                    ? firstDimensions : secondDimensions;
+            LobeDimensions secondary = primary == firstDimensions
+                    ? secondDimensions : firstDimensions;
+            double firstCentre = minorCentre(first, majorX);
+            double secondCentre = minorCentre(second, majorX);
+            boolean bent = Math.abs(firstCentre - secondCentre) >= 2.0;
+            int area = firstDimensions.area() + secondDimensions.area();
+            if (area > bestArea) {
+                bestArea = area;
+                best = new LobeMetrics(
+                        primary.span(), primary.width(), secondary.span(), secondary.width(),
+                        throatWidth, bent);
+            }
+        }
+        return best;
     }
 
-    private static boolean isIntactSurfaceTailColumn(
+    private static boolean throatJoinsBothSides(Map<Integer, Set<Integer>> slices, int coordinate) {
+        for (int minor : slices.get(coordinate)) {
+            boolean left = slices.get(coordinate - 1).contains(minor);
+            boolean right = slices.get(coordinate + 1).contains(minor);
+            if (left && right) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static LobeDimensions lobeDimensions(List<CavernFloor> floors, boolean majorX) {
+        if (floors.isEmpty()) {
+            return new LobeDimensions(0, 0, 0);
+        }
+        int minMajor = floors.stream().mapToInt(floor -> majorX ? floor.x() : floor.z()).min().orElse(0);
+        int maxMajor = floors.stream().mapToInt(floor -> majorX ? floor.x() : floor.z()).max().orElse(0);
+        int minMinor = floors.stream().mapToInt(floor -> majorX ? floor.z() : floor.x()).min().orElse(0);
+        int maxMinor = floors.stream().mapToInt(floor -> majorX ? floor.z() : floor.x()).max().orElse(0);
+        return new LobeDimensions(
+                maxMajor - minMajor + 1, maxMinor - minMinor + 1, floors.size());
+    }
+
+    private static boolean lobeFits(LobeDimensions dimensions, int span, int width) {
+        return dimensions.span() >= span && dimensions.width() >= width;
+    }
+
+    private static double minorCentre(List<CavernFloor> floors, boolean majorX) {
+        return floors.stream().mapToInt(floor -> majorX ? floor.z() : floor.x())
+                .average().orElse(0.0);
+    }
+
+    private static int passageDirections(Set<Long> floors) {
+        boolean x = false;
+        boolean z = false;
+        for (long packed : floors) {
+            int cellX = (int) (packed >> 32);
+            int cellZ = (int) packed;
+            x |= floors.contains(packHorizontal(cellX - 1, cellZ))
+                    || floors.contains(packHorizontal(cellX + 1, cellZ));
+            z |= floors.contains(packHorizontal(cellX, cellZ - 1))
+                    || floors.contains(packHorizontal(cellX, cellZ + 1));
+        }
+        return (x ? 1 : 0) + (z ? 1 : 0);
+    }
+
+    private static boolean isCavernHazard(PhysicalCellKind kind) {
+        return kind == PhysicalCellKind.FLUID
+                || kind == PhysicalCellKind.BLOCK_ENTITY
+                || kind == PhysicalCellKind.GRAVITY_SOLID
+                || kind == PhysicalCellKind.ORE
+                || kind == PhysicalCellKind.BEDROCK
+                || kind == PhysicalCellKind.DEEPSLATE
+                || kind == PhysicalCellKind.MAGMA;
+    }
+
+    private static PhysicalRejection authoredRejection(
+            AuthoredCavernRejection reason, boolean unsafe) {
+        return new PhysicalRejection(reason.name(), unsafe);
+    }
+
+    private static boolean routeNeverRises(List<PhysicalRouteStation> stations) {
+        for (int index = 1; index < stations.size(); index++) {
+            if (stations.get(index).floorY() > stations.get(index - 1).floorY()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static PhysicalRejection diagnoseAuthoredRoute(
             PhysicalCellKind[][][] cells,
-            int[][] surfaceY,
-            WalkNode tailEnd) {
-        int surface = measuredSurfaceAt(surfaceY, tailEnd.x(), tailEnd.z());
-        int headY = tailEnd.feetY() + 2;
-        PhysicalCellKind above = physicalCellAt(
-                cells, tailEnd.x(), headY + 1, tailEnd.z());
-        if (surface == headY) {
-            return isPassable(above);
+            VolumeBounds bounds,
+            Map<Long, DropColumn> drops,
+            RouteFootprint start,
+            int entryFloorY,
+            int initialX,
+            int initialZ) {
+        record DiagnosticPath(RouteFootprint current, Set<Long> occupied, int headingX, int headingZ) {
         }
-        return surface == headY + 1
-                && above == PhysicalCellKind.SNOW_LAYER
-                && isPassable(physicalCellAt(
-                        cells, tailEnd.x(), headY + 2, tailEnd.z()));
-    }
-
-    private static boolean isOpenedSurfaceTailColumn(
-            PhysicalCellKind[][][] cells,
-            int[][] surfaceY,
-            int x,
-            int feetY,
-            int z) {
-        if (!isDryStableSupport(physicalCellAt(cells, x, feetY - 1, z))
-                || physicalCellAt(cells, x, feetY, z) != PhysicalCellKind.SNOW_BLOCK
-                || physicalCellAt(cells, x, feetY + 1, z) != PhysicalCellKind.SNOW_BLOCK
-                || !isPassable(physicalCellAt(cells, x, feetY + 2, z))) {
-            return false;
+        List<DiagnosticPath> paths = List.of(new DiagnosticPath(
+                start, start.columns(), initialX, initialZ));
+        for (int station = 1; station <= 11 && !paths.isEmpty(); station++) {
+            int floorY = entryFloorY - Math.min(station, 5);
+            List<DiagnosticPath> expanded = new ArrayList<>();
+            for (DiagnosticPath path : paths) {
+                for (int[] heading : CARDINAL_DIRECTIONS) {
+                    List<RouteFootprint> nextFootprints = heading[0] == path.headingX()
+                                    && heading[1] == path.headingZ()
+                            ? List.of(path.current().translate(heading[0], heading[1]))
+                            : turnFootprints(path.current(), heading[0], heading[1]);
+                    for (RouteFootprint next : nextFootprints) {
+                        if (next.columns().stream().anyMatch(path.occupied()::contains)
+                                || !isRouteFootprint(cells, bounds, drops, next, floorY)) {
+                            continue;
+                        }
+                        if (heading[0] == -initialX && heading[1] == -initialZ) {
+                            return new PhysicalRejection("AUTHORED_ROUTE_REVERSE", false);
+                        }
+                        if (expanded.size() < 256) {
+                            Set<Long> occupied = new HashSet<>(path.occupied());
+                            occupied.addAll(next.columns());
+                            expanded.add(new DiagnosticPath(
+                                    next, Set.copyOf(occupied), heading[0], heading[1]));
+                        }
+                    }
+                }
+            }
+            paths = List.copyOf(expanded);
         }
-        int surface = measuredSurfaceAt(surfaceY, x, z);
-        return surface == feetY + 1
-                || (surface == feetY + 3
-                        && physicalCellAt(cells, x, feetY + 3, z)
-                                == PhysicalCellKind.SNOW_LAYER);
-    }
-
-    private static int measuredSurfaceAt(int[][] surfaceY, int x, int z) {
-        if (x < 0 || x >= surfaceY.length
-                || z < 0 || z >= surfaceY[x].length) {
-            return UNLOADED;
+        for (char action : new char[]{'F', 'L', 'R'}) {
+            int dx = actionHeadingX(initialX, initialZ, action);
+            int dz = actionHeadingZ(initialX, initialZ, action);
+            for (RouteFootprint next : turnFootprints(start, dx, dz)) {
+                if (isRouteFootprint(cells, bounds, drops, next, entryFloorY)) {
+                    return new PhysicalRejection("AUTHORED_ROUTE_RISE", false);
+                }
+            }
+            RouteFootprint translated = start.translate(dx, dz);
+            if (isRouteFootprint(cells, bounds, drops, translated, entryFloorY)) {
+                return new PhysicalRejection("AUTHORED_ROUTE_RISE", false);
+            }
         }
-        return surfaceY[x][z];
+        return new PhysicalRejection("AUTHORED_ROUTE_DISCONNECTED", false);
     }
 
-    private static boolean insideEscapeBounds(
-            WalkNode node,
-            int minX,
-            int maxX,
-            int minZ,
-            int maxZ,
-            int ySize) {
-        return node.x() >= minX && node.x() <= maxX
-                && node.z() >= minZ && node.z() <= maxZ
-                && node.feetY() > 0 && node.feetY() + 1 < ySize;
+    private static PhysicalRejection preferredAuthoredRejection(
+            PhysicalRejection current, PhysicalRejection candidate) {
+        if (candidate == null) {
+            return current;
+        }
+        if (current == null || authoredRejectionPriority(candidate.reason())
+                > authoredRejectionPriority(current.reason())) {
+            return candidate;
+        }
+        return current;
     }
 
-    private static boolean isWalkNode(PhysicalCellKind[][][] cells, WalkNode node) {
-        return isPassable(
-                        physicalCellAt(cells, node.x(), node.feetY(), node.z()))
-                && isPassable(
-                        physicalCellAt(cells, node.x(), node.feetY() + 1, node.z()))
-                && isDryStableSupport(
-                        physicalCellAt(cells, node.x(), node.feetY() - 1, node.z()));
+    private static int authoredRejectionPriority(String reason) {
+        return switch (reason) {
+            case "AUTHORED_CAVERN_HAZARD" -> 16;
+            case "AUTHORED_CAVERN_BIOME" -> 15;
+            case "AUTHORED_CAVERN_ABOVE_Y0" -> 14;
+            case "AUTHORED_CAVERN_FULL_5X5" -> 13;
+            case "AUTHORED_CAVERN_CLEAR_HEIGHT" -> 12;
+            case "AUTHORED_CAVERN_SHELL" -> 11;
+            case "AUTHORED_CAVERN_LOBES" -> 10;
+            case "AUTHORED_CAVERN_THROAT" -> 9;
+            case "AUTHORED_CAVERN_BEND" -> 8;
+            case "AUTHORED_CAVERN_FILL" -> 7;
+            case "AUTHORED_CAVERN_SPAN" -> 6;
+            case "AUTHORED_CAVERN_SIZE" -> 5;
+            case "AUTHORED_CAVERN_OWNER_NEIGHBOR" -> 4;
+            case "AUTHORED_CAVERN_PORTAL" -> 3;
+            case "AUTHORED_ROUTE_REVERSE", "AUTHORED_ROUTE_RISE" -> 2;
+            case "AUTHORED_ROUTE_DISCONNECTED" -> 1;
+            default -> 0;
+        };
+    }
+
+    private static boolean isThreeHighDescentStation(
+            PhysicalCellKind[][][] cells, VolumeBounds bounds, int x, int floorY, int z) {
+        return insideVolume(bounds, x, floorY, z)
+                && physicalCellAt(cells, x, floorY, z) == PhysicalCellKind.SNOW_BLOCK
+                && isPassable(physicalCellAt(cells, x, floorY + 1, z))
+                && isPassable(physicalCellAt(cells, x, floorY + 2, z))
+                && isPassable(physicalCellAt(cells, x, floorY + 3, z))
+                && isDryStableSupport(physicalCellAt(cells, x, floorY + 4, z));
+    }
+
+    private static boolean isNaturalCaveColumn(PhysicalCellKind[][][] cells, int x, int floorY, int z) {
+        return physicalCellAt(cells, x, floorY, z) == PhysicalCellKind.DRY_SOLID
+                && physicalCellAt(cells, x, floorY - 1, z) == PhysicalCellKind.DRY_SOLID
+                && isPassable(physicalCellAt(cells, x, floorY + 1, z))
+                && isPassable(physicalCellAt(cells, x, floorY + 2, z))
+                && isPassable(physicalCellAt(cells, x, floorY + 3, z));
+    }
+
+    private static int connectedNaturalCaveFloors(
+            PhysicalCellKind[][][] cells, VolumeBounds bounds, int firstX, int floorY, int firstZ,
+            int secondX, int secondZ) {
+        ArrayDeque<WalkNode> queue = new ArrayDeque<>();
+        Set<WalkNode> visited = new HashSet<>();
+        for (WalkNode start : List.of(new WalkNode(firstX, floorY, firstZ),
+                new WalkNode(secondX, floorY, secondZ))) {
+            if (visited.add(start)) {
+                queue.addLast(start);
+            }
+        }
+        while (!queue.isEmpty() && visited.size() < 8) {
+            WalkNode current = queue.removeFirst();
+            for (int[] direction : CARDINAL_DIRECTIONS) {
+                for (int dy : new int[]{0, -1, 1}) {
+                    WalkNode next = new WalkNode(current.x() + direction[0], current.feetY() + dy,
+                            current.z() + direction[1]);
+                    if (insideVolume(bounds, next.x(), next.feetY(), next.z())
+                            && isNaturalCaveColumn(cells, next.x(), next.feetY(), next.z())
+                            && visited.add(next)) {
+                        queue.addLast(next);
+                    }
+                }
+            }
+        }
+        return visited.size();
+    }
+
+    private static boolean insideDescentBounds(
+            int x, int y, int z, int minX, int maxX, int minZ, int maxZ, VolumeBounds bounds) {
+        return x >= minX && x <= maxX && z >= minZ && z <= maxZ && insideVolume(bounds, x, y, z);
+    }
+
+    private static boolean insideVolume(VolumeBounds bounds, int x, int y, int z) {
+        return x >= 0 && x < bounds.xSize() && y > 0 && y + 3 < bounds.ySize() && z >= 0 && z < bounds.zSize();
     }
 
     private static boolean isPassable(PhysicalCellKind kind) {
@@ -759,6 +1705,17 @@ public final class GlacialMarkScan {
             return PhysicalCellKind.UNLOADED;
         }
         return cells[x][y][z];
+    }
+
+    private static PhysicalBiomeKind physicalBiomeAt(
+            PhysicalBiomeKind[][][] biomes, int x, int y, int z) {
+        if (biomes == null || x < 0 || x >= biomes.length || biomes[x] == null
+                || y < 0 || y >= biomes[x].length || biomes[x][y] == null
+                || z < 0 || z >= biomes[x][y].length
+                || biomes[x][y][z] == null) {
+            return PhysicalBiomeKind.UNLOADED;
+        }
+        return biomes[x][y][z];
     }
 
     private static long packHorizontal(int x, int z) {

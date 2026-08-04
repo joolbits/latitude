@@ -99,15 +99,78 @@ class MagmaQuenchSweepFeatureContractTest {
         assertEquals(writesAfterFirstPass, world.writeAttempts(),
                 "the idempotent second pass must not call setBlock again");
 
-        BlockPos subY0Magma = new BlockPos(4, -1, 4);
-        BlockPos subY0Ice = subY0Magma.west();
-        world.put(subY0Magma, Blocks.MAGMA_BLOCK.defaultBlockState());
-        world.put(subY0Ice, Blocks.PACKED_ICE.defaultBlockState());
+        BlockPos belowBandMagma = new BlockPos(4, MagmaQuenchSweepFeature.SCAN_BOTTOM_Y - 1, 4);
+        BlockPos belowBandIce = belowBandMagma.west();
+        world.put(belowBandMagma, Blocks.MAGMA_BLOCK.defaultBlockState());
+        world.put(belowBandIce, Blocks.PACKED_ICE.defaultBlockState());
 
         assertFalse(feature.place(new FeaturePlaceContext<>(Optional.empty(), world.level(), null, null,
-                subY0Magma, NoneFeatureConfiguration.INSTANCE)));
-        assertEquals(Blocks.PACKED_ICE, world.block(subY0Ice).getBlock(),
-                "the deliberate sub-Y0 cellar exemption remains outside the sweep");
+                belowBandMagma, NoneFeatureConfiguration.INSTANCE)));
+        assertEquals(Blocks.PACKED_ICE, world.block(belowBandIce).getBlock(),
+                "the deliberate below-diffusion cellar exemption remains outside the sweep");
+    }
+
+    @Test
+    void finalSweepQuenchesTheWholeSubYZeroIceDiffusionBandWithoutSpillingBelowIt() {
+        assertEquals(-10, MagmaQuenchSweepFeature.SCAN_BOTTOM_Y,
+                "the sweep bottom derives from the current Y0-to-Y-10 diffusion definition");
+        RecordingWorld world = new RecordingWorld();
+        BlockPos justBelowY0 = new BlockPos(4, -1, 4);
+        BlockPos bandBottom = new BlockPos(10, MagmaQuenchSweepFeature.SCAN_BOTTOM_Y, 4);
+        BlockPos cellar = new BlockPos(4, MagmaQuenchSweepFeature.SCAN_BOTTOM_Y - 1, 10);
+        world.put(justBelowY0, Blocks.MAGMA_BLOCK.defaultBlockState());
+        world.put(bandBottom, Blocks.MAGMA_BLOCK.defaultBlockState());
+        world.put(cellar, Blocks.MAGMA_BLOCK.defaultBlockState());
+        fillShell(world, justBelowY0, justBelowY0.east());
+        fillShell(world, bandBottom, bandBottom.east());
+        world.put(bandBottom.below(), Blocks.WATER.defaultBlockState());
+        fillShell(world, cellar, cellar.east());
+
+        MagmaQuenchSweepFeature feature = new MagmaQuenchSweepFeature(NoneFeatureConfiguration.CODEC);
+        assertTrue(feature.place(new FeaturePlaceContext<>(Optional.empty(), world.level(), null, null,
+                justBelowY0, NoneFeatureConfiguration.INSTANCE)));
+        assertSealedObsidianShell(world, justBelowY0);
+        assertBandFloorShellQuenchedWithoutSpill(world, bandBottom);
+        assertEquals(Blocks.WATER, world.block(cellar.east()).getBlock(),
+                "magma below the diffusion band stays untouched");
+    }
+
+    @Test
+    void exactStoredBiomeQuartControlsBoundaryOwnershipForBothGlacialHosts() {
+        RecordingWorld world = new RecordingWorld();
+        BlockPos exactGlacial = new BlockPos(4, 20, 4);
+        world.put(exactGlacial, Blocks.MAGMA_BLOCK.defaultBlockState());
+        fillShell(world, exactGlacial, exactGlacial.east());
+        world.setFuzzyBiome("minecraft", "plains");
+        world.setStoredBiome("globe", "glacial_caves");
+
+        MagmaQuenchSweepFeature feature = new MagmaQuenchSweepFeature(NoneFeatureConfiguration.CODEC);
+        assertTrue(feature.place(new FeaturePlaceContext<>(Optional.empty(), world.level(), null, null,
+                exactGlacial, NoneFeatureConfiguration.INSTANCE)),
+                "a glacial-caves quart must quench even when the fuzzy lookup points across its boundary");
+        assertSealedObsidianShell(world, exactGlacial);
+        assertEquals(0, world.fuzzyBiomeQueries(), "the sweep must not use fuzzy host-biome resolution");
+
+        RecordingWorld polarBarrensWorld = new RecordingWorld();
+        BlockPos exactBarrens = new BlockPos(4, 20, 4);
+        polarBarrensWorld.put(exactBarrens, Blocks.MAGMA_BLOCK.defaultBlockState());
+        fillShell(polarBarrensWorld, exactBarrens, exactBarrens.east());
+        polarBarrensWorld.setStoredBiome("globe", "polar_barrens");
+        assertTrue(feature.place(new FeaturePlaceContext<>(Optional.empty(), polarBarrensWorld.level(), null, null,
+                exactBarrens, NoneFeatureConfiguration.INSTANCE)),
+                "polar-barrens is the second scheduled host biome and must use the same exact quart rule");
+        assertSealedObsidianShell(polarBarrensWorld, exactBarrens);
+
+        RecordingWorld nonGlacialWorld = new RecordingWorld();
+        BlockPos outsideExactHost = new BlockPos(4, 20, 4);
+        nonGlacialWorld.put(outsideExactHost, Blocks.MAGMA_BLOCK.defaultBlockState());
+        fillShell(nonGlacialWorld, outsideExactHost, outsideExactHost.east());
+        nonGlacialWorld.setFuzzyBiome("globe", "glacial_caves");
+        nonGlacialWorld.setStoredBiome("minecraft", "plains");
+        assertFalse(feature.place(new FeaturePlaceContext<>(Optional.empty(), nonGlacialWorld.level(), null, null,
+                outsideExactHost, NoneFeatureConfiguration.INSTANCE)),
+                "a neighboring fuzzy glacial sample must not quench a non-glacial stored quart");
+        assertEquals(Blocks.WATER, nonGlacialWorld.block(outsideExactHost.east()).getBlock());
     }
 
     @Test
@@ -247,11 +310,35 @@ class MagmaQuenchSweepFeatureContractTest {
         }
     }
 
+    private static void assertBandFloorShellQuenchedWithoutSpill(RecordingWorld world, BlockPos magma) {
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0) {
+                        continue;
+                    }
+                    BlockPos shell = magma.offset(dx, dy, dz);
+                    if (shell.getY() >= MagmaQuenchSweepFeature.SCAN_BOTTOM_Y) {
+                        assertEquals(Blocks.OBSIDIAN, world.block(shell).getBlock(),
+                                "in-band shell cell must quench at " + shell);
+                    } else {
+                        assertEquals(shell.equals(magma.below()) ? Blocks.WATER : Blocks.PACKED_ICE,
+                                world.block(shell).getBlock(),
+                                "below-band water/ice must remain untouched at " + shell);
+                    }
+                }
+            }
+        }
+    }
+
     private static final class RecordingWorld {
         private final Map<BlockPos, BlockState> blocks = new HashMap<>();
         private final boolean acceptWrites;
         private final WorldGenLevel level;
         private int writeAttempts;
+        private int fuzzyBiomeQueries;
+        private ResourceKey<Biome> fuzzyBiome = biomeKey("globe", "glacial_caves");
+        private ResourceKey<Biome> storedBiome = biomeKey("globe", "glacial_caves");
 
         private RecordingWorld() {
             this(true);
@@ -263,7 +350,11 @@ class MagmaQuenchSweepFeatureContractTest {
                     WorldGenLevel.class.getClassLoader(), new Class<?>[] {WorldGenLevel.class},
                     (proxy, method, arguments) -> switch (method.getName()) {
                         case "getBlockState" -> block((BlockPos) arguments[0]);
-                        case "getBiome" -> glacialCavesHolder();
+                        case "getBiome" -> {
+                            fuzzyBiomeQueries++;
+                            yield biomeHolder(fuzzyBiome);
+                        }
+                        case "getNoiseBiome" -> biomeHolder(storedBiome);
                         case "setBlock" -> setBlock(
                                 (BlockPos) arguments[0], (BlockState) arguments[1]);
                         case "getMinY" -> -64;
@@ -290,6 +381,18 @@ class MagmaQuenchSweepFeatureContractTest {
             return writeAttempts;
         }
 
+        int fuzzyBiomeQueries() {
+            return fuzzyBiomeQueries;
+        }
+
+        void setFuzzyBiome(String namespace, String path) {
+            fuzzyBiome = biomeKey(namespace, path);
+        }
+
+        void setStoredBiome(String namespace, String path) {
+            storedBiome = biomeKey(namespace, path);
+        }
+
         private boolean setBlock(BlockPos pos, BlockState state) {
             writeAttempts++;
             if (!acceptWrites) {
@@ -299,9 +402,11 @@ class MagmaQuenchSweepFeatureContractTest {
             return true;
         }
 
-        private static Holder<Biome> glacialCavesHolder() {
-            ResourceKey<Biome> key = ResourceKey.create(Registries.BIOME,
-                    Identifier.fromNamespaceAndPath("globe", "glacial_caves"));
+        private static ResourceKey<Biome> biomeKey(String namespace, String path) {
+            return ResourceKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath(namespace, path));
+        }
+
+        private static Holder<Biome> biomeHolder(ResourceKey<Biome> key) {
             return Holder.Reference.createStandAlone(new HolderOwner<>() { }, key);
         }
     }

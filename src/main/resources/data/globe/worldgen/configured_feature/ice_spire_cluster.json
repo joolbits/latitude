@@ -4,21 +4,9 @@
     "features": [
       {
         "feature": "globe:ice_spire",
-        "placement": []
-      },
-      {
-        "feature": "globe:ice_spire",
         "placement": [
           {
-            "type": "minecraft:random_offset",
-            "xz_spread": {
-              "type": "minecraft:clamped_normal",
-              "deviation": 2.5,
-              "max_inclusive": 5,
-              "mean": 0.0,
-              "min_inclusive": -5
-            },
-            "y_spread": 0
+            "type": "globe:roofed_cavern"
           }
         ]
       },
@@ -35,6 +23,28 @@
               "min_inclusive": -5
             },
             "y_spread": 0
+          },
+          {
+            "type": "globe:roofed_cavern"
+          }
+        ]
+      },
+      {
+        "feature": "globe:ice_spire",
+        "placement": [
+          {
+            "type": "minecraft:random_offset",
+            "xz_spread": {
+              "type": "minecraft:clamped_normal",
+              "deviation": 2.5,
+              "max_inclusive": 5,
+              "mean": 0.0,
+              "min_inclusive": -5
+            },
+            "y_spread": 0
+          },
+          {
+            "type": "globe:roofed_cavern"
           }
         ]
       },
@@ -51,6 +61,9 @@
               "min_inclusive": -7
             },
             "y_spread": 0
+          },
+          {
+            "type": "globe:roofed_cavern"
           }
         ]
       },
@@ -67,6 +80,9 @@
               "min_inclusive": -7
             },
             "y_spread": 0
+          },
+          {
+            "type": "globe:roofed_cavern"
           }
         ]
       }

@@ -2,7 +2,9 @@ package com.example.globe.core;
 
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Method;
+import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -11,17 +13,28 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Pure-JVM laws for natural-relief subterranean trap plans. */
+/** Pure-JVM laws for a surface trap that continues downward into a real lower cave. */
 class SubterraneanTrapPlanTest {
 
-    private static final SubterraneanTrapLayout.Placement PLACEMENT =
-            SubterraneanTrapLayout.placements(73L, 4, -9).getFirst();
+    private static final SubterraneanTrapLayout.Placement PLACEMENT = placementWithProbe();
 
     @Test
-    void firstAir101MeansMinimumPowderRoofY100AndPreferredLanding68() {
-        SubterraneanTrapPlan.Result result = plan(firstAir(101), fullSnow());
+    void missingLowerNaturalCaveFailsClosed() {
+        SubterraneanTrapPlan.Result result = SubterraneanTrapPlan.plan(
+                PLACEMENT, firstAir(101), fullSnow());
+        assertFalse(result.isAccepted());
+        assertEquals(SubterraneanTrapPlan.Rejection.LOWER_CAVE_REQUIRED, result.rejection());
+        assertNull(result.accepted());
+        assertTrue(SubterraneanTrapPlan.planAlternatives(
+                PLACEMENT, firstAir(101), fullSnow(), 32).isEmpty());
+    }
+
+    @Test
+    void connectedLowerNaturalCaveProducesThePreferredLanding() {
+        SubterraneanTrapPlan.Result result = validPlan();
         assertTrue(result.isAccepted());
         assertEquals(100, result.accepted().roofY());
         assertEquals(68, result.accepted().landingY());
@@ -29,705 +42,1035 @@ class SubterraneanTrapPlanTest {
     }
 
     @Test
-    void localReliefAllowsOnePowderBlockAndAThreeBlockSmoothApproachButRejectsTheNamedLimits() {
-        int[][] smoothThreeBlockApproach = firstAir(101);
-        smoothThreeBlockApproach[approachCell(1).x()][approachCell(1).z()] = 102;
-        smoothThreeBlockApproach[approachCell(2).x()][approachCell(2).z()] = 103;
-        smoothThreeBlockApproach[approachCell(3).x()][approachCell(3).z()] = 104;
-        assertTrue(plan(smoothThreeBlockApproach, fullSnow()).isAccepted(),
-                "powder stays within one block while a firm long-axis approach may rise smoothly by three");
-
-        int[][] powderReliefTwo = firstAir(101);
-        SubterraneanTrapLayout.Cell raisedPowder = PLACEMENT.powder().getFirst();
-        powderReliefTwo[raisedPowder.x()][raisedPowder.z()] = 103;
-        assertFalse(plan(powderReliefTwo, fullSnow()).isAccepted(), "two blocks across powder is too uneven");
-
-        int[][] adjacentStepTwo = firstAir(101);
-        adjacentStepTwo[approachCell(1).x()][approachCell(1).z()] = 103;
-        assertFalse(plan(adjacentStepTwo, fullSnow()).isAccepted(),
-                "a two-block cardinal step in the collar or approach is unsafe");
-
-        int[][] totalReliefFour = firstAir(101);
-        totalReliefFour[approachCell(1).x()][approachCell(1).z()] = 102;
-        totalReliefFour[approachCell(2).x()][approachCell(2).z()] = 103;
-        totalReliefFour[approachCell(3).x()][approachCell(3).z()] = 104;
-        totalReliefFour[approachCell(4).x()][approachCell(4).z()] = 105;
-        assertFalse(plan(totalReliefFour, fullSnow()).isAccepted(),
-                "a four-block total collar or approach relief exceeds the local terrain allowance");
+    void everyCataloguePlacementAndRotationHasTheIrregularCrossChunkCavernContract() {
+        assertTimeoutPreemptively(Duration.ofSeconds(60),
+                SubterraneanTrapPlanTest::assertFullAuthoredCatalogueContract);
     }
 
-    @Test
-    void powderWritesKeepEachNaturalRoofHeightAndShareMinimumBasedLanding() {
-        int[][] heights = firstAir(101);
-        SubterraneanTrapLayout.Cell raised = PLACEMENT.powder().getFirst();
-        heights[raised.x()][raised.z()] = 102;
-        SubterraneanTrapPlan.Plan plan = plan(heights, fullSnow()).accepted();
-        assertEquals(68, plan.landingY());
-        assertEquals(1, writesAt(plan.writes(), raised.x(), 101, raised.z(),
-                SubterraneanTrapPlan.Phase.SURFACE_POWDER));
-        assertEquals(1, writesAt(plan.writes(), raised.x(), 100, raised.z(), SubterraneanTrapPlan.Phase.CLEAR));
-        for (SubterraneanTrapLayout.Cell powder : PLACEMENT.powder()) {
-            int roofY = heights[powder.x()][powder.z()] - 1;
-            assertEquals(1, writesAt(plan.writes(), powder.x(), roofY, powder.z(),
-                    SubterraneanTrapPlan.Phase.SURFACE_POWDER));
-            assertEquals(1, writesAt(plan.writes(), powder.x(), 68, powder.z(), SubterraneanTrapPlan.Phase.CUSHION));
-            for (int y = roofY - 1; y >= 69; y--) {
-                assertEquals(1, writesAt(plan.writes(), powder.x(), y, powder.z(), SubterraneanTrapPlan.Phase.CLEAR));
-            }
-        }
-    }
-
-    @Test
-    void everyCushionHasOneExplicitUniqueBaseDirectlyBelowAndBasesPrecedeCushionsAndSurface() {
-        Set<String> phases = java.util.Arrays.stream(SubterraneanTrapPlan.Phase.values()).map(Enum::name)
-                .collect(java.util.stream.Collectors.toSet());
-        assertTrue(phases.contains("CUSHION_BASE"),
-                "RED: a safe landing must plan an explicit final-solid CUSHION_BASE, not depend on incidental cave terrain");
-
-        SubterraneanTrapPlan.Phase basePhase = namedPhase("CUSHION_BASE");
-        SubterraneanTrapPlan.Plan plan = plan(firstAir(101), fullSnow()).accepted();
-        List<SubterraneanTrapPlan.Write> bases = plan.writes().stream()
-                .filter(write -> write.phase() == basePhase).toList();
-        List<SubterraneanTrapPlan.Write> cushions = plan.writes().stream()
-                .filter(write -> write.phase() == SubterraneanTrapPlan.Phase.CUSHION).toList();
-        assertEquals(cushions.size(), bases.size(), "every cushion gets exactly one authored base");
-
-        int firstSurface = firstPhaseIndex(plan.writes(), "SURFACE_POWDER");
-        Set<String> baseCoordinates = new HashSet<>();
-        for (SubterraneanTrapPlan.Write base : bases) {
-            assertTrue(baseCoordinates.add(base.x() + ":" + base.y() + ":" + base.z()),
-                    "cushion-base coordinates are unique");
-            assertTrue(indexOf(plan.writes(), base) < firstSurface,
-                    "all final-solid bases are applied before any surface is replaced");
-        }
-        for (SubterraneanTrapPlan.Write cushion : cushions) {
-            SubterraneanTrapPlan.Write base = bases.stream()
-                    .filter(candidate -> candidate.x() == cushion.x()
-                            && candidate.y() == cushion.y() - 1
-                            && candidate.z() == cushion.z())
-                    .findFirst().orElse(null);
-            assertTrue(base != null, "the base is exactly one block vertically below its cushion");
-            assertTrue(indexOf(plan.writes(), base) < indexOf(plan.writes(), cushion),
-                    "the solid base must be applied before the player-facing powder cushion");
-        }
-    }
-
-    @Test
-    void callerCertifiedThinSnowIsAcceptedForPowderAndVisualCollarAndRemovedAfterReplacement() {
-        int[][] kinds = fullSnow();
-        SubterraneanTrapLayout.Cell powder = PLACEMENT.powder().getFirst();
-        SubterraneanTrapLayout.Cell collar = lateralVisualCollarCell();
-        kinds[powder.x()][powder.z()] = SubterraneanTrapPlan.THIN_SNOW;
-        kinds[collar.x()][collar.z()] = SubterraneanTrapPlan.THIN_SNOW;
-        SubterraneanTrapPlan.Result result = plan(firstAir(101), kinds);
-        assertTrue(result.isAccepted(), "caller-certified thin snow is a valid cosmetic layer over safe support");
-        SubterraneanTrapPlan.Plan plan = result.accepted();
-        assertEquals(1, writesAt(plan.writes(), powder.x(), 100, powder.z(), SubterraneanTrapPlan.Phase.SURFACE_POWDER));
-        assertEquals(1, writesAt(plan.writes(), powder.x(), 101, powder.z(),
-                SubterraneanTrapPlan.Phase.REMOVE_SURFACE_LAYER));
-        assertEquals(SubterraneanTrapPlan.Phase.REMOVE_SURFACE_LAYER, plan.writes().getLast().phase());
-        assertEquals(0, writesAt(plan.writes(), collar.x(), 101, collar.z(),
-                SubterraneanTrapPlan.Phase.REMOVE_SURFACE_LAYER), "unreplaced collar snow remains untouched");
-    }
-
-    @Test
-    void terrainFitIgnoresRemoteOldRectangleCellsButKeepsTheLocalCollarAndApproachMeaningful() {
-        int[][] kinds = fullSnow();
-        int[][] heights = firstAir(101);
-        SubterraneanTrapLayout.Cell remote = remoteOldRectangleCell();
-        kinds[remote.x()][remote.z()] = SubterraneanTrapPlan.OTHER;
-        heights[remote.x()][remote.z()] = 109;
-        assertTrue(plan(heights, kinds).isAccepted(),
-                "unrelated legacy rectangle cells must not decide a local powder/collar/approach fit");
-
-        kinds = fullSnow();
-        kinds[lateralVisualCollarCell().x()][lateralVisualCollarCell().z()] = SubterraneanTrapPlan.OTHER;
-        assertFalse(plan(firstAir(101), kinds).isAccepted(), "the immediate visual collar remains constrained");
-
-        kinds = fullSnow();
-        kinds[approachCell(1).x()][approachCell(1).z()] = SubterraneanTrapPlan.OTHER;
-        assertFalse(plan(firstAir(101), kinds).isAccepted(), "the firm long-axis approach remains constrained");
-    }
-
-    @Test
-    void naturalPowderIsAllowedInTheLateralVisualCollarButNotTheFirmApproach() {
-        int[][] kinds = fullSnow();
-        SubterraneanTrapLayout.Cell collar = lateralVisualCollarCell();
-        kinds[collar.x()][collar.z()] = SubterraneanTrapPlan.POWDER;
-        assertTrue(plan(firstAir(101), kinds).isAccepted(),
-                "natural powder belongs in the lateral visual collar around a powder cap");
-
-        kinds = fullSnow();
-        SubterraneanTrapLayout.Cell approach = approachCell(1);
-        kinds[approach.x()][approach.z()] = SubterraneanTrapPlan.POWDER;
-        assertFalse(plan(firstAir(101), kinds).isAccepted(), "firm approach cells may not be powder");
-    }
-
-    @Test
-    void writesAreUniqueAndOnlyTheNamedEscapePhasesTouchNonpowderColumns() {
-        SubterraneanTrapPlan.Plan plan = plan(firstAir(101), fullSnow()).accepted();
-        Set<String> coordinates = new HashSet<>();
-        Set<SubterraneanTrapLayout.Cell> powder = Set.copyOf(PLACEMENT.powder());
-        int escapeWrites = 0;
-        for (SubterraneanTrapPlan.Write write : plan.writes()) {
-            assertTrue(coordinates.add(write.x() + ":" + write.y() + ":" + write.z()));
-            if (!powder.contains(new SubterraneanTrapLayout.Cell(write.x(), write.z()))) {
-                escapeWrites++;
-                assertTrue(write.phase() == SubterraneanTrapPlan.Phase.ESCAPE_FLOOR
-                                || write.phase() == SubterraneanTrapPlan.Phase.ESCAPE_CLEAR
-                                || write.phase() == SubterraneanTrapPlan.Phase.ESCAPE_MINE_TAIL,
-                        "one narrow doorway and route replace the old broad chamber dilation");
-            }
-        }
-        assertTrue(escapeWrites > 0);
-    }
-
-    @Test
-    void planOrderIsStableAndImmutableForRuntimeGuardColumns() {
-        SubterraneanTrapPlan.Result first = plan(firstAir(101), fullSnow());
-        assertEquals(first, plan(firstAir(101), fullSnow()));
-        assertThrows(UnsupportedOperationException.class, () -> first.accepted().writes().add(
-                new SubterraneanTrapPlan.Write(0, 0, 0, SubterraneanTrapPlan.Phase.CLEAR)));
-        int phaseGroup = -1;
-        for (SubterraneanTrapPlan.Write write : first.accepted().writes()) {
-            int next = phaseOrder(write.phase().name());
-            assertTrue(next >= phaseGroup);
-            phaseGroup = next;
-        }
-    }
-
-    @Test
-    void acceptedPlanExposesEscapeRouteMetadataAndExplicitEscapeWritePhases() {
-        SubterraneanTrapPlan.Plan plan = plan(firstAir(101), fullSnow()).accepted();
-        assertTrue(recordComponentNames(plan).contains("escapeRoute"),
-                "accepted Plan exposes escapeRoute metadata for scanner and write-law proof");
-        Set<String> phases = java.util.Arrays.stream(SubterraneanTrapPlan.Phase.values()).map(Enum::name)
-                .collect(java.util.stream.Collectors.toSet());
-        assertTrue(phases.containsAll(Set.of("ESCAPE_FLOOR", "ESCAPE_CLEAR", "ESCAPE_MINE_TAIL")),
-                "escape floor, two-high clearance, and solid mining tail have explicit write phases");
-    }
-
-    @Test
-    void tooShortSyntheticGeometryRejectsAtomicallyForNamedEscapeElevationCapacity() {
-        Set<String> rejections = java.util.Arrays.stream(SubterraneanTrapPlan.Rejection.values()).map(Enum::name)
-                .collect(java.util.stream.Collectors.toSet());
-        assertTrue(rejections.contains("ESCAPE_ELEVATION_CAPACITY"),
-                "a plan without distinct rising route, tail, and closure capacity has a named atomic rejection");
-        SubterraneanTrapPlan.Result result = SubterraneanTrapPlan.plan(tooShortEscapePlacement(), firstAir(101), fullSnow());
-        assertFalse(result.isAccepted(), "too-short synthetic geometry never exposes a partial fall or route plan");
-        assertNull(result.accepted());
-        assertEquals("ESCAPE_ELEVATION_CAPACITY", result.rejection().name());
-    }
-
-    @Test
-    void escapeRouteIsAUniqueRisingCardinalPathOutsidePowderWithFloorsAndTwoHighClearance() {
-        SubterraneanTrapPlan.Plan plan = plan(firstAir(101), fullSnow()).accepted();
-        Object route = requiredComponent(plan, "escapeRoute");
-        List<?> steps = requiredList(route, "steps");
-        assertTrue(steps.size() >= 3, "route has a real rising path before its mine-through tail");
-        Set<String> seen = new HashSet<>();
-        for (int index = 0; index < steps.size(); index++) {
-            Object step = steps.get(index);
-            int x = requiredInt(step, "x");
-            int y = requiredInt(step, "y");
-            int z = requiredInt(step, "z");
-            assertTrue(seen.add(x + ":" + y + ":" + z), "route cells are unique; repeated loops are forbidden");
-            assertFalse(Set.copyOf(PLACEMENT.powder()).contains(new SubterraneanTrapLayout.Cell(x, z)),
-                    "route never intersects a powder fall column");
-            assertEquals(1, writesAt(plan.writes(), x, y, z, namedPhase("ESCAPE_FLOOR")),
-                    "each route cell gets an authored snow-block floor");
-            assertEquals(2, writesAt(plan.writes(), x, y + 1, z, namedPhase("ESCAPE_CLEAR"))
-                            + writesAt(plan.writes(), x, y + 2, z, namedPhase("ESCAPE_CLEAR")),
-                    "each route floor has exactly two clear headspace writes");
-            if (index > 0) {
-                Object previous = steps.get(index - 1);
-                assertEquals(1, Math.abs(x - requiredInt(previous, "x")) + Math.abs(z - requiredInt(previous, "z")),
-                        "route steps are cardinally adjacent");
-                assertEquals(1, y - requiredInt(previous, "y"), "route floor rises exactly one per step");
-            }
-        }
-    }
-
-    @Test
-    void escapeMetadataProvesLocalPerimeterShellElevationTailAndSurfaceClosure() {
-        SubterraneanTrapPlan.Plan plan = plan(firstAir(101), fullSnow()).accepted();
-        Object route = requiredComponent(plan, "escapeRoute");
-        for (SubterraneanTrapPlan.Write write : plan.writes()) {
-            assertTrue(write.x() >= 1 && write.x() <= 14 && write.z() >= 1 && write.z() <= 14,
-                    "all trap and escape writes remain owner-chunk local 1..14");
-        }
-        for (Object probe : requiredList(route, "shellProbes")) {
-            assertTrue(requiredInt(probe, "x") >= 0 && requiredInt(probe, "x") <= 15
-                            && requiredInt(probe, "z") >= 0 && requiredInt(probe, "z") <= 15,
-                    "all route shell probes stay in the owner chunk, including its 0..15 boundary");
-        }
-        assertTrue(requiredList(route, "tailSteps").size() >= 2 && requiredList(route, "tailSteps").size() <= 3,
-                "the route ends in two or three snow mining steps");
-        assertTrue(recordComponentNames(route).containsAll(Set.of("entry", "exit", "closureCell", "surfacePlug")),
-                "metadata proves the landing doorway, high/low closure, and intact surface plug");
-        Object entry = requiredComponent(route, "entry");
-        assertEquals(plan.landingY(), requiredInt(entry, "y"));
-        assertEquals(1, writesAt(plan.writes(), requiredInt(entry, "x"), requiredInt(entry, "y"),
-                requiredInt(entry, "z"), SubterraneanTrapPlan.Phase.ESCAPE_FLOOR));
-        assertEquals(2, writesAt(plan.writes(), requiredInt(entry, "x"), requiredInt(entry, "y") + 1,
-                        requiredInt(entry, "z"), SubterraneanTrapPlan.Phase.ESCAPE_CLEAR)
-                        + writesAt(plan.writes(), requiredInt(entry, "x"), requiredInt(entry, "y") + 2,
-                        requiredInt(entry, "z"), SubterraneanTrapPlan.Phase.ESCAPE_CLEAR),
-                "the bank has exactly one two-high landing doorway");
-        assertEquals(0, writesAtAnyPhase(plan.writes(), requiredInt(entry, "x"),
-                requiredInt(entry, "y") + 3, requiredInt(entry, "z")),
-                "the bank wall remains intact above the two-high doorway");
-        Object exit = requiredComponent(route, "exit");
-        assertTrue(requiredList(route, "tailSteps").contains(exit), "the authored high exit is in the mining tail");
-        Object finalTail = requiredList(route, "tailSteps").getLast();
-        Object plug = requiredComponent(route, "surfacePlug");
-        assertEquals(requiredInt(finalTail, "x"), requiredInt(plug, "x"));
-        assertEquals(requiredInt(finalTail, "z"), requiredInt(plug, "z"));
-        assertEquals(requiredInt(finalTail, "y") + 1, requiredInt(plug, "y"),
-                "the virtual plug floor is the final rising tail step above its authored floor");
-        assertEquals(1, writesAt(plan.writes(), requiredInt(plug, "x"), requiredInt(plug, "y"),
-                requiredInt(plug, "z"), SubterraneanTrapPlan.Phase.ESCAPE_MINE_TAIL));
-        assertEquals(1, writesAt(plan.writes(), requiredInt(plug, "x"), requiredInt(plug, "y") + 1,
-                requiredInt(plug, "z"), SubterraneanTrapPlan.Phase.ESCAPE_MINE_TAIL),
-                "the last future-mined head remains a snow-block support until the player reaches it");
-        assertEquals(0, writesAtAnyPhase(plan.writes(), requiredInt(plug, "x"), requiredInt(plug, "y") + 2,
-                requiredInt(plug, "z")), "the air above the intact support remains untouched");
-        Object closure = requiredComponent(route, "closureCell");
-        assertEquals(0, writesAtAnyPhase(plan.writes(), requiredInt(closure, "x"), requiredInt(closure, "y"),
-                requiredInt(closure, "z")), "at least one intact perimeter cell separates high and low ends");
-        Object low = requiredList(route, "steps").getFirst();
-        assertTrue(Math.abs(requiredInt(plug, "x") - requiredInt(low, "x"))
-                        + Math.abs(requiredInt(plug, "z") - requiredInt(low, "z")) > 1,
-                "the high plug is not cardinally adjacent to the low route");
-        assertTrue(plan.writes().getLast().phase() == SubterraneanTrapPlan.Phase.REMOVE_SURFACE_LAYER
-                        || plan.writes().getLast().phase() == SubterraneanTrapPlan.Phase.SURFACE_POWDER,
-                "surface powder and cosmetic layer removal remain the final material actions");
-    }
-
-    @Test
-    void everyAcceptedRaisedTailCandidateEitherReplansOrKeepsItsFinalTailSealedToSnowSupport() {
-        int exercised = 0;
-        for (SubterraneanTrapLayout.Placement placement :
-                SubterraneanTrapLayout.placements(73L, 4, -9)) {
-            SubterraneanTrapPlan.Result baseline =
-                    SubterraneanTrapPlan.plan(placement, firstAir(101), fullSnow());
-            if (!baseline.isAccepted()) {
-                continue;
-            }
-            exercised++;
-            SubterraneanTrapPlan.EscapeStep oldTail =
-                    baseline.accepted().escapeRoute().tailSteps().getLast();
-            int[][] raisedTail = firstAir(101);
-            raisedTail[oldTail.x()][oldTail.z()] = 111;
-
-            SubterraneanTrapPlan.Result replanned =
-                    SubterraneanTrapPlan.plan(placement, raisedTail, fullSnow());
-            if (!replanned.isAccepted()) {
-                continue;
-            }
-            SubterraneanTrapPlan.EscapeStep finalTail =
-                    replanned.accepted().escapeRoute().tailSteps().getLast();
-            assertEquals(raisedTail[finalTail.x()][finalTail.z()] - 1, finalTail.y() + 2,
-                    "the final authored tail head must meet its own intact snow-block support with no gap");
-        }
-        assertTrue(exercised > 0, "synthetic sweep must exercise accepted placements in both template axes");
-    }
-
-    @Test
-    void everyAcceptedReliefCandidateKeepsNonFinalTailColumnsStrictlyBuried() {
-        int exercised = 0;
-        for (SubterraneanTrapLayout.Placement placement :
-                SubterraneanTrapLayout.placements(73L, 4, -9)) {
-            SubterraneanTrapPlan.Result baseline =
-                    SubterraneanTrapPlan.plan(placement, firstAir(101), fullSnow());
-            if (!baseline.isAccepted()) {
-                continue;
-            }
-            List<SubterraneanTrapPlan.EscapeStep> baselineTail =
-                    baseline.accepted().escapeRoute().tailSteps();
-            for (int index = 0; index < baselineTail.size() - 1; index++) {
-                SubterraneanTrapPlan.EscapeStep exposed = baselineTail.get(index);
-                int[][] relief = firstAir(101);
-                relief[exposed.x()][exposed.z()] = exposed.y() + 3;
-
-                SubterraneanTrapPlan.Result replanned =
-                        SubterraneanTrapPlan.plan(placement, relief, fullSnow());
-                if (!replanned.isAccepted()) {
+    private static void assertFullAuthoredCatalogueContract() {
+        List<SubterraneanTrapLayout.Placement> placements = SubterraneanTrapLayout.placements(73L, 4, -9);
+        assertEquals(64, placements.size());
+        int catalogueBuilds = 0;
+        int entryGeometries = 0;
+        int expansionCalls = 0;
+        int indexedPaths = 0;
+        List<String> routeFingerprints = new ArrayList<>();
+        java.util.Map<Integer, Integer> directionCountMatrix = new java.util.TreeMap<>();
+        for (int directions = 0; directions <= 4; directions++) directionCountMatrix.put(directions, 0);
+        List<Integer> zeroDirectionOrdinals = new ArrayList<>();
+        int weightedDirectionTotal = 0;
+        for (int ordinal = 0; ordinal < placements.size(); ordinal++) {
+            SubterraneanTrapLayout.Placement placement = placements.get(ordinal);
+            SubterraneanTrapPlan.AuthoredCavernCatalogue catalogue =
+                    SubterraneanTrapPlan.authoredCavernCatalogue(placement);
+            SubterraneanTrapPlan.AuthoredRouteBuildMeter meter = catalogue.buildMeter();
+            catalogueBuilds++;
+            entryGeometries += meter.entryGeometries();
+            expansionCalls += meter.expansionCalls();
+            indexedPaths += meter.indexedPaths();
+            assertEquals(539, meter.actionWords(), "the finite action-word grammar must not expand");
+            int viableDirections = 0;
+            for (SubterraneanTrapPlan.CavernDirection direction : SubterraneanTrapPlan.CavernDirection.values()) {
+                List<SubterraneanTrapPlan.Plan> alternatives = SubterraneanTrapPlan.authoredCavernAlternatives(
+                        catalogue, firstAir(101), fullSnow(), 32, direction);
+                routeFingerprints.add((ordinal + 1) + "|" + direction + "|count=" + alternatives.size());
+                for (int routeIndex = 0; routeIndex < alternatives.size(); routeIndex++) {
+                    routeFingerprints.add(authoredRouteFingerprint(
+                            ordinal + 1, direction, routeIndex + 1, alternatives.get(routeIndex)));
+                }
+                if (alternatives.isEmpty()) {
                     continue;
                 }
-                exercised++;
-                List<SubterraneanTrapPlan.EscapeStep> finalTail =
-                        replanned.accepted().escapeRoute().tailSteps();
-                for (int finalIndex = 0; finalIndex < finalTail.size() - 1; finalIndex++) {
-                    SubterraneanTrapPlan.EscapeStep step = finalTail.get(finalIndex);
-                    assertTrue(step.y() + 2 < relief[step.x()][step.z()] - 1,
-                            "only the final tail may meet its local surface support");
+                viableDirections++;
+                assertEquals(alternatives, SubterraneanTrapPlan.authoredCavernAlternatives(
+                        catalogue, firstAir(101), fullSnow(), 32, direction),
+                        "candidate order must be deterministic");
+                SubterraneanTrapPlan.Plan cavern = alternatives.getFirst();
+                assertEquals(SubterraneanTrapPlan.DestinationKind.AUTHORED_CAVERN, cavern.destinationKind());
+                SubterraneanTrapPlan.AuthoredCavernEndpoint endpoint =
+                        (SubterraneanTrapPlan.AuthoredCavernEndpoint) cavern.descentRoute().endpoint();
+                assertEquals(direction, endpoint.direction());
+                assertEquals(cavern.landingY() - 8, endpoint.floorY());
+
+                List<SubterraneanTrapPlan.RouteCell> floors = endpoint.floorCells();
+                Set<PlanarCell> floorPlan = planarCells(floors);
+                assertEquals(floors.size(), floorPlan.size());
+                assertTrue(floors.size() >= 96);
+                int minX = floors.stream().mapToInt(cell -> direction.canonicalX(cell.x(), cell.z())).min().orElseThrow();
+                int maxX = floors.stream().mapToInt(cell -> direction.canonicalX(cell.x(), cell.z())).max().orElseThrow();
+                int minZ = floors.stream().mapToInt(cell -> direction.canonicalZ(cell.x(), cell.z())).min().orElseThrow();
+                int maxZ = floors.stream().mapToInt(cell -> direction.canonicalZ(cell.x(), cell.z())).max().orElseThrow();
+                assertEquals(20, maxX - minX + 1);
+                assertEquals(12, maxZ - minZ + 1);
+                double fill = floors.size() / (double) ((maxX - minX + 1) * (maxZ - minZ + 1));
+                assertTrue(fill >= 0.45 && fill <= 0.75, "cavity fill stays irregular rather than box-like");
+                assertTrue(canonicalSpan(endpoint.primaryLobeFloors(), direction, true) >= 8);
+                assertTrue(canonicalSpan(endpoint.primaryLobeFloors(), direction, false) >= 7);
+                assertTrue(canonicalSpan(endpoint.secondaryLobeFloors(), direction, true) >= 6);
+                assertTrue(canonicalSpan(endpoint.secondaryLobeFloors(), direction, false) >= 5);
+                assertTrue(canonicalSpan(endpoint.throatFloors(), direction, false) >= 3);
+                assertTrue(canonicalSpan(endpoint.throatFloors(), direction, false) <= 5);
+                assertTrue(connectedWalkable(floors));
+                assertTrue(floors.stream().map(SubterraneanTrapPlan.RouteCell::y).distinct().count() >= 3);
+                assertFalse(hasFilledCanonicalFiveByFive(floors, direction));
+
+                java.util.Map<PlanarCell, Long> clearByColumn = endpoint.clearCells().stream().collect(
+                        java.util.stream.Collectors.groupingBy(cell -> new PlanarCell(cell.x(), cell.z()),
+                                java.util.stream.Collectors.counting()));
+                assertEquals(floorPlan, clearByColumn.keySet());
+                assertTrue(clearByColumn.values().stream().allMatch(height -> height >= 4 && height <= 7));
+                assertTrue(clearByColumn.values().stream().distinct().count() >= 3);
+                assertFalse(endpoint.substrateProbes().isEmpty());
+                assertFalse(endpoint.ceilingProbes().isEmpty());
+                assertFalse(endpoint.perimeterProbes().isEmpty());
+                assertTrue(endpoint.shellProbes().stream().allMatch(cell ->
+                        direction.containsReadShellCell(cell.x(), cell.z())));
+                Set<String> chunks = floors.stream().map(cell ->
+                                Math.floorDiv(cell.x(), 16) + ":" + Math.floorDiv(cell.z(), 16))
+                        .collect(java.util.stream.Collectors.toSet());
+                assertEquals(Set.of("0:0", direction.chunkDx() + ":" + direction.chunkDz()), chunks,
+                        "the cavern occupies the owner and exactly one cardinal neighbour");
+
+                assertTrue(cavern.descentRoute().steps().size() >= 6
+                        && cavern.descentRoute().steps().size() <= 12);
+                IndependentRouteGeometry geometry = independentlyVerifyRouteGeometry(
+                        placement, cavern.descentRoute().steps());
+                Heading storedInitial = new Heading(cavern.descentRoute().initialHeadingX(),
+                        cavern.descentRoute().initialHeadingZ());
+                assertTrue(geometry.viableInitialHeadings().contains(storedInitial));
+                assertEquals(independentlyCountTurns(storedInitial, geometry.headings()),
+                        cavern.descentRoute().turns());
+                assertTrue(geometry.maximumTurns() <= 2);
+                assertTrue(cavern.descentRoute().headingsNeverReverseInitial());
+                Set<String> routeFootprint = new HashSet<>();
+                int previousY = cavern.landingY();
+                for (int index = 0; index < cavern.descentRoute().steps().size(); index++) {
+                    SubterraneanTrapPlan.RouteStep step = cavern.descentRoute().steps().get(index);
+                    assertEquals(index < 6 ? previousY - 1 : endpoint.floorY() + 2, step.y());
+                    assertTrue(step.y() <= previousY);
+                    previousY = step.y();
+                    for (SubterraneanTrapPlan.RouteCell floor : step.floorCells()) {
+                        assertTrue(routeFootprint.add(floor.x() + ":" + floor.z()));
+                        assertEquals(1, writesAt(cavern, floor, SubterraneanTrapPlan.Phase.DESCENT_FLOOR));
+                        for (int dy = 1; dy <= 3; dy++) {
+                            assertEquals(1, writesAt(cavern, new SubterraneanTrapPlan.RouteCell(
+                                            floor.x(), floor.y() + dy, floor.z()),
+                                    SubterraneanTrapPlan.Phase.DESCENT_CLEAR));
+                        }
+                    }
                 }
-                SubterraneanTrapPlan.EscapeStep exit = finalTail.getLast();
-                assertEquals(relief[exit.x()][exit.z()] - 1, exit.y() + 2,
-                        "the replanned final tail still meets its exact intact surface support");
+                assertEquals(endpoint.floorY() + 2, previousY);
+                Heading portalHeading = geometry.headings().isEmpty() ? storedInitial : geometry.headings().getLast();
+                assertEquals(planarCells(endpoint.portalFloors()),
+                        translate(planarCells(endpoint.approachFloors()), portalHeading));
+                assertTrue(cavern.writes().stream()
+                        .filter(write -> write.phase() == SubterraneanTrapPlan.Phase.AUTHORED_CAVERN_FLOOR
+                                || write.phase() == SubterraneanTrapPlan.Phase.AUTHORED_CAVERN_CLEAR)
+                        .allMatch(write -> direction.containsWriteCell(write.x(), write.z())));
+                assertEquals(cavern.writes().size(), cavern.writes().stream()
+                        .map(write -> write.x() + ":" + write.y() + ":" + write.z()).distinct().count());
             }
+            directionCountMatrix.merge(viableDirections, 1, Integer::sum);
+            weightedDirectionTotal += viableDirections;
+            if (viableDirections == 0) zeroDirectionOrdinals.add(ordinal + 1);
+            SubterraneanTrapPlan.authoredCavernAlternatives(
+                    catalogue, firstAir(101), fullSnow(), 33,
+                    SubterraneanTrapPlan.CavernDirection.EAST);
+            assertEquals(meter, catalogue.buildMeter(),
+                    "directions and per-depth planning must not rebuild planar routes");
         }
-        assertTrue(exercised > 0, "relief matrix must retain at least one accepted replanned candidate");
+        assertEquals(java.util.Map.of(0, 14, 1, 36, 2, 14, 3, 0, 4, 0), directionCountMatrix,
+                "the exact sparse direction matrix is the catalogue law, not artificial 256/256 availability");
+        assertEquals(64, weightedDirectionTotal);
+        assertEquals(64, catalogueBuilds, "one planar catalogue build per placement");
+        assertEquals(1_600, entryGeometries, "the fixed 64-mouth catalogue entry census");
+        assertEquals(862_400, expansionCalls,
+                "directions and depths must not multiply the 1,600 entries by the 539-word grammar");
+        assertEquals(655_188, indexedPaths, "the cold catalogue keeps its exact accepted-path census");
+        assertTrue(indexedPaths <= 3_057_600,
+                "the full cold sweep must remain under the finite three-way/two-turn route bound");
+        assertEquals("e12a6c11ae7de2d5fb9bae7ae127c3684fcc2b96b7b281280136b7fec5a5be82",
+                sha256(routeFingerprints),
+                "ordered alternatives and every route coordinate remain fingerprint-pinned");
+        assertEquals(List.of(6, 17, 25, 27, 28, 30, 32, 37, 39, 40, 42, 44, 46, 54),
+                zeroDirectionOrdinals);
+        assertZeroDirectionPlacementsAreRealCushionCollisions(placements);
+        assertCatalogueSelectionGate(placements);
+        assertEquals(SubterraneanTrapPlan.DestinationKind.NATURAL_CAVE, validPlan().accepted().destinationKind(),
+                "the pre-existing natural cave remains the ordinary path");
     }
 
-    @Test
-    void nonFinalReliefSurfaceEqualityIsRejectedByThePureConcealmentLaw() {
-        int landingY = 90;
-        List<SubterraneanTrapLayout.Cell> route = List.of(
-                new SubterraneanTrapLayout.Cell(1, 1),
-                new SubterraneanTrapLayout.Cell(2, 1),
-                new SubterraneanTrapLayout.Cell(3, 1),
-                new SubterraneanTrapLayout.Cell(4, 1),
-                new SubterraneanTrapLayout.Cell(5, 1));
-        int[][] relief = firstAir(120);
-        relief[4][1] = 96;
-        relief[5][1] = 97;
+    private static String authoredRouteFingerprint(
+            int placementOrdinal, SubterraneanTrapPlan.CavernDirection direction,
+            int routeOrdinal, SubterraneanTrapPlan.Plan plan) {
+        SubterraneanTrapPlan.DescentRoute route = plan.descentRoute();
+        SubterraneanTrapPlan.AuthoredCavernEndpoint endpoint =
+                (SubterraneanTrapPlan.AuthoredCavernEndpoint) route.endpoint();
+        String stations = route.steps().stream().map(step -> step.y() + ":"
+                        + step.floorCells().stream().map(cell -> cell.x() + "," + cell.z())
+                        .collect(java.util.stream.Collectors.joining("/")))
+                .collect(java.util.stream.Collectors.joining(";"));
+        return placementOrdinal + "|" + direction + "|" + routeOrdinal + "|" + endpoint.portal()
+                + "|" + route.initialHeadingX() + "," + route.initialHeadingZ()
+                + "|" + route.turns() + "|" + route.actionWord() + "|" + stations;
+    }
+
+    private static String sha256(List<String> lines) {
         try {
-            var concealment = SubterraneanTrapPlan.class.getDeclaredMethod(
-                    "tailWritesStayConcealed", List.class, int.class, int.class, int.class,
-                    int[][].class, int[][].class);
-            concealment.setAccessible(true);
-            assertFalse((boolean) concealment.invoke(
-                            null, route, 3, 5, landingY, relief, fullSnow()),
-                    "a non-final tail top touching its local surface would create a second opening");
-        } catch (ReflectiveOperationException exception) {
-            throw new AssertionError("pure tail concealment law must remain directly provable", exception);
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(
+                    String.join("\n", lines).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new AssertionError(impossible);
         }
     }
 
+    private static void assertZeroDirectionPlacementsAreRealCushionCollisions(
+            List<SubterraneanTrapLayout.Placement> placements) {
+        assertEquals(List.of(
+                        "6:Z:12:7:4:2", "17:Z:12:7:5:2", "25:X:14:7:1:4",
+                        "27:X:14:7:1:5", "28:X:14:7:1:7", "30:X:14:7:1:3",
+                        "32:X:14:7:1:6", "37:Z:14:7:6:1", "39:Z:14:7:7:1",
+                        "40:Z:14:7:5:1", "42:X:12:7:1:5", "44:X:12:7:2:5",
+                        "46:X:12:7:1:6", "54:X:12:7:3:5"),
+                List.of(6, 17, 25, 27, 28, 30, 32, 37, 39, 40, 42, 44, 46, 54)
+                        .stream().map(ordinal -> {
+                    SubterraneanTrapLayout.Placement placement = placements.get(ordinal - 1);
+                    return ordinal + ":" + placement.template().axis() + ":"
+                            + placement.template().stations() + ":" + placement.template().width() + ":"
+                            + placement.offsetX() + ":" + placement.offsetZ();
+                }).toList(), "zero-direction catalogue rows keep their exact template and offset identity");
+        for (int ordinal : List.of(6, 17, 25, 27, 28, 30, 32, 37, 39, 40, 42, 44, 46, 54)) {
+            SubterraneanTrapLayout.Placement placement = placements.get(ordinal - 1);
+            SubterraneanTrapPlan.AuthoredCavernCatalogue catalogue =
+                    SubterraneanTrapPlan.authoredCavernCatalogue(placement);
+            int eligible = 0;
+            int collisions = 0;
+            int cushionClear = 0;
+            for (SubterraneanTrapPlan.CavernDirection direction
+                    : SubterraneanTrapPlan.CavernDirection.values()) {
+                assertTrue(SubterraneanTrapPlan.authoredCavernAlternatives(
+                        catalogue, firstAir(101), fullSnow(), 32, direction).isEmpty());
+                SubterraneanTrapPlan.AuthoredCavernRouteCensus census =
+                        SubterraneanTrapPlan.authoredCavernRouteCensus(catalogue, 68, direction);
+                eligible += census.geometricallyEligible();
+                collisions += census.cushionCollisions();
+                cushionClear += census.cushionClear();
+            }
+            assertTrue(eligible > 0, "ordinal " + ordinal + " has real indexed portal candidates");
+            assertEquals(eligible, collisions,
+                    "ordinal " + ordinal + " rejects every geometrically eligible route for cushion collision");
+            assertEquals(0, cushionClear,
+                    "ordinal " + ordinal + " has no collision-free candidate hidden by another gate");
+        }
+    }
+
+    private static void assertCatalogueSelectionGate(List<SubterraneanTrapLayout.Placement> placements) {
+        List<SubterraneanTrapPlan.CavernDirection> order = rotatedDirections(2);
+        assertEquals(List.of(SubterraneanTrapPlan.CavernDirection.WEST,
+                SubterraneanTrapPlan.CavernDirection.NORTH,
+                SubterraneanTrapPlan.CavernDirection.EAST,
+                SubterraneanTrapPlan.CavernDirection.SOUTH), order);
+        assertEquals(order, rotatedDirections(2), "direction order is deterministic");
+
+        java.util.Map<Integer, SubterraneanTrapPlan.AuthoredCavernCatalogue> catalogues =
+                java.util.stream.Stream.of(27, 1, 3).collect(java.util.stream.Collectors.toMap(
+                        ordinal -> ordinal,
+                        ordinal -> SubterraneanTrapPlan.authoredCavernCatalogue(
+                                placements.get(ordinal - 1))));
+        List<String> events = new ArrayList<>();
+        CatalogueCandidate selected = firstSafeCatalogueCandidate(
+                List.of(27, 1, 3), placements, order,
+                (ordinal, direction) -> {
+                    events.add("generate:" + ordinal + ":" + direction);
+                    return SubterraneanTrapPlan.authoredCavernAlternatives(
+                                    catalogues.get(ordinal), firstAir(101), fullSnow(), 32, direction)
+                            .stream().map(plan -> new CatalogueCandidate(ordinal, direction, plan)).toList();
+                },
+                candidate -> {
+                    events.add("safe:" + candidate.ordinal() + ":" + candidate.direction());
+                    return candidate.ordinal() == 3;
+                });
+        assertTrue(selected != null);
+        assertEquals(3, selected.ordinal(), "zero and fully unsafe placements yield to the later safe placement");
+        assertEquals(java.util.stream.Stream.of(27, 1, 3).flatMap(ordinal -> order.stream()
+                        .map(direction -> "generate:" + ordinal + ":" + direction)).toList(),
+                events.stream().filter(event -> event.startsWith("generate:")).toList(),
+                "all four directions are generated in deterministic order for each visited placement");
+        assertTrue(events.stream().noneMatch(event -> event.startsWith("safe:27:")),
+                "zero-direction placement never reaches world safety");
+        assertTrue(events.indexOf("safe:1:EAST") > events.indexOf("generate:1:SOUTH"),
+                "all four direction plans exist before the first world-safety callback");
+        assertTrue(events.indexOf("safe:3:EAST") > events.indexOf("generate:3:SOUTH"),
+                "later placement also completes generation before safety selection");
+        java.util.concurrent.atomic.AtomicInteger mutationBoundary = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.function.Consumer<CatalogueCandidate> mutate = ignored -> mutationBoundary.incrementAndGet();
+        mutate.accept(selected);
+        assertEquals(1, mutationBoundary.get(), "exactly the selected safe candidate crosses mutation boundary");
+    }
+
+    private static List<SubterraneanTrapPlan.CavernDirection> rotatedDirections(int first) {
+        SubterraneanTrapPlan.CavernDirection[] directions = SubterraneanTrapPlan.CavernDirection.values();
+        return java.util.stream.IntStream.range(0, directions.length)
+                .mapToObj(index -> directions[Math.floorMod(first + index, directions.length)]).toList();
+    }
+
+    private static <T> T firstSafeCatalogueCandidate(
+            List<Integer> ordinals, List<SubterraneanTrapLayout.Placement> placements,
+            List<SubterraneanTrapPlan.CavernDirection> directions,
+            java.util.function.BiFunction<Integer, SubterraneanTrapPlan.CavernDirection, List<T>> planFactory,
+            java.util.function.Predicate<T> worldSafe) {
+        for (int ordinal : ordinals) {
+            List<T> generated = new ArrayList<>();
+            for (SubterraneanTrapPlan.CavernDirection direction : directions) {
+                generated.addAll(planFactory.apply(ordinal, direction));
+            }
+            for (T candidate : generated) {
+                if (worldSafe.test(candidate)) return candidate;
+            }
+        }
+        return null;
+    }
+
+    private record CatalogueCandidate(int ordinal, SubterraneanTrapPlan.CavernDirection direction,
+                                      SubterraneanTrapPlan.Plan plan) {
+    }
+
     @Test
-    void everyAcceptedCataloguePlacementHasOneConnectedLocalEscapeToItsActualSurface() {
-        Set<String> acceptedShapes = new HashSet<>();
-        int[][] heights = firstAir(101);
-        int[][] kinds = fullSnow();
-        for (SubterraneanTrapLayout.Placement placement :
-                SubterraneanTrapLayout.placements(73L, 4, -9)) {
-            SubterraneanTrapPlan.Result result =
-                    SubterraneanTrapPlan.plan(placement, heights, kinds);
-            if (!result.isAccepted()) {
-                continue;
+    void canonicalEastPortalCatalogueIsExactInsideTheCavernAndOutsideAtItsApproaches() {
+        assertEquals(List.of(
+                        "WEST_3", "WEST_4", "WEST_5", "WEST_6",
+                        "NORTH_12", "NORTH_13", "SOUTH_12", "SOUTH_13"),
+                java.util.Arrays.stream(SubterraneanTrapPlan.CavernPortal.values())
+                        .map(Enum::name).toList());
+        java.util.Map<String, List<PlanarCell>> expectedPortals = java.util.Map.of(
+                "WEST_3", List.of(new PlanarCell(10, 3), new PlanarCell(10, 4)),
+                "WEST_4", List.of(new PlanarCell(10, 4), new PlanarCell(10, 5)),
+                "WEST_5", List.of(new PlanarCell(10, 5), new PlanarCell(10, 6)),
+                "WEST_6", List.of(new PlanarCell(10, 6), new PlanarCell(10, 7)),
+                "NORTH_12", List.of(new PlanarCell(11, 2), new PlanarCell(12, 2)),
+                "NORTH_13", List.of(new PlanarCell(12, 2), new PlanarCell(13, 2)),
+                "SOUTH_12", List.of(new PlanarCell(11, 8), new PlanarCell(12, 8)),
+                "SOUTH_13", List.of(new PlanarCell(12, 8), new PlanarCell(13, 8)));
+        for (SubterraneanTrapPlan.CavernPortal portal : SubterraneanTrapPlan.CavernPortal.values()) {
+            SubterraneanTrapPlan.AuthoredCavernEndpoint endpoint =
+                    new SubterraneanTrapPlan.AuthoredCavernEndpoint(
+                            60, SubterraneanTrapPlan.CavernDirection.EAST, portal);
+            List<PlanarCell> portalCells = endpoint.portalFloors().stream()
+                    .map(cell -> new PlanarCell(cell.x(), cell.z())).toList();
+            List<PlanarCell> approaches = endpoint.approachFloors().stream()
+                    .map(cell -> new PlanarCell(cell.x(), cell.z())).toList();
+            assertEquals(expectedPortals.get(portal.name()), portalCells);
+            assertTrue(endpoint.portalFloors().stream().allMatch(cell -> cell.y() == 62));
+            Set<PlanarCell> cavern = planarCells(endpoint.floorCells());
+            assertTrue(cavern.containsAll(portalCells), "portal floor belongs to the cavern mask");
+            assertTrue(approaches.stream().noneMatch(cavern::contains),
+                    "route approach stays outside the cavern mask");
+            assertTrue(approaches.stream().allMatch(cell ->
+                    cell.x() >= 1 && cell.x() <= 14 && cell.z() >= 1 && cell.z() <= 14));
+            for (int index = 0; index < 2; index++) {
+                PlanarCell inside = portalCells.get(index);
+                PlanarCell outside = approaches.get(index);
+                int outwardX = outside.x() - inside.x();
+                int outwardZ = outside.z() - inside.z();
+                assertEquals(1, Math.abs(outwardX) + Math.abs(outwardZ));
+                assertEquals(inside, new PlanarCell(outside.x() - outwardX, outside.z() - outwardZ),
+                        "one inward translation returns the exact portal cell");
             }
-            acceptedShapes.add(placement.template().stations() + ":" + placement.template().axis());
-            SubterraneanTrapPlan.Plan plan = result.accepted();
-            SubterraneanTrapPlan.EscapeRoute route = plan.escapeRoute();
-            Set<SubterraneanTrapLayout.Cell> powder = Set.copyOf(placement.powder());
+        }
+    }
 
-            Set<String> writeCoordinates = new HashSet<>();
-            for (SubterraneanTrapPlan.Write write : plan.writes()) {
-                assertTrue(write.x() >= 1 && write.x() <= 14 && write.z() >= 1 && write.z() <= 14);
-                assertTrue(writeCoordinates.add(write.x() + ":" + write.y() + ":" + write.z()));
-            }
-            for (SubterraneanTrapPlan.EscapeStep probe : route.shellProbes()) {
-                assertTrue(probe.x() >= 0 && probe.x() <= 15 && probe.z() >= 0 && probe.z() <= 15);
-            }
+    private static int canonicalSpan(List<SubterraneanTrapPlan.RouteCell> cells,
+                                     SubterraneanTrapPlan.CavernDirection direction, boolean xAxis) {
+        java.util.function.ToIntFunction<SubterraneanTrapPlan.RouteCell> coordinate = xAxis
+                ? cell -> direction.canonicalX(cell.x(), cell.z())
+                : cell -> direction.canonicalZ(cell.x(), cell.z());
+        return cells.stream().mapToInt(coordinate).max().orElseThrow()
+                - cells.stream().mapToInt(coordinate).min().orElseThrow() + 1;
+    }
 
-            long entryPowderNeighbours = powder.stream()
-                    .filter(cell -> Math.abs(cell.x() - route.entry().x())
-                            + Math.abs(cell.z() - route.entry().z()) == 1)
-                    .count();
-            assertEquals(1, entryPowderNeighbours, "there is exactly one landing doorway into the fall volume");
+    private static boolean connectedWalkable(List<SubterraneanTrapPlan.RouteCell> floors) {
+        Set<SubterraneanTrapPlan.RouteCell> unseen = new HashSet<>(floors);
+        ArrayDeque<SubterraneanTrapPlan.RouteCell> queue = new ArrayDeque<>();
+        queue.add(unseen.iterator().next());
+        unseen.remove(queue.getFirst());
+        while (!queue.isEmpty()) {
+            SubterraneanTrapPlan.RouteCell current = queue.removeFirst();
+            List<SubterraneanTrapPlan.RouteCell> neighbours = unseen.stream().filter(candidate ->
+                    Math.abs(candidate.x() - current.x()) + Math.abs(candidate.z() - current.z()) == 1
+                            && Math.abs(candidate.y() - current.y()) <= 1).toList();
+            neighbours.forEach(cell -> { unseen.remove(cell); queue.addLast(cell); });
+        }
+        return unseen.isEmpty();
+    }
 
-            Set<String> routeCoordinates = new HashSet<>();
-            SubterraneanTrapPlan.EscapeStep previous = null;
-            for (SubterraneanTrapPlan.EscapeStep step : route.steps()) {
-                assertTrue(routeCoordinates.add(step.x() + ":" + step.y() + ":" + step.z()));
-                assertFalse(powder.contains(new SubterraneanTrapLayout.Cell(step.x(), step.z())));
-                if (previous != null) {
-                    assertEquals(1, Math.abs(step.x() - previous.x()) + Math.abs(step.z() - previous.z()));
-                    assertEquals(1, step.y() - previous.y());
+    private static boolean hasFilledCanonicalFiveByFive(
+            List<SubterraneanTrapPlan.RouteCell> floors, SubterraneanTrapPlan.CavernDirection direction) {
+        Set<PlanarCell> canonical = floors.stream().map(cell -> new PlanarCell(
+                        direction.canonicalX(cell.x(), cell.z()), direction.canonicalZ(cell.x(), cell.z())))
+                .collect(java.util.stream.Collectors.toSet());
+        for (int x = 11; x <= 26; x++) {
+            for (int z = 2; z <= 9; z++) {
+                boolean full = true;
+                for (int dx = 0; dx < 5; dx++) for (int dz = 0; dz < 5; dz++) {
+                    full &= canonical.contains(new PlanarCell(x + dx, z + dz));
                 }
-                previous = step;
-            }
-            for (SubterraneanTrapPlan.EscapeStep tail : route.tailSteps()) {
-                assertTrue(routeCoordinates.add(tail.x() + ":" + tail.y() + ":" + tail.z()));
-                assertFalse(powder.contains(new SubterraneanTrapLayout.Cell(tail.x(), tail.z())));
-                assertEquals(1, Math.abs(tail.x() - previous.x()) + Math.abs(tail.z() - previous.z()));
-                assertEquals(1, tail.y() - previous.y());
-                previous = tail;
-            }
-
-            SubterraneanTrapPlan.EscapeStep finalTail = route.tailSteps().getLast();
-            assertEquals(heights[finalTail.x()][finalTail.z()] - 1, finalTail.y() + 2,
-                    "final mining head is the captured snow-block surface support");
-            assertEquals(finalTail.x(), route.surfacePlug().x());
-            assertEquals(finalTail.z(), route.surfacePlug().z());
-            assertEquals(finalTail.y() + 1, route.surfacePlug().y(),
-                    "surfacePlug records the virtual floor directly below the intact support");
-            assertEquals(0, writesAtAnyPhase(plan.writes(), route.closureCell().x(),
-                    route.closureCell().y(), route.closureCell().z()));
-            assertTrue(Math.abs(route.closureCell().x() - finalTail.x())
-                            + Math.abs(route.closureCell().z() - finalTail.z()) == 1,
-                    "one intact perimeter closure follows the high exit");
-        }
-        assertEquals(Set.of("12:X", "12:Z", "14:X", "14:Z"), acceptedShapes,
-                "the invariant matrix exercises every accepted catalogue size and axis");
-    }
-
-    @Test
-    void preferredLandingDepthOrderIsTheExactNineValueNearFirstSequence() {
-        Method order = requiredPlannerMethod("preferredDepthOrder");
-        Object value = invokePlanner(order);
-        assertTrue(value instanceof List<?>, "preferredDepthOrder is deterministic ordered planner metadata");
-        assertEquals(List.of(32, 33, 31, 34, 30, 35, 29, 36, 28), value,
-                "RED: try the preferred landing first, then alternate deeper and shallower through the bounded range");
-    }
-
-    @Test
-    void routeAlternativesAreOrderedUniqueBoundedStableAndKeepLegacyPlanFirst() {
-        int[][] heights = firstAir(101);
-        int[][] kinds = fullSnow();
-        List<SubterraneanTrapPlan.Plan> alternatives =
-                planAlternatives(PLACEMENT, heights, kinds, 32);
-
-        assertFalse(alternatives.isEmpty(), "the accepted flat fixture exposes route alternatives");
-        assertTrue(alternatives.size() <= 34, "one landing depth exposes at most 34 route alternatives");
-        assertEquals(alternatives, planAlternatives(PLACEMENT, heights, kinds, 32),
-                "the same placement and snapshot must produce the same ordered alternatives");
-        assertEquals(alternatives.size(), new HashSet<>(alternatives).size(),
-                "route alternatives are unique complete plans, not duplicate retry work");
-
-        List<AlternativeOrder> actualOrder = alternatives.stream()
-                .map(plan -> alternativeOrder(PLACEMENT, plan.escapeRoute())).toList();
-        List<AlternativeOrder> sortedOrder = actualOrder.stream()
-                .sorted(AlternativeOrder.COMPARATOR).toList();
-        assertEquals(sortedOrder, actualOrder,
-                "RED: order is doorway X/Z, clockwise then counterclockwise, route length ascending, tail 2 then 3");
-
-        SubterraneanTrapPlan.Result legacy = plan(heights, kinds);
-        assertTrue(legacy.isAccepted());
-        assertEquals(legacy.accepted(), alternatives.getFirst(),
-                "plan(...) remains the compatibility seam and selects the first preferred-depth alternative");
-    }
-
-    @Test
-    void everyAlternativeAtEveryPreferredDepthPreservesTheCompleteEscapeGeometryAndWritePhases() {
-        int[][] heights = firstAir(101);
-        int[][] kinds = fullSnow();
-        List<Integer> depths = List.of(32, 33, 31, 34, 30, 35, 29, 36, 28);
-        Set<String> expectedPhases = Set.of(
-                "CUSHION_BASE", "CUSHION", "ESCAPE_FLOOR", "ESCAPE_MINE_TAIL",
-                "CLEAR", "ESCAPE_CLEAR", "SURFACE_POWDER", "REMOVE_SURFACE_LAYER");
-        assertEquals(expectedPhases,
-                java.util.Arrays.stream(SubterraneanTrapPlan.Phase.values()).map(Enum::name)
-                        .collect(java.util.stream.Collectors.toSet()),
-                "alternative planning preserves every existing material phase and adds no hidden phase");
-
-        int exercised = 0;
-        for (int depth : depths) {
-            List<SubterraneanTrapPlan.Plan> alternatives =
-                    planAlternatives(PLACEMENT, heights, kinds, depth);
-            assertFalse(alternatives.isEmpty(), "flat snow fixture must exercise depth " + depth);
-            assertTrue(alternatives.size() <= 34, "each landing has its own bounded alternative list");
-            for (SubterraneanTrapPlan.Plan alternative : alternatives) {
-                exercised++;
-                assertCompleteAlternativeGeometry(PLACEMENT, alternative, depth, heights, expectedPhases);
+                if (full) return true;
             }
         }
-        assertTrue(exercised >= depths.size(), "all nine preferred landing depths were inspected");
+        return false;
+    }
+
+    private static IndependentRouteGeometry independentlyVerifyRouteGeometry(
+            SubterraneanTrapLayout.Placement placement,
+            List<SubterraneanTrapPlan.RouteStep> steps) {
+        List<Station> stations = steps.stream()
+                .map(SubterraneanTrapPlanTest::station).toList();
+        Set<PlanarCell> powder = placement.powder().stream()
+                .map(cell -> new PlanarCell(cell.x(), cell.z()))
+                .collect(java.util.stream.Collectors.toSet());
+        List<Heading> possibleInitialHeadings = cardinalHeadings().stream()
+                .filter(heading -> stations.getFirst().cells().stream().allMatch(cell ->
+                        powder.contains(new PlanarCell(cell.x() - heading.x(), cell.z() - heading.z()))))
+                .toList();
+        assertFalse(possibleInitialHeadings.isEmpty(),
+                "the first two-wide station must adjoin a valid two-cell powder mouth");
+        List<Heading> headings = new ArrayList<>();
+        for (int index = 1; index < stations.size(); index++) {
+            Station previous = stations.get(index - 1);
+            Station next = stations.get(index);
+            assertTrue(java.util.Collections.disjoint(previous.cells(), next.cells()),
+                    "consecutive two-wide stations may not overlap");
+            int dx2 = next.centerX2() - previous.centerX2();
+            int dz2 = next.centerZ2() - previous.centerZ2();
+            boolean forward = (Math.abs(dx2) == 2 && dz2 == 0)
+                    || (dx2 == 0 && Math.abs(dz2) == 2);
+            boolean quarterTurn = (Math.abs(dx2) == 3 && Math.abs(dz2) == 1)
+                    || (Math.abs(dx2) == 1 && Math.abs(dz2) == 3);
+            assertTrue(forward || quarterTurn,
+                    "station centers permit only one-block forward or contiguous quarter-turn transforms");
+            Heading heading = forward
+                    ? new Heading(Integer.signum(dx2), Integer.signum(dz2))
+                    : new Heading(Math.abs(dx2) == 3 ? Integer.signum(dx2) : 0,
+                            Math.abs(dz2) == 3 ? Integer.signum(dz2) : 0);
+            int adjacency = cardinalAdjacencyCount(previous.cells(), next.cells());
+            assertEquals(0, next.orientationX() * heading.x() + next.orientationZ() * heading.z(),
+                    "the next two-cell station stays perpendicular to its movement heading");
+            if (forward) {
+                assertEquals(previous.orientationX(), next.orientationX(),
+                        "a forward transform preserves station orientation");
+                assertEquals(previous.orientationZ(), next.orientationZ(),
+                        "a forward transform preserves station orientation");
+                assertEquals(2, adjacency,
+                        "a contiguous forward transform advances both cells by one cardinal block");
+            } else {
+                assertEquals(1, Math.abs(previous.orientationX() * heading.x()
+                                + previous.orientationZ() * heading.z()),
+                        "a quarter turn advances along the prior station width");
+                assertEquals(1, adjacency,
+                        "a contiguous quarter turn pivots from exactly one prior edge cell");
+            }
+            headings.add(heading);
+        }
+
+        Set<Heading> viableInitialHeadings = possibleInitialHeadings.stream()
+                .filter(initial -> headings.stream().noneMatch(heading ->
+                        heading.x() == -initial.x() && heading.z() == -initial.z()))
+                .collect(java.util.stream.Collectors.toSet());
+        assertFalse(viableInitialHeadings.isEmpty(),
+                "coordinate-derived moves must leave at least one mouth heading unreversed");
+        int maximumTurns = viableInitialHeadings.stream()
+                .mapToInt(initial -> independentlyCountTurns(initial, headings)).max().orElseThrow();
+        return new IndependentRouteGeometry(
+                List.copyOf(headings), Set.copyOf(viableInitialHeadings), maximumTurns, stations.getLast());
+    }
+
+    private static int independentlyCountTurns(Heading initial, List<Heading> headings) {
+        int turns = 0;
+        Heading previous = initial;
+        for (Heading heading : headings) {
+            if (!heading.equals(previous)) {
+                turns++;
+            }
+            previous = heading;
+        }
+        return turns;
+    }
+
+    private static String independentlyDeriveActionWord(Heading initial, List<Heading> headings) {
+        StringBuilder actionWord = new StringBuilder();
+        Heading left = new Heading(-initial.z(), initial.x());
+        Heading right = new Heading(initial.z(), -initial.x());
+        for (Heading heading : headings) {
+            if (heading.equals(initial)) {
+                actionWord.append('F');
+            } else if (heading.equals(left)) {
+                actionWord.append('L');
+            } else if (heading.equals(right)) {
+                actionWord.append('R');
+            } else {
+                throw new AssertionError("coordinate-derived heading is not forward or a quarter turn");
+            }
+        }
+        return actionWord.toString();
+    }
+
+    private static Station station(SubterraneanTrapPlan.RouteStep step) {
+        List<SubterraneanTrapPlan.RouteCell> cells = step.floorCells().stream()
+                .sorted(java.util.Comparator.comparingInt(SubterraneanTrapPlan.RouteCell::x)
+                        .thenComparingInt(SubterraneanTrapPlan.RouteCell::z))
+                .toList();
+        assertEquals(2, cells.size(), "every station is exactly two cells wide");
+        int orientationX = cells.get(1).x() - cells.get(0).x();
+        int orientationZ = cells.get(1).z() - cells.get(0).z();
+        assertEquals(1, Math.abs(orientationX) + Math.abs(orientationZ),
+                "a station is a cardinal pair, never diagonal or separated");
+        return new Station(planarCells(cells),
+                cells.get(0).x() + cells.get(1).x(),
+                cells.get(0).z() + cells.get(1).z(),
+                orientationX, orientationZ);
+    }
+
+    private static Set<PlanarCell> planarCells(List<SubterraneanTrapPlan.RouteCell> cells) {
+        return cells.stream().map(cell -> new PlanarCell(cell.x(), cell.z()))
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    private static Set<PlanarCell> translate(Set<PlanarCell> cells, Heading heading) {
+        return cells.stream().map(cell -> new PlanarCell(
+                        cell.x() + heading.x(), cell.z() + heading.z()))
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    private static int cardinalAdjacencyCount(Set<PlanarCell> first, Set<PlanarCell> second) {
+        return (int) first.stream().flatMap(left -> second.stream().map(right ->
+                        Math.abs(left.x() - right.x()) + Math.abs(left.z() - right.z())))
+                .filter(distance -> distance == 1).count();
+    }
+
+    private static List<Heading> cardinalHeadings() {
+        return List.of(new Heading(-1, 0), new Heading(1, 0),
+                new Heading(0, -1), new Heading(0, 1));
+    }
+
+    private record PlanarCell(int x, int z) {
+    }
+
+    private record Heading(int x, int z) {
+    }
+
+    private record Station(Set<PlanarCell> cells, int centerX2, int centerZ2,
+                           int orientationX, int orientationZ) {
+    }
+
+    private record IndependentRouteGeometry(
+            List<Heading> headings, Set<Heading> viableInitialHeadings,
+            int maximumTurns, Station terminal) {
     }
 
     @Test
-    void depth32OffersCounterclockwiseRecoveryAfterTheSameDoorwaysClockwiseAlternative() {
-        List<SubterraneanTrapPlan.Plan> alternatives =
-                planAlternatives(PLACEMENT, firstAir(101), fullSnow(), 32);
-        java.util.Map<String, List<Integer>> directionsByDoorway = new java.util.LinkedHashMap<>();
-        for (SubterraneanTrapPlan.Plan alternative : alternatives) {
-            SubterraneanTrapPlan.EscapeStep entry = alternative.escapeRoute().entry();
-            directionsByDoorway.computeIfAbsent(entry.x() + ":" + entry.z(), ignored -> new java.util.ArrayList<>())
-                    .add(routeDirection(PLACEMENT, alternative.escapeRoute()));
+    void destinationKindCannotMislabelEitherEndpointVariant() {
+        SubterraneanTrapPlan.Plan natural = validPlan().accepted();
+        assertThrows(IllegalArgumentException.class, () -> new SubterraneanTrapPlan.Plan(
+                natural.roofY(), natural.landingY(), natural.descentRoute(),
+                SubterraneanTrapPlan.DestinationKind.AUTHORED_CAVERN, natural.writes()));
+
+        SubterraneanTrapPlan.Plan cavern = SubterraneanTrapPlan.authoredCavernAlternatives(
+                PLACEMENT, firstAir(101), fullSnow(), 32,
+                SubterraneanTrapPlan.CavernDirection.EAST).getFirst();
+        assertThrows(IllegalArgumentException.class, () -> new SubterraneanTrapPlan.Plan(
+                        cavern.roofY(), cavern.landingY(), cavern.descentRoute(), cavern.writes()),
+                "the compatibility constructor must not label an authored endpoint as natural");
+    }
+
+    @Test
+    void twoSameDirectionQuarterTurnsCannotReverseTheInitialHeading() {
+        int initialX = 1;
+        int initialZ = 0;
+        int[][] leftTwice = {{1, 0}, {0, 1}, {-1, 0}};
+        int[][] rightTwice = {{1, 0}, {0, -1}, {-1, 0}};
+        assertTrue(java.util.Arrays.stream(leftTwice, 0, 2).allMatch(heading ->
+                SubterraneanTrapPlan.headingNeverReversesInitial(
+                        initialX, initialZ, heading[0], heading[1])));
+        assertFalse(java.util.Arrays.stream(leftTwice).allMatch(heading ->
+                SubterraneanTrapPlan.headingNeverReversesInitial(
+                        initialX, initialZ, heading[0], heading[1])));
+        assertFalse(java.util.Arrays.stream(rightTwice).allMatch(heading ->
+                SubterraneanTrapPlan.headingNeverReversesInitial(
+                        initialX, initialZ, heading[0], heading[1])));
+    }
+
+    @Test
+    void destinationProbesExcludeClearanceThatReentersTheLandingShaft() {
+        Set<SubterraneanTrapLayout.Cell> powder = Set.copyOf(PLACEMENT.powder());
+        List<SubterraneanTrapPlan.DestinationProbe> probes =
+                SubterraneanTrapPlan.destinationProbes(PLACEMENT, 68);
+        assertFalse(probes.isEmpty());
+        for (SubterraneanTrapPlan.DestinationProbe probe : probes) {
+            for (int index = 0; index < probe.distance(); index++) {
+                int floorY = 68 - index - 1;
+                int x = probe.entryX() + probe.forwardDx() * index;
+                int z = probe.entryZ() + probe.forwardDz() * index;
+                for (int width = 0; width < SubterraneanTrapPlan.ROUTE_WIDTH; width++) {
+                    SubterraneanTrapLayout.Cell projection = new SubterraneanTrapLayout.Cell(
+                            x + probe.widthDx() * width, z + probe.widthDz() * width);
+                    assertFalse(powder.contains(projection)
+                                    && floorY + SubterraneanTrapPlan.ROUTE_CLEAR_HEIGHT >= 67,
+                            "route floor/headroom must not overlap a cushion or shaft column");
+                }
+            }
         }
-
-        List<Integer> recoverable = directionsByDoorway.values().stream()
-                .filter(directions -> directions.contains(0) && directions.contains(1))
-                .findFirst().orElse(null);
-        assertTrue(recoverable != null,
-                "RED: at least one depth-32 doorway must retain both directions so shell failure can recover");
-        assertEquals(0, recoverable.getFirst(), "clockwise is tried before counterclockwise for one doorway");
-        assertTrue(recoverable.indexOf(1) > recoverable.lastIndexOf(0),
-                "all clockwise shapes for a doorway precede its counterclockwise recovery shapes");
     }
 
-    private static SubterraneanTrapPlan.Result plan(int[][] heights, int[][] kinds) {
-        return SubterraneanTrapPlan.plan(PLACEMENT, heights, kinds);
-    }
-
-    private static Method requiredPlannerMethod(String name, Class<?>... parameters) {
-        Method method = java.util.Arrays.stream(SubterraneanTrapPlan.class.getDeclaredMethods())
-                .filter(candidate -> candidate.getName().equals(name)
-                        && java.util.Arrays.equals(candidate.getParameterTypes(), parameters))
-                .findFirst().orElse(null);
-        if (method == null) {
-            throw new AssertionError("RED: missing bounded planner seam " + name);
+    @Test
+    void everyRouteStationIsTwoWideThreeHighAndStrictlyDescendsFromTheLanding() {
+        SubterraneanTrapPlan.Plan plan = validPlan().accepted();
+        int previousY = plan.landingY();
+        boolean descended = false;
+        Set<String> floors = new HashSet<>();
+        for (SubterraneanTrapPlan.RouteStep step : plan.descentRoute().steps()) {
+            assertEquals(2, step.floorCells().size(), "passage is exactly two floor blocks wide");
+            assertTrue(step.y() <= previousY, "no authored station climbs toward the surface");
+            descended |= step.y() < previousY;
+            previousY = step.y();
+            for (SubterraneanTrapPlan.RouteCell floor : step.floorCells()) {
+                assertTrue(floors.add(floor.x() + ":" + floor.y() + ":" + floor.z()));
+                assertEquals(1, writesAt(plan, floor, SubterraneanTrapPlan.Phase.DESCENT_FLOOR));
+                for (int dy = 1; dy <= 3; dy++) {
+                    assertEquals(1, writesAt(plan,
+                            new SubterraneanTrapPlan.RouteCell(
+                                    floor.x(), floor.y() + dy, floor.z()),
+                            SubterraneanTrapPlan.Phase.DESCENT_CLEAR),
+                            "every width cell has three clear blocks above its safe floor");
+                }
+            }
         }
-        method.setAccessible(true);
-        return method;
+        assertTrue(descended, "the route makes real downward progress");
+        assertEquals(plan.descentRoute().destination().probe().floorY(), previousY,
+                "authored stairs terminate level with the untouched lower cave floor");
     }
 
-    private static Object invokePlanner(Method method, Object... arguments) {
-        try {
-            return method.invoke(null, arguments);
-        } catch (ReflectiveOperationException exception) {
-            throw new AssertionError("planner seam " + method.getName() + " must be invocable", exception);
-        }
-    }
-
-    private static List<SubterraneanTrapPlan.Plan> planAlternatives(
-            SubterraneanTrapLayout.Placement placement, int[][] heights, int[][] kinds, int depth) {
-        Method alternatives = requiredPlannerMethod("planAlternatives",
-                SubterraneanTrapLayout.Placement.class, int[][].class, int[][].class, int.class);
-        Object value = invokePlanner(alternatives, placement, heights, kinds, depth);
-        assertTrue(value instanceof List<?>, "planAlternatives returns one deterministic ordered plan list");
-        List<?> raw = (List<?>) value;
-        assertTrue(raw.stream().allMatch(SubterraneanTrapPlan.Plan.class::isInstance),
-                "every alternative is a complete immutable Plan");
-        @SuppressWarnings("unchecked")
-        List<SubterraneanTrapPlan.Plan> plans = (List<SubterraneanTrapPlan.Plan>) raw;
-        return plans;
-    }
-
-    private static void assertCompleteAlternativeGeometry(
-            SubterraneanTrapLayout.Placement placement, SubterraneanTrapPlan.Plan plan, int depth,
-            int[][] heights, Set<String> expectedPhases) {
-        assertEquals(depth, plan.roofY() - plan.landingY(), "the requested landing depth is exact");
-
-        Set<String> writeCoordinates = new HashSet<>();
+    @Test
+    void activePlanHasNoUpwardEscapeMineTailOrSurfacePlugWrites() {
+        SubterraneanTrapPlan.Plan plan = validPlan().accepted();
+        Set<SubterraneanTrapPlan.Phase> active = plan.writes().stream()
+                .map(SubterraneanTrapPlan.Write::phase).collect(java.util.stream.Collectors.toSet());
+        assertTrue(active.containsAll(Set.of(
+                SubterraneanTrapPlan.Phase.CUSHION_BASE,
+                SubterraneanTrapPlan.Phase.CUSHION,
+                SubterraneanTrapPlan.Phase.DESCENT_FLOOR,
+                SubterraneanTrapPlan.Phase.DESCENT_CLEAR,
+                SubterraneanTrapPlan.Phase.CLEAR,
+                SubterraneanTrapPlan.Phase.SURFACE_POWDER)));
+        assertFalse(active.contains(SubterraneanTrapPlan.Phase.ESCAPE_FLOOR));
+        assertFalse(active.contains(SubterraneanTrapPlan.Phase.ESCAPE_CLEAR));
+        assertFalse(active.contains(SubterraneanTrapPlan.Phase.ESCAPE_MINE_TAIL));
         for (SubterraneanTrapPlan.Write write : plan.writes()) {
-            assertTrue(write.x() >= 1 && write.x() <= 14 && write.z() >= 1 && write.z() <= 14,
-                    "every alternative write stays in owner-local 1..14");
-            assertTrue(writeCoordinates.add(write.x() + ":" + write.y() + ":" + write.z()),
-                    "every alternative remains conflict-free");
-            assertTrue(expectedPhases.contains(write.phase().name()), "only existing material phases are used");
+            if (write.phase() == SubterraneanTrapPlan.Phase.DESCENT_FLOOR
+                    || write.phase() == SubterraneanTrapPlan.Phase.DESCENT_CLEAR) {
+                assertTrue(write.y() <= plan.landingY() + SubterraneanTrapPlan.ROUTE_CLEAR_HEIGHT,
+                        "the descending passage never approaches the surface shell");
+            }
         }
-        int phaseGroup = -1;
+    }
+
+    @Test
+    void lowerNaturalDestinationRemainsUntouchedAndProvidesConnectedContinuation() {
+        SubterraneanTrapPlan.Plan plan = validPlan().accepted();
+        SubterraneanTrapPlan.NaturalCaveDestination destination = plan.descentRoute().destination();
+        assertTrue(destination.continuationFloors().size()
+                >= SubterraneanTrapPlan.MIN_NATURAL_CONTINUATION_FLOORS);
+        for (SubterraneanTrapPlan.RouteCell naturalFloor : destination.continuationFloors()) {
+            assertEquals(0, writesAtAnyPhase(plan, naturalFloor),
+                    "the certified cave stays natural rather than becoming an authored floor patch");
+        }
+        assertTrue(destination.continuationFloors().containsAll(destination.probe().targetFloors()));
+        for (SubterraneanTrapPlan.RouteCell naturalFloor : destination.continuationFloors()) {
+            assertTrue(SubterraneanTrapPlan.naturalContinuationColumnAvoidsAuthoredRoute(
+                    destination.probe(), naturalFloor),
+                    "each natural witness column, including three blocks of headroom, is disjoint from the stair");
+        }
+    }
+
+    @Test
+    void malformedOrDisconnectedLowerWitnessesRejectBeforePlanning() {
+        SubterraneanTrapPlan.DestinationProbe probe = probe();
+        assertThrows(IllegalArgumentException.class, () ->
+                new SubterraneanTrapPlan.NaturalCaveDestination(probe, probe.targetFloors()));
+
+        List<SubterraneanTrapPlan.RouteCell> disconnected = new ArrayList<>(probe.targetFloors());
+        for (int index = 0; index < 6; index++) {
+            disconnected.add(new SubterraneanTrapPlan.RouteCell(
+                    15 - index, probe.floorY(), 15));
+        }
+        assertThrows(IllegalArgumentException.class, () ->
+                new SubterraneanTrapPlan.NaturalCaveDestination(probe, disconnected));
+    }
+
+    @Test
+    void naturalContinuationRejectsAHeadroomLoopBackIntoDescentClearance() {
+        SubterraneanTrapPlan.DestinationProbe probe = probe();
+        int landingY = probe.floorY() + probe.distance();
+        SubterraneanTrapPlan.RouteCell routeFloor = new SubterraneanTrapPlan.RouteCell(
+                probe.entryX(), landingY - 1, probe.entryZ());
+        SubterraneanTrapPlan.RouteCell loopBackFloor = new SubterraneanTrapPlan.RouteCell(
+                routeFloor.x(), routeFloor.y() - 1, routeFloor.z());
+        assertFalse(SubterraneanTrapPlan.naturalContinuationColumnAvoidsAuthoredRoute(probe, routeFloor),
+                "the authored floor itself cannot be recast as natural continuation");
+        assertFalse(SubterraneanTrapPlan.naturalContinuationColumnAvoidsAuthoredRoute(probe, loopBackFloor),
+                "a natural floor whose three-block headroom enters DESCENT_CLEAR must be rejected");
+
+        List<SubterraneanTrapPlan.RouteCell> witness = new ArrayList<>(destination().continuationFloors());
+        witness.set(witness.size() - 1, loopBackFloor);
+        assertThrows(IllegalArgumentException.class, () ->
+                new SubterraneanTrapPlan.NaturalCaveDestination(probe, witness));
+    }
+
+    @Test
+    void cataloguePlacementsAndPreferredDepthsKeepEveryNaturalWitnessColumnOutOfAuthoredRouteVolume() {
+        List<SubterraneanTrapLayout.Placement> placements = SubterraneanTrapLayout.placements(73L, 4, -9);
+        assertEquals(64, placements.size(), "the fixed full local placement catalogue remains covered");
+        int placementDepths = 0;
+        int legalProbes = 0;
+        for (SubterraneanTrapLayout.Placement placement : placements) {
+            for (int depth : SubterraneanTrapPlan.preferredDepthOrder()) {
+                int landingY = 100 - depth;
+                List<SubterraneanTrapPlan.DestinationProbe> probes =
+                        SubterraneanTrapPlan.destinationProbes(placement, landingY);
+                placementDepths++;
+                assertFalse(probes.isEmpty(), "every catalogue placement/depth retains a legal descent probe");
+                for (SubterraneanTrapPlan.DestinationProbe probe : probes) {
+                    SubterraneanTrapPlan.NaturalCaveDestination destination = destinationFor(probe);
+                    for (SubterraneanTrapPlan.RouteCell floor : destination.continuationFloors()) {
+                        assertTrue(SubterraneanTrapPlan.naturalContinuationColumnAvoidsAuthoredRoute(
+                                destination.probe(), floor));
+                    }
+                    legalProbes++;
+                }
+            }
+        }
+        assertEquals(576, placementDepths, "64 catalogue placements times nine preferred depths are exercised");
+        assertEquals(17_280, legalProbes, "every fixed legal route probe remains covered");
+    }
+
+    @Test
+    void routeWritesAndShellReadsStayInsideTheOwnerChunkDiscipline() {
+        SubterraneanTrapPlan.Plan plan = validPlan().accepted();
+        Set<String> writes = new HashSet<>();
         for (SubterraneanTrapPlan.Write write : plan.writes()) {
-            int next = phaseOrder(write.phase().name());
-            assertTrue(next >= phaseGroup, "every alternative preserves phase ordering");
-            phaseGroup = next;
+            assertTrue(write.x() >= 1 && write.x() <= 14 && write.z() >= 1 && write.z() <= 14);
+            assertTrue(writes.add(write.x() + ":" + write.y() + ":" + write.z()));
+        }
+        for (SubterraneanTrapPlan.RouteCell probe : plan.descentRoute().shellProbes()) {
+            assertTrue(probe.x() >= 0 && probe.x() <= 15 && probe.z() >= 0 && probe.z() <= 15);
+        }
+    }
+
+    @Test
+    void surfaceReliefAndSupportLawsRemainInForce() {
+        int[][] raisedPowder = firstAir(101);
+        SubterraneanTrapLayout.Cell powder = PLACEMENT.powder().getFirst();
+        raisedPowder[powder.x()][powder.z()] = 103;
+        SubterraneanTrapPlan.Result cliff = SubterraneanTrapPlan.plan(
+                PLACEMENT, raisedPowder, fullSnow(), List.of(destination()));
+        assertFalse(cliff.isAccepted());
+        assertEquals(SubterraneanTrapPlan.Rejection.POWDER_RELIEF_EXCEEDS_ONE, cliff.rejection(),
+                "an abrupt two-block break inside the powder cap still rejects");
+
+        int[][] kinds = fullSnow();
+        kinds[powder.x()][powder.z()] = SubterraneanTrapPlan.OTHER;
+        assertFalse(SubterraneanTrapPlan.plan(
+                PLACEMENT, firstAir(101), kinds, List.of(destination())).isAccepted());
+    }
+
+    @Test
+    void snowyMouthMayUseOnlyFirmGlacialIceForItsUnchangedRimAndApproach() {
+        int[][] kinds = surfaceKind(SubterraneanTrapPlan.FIRM_GLACIAL_ICE);
+        for (SubterraneanTrapLayout.Cell powder : PLACEMENT.powder()) {
+            kinds[powder.x()][powder.z()] = SubterraneanTrapPlan.THIN_OVER_FULL_SNOW;
         }
 
-        SubterraneanTrapPlan.EscapeRoute route = plan.escapeRoute();
-        for (SubterraneanTrapPlan.EscapeStep probe : route.shellProbes()) {
-            assertTrue(probe.x() >= 0 && probe.x() <= 15 && probe.z() >= 0 && probe.z() <= 15,
-                    "every shell probe stays in the owner chunk");
+        SubterraneanTrapPlan.Result supported = SubterraneanTrapPlan.plan(
+                PLACEMENT, firstAir(101), kinds, List.of(destination()));
+        assertTrue(supported.isAccepted(),
+                "a thin-snow mouth may meet an untouched packed/blue-ice glacier rim and firm approach");
+
+        SubterraneanTrapLayout.Cell powder = PLACEMENT.powder().getFirst();
+        kinds[powder.x()][powder.z()] = SubterraneanTrapPlan.FIRM_GLACIAL_ICE;
+        SubterraneanTrapPlan.Result exposedIceMouth = SubterraneanTrapPlan.plan(
+                PLACEMENT, firstAir(101), kinds, List.of(destination()));
+        assertFalse(exposedIceMouth.isAccepted(),
+                "bare glacier ice is never a concealed powder-mouth replacement surface");
+        assertEquals(SubterraneanTrapPlan.Rejection.UNSUPPORTED_SURFACE, exposedIceMouth.rejection());
+    }
+
+    @Test
+    void surfaceDiagnosticsNameEachExistingSurfaceExitWithoutChangingItsVerdict() {
+        assertSurfaceDiagnostic(surfaceKind(SubterraneanTrapPlan.FIRM_GLACIAL_ICE), PLACEMENT.powder().getFirst(),
+                SubterraneanTrapPlan.SurfaceRejectionReason.MOUTH_FIRM_GLACIAL);
+        assertSurfaceDiagnostic(surfaceKind(SubterraneanTrapPlan.OTHER), PLACEMENT.powder().getFirst(),
+                SubterraneanTrapPlan.SurfaceRejectionReason.MOUTH_OTHER);
+
+        int[][] collarKinds = firmGlacierWithSnowMouth();
+        SubterraneanTrapLayout.Cell collar = firstCollarCell();
+        collarKinds[collar.x()][collar.z()] = SubterraneanTrapPlan.OTHER;
+        assertSurfaceDiagnostic(collarKinds, null, SubterraneanTrapPlan.SurfaceRejectionReason.COLLAR_OTHER);
+
+        SubterraneanTrapLayout.Cell approach = thirdApproachCell();
+        int[][] approachOtherKinds = firmGlacierWithSnowMouth();
+        approachOtherKinds[approach.x()][approach.z()] = SubterraneanTrapPlan.OTHER;
+        assertSurfaceDiagnostic(approachOtherKinds, null, SubterraneanTrapPlan.SurfaceRejectionReason.APPROACH_OTHER);
+
+        int[][] approachPowderKinds = firmGlacierWithSnowMouth();
+        approachPowderKinds[approach.x()][approach.z()] = SubterraneanTrapPlan.POWDER;
+        assertSurfaceDiagnostic(approachPowderKinds, null, SubterraneanTrapPlan.SurfaceRejectionReason.APPROACH_POWDER);
+
+        SubterraneanTrapPlan.SurfaceDiagnosticResult invalid =
+                SubterraneanTrapPlan.planWithSurfaceDiagnostics(null, firstAir(101), fullSnow(), List.of(destination()));
+        assertEquals(SubterraneanTrapPlan.Rejection.INVALID_INPUT, invalid.result().rejection());
+        assertEquals(SubterraneanTrapPlan.SurfaceRejectionReason.INVALID_INPUT, invalid.surfaceRejectionReason());
+    }
+
+    @Test
+    void realSnowLayerGradeSurvivesSurfaceRingDepthAndRouteCertification() {
+        int[][] generatedSurface = gentleGeneratedSurface();
+        int minimumRoof = PLACEMENT.powder().stream()
+                .mapToInt(cell -> generatedSurface[cell.x()][cell.z()] - 1)
+                .min().orElseThrow();
+        int maximumRoof = PLACEMENT.powder().stream()
+                .mapToInt(cell -> generatedSurface[cell.x()][cell.z()] - 1)
+                .max().orElseThrow();
+        assertTrue(maximumRoof - minimumRoof > 3,
+                "fixture reproduces the cumulative real-world slope rejected by the old flat-surface range cap");
+
+        int landingY = minimumRoof - SubterraneanTrapPlan.PREFERRED_DEPTH;
+        SubterraneanTrapPlan.DestinationProbe route =
+                SubterraneanTrapPlan.destinationProbes(PLACEMENT, landingY).getFirst();
+        SubterraneanTrapPlan.Result result = SubterraneanTrapPlan.plan(
+                PLACEMENT, generatedSurface, surfaceKind(SubterraneanTrapPlan.THIN_OVER_FULL_SNOW),
+                List.of(destinationFor(route)));
+
+        assertTrue(result.isAccepted(),
+                "a locally one-block-smooth snow-layer grade reaches lower-cave route certification");
+        assertEquals(minimumRoof, result.accepted().roofY());
+        assertTrue(result.accepted().writes().stream()
+                        .filter(write -> write.phase() == SubterraneanTrapPlan.Phase.SURFACE_POWDER)
+                        .allMatch(write -> write.y() == generatedSurface[write.x()][write.z()] - 1),
+                "each powder cell still follows the exact captured visible surface");
+        assertTrue(result.accepted().writes().stream()
+                        .filter(write -> write.phase() == SubterraneanTrapPlan.Phase.SURFACE_POWDER)
+                        .allMatch(write -> write.y() - result.accepted().landingY()
+                                >= SubterraneanTrapPlan.MIN_LEGAL_DEPTH
+                                && write.y() - result.accepted().landingY()
+                                <= SubterraneanTrapPlan.MAX_LEGAL_DEPTH),
+                "every sloped column retains the independent legal fall-depth bound");
+    }
+
+    @Test
+    void thinSnowReplacementStillOccursOnlyAfterTheCompleteUndergroundPlan() {
+        int[][] kinds = fullSnow();
+        SubterraneanTrapLayout.Cell powder = PLACEMENT.powder().getFirst();
+        kinds[powder.x()][powder.z()] = SubterraneanTrapPlan.THIN_SNOW;
+        SubterraneanTrapPlan.Plan plan = SubterraneanTrapPlan.plan(
+                PLACEMENT, firstAir(101), kinds, List.of(destination())).accepted();
+        assertEquals(SubterraneanTrapPlan.Phase.REMOVE_SURFACE_LAYER,
+                plan.writes().getLast().phase());
+        assertEquals(1, plan.writes().stream()
+                .filter(write -> write.x() == powder.x() && write.y() == 101 && write.z() == powder.z()
+                        && write.phase() == SubterraneanTrapPlan.Phase.REMOVE_SURFACE_LAYER)
+                .count());
+    }
+
+    @Test
+    void alternativesAreDeterministicUniqueAndBounded() {
+        List<SubterraneanTrapPlan.NaturalCaveDestination> targets = List.of(destination());
+        List<SubterraneanTrapPlan.Plan> first = SubterraneanTrapPlan.planAlternatives(
+                PLACEMENT, firstAir(101), fullSnow(), 32, targets);
+        List<SubterraneanTrapPlan.Plan> second = SubterraneanTrapPlan.planAlternatives(
+                PLACEMENT, firstAir(101), fullSnow(), 32, targets);
+        assertEquals(first, second);
+        assertFalse(first.isEmpty());
+        assertTrue(first.size() <= 34);
+        assertEquals(first.size(), new HashSet<>(first).size());
+        assertEquals(List.of(32, 33, 31, 34, 30, 35, 29, 36, 28),
+                SubterraneanTrapPlan.preferredDepthOrder());
+    }
+
+    @Test
+    void deeperDepth64FindsOnlyItsCertifiedNaturalDestinationAfterTheLegacyPrefix() {
+        List<Integer> depths = SubterraneanTrapPlan.landingDepthOrder(100);
+        assertEquals(List.of(32, 33, 31, 34, 30, 35, 29, 36, 28),
+                depths.subList(0, SubterraneanTrapPlan.preferredDepthOrder().size()));
+        assertEquals(64, depths.size(), "roof Y100 searches nine legacy depths plus 37..91 exactly once");
+        assertEquals(91, depths.getLast(),
+                "the deepest candidate keeps an eight-block destination strictly above Y0");
+
+        int landingY = 100 - 64;
+        SubterraneanTrapPlan.DestinationProbe depth64Probe =
+                SubterraneanTrapPlan.destinationProbes(PLACEMENT, landingY).getFirst();
+        SubterraneanTrapPlan.NaturalCaveDestination depth64Destination = destinationFor(depth64Probe);
+        List<SubterraneanTrapPlan.Plan> plans = SubterraneanTrapPlan.planAlternatives(
+                PLACEMENT, firstAir(101), fullSnow(), 64, List.of(depth64Destination));
+
+        assertFalse(plans.isEmpty(), "a certified depth64 natural glacial cave becomes reachable");
+        SubterraneanTrapPlan.Plan selected = plans.getFirst();
+        assertEquals(64, selected.roofY() - selected.landingY());
+        assertEquals(36, selected.landingY());
+        assertTrue(selected.descentRoute().destination().probe().floorY() > 0);
+        int previousY = selected.landingY();
+        for (SubterraneanTrapPlan.RouteStep step : selected.descentRoute().steps()) {
+            assertEquals(2, step.floorCells().size());
+            assertTrue(step.y() <= previousY, "the depth64 route is level-or-descending only");
+            previousY = step.y();
         }
-        Set<SubterraneanTrapLayout.Cell> powder = Set.copyOf(placement.powder());
-        long entryPowderNeighbours = powder.stream()
-                .filter(cell -> cardinalDistance(cell.x(), cell.z(), route.entry().x(), route.entry().z()) == 1)
+        assertEquals(selected.descentRoute().destination().probe().floorY(), previousY);
+        assertTrue(selected.descentRoute().steps().stream()
+                .flatMap(step -> step.floorCells().stream())
+                .allMatch(floor -> java.util.stream.IntStream.rangeClosed(1, 3)
+                        .allMatch(dy -> writesAt(selected,
+                                new SubterraneanTrapPlan.RouteCell(floor.x(), floor.y() + dy, floor.z()),
+                                SubterraneanTrapPlan.Phase.DESCENT_CLEAR) == 1)));
+        assertTrue(selected.writes().stream().noneMatch(write ->
+                write.phase() == SubterraneanTrapPlan.Phase.ESCAPE_FLOOR
+                        || write.phase() == SubterraneanTrapPlan.Phase.ESCAPE_CLEAR
+                        || write.phase() == SubterraneanTrapPlan.Phase.ESCAPE_MINE_TAIL));
+        assertTrue(selected.writes().stream().allMatch(write ->
+                write.x() >= 1 && write.x() <= 14 && write.z() >= 1 && write.z() <= 14));
+    }
+
+    @Test
+    void y0BoundaryAndHardDepthRemainFailClosed() {
+        List<Integer> y0Pruned = SubterraneanTrapPlan.landingDepthOrder(72);
+        assertEquals(63, y0Pruned.getLast());
+        assertFalse(y0Pruned.contains(64),
+                "roof Y72 cannot try depth64 because its deepest target would be Y0");
+        SubterraneanTrapPlan.DestinationProbe ordinary =
+                SubterraneanTrapPlan.destinationProbes(PLACEMENT, 36).getFirst();
+        assertThrows(IllegalArgumentException.class, () -> new SubterraneanTrapPlan.DestinationProbe(
+                ordinary.entryX(), ordinary.entryZ(), ordinary.targetX(), ordinary.targetZ(),
+                ordinary.widthDx(), ordinary.widthDz(), ordinary.forwardDx(), ordinary.forwardDz(),
+                0, ordinary.distance()), "a Y0 destination can never become certified evidence");
+
+        assertEquals(SubterraneanTrapPlan.MAX_HARD_DEPTH, SubterraneanTrapPlan.MAX_LEGAL_DEPTH,
+                "deep natural landings use, but never relax, the existing hard bound");
+        List<Integer> highRoofDepths = SubterraneanTrapPlan.landingDepthOrder(110);
+        assertEquals(SubterraneanTrapPlan.MAX_HARD_DEPTH, highRoofDepths.getLast());
+        int hardLandingY = 110 - SubterraneanTrapPlan.MAX_HARD_DEPTH;
+        SubterraneanTrapPlan.NaturalCaveDestination hardBoundDestination = destinationFor(
+                SubterraneanTrapPlan.destinationProbes(PLACEMENT, hardLandingY).getFirst());
+        assertFalse(SubterraneanTrapPlan.planAlternatives(
+                PLACEMENT, firstAir(111), fullSnow(), SubterraneanTrapPlan.MAX_HARD_DEPTH,
+                List.of(hardBoundDestination)).isEmpty(), "the exact hard bound remains legal above Y0");
+
+        int beyondHardLandingY = 110 - SubterraneanTrapPlan.MAX_HARD_DEPTH - 1;
+        SubterraneanTrapPlan.NaturalCaveDestination beyondHardDestination = destinationFor(
+                SubterraneanTrapPlan.destinationProbes(PLACEMENT, beyondHardLandingY).getFirst());
+        assertTrue(SubterraneanTrapPlan.planAlternatives(
+                PLACEMENT, firstAir(111), fullSnow(), SubterraneanTrapPlan.MAX_HARD_DEPTH + 1,
+                List.of(beyondHardDestination)).isEmpty(), "depth97 remains outside the immutable hard bound");
+    }
+
+    private static SubterraneanTrapPlan.Result validPlan() {
+        return SubterraneanTrapPlan.plan(
+                PLACEMENT, firstAir(101), fullSnow(), List.of(destination()));
+    }
+
+    private static void assertSurfaceDiagnostic(int[][] kinds, SubterraneanTrapLayout.Cell changedMouth,
+                                                SubterraneanTrapPlan.SurfaceRejectionReason expected) {
+        if (changedMouth != null) {
+            kinds[changedMouth.x()][changedMouth.z()] = expected == SubterraneanTrapPlan.SurfaceRejectionReason.MOUTH_FIRM_GLACIAL
+                    ? SubterraneanTrapPlan.FIRM_GLACIAL_ICE : SubterraneanTrapPlan.OTHER;
+        }
+        SubterraneanTrapPlan.Result ordinary = SubterraneanTrapPlan.plan(
+                PLACEMENT, firstAir(101), kinds, List.of(destination()));
+        SubterraneanTrapPlan.SurfaceDiagnosticResult diagnostic =
+                SubterraneanTrapPlan.planWithSurfaceDiagnostics(PLACEMENT, firstAir(101), kinds, List.of(destination()));
+        assertFalse(ordinary.isAccepted());
+        assertEquals(SubterraneanTrapPlan.Rejection.UNSUPPORTED_SURFACE, ordinary.rejection());
+        assertEquals(ordinary, diagnostic.result(), "diagnostics must not alter the ordinary planner verdict");
+        assertEquals(expected, diagnostic.surfaceRejectionReason());
+    }
+
+    private static int[][] firmGlacierWithSnowMouth() {
+        int[][] kinds = surfaceKind(SubterraneanTrapPlan.FIRM_GLACIAL_ICE);
+        for (SubterraneanTrapLayout.Cell powder : PLACEMENT.powder()) {
+            kinds[powder.x()][powder.z()] = SubterraneanTrapPlan.FULL_SNOW;
+        }
+        return kinds;
+    }
+
+    private static SubterraneanTrapLayout.Cell firstCollarCell() {
+        Set<SubterraneanTrapLayout.Cell> powder = Set.copyOf(PLACEMENT.powder());
+        return powder.stream().flatMap(cell -> java.util.stream.IntStream.rangeClosed(-1, 1).boxed()
+                        .flatMap(dx -> java.util.stream.IntStream.rangeClosed(-1, 1)
+                                .mapToObj(dz -> new SubterraneanTrapLayout.Cell(cell.x() + dx, cell.z() + dz))))
+                .filter(cell -> cell.x() >= 0 && cell.x() < 16 && cell.z() >= 0 && cell.z() < 16)
+                .filter(cell -> !powder.contains(cell))
+                .findFirst().orElseThrow();
+    }
+
+    private static SubterraneanTrapLayout.Cell thirdApproachCell() {
+        boolean axisX = PLACEMENT.template().axis() == SubterraneanTrapLayout.Axis.X;
+        SubterraneanTrapLayout.Cell lowEnd = PLACEMENT.powder().stream()
+                .min(axisX ? java.util.Comparator.comparingInt(SubterraneanTrapLayout.Cell::x)
+                        .thenComparingInt(SubterraneanTrapLayout.Cell::z)
+                        : java.util.Comparator.comparingInt(SubterraneanTrapLayout.Cell::z)
+                                .thenComparingInt(SubterraneanTrapLayout.Cell::x))
+                .orElseThrow();
+        return axisX ? new SubterraneanTrapLayout.Cell(lowEnd.x() - 3, lowEnd.z())
+                : new SubterraneanTrapLayout.Cell(lowEnd.x(), lowEnd.z() - 3);
+    }
+
+    private static SubterraneanTrapPlan.NaturalCaveDestination destination() {
+        return destinationFor(probe());
+    }
+
+    private static SubterraneanTrapPlan.NaturalCaveDestination destinationFor(
+            SubterraneanTrapPlan.DestinationProbe probe) {
+        Set<SubterraneanTrapPlan.RouteCell> floors = new java.util.LinkedHashSet<>(probe.targetFloors());
+        ArrayDeque<SubterraneanTrapPlan.RouteCell> queue = new ArrayDeque<>(probe.targetFloors());
+        while (floors.size() < SubterraneanTrapPlan.MIN_NATURAL_CONTINUATION_FLOORS) {
+            SubterraneanTrapPlan.RouteCell current = queue.removeFirst();
+            for (int[] offset : new int[][]{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}) {
+                SubterraneanTrapPlan.RouteCell next = new SubterraneanTrapPlan.RouteCell(
+                        current.x() + offset[0], current.y(), current.z() + offset[1]);
+                if (next.x() >= 0 && next.x() <= 15 && next.z() >= 0 && next.z() <= 15
+                        && SubterraneanTrapPlan.naturalContinuationColumnAvoidsAuthoredRoute(probe, next)
+                        && floors.add(next)) {
+                    queue.addLast(next);
+                    if (floors.size() == SubterraneanTrapPlan.MIN_NATURAL_CONTINUATION_FLOORS) {
+                        break;
+                    }
+                }
+            }
+        }
+        return new SubterraneanTrapPlan.NaturalCaveDestination(probe, List.copyOf(floors));
+    }
+
+    private static SubterraneanTrapPlan.DestinationProbe probe() {
+        return SubterraneanTrapPlan.destinationProbes(PLACEMENT, 68).getFirst();
+    }
+
+    private static SubterraneanTrapLayout.Placement placementWithProbe() {
+        return SubterraneanTrapLayout.placements(73L, 4, -9).stream()
+                .filter(placement -> !SubterraneanTrapPlan.destinationProbes(placement, 68).isEmpty())
+                .findFirst().orElseThrow();
+    }
+
+    private static int writesAt(SubterraneanTrapPlan.Plan plan,
+                                SubterraneanTrapPlan.RouteCell cell,
+                                SubterraneanTrapPlan.Phase phase) {
+        return (int) plan.writes().stream()
+                .filter(write -> write.x() == cell.x() && write.y() == cell.y() && write.z() == cell.z()
+                        && write.phase() == phase)
                 .count();
-        assertEquals(1, entryPowderNeighbours, "each alternative opens exactly one bank doorway");
-        assertEquals(plan.landingY(), route.entry().y());
-
-        List<SubterraneanTrapPlan.EscapeStep> corridor = new java.util.ArrayList<>();
-        corridor.addAll(route.steps());
-        corridor.addAll(route.tailSteps());
-        assertFalse(corridor.isEmpty());
-        assertEquals(1, cardinalDistance(
-                route.entry().x(), route.entry().z(), corridor.getFirst().x(), corridor.getFirst().z()));
-        assertEquals(route.entry().y(), corridor.getFirst().y(),
-                "the landing doorway enters the first perimeter floor at the same elevation");
-
-        Set<String> routeCoordinates = new HashSet<>();
-        SubterraneanTrapPlan.EscapeStep previous = null;
-        for (SubterraneanTrapPlan.EscapeStep step : corridor) {
-            assertTrue(routeCoordinates.add(step.x() + ":" + step.y() + ":" + step.z()),
-                    "the complete route is duplicate-free");
-            assertFalse(powder.contains(new SubterraneanTrapLayout.Cell(step.x(), step.z())),
-                    "the escape never crosses a fall column");
-            if (previous != null) {
-                assertEquals(1, cardinalDistance(previous.x(), previous.z(), step.x(), step.z()),
-                        "the escape is cardinally connected");
-                assertEquals(1, step.y() - previous.y(), "the escape rises exactly one block per step");
-            }
-            previous = step;
-        }
-        assertTrue(route.tailSteps().size() == 2 || route.tailSteps().size() == 3,
-                "the future-mined tail is exactly two or three steps");
-
-        SubterraneanTrapPlan.EscapeStep finalTail = route.tailSteps().getLast();
-        for (SubterraneanTrapPlan.EscapeStep step : corridor.subList(0, corridor.size() - 1)) {
-            assertTrue(step.y() + 2 < heights[step.x()][step.z()] - 1,
-                    "every non-final route top remains strictly buried");
-        }
-        assertEquals(heights[finalTail.x()][finalTail.z()] - 1, finalTail.y() + 2,
-                "the final tail meets its exact intact surface support");
-        assertEquals(finalTail.x(), route.surfacePlug().x());
-        assertEquals(finalTail.z(), route.surfacePlug().z());
-        assertEquals(finalTail.y() + 1, route.surfacePlug().y());
-        assertEquals(1, cardinalDistance(
-                finalTail.x(), finalTail.z(), route.closureCell().x(), route.closureCell().z()));
-        assertTrue(plan.writes().stream().noneMatch(write ->
-                        write.x() == route.closureCell().x() && write.z() == route.closureCell().z()),
-                "the reserved perimeter closure column remains untouched");
     }
 
-    private static AlternativeOrder alternativeOrder(
-            SubterraneanTrapLayout.Placement placement, SubterraneanTrapPlan.EscapeRoute route) {
-        return new AlternativeOrder(
-                route.entry().x(), route.entry().z(), routeDirection(placement, route),
-                route.steps().size() + route.tailSteps().size(), route.tailSteps().size());
-    }
-
-    private static int routeDirection(
-            SubterraneanTrapLayout.Placement placement, SubterraneanTrapPlan.EscapeRoute route) {
-        List<SubterraneanTrapLayout.Cell> perimeter = expandedPerimeter(placement);
-        SubterraneanTrapPlan.EscapeStep first = route.steps().getFirst();
-        SubterraneanTrapPlan.EscapeStep second = route.steps().get(1);
-        int firstIndex = perimeter.indexOf(new SubterraneanTrapLayout.Cell(first.x(), first.z()));
-        assertTrue(firstIndex >= 0, "route starts on the expanded powder perimeter");
-        SubterraneanTrapLayout.Cell clockwise = perimeter.get(Math.floorMod(firstIndex + 1, perimeter.size()));
-        SubterraneanTrapLayout.Cell counterclockwise =
-                perimeter.get(Math.floorMod(firstIndex - 1, perimeter.size()));
-        SubterraneanTrapLayout.Cell next = new SubterraneanTrapLayout.Cell(second.x(), second.z());
-        if (next.equals(clockwise)) {
-            return 0;
-        }
-        if (next.equals(counterclockwise)) {
-            return 1;
-        }
-        throw new AssertionError("route does not follow either deterministic perimeter direction");
-    }
-
-    private static List<SubterraneanTrapLayout.Cell> expandedPerimeter(
-            SubterraneanTrapLayout.Placement placement) {
-        int minX = placement.powder().stream().mapToInt(SubterraneanTrapLayout.Cell::x).min().orElseThrow() - 2;
-        int maxX = placement.powder().stream().mapToInt(SubterraneanTrapLayout.Cell::x).max().orElseThrow() + 2;
-        int minZ = placement.powder().stream().mapToInt(SubterraneanTrapLayout.Cell::z).min().orElseThrow() - 2;
-        int maxZ = placement.powder().stream().mapToInt(SubterraneanTrapLayout.Cell::z).max().orElseThrow() + 2;
-        List<SubterraneanTrapLayout.Cell> perimeter = new java.util.ArrayList<>();
-        for (int x = minX; x <= maxX; x++) {
-            perimeter.add(new SubterraneanTrapLayout.Cell(x, minZ));
-        }
-        for (int z = minZ + 1; z <= maxZ; z++) {
-            perimeter.add(new SubterraneanTrapLayout.Cell(maxX, z));
-        }
-        for (int x = maxX - 1; x >= minX; x--) {
-            perimeter.add(new SubterraneanTrapLayout.Cell(x, maxZ));
-        }
-        for (int z = maxZ - 1; z > minZ; z--) {
-            perimeter.add(new SubterraneanTrapLayout.Cell(minX, z));
-        }
-        return List.copyOf(perimeter);
-    }
-
-    private static int cardinalDistance(int firstX, int firstZ, int secondX, int secondZ) {
-        return Math.abs(firstX - secondX) + Math.abs(firstZ - secondZ);
-    }
-
-    private record AlternativeOrder(
-            int doorwayX, int doorwayZ, int direction, int routeLength, int tailLength) {
-        private static final java.util.Comparator<AlternativeOrder> COMPARATOR =
-                java.util.Comparator.comparingInt(AlternativeOrder::doorwayX)
-                        .thenComparingInt(AlternativeOrder::doorwayZ)
-                        .thenComparingInt(AlternativeOrder::direction)
-                        .thenComparingInt(AlternativeOrder::routeLength)
-                        .thenComparingInt(AlternativeOrder::tailLength);
-    }
-
-    private static void assertRejected(SubterraneanTrapPlan.Result result, SubterraneanTrapPlan.Rejection rejection) {
-        assertFalse(result.isAccepted());
-        assertNull(result.accepted());
-        assertEquals(rejection, result.rejection());
+    private static int writesAtAnyPhase(SubterraneanTrapPlan.Plan plan,
+                                        SubterraneanTrapPlan.RouteCell cell) {
+        return (int) plan.writes().stream()
+                .filter(write -> write.x() == cell.x() && write.y() == cell.y() && write.z() == cell.z())
+                .count();
     }
 
     private static int[][] firstAir(int value) {
@@ -738,128 +1081,25 @@ class SubterraneanTrapPlanTest {
         return heights;
     }
 
-    private static int[][] fullSnow() {
+    private static int[][] gentleGeneratedSurface() {
+        int[][] heights = new int[16][16];
+        for (int x = 0; x < 16; x++) {
+            for (int z = 0; z < 16; z++) {
+                heights[x][z] = 101 + x / 2 + z / 2;
+            }
+        }
+        return heights;
+    }
+
+    private static int[][] surfaceKind(int value) {
         int[][] kinds = new int[16][16];
         for (int x = 0; x < 16; x++) {
-            java.util.Arrays.fill(kinds[x], SubterraneanTrapPlan.FULL_SNOW);
+            java.util.Arrays.fill(kinds[x], value);
         }
         return kinds;
     }
 
-    private static int writesAt(List<SubterraneanTrapPlan.Write> writes, int x, int y, int z,
-                                SubterraneanTrapPlan.Phase phase) {
-        return (int) writes.stream().filter(write -> write.x() == x && write.y() == y && write.z() == z
-                && write.phase() == phase).count();
-    }
-
-    private static int writesAtAnyPhase(List<SubterraneanTrapPlan.Write> writes, int x, int y, int z) {
-        return (int) writes.stream().filter(write -> write.x() == x && write.y() == y && write.z() == z).count();
-    }
-
-    private static int firstPhaseIndex(List<SubterraneanTrapPlan.Write> writes, String phase) {
-        for (int index = 0; index < writes.size(); index++) {
-            if (writes.get(index).phase().name().equals(phase)) {
-                return index;
-            }
-        }
-        throw new AssertionError("missing planned phase " + phase);
-    }
-
-    private static int indexOf(List<SubterraneanTrapPlan.Write> writes, SubterraneanTrapPlan.Write target) {
-        int index = writes.indexOf(target);
-        if (index < 0) {
-            throw new AssertionError("planned write is absent from its own immutable write list");
-        }
-        return index;
-    }
-
-    private static int phaseOrder(String phase) {
-        return switch (phase) {
-            case "CUSHION_BASE" -> 0;
-            case "CUSHION" -> 1;
-            case "ESCAPE_FLOOR" -> 2;
-            case "ESCAPE_MINE_TAIL" -> 3;
-            case "CLEAR" -> 4;
-            case "ESCAPE_CLEAR" -> 5;
-            case "SURFACE_POWDER" -> 6;
-            case "REMOVE_SURFACE_LAYER" -> 7;
-            default -> throw new AssertionError("unclassified planned phase " + phase);
-        };
-    }
-
-    private static SubterraneanTrapPlan.Phase namedPhase(String name) {
-        return java.util.Arrays.stream(SubterraneanTrapPlan.Phase.values()).filter(phase -> phase.name().equals(name))
-                .findFirst().orElseThrow(() -> new AssertionError("missing explicit phase " + name));
-    }
-
-    private static Set<String> recordComponentNames(Object record) {
-        return java.util.Arrays.stream(record.getClass().getRecordComponents()).map(component -> component.getName())
-                .collect(java.util.stream.Collectors.toSet());
-    }
-
-    private static Object requiredComponent(Object record, String name) {
-        Method accessor = java.util.Arrays.stream(record.getClass().getMethods())
-                .filter(method -> method.getName().equals(name) && method.getParameterCount() == 0).findFirst().orElse(null);
-        assertTrue(accessor != null, "escape metadata must expose " + name);
-        try {
-            return accessor.invoke(record);
-        } catch (ReflectiveOperationException exception) {
-            throw new AssertionError("escape metadata accessor " + name + " must be invocable", exception);
-        }
-    }
-
-    private static List<?> requiredList(Object record, String name) {
-        Object value = requiredComponent(record, name);
-        assertTrue(value instanceof List<?>, name + " is ordered scanner-readable metadata");
-        return (List<?>) value;
-    }
-
-    private static int requiredInt(Object record, String name) {
-        Object value = requiredComponent(record, name);
-        assertTrue(value instanceof Integer, name + " is an exact integer coordinate");
-        return (Integer) value;
-    }
-
-    private static SubterraneanTrapLayout.Cell lateralVisualCollarCell() {
-        Set<SubterraneanTrapLayout.Cell> powder = Set.copyOf(PLACEMENT.powder());
-        int minStation = powder.stream().mapToInt(SubterraneanTrapPlanTest::station).min().orElseThrow();
-        int maxStation = powder.stream().mapToInt(SubterraneanTrapPlanTest::station).max().orElseThrow();
-        return PLACEMENT.solid().stream().filter(cell -> station(cell) > minStation && station(cell) < maxStation)
-                .filter(cell -> powder.stream().anyMatch(powderCell -> Math.abs(powderCell.x() - cell.x())
-                        + Math.abs(powderCell.z() - cell.z()) == 1)).findFirst().orElseThrow();
-    }
-
-    private static SubterraneanTrapLayout.Placement tooShortEscapePlacement() {
-        List<SubterraneanTrapLayout.Cell> powder = List.of(new SubterraneanTrapLayout.Cell(2, 1));
-        List<SubterraneanTrapLayout.Cell> solid = new java.util.ArrayList<>();
-        for (int x = 0; x < 5; x++) {
-            for (int z = 0; z < 3; z++) {
-                SubterraneanTrapLayout.Cell cell = new SubterraneanTrapLayout.Cell(x, z);
-                if (!powder.contains(cell)) {
-                    solid.add(cell);
-                }
-            }
-        }
-        return new SubterraneanTrapLayout.Placement(new SubterraneanTrapLayout.Template(
-                SubterraneanTrapLayout.Axis.X, 5, 3, powder, solid), 1, 1);
-    }
-
-    private static SubterraneanTrapLayout.Cell remoteOldRectangleCell() {
-        int minX = PLACEMENT.implied().stream().mapToInt(SubterraneanTrapLayout.Cell::x).min().orElseThrow();
-        int minZ = PLACEMENT.implied().stream().mapToInt(SubterraneanTrapLayout.Cell::z).min().orElseThrow();
-        return new SubterraneanTrapLayout.Cell(minX - 1, minZ - 1);
-    }
-
-    private static SubterraneanTrapLayout.Cell approachCell(int distanceFromPowder) {
-        int lastPowderStation = PLACEMENT.powder().stream().mapToInt(SubterraneanTrapPlanTest::station).max().orElseThrow();
-        SubterraneanTrapLayout.Cell endpoint = PLACEMENT.powder().stream()
-                .filter(cell -> station(cell) == lastPowderStation).findFirst().orElseThrow();
-        return PLACEMENT.template().axis() == SubterraneanTrapLayout.Axis.X
-                ? new SubterraneanTrapLayout.Cell(endpoint.x() + distanceFromPowder, endpoint.z())
-                : new SubterraneanTrapLayout.Cell(endpoint.x(), endpoint.z() + distanceFromPowder);
-    }
-
-    private static int station(SubterraneanTrapLayout.Cell cell) {
-        return PLACEMENT.template().axis() == SubterraneanTrapLayout.Axis.X ? cell.x() : cell.z();
+    private static int[][] fullSnow() {
+        return surfaceKind(SubterraneanTrapPlan.FULL_SNOW);
     }
 }

@@ -3,9 +3,12 @@ package com.example.globe;
 import com.example.globe.adapter.geo.GeoAuthorityProvider;
 import com.example.globe.adapter.geo.GeoSummaryProvider;
 import com.example.globe.core.CrevasseLocator;
+import com.example.globe.core.CaveTrapEntranceScan;
 import com.example.globe.core.GeoSurveyNarrator;
 import com.example.globe.core.GlacialBlend;
 import com.example.globe.core.GlacialMarkScan;
+import com.example.globe.core.HiddenChamberPlan;
+import com.example.globe.core.HiddenChamberScan;
 import com.example.globe.core.LatitudeV2Flags;
 import com.example.globe.core.PowderRoofTrap;
 import com.example.globe.core.SurveyGroundTruth;
@@ -16,20 +19,29 @@ import com.example.globe.core.geo.GeoSummary;
 import com.example.globe.mixin.ChunkGeneratorAccessor;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
+import com.example.globe.world.IcicleBlocks;
 import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
+import com.example.globe.world.CaveTrapBlocks;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -44,6 +56,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BiomeTags;
@@ -55,7 +68,9 @@ import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
@@ -164,6 +179,24 @@ public final class LatitudeDevCommands {
                                                         IntegerArgumentType.getInteger(ctx, "radiusChunks"),
                                                         IntegerArgumentType.getInteger(ctx, "x"),
                                                         IntegerArgumentType.getInteger(ctx, "z")))))))
+                .then(Commands.literal("markCaveTraps")
+                        .executes(ctx -> markCaveTraps(ctx, DEFAULT_CAVE_TRAP_RADIUS_CHUNKS))
+                        .then(Commands.argument("radiusChunks", IntegerArgumentType.integer(1, MAX_CAVE_TRAP_RADIUS_CHUNKS))
+                                .executes(ctx -> markCaveTraps(
+                                        ctx, IntegerArgumentType.getInteger(ctx, "radiusChunks")))))
+                .then(Commands.literal("markChambers")
+                        .executes(ctx -> markChambers(ctx, DEFAULT_CHAMBER_RADIUS_CHUNKS))
+                        .then(Commands.argument("radiusChunks", IntegerArgumentType.integer(1, MAX_CHAMBER_RADIUS_CHUNKS))
+                                .executes(ctx -> markChambers(
+                                        ctx, IntegerArgumentType.getInteger(ctx, "radiusChunks")))))
+                .then(Commands.literal("locateChamber")
+                        .executes(ctx -> locateChamber(ctx, DEFAULT_LOCATE_CHAMBER_RADIUS_CHUNKS))
+                        // The literal is matched before the integer argument, so "cancel" is unambiguous.
+                        .then(Commands.literal("cancel").executes(LatitudeDevCommands::locateChamberCancel))
+                        .then(Commands.argument("radiusChunks",
+                                        IntegerArgumentType.integer(1, MAX_LOCATE_CHAMBER_RADIUS_CHUNKS))
+                                .executes(ctx -> locateChamber(
+                                        ctx, IntegerArgumentType.getInteger(ctx, "radiusChunks")))))
                 .then(Commands.literal("voidCensus")
                         .executes(ctx -> voidCensus(ctx, DEFAULT_VOID_RADIUS_CHUNKS))
                         .then(Commands.argument("radiusChunks", IntegerArgumentType.integer(1, MAX_VOID_RADIUS_CHUNKS))
@@ -197,7 +230,9 @@ public final class LatitudeDevCommands {
                 "[latdev] here | probe | survey | tpband <band> [center|low|high] | tpedge <west|east> [frac]"
                         + " | tphemi <ns|ew|zero> [n|s|e|w] | tppole <n|s> [deg]"
                         + " | locateCrevasse [radiusChunks] | locateTunnel [radiusChunks]"
-                        + " | markGlacial [radiusChunks [x z]] | voidCensus [radiusChunks [x z]] | tpxz <x> <z>"), false);
+                        + " | markGlacial [radiusChunks [x z]] | markCaveTraps [radiusChunks]"
+                        + " | markChambers [radiusChunks] | locateChamber [radiusChunks|cancel]"
+                        + " | voidCensus [radiusChunks [x z]] | tpxz <x> <z>"), false);
         return 1;
     }
 
@@ -720,6 +755,12 @@ public final class LatitudeDevCommands {
     /** Tallest open-slot beacon (blocks) -- a deep canyon's blue plume is clipped here to bound particles. */
     private static final int MARK_BEACON_MAX_HEIGHT = 24;
 
+    /** A full-height scan is more expensive than the surface marker; 9x9 loaded chunks stays responsive. */
+    private static final int DEFAULT_CAVE_TRAP_RADIUS_CHUNKS = 2;
+    private static final int MAX_CAVE_TRAP_RADIUS_CHUNKS = 4;
+    private static final int CAVE_TRAP_CHAT_CAP = 10;
+    private static final int CAVE_TRAP_MARKER_CAP = 200;
+
     /**
      * TEST128 ground-truth scan over real, already-loaded blocks. GREEN means a complete physical trap:
      * irregular low-relief powder cover, a deep clear fall and matching cushions under every cover column,
@@ -740,6 +781,1031 @@ public final class LatitudeDevCommands {
         } catch (Exception e) {
             src.sendFailure(Component.literal("[latdev] markGlacial failed: " + e.getMessage()));
             return 0;
+        }
+    }
+
+    // --- /latdev markCaveTraps -- direct locator for the inner-cave feature. Unlike locateCrevasse and the
+    // surface markGlacial evidence, this scans only the unique worldgen-only block signature already present in
+    // loaded FULL chunks. No generator seed/planner is consulted and it never asks the chunk source to create
+    // terrain. --------------------------------------------------------------------------------------------------
+
+    private static int markCaveTraps(CommandContext<CommandSourceStack> ctx, int radiusChunks) {
+        CommandSourceStack src = ctx.getSource();
+        try {
+            ServerPlayer player = src.getPlayerOrException();
+            return markCaveTrapsCore(src, src.getLevel(), player, radiusChunks);
+        } catch (Exception e) {
+            src.sendFailure(Component.literal("[latdev] markCaveTraps failed: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int markCaveTrapsCore(
+            CommandSourceStack src, ServerLevel world, ServerPlayer player, int radiusChunks) {
+        if (CaveTrapBlocks.CAVE_TRAP_POWDER_SNOW == null) {
+            src.sendFailure(Component.literal(
+                    "[latdev] the globe:cave_trap_powder_snow signature is not registered in this session."));
+            return 0;
+        }
+        int r = Mth.clamp(radiusChunks, 1, MAX_CAVE_TRAP_RADIUS_CHUNKS);
+        clearGreenMarkers(); // a new direct scan must never leave a prior entrance highlighted
+        CollapseSweep sweep = sweepLoadedCollapseSignature(world, player.getX(), player.getZ(), r);
+        List<CaveTrapEntranceScan.Cell> signatures = sweep.signatures();
+        Set<LoadedChunk> loadedChunks = sweep.loadedChunks();
+        int loaded = sweep.loadedChunkCount();
+        int skipped = sweep.skippedChunkCount();
+
+        List<CaveTrapEntranceScan.Patch> patches = CaveTrapEntranceScan.groupPatches(signatures);
+        Map<HiddenChamberScan.Position, List<HiddenChamberScan.Position>> mouthByCell =
+                chamberMouthsByCell(signatures);
+        List<CaveTrapHit> hits = new ArrayList<>();
+        int partialPatches = 0;
+        int noSafeWaypoint = 0;
+        for (CaveTrapEntranceScan.Patch patch : patches) {
+            if (!patchHasLoadedBorder(patch, loadedChunks)) {
+                partialPatches++;
+                continue;
+            }
+            BlockPos waypoint = safeCaveTrapWaypoint(world, patch, loadedChunks);
+            if (waypoint == null) {
+                noSafeWaypoint++;
+                continue;
+            }
+            double dx = patch.x() + 0.5 - player.getX();
+            double dy = patch.y() + 0.5 - player.getY();
+            double dz = patch.z() + 0.5 - player.getZ();
+            hits.add(new CaveTrapHit(patch, waypoint, Math.sqrt(dx * dx + dy * dy + dz * dz)));
+        }
+        hits.sort(Comparator.comparingDouble(CaveTrapHit::distanceBlocks)
+                .thenComparingInt(hit -> hit.patch().x())
+                .thenComparingInt(hit -> hit.patch().y())
+                .thenComparingInt(hit -> hit.patch().z()));
+
+        int marked = 0;
+        int lines = 0;
+        String commandRoot = commandRootForEnvironment();
+        for (CaveTrapHit hit : hits) {
+            if (marked < CAVE_TRAP_MARKER_CAP) {
+                greenBeacon(world, hit.patch().x(), hit.patch().y(),
+                        hit.patch().y() + TRAP_PILLAR_HEIGHT, hit.patch().z());
+                marked++;
+            }
+            if (lines < CAVE_TRAP_CHAT_CAP) {
+                String tpCommand = String.format(Locale.ROOT, "/tp @s %.1f %d %.1f",
+                        hit.waypoint().getX() + 0.5, hit.waypoint().getY(), hit.waypoint().getZ() + 0.5);
+                MutableComponent line = Component.literal(String.format(Locale.ROOT,
+                        "[latdev]   %s: %d blocks away | entrance x=%d y=%d z=%d"
+                                + " | %d signature blocks | safe arrival x=%d y=%d z=%d ",
+                        caveTrapPatchLabel(world, hit.patch(), mouthByCell),
+                        Math.round(hit.distanceBlocks()), hit.patch().x(), hit.patch().y(), hit.patch().z(),
+                        hit.patch().blockCount(), hit.waypoint().getX(), hit.waypoint().getY(), hit.waypoint().getZ()))
+                        .append(Component.literal("[teleport]").withStyle(style -> style
+                                .withClickEvent(new ClickEvent.RunCommand(tpCommand))
+                                .withUnderlined(true)));
+                src.sendSuccess(() -> line, false);
+                lines++;
+            }
+        }
+
+        final int fLoaded = loaded;
+        final int fSkipped = skipped;
+        final int fPatchCount = patches.size();
+        final int fPartial = partialPatches;
+        final int fNoSafeWaypoint = noSafeWaypoint;
+        final int fSignatures = signatures.size();
+        final int fHits = hits.size();
+        src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "[latdev] markCaveTraps (r=%d chunks): %d exact signature blocks, %d entrance patches, "
+                        + "%d teleportable traps | scanned %d FULL loaded chunks, skipped %d unloaded chunks"
+                        + " | partial=%d, no-safe-arrival=%d",
+                r, fSignatures, fPatchCount, fHits, fLoaded, fSkipped, fPartial, fNoSafeWaypoint)), false);
+        if (fHits == 0) {
+            if (fLoaded == 0) {
+                src.sendFailure(Component.literal(
+                        "[latdev] no FULL chunks were loaded to scan — load this cave area, then run "
+                                + commandRoot + " markCaveTraps again."));
+            } else if (fPatchCount == 0) {
+                src.sendSuccess(() -> Component.literal(
+                        "[latdev] no cave-trap signature was found in the loaded chunks; unloaded chunks were skipped, not searched."), false);
+            } else {
+                src.sendSuccess(() -> Component.literal(
+                        "[latdev] exact trap signatures were found, but their patch or a safe adjacent cave arrival was incomplete; load the nearby chunks and rescan."), false);
+            }
+        }
+        if (marked >= CAVE_TRAP_MARKER_CAP || lines >= CAVE_TRAP_CHAT_CAP) {
+            src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    "[latdev] display capped at %d green markers and %d chat lines; the summary count is exact.",
+                    CAVE_TRAP_MARKER_CAP, CAVE_TRAP_CHAT_CAP)), false);
+        }
+        return 1;
+    }
+
+    /** The clicked command must name the root that is actually registered in this runtime. */
+    private static String commandRootForEnvironment() {
+        return FabricLoader.getInstance().isDevelopmentEnvironment() ? "/latdev2" : "/latdev";
+    }
+
+    /** A patch touching an unloaded neighbouring chunk could be only part of one wider entrance carpet. */
+    private static boolean patchHasLoadedBorder(CaveTrapEntranceScan.Patch patch, Set<LoadedChunk> loadedChunks) {
+        for (CaveTrapEntranceScan.Cell cell : patch.cells()) {
+            int chunkX = Math.floorDiv(cell.x(), 16);
+            int chunkZ = Math.floorDiv(cell.z(), 16);
+            if ((Math.floorMod(cell.x(), 16) == 0 && !loadedChunks.contains(new LoadedChunk(chunkX - 1, chunkZ)))
+                    || (Math.floorMod(cell.x(), 16) == 15 && !loadedChunks.contains(new LoadedChunk(chunkX + 1, chunkZ)))
+                    || (Math.floorMod(cell.z(), 16) == 0 && !loadedChunks.contains(new LoadedChunk(chunkX, chunkZ - 1)))
+                    || (Math.floorMod(cell.z(), 16) == 15 && !loadedChunks.contains(new LoadedChunk(chunkX, chunkZ + 1)))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Finds a two-block-high, non-falling, dry standing space directly beside the true underground entrance. */
+    private static BlockPos safeCaveTrapWaypoint(
+            ServerLevel world, CaveTrapEntranceScan.Patch patch, Set<LoadedChunk> loadedChunks) {
+        for (CaveTrapEntranceScan.Cell cell : patch.cells()) {
+            BlockPos arrival = safeArrivalBeside(world, cell.x(), cell.y(), cell.z(), loadedChunks);
+            if (arrival != null) {
+                return arrival;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The one arrival test, shared by every locator that offers a clickable teleport: of the four cardinal
+     * columns beside a hole, take the first whose support block is loaded, full, dry, and not gravity-bound,
+     * and which carries two blocks of air above it. Arriving ON the hole is arriving IN the trap.
+     */
+    private static BlockPos safeArrivalBeside(
+            ServerLevel world, int cellX, int cellY, int cellZ, Set<LoadedChunk> loadedChunks) {
+        int[][] directions = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int[] direction : directions) {
+            int x = cellX + direction[0];
+            int z = cellZ + direction[1];
+            if (!loadedChunks.contains(new LoadedChunk(Math.floorDiv(x, 16), Math.floorDiv(z, 16)))) {
+                continue;
+            }
+            BlockPos support = new BlockPos(x, cellY, z);
+            BlockState supportState = world.getBlockState(support);
+            if (supportState.is(CaveTrapBlocks.CAVE_TRAP_POWDER_SNOW)
+                    || !supportState.getFluidState().isEmpty()
+                    || supportState.getBlock() instanceof FallingBlock
+                    || !supportState.isCollisionShapeFullBlock(world, support)) {
+                continue;
+            }
+            BlockPos feet = support.above();
+            if (world.getBlockState(feet).isAir() && world.getBlockState(feet.above()).isAir()) {
+                return feet;
+            }
+        }
+        return null;
+    }
+
+    private record LoadedChunk(int x, int z) {
+    }
+
+    private record CaveTrapHit(CaveTrapEntranceScan.Patch patch, BlockPos waypoint, double distanceBlocks) {
+    }
+
+    /** One loaded-chunk signature sweep: the exact collapse cells found, and which chunks were readable. */
+    private record CollapseSweep(List<CaveTrapEntranceScan.Cell> signatures,
+                                 Set<LoadedChunk> loadedChunks,
+                                 int loadedChunkCount,
+                                 int skippedChunkCount) {
+    }
+
+    /**
+     * Sweep the {@code (2r+1)}-square of chunks around a position for the worldgen-only collapse signature,
+     * reading ONLY chunks that are already loaded. This is the shared floor under {@code markCaveTraps} and
+     * {@code markChambers}: the section-palette prefilter rejects almost every cave section without touching
+     * its 4096 cells, and an unloaded chunk is counted as skipped and never generated.
+     */
+    private static CollapseSweep sweepLoadedCollapseSignature(
+            ServerLevel world, double centerX, double centerZ, int radiusChunks) {
+        int centerChunkX = Math.floorDiv(Mth.floor(centerX), 16);
+        int centerChunkZ = Math.floorDiv(Mth.floor(centerZ), 16);
+        int chunksPerSide = 2 * radiusChunks + 1;
+        int minChunkX = centerChunkX - radiusChunks;
+        int minChunkZ = centerChunkZ - radiusChunks;
+        var chunkSource = world.getChunkSource();
+        List<CaveTrapEntranceScan.Cell> signatures = new ArrayList<>();
+        Set<LoadedChunk> loadedChunks = new HashSet<>();
+        int loaded = 0;
+        int skipped = 0;
+        for (int chunkX = minChunkX; chunkX < minChunkX + chunksPerSide; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ < minChunkZ + chunksPerSide; chunkZ++) {
+                LevelChunk chunk = chunkSource.getChunkNow(chunkX, chunkZ);
+                if (chunk == null) {
+                    skipped++;
+                    continue;
+                }
+                loaded++;
+                loadedChunks.add(new LoadedChunk(chunkX, chunkZ));
+                collectCollapseCells(chunk, chunkX, chunkZ, signatures);
+            }
+        }
+        return new CollapseSweep(signatures, loadedChunks, loaded, skipped);
+    }
+
+    /**
+     * Append every {@code globe:cave_trap_powder_snow} cell in one chunk, in x/y/z order.
+     *
+     * <p>{@code maybeHas} asks the section's compact palette, not its 4096 cells. Almost every cave section is
+     * rejected here, so a maximum-radius command never performs a blind full-world walk.
+     */
+    private static void collectCollapseCells(
+            ChunkAccess chunk, int chunkX, int chunkZ, List<CaveTrapEntranceScan.Cell> out) {
+        LevelChunkSection[] sections = chunk.getSections();
+        boolean[] candidateSections = new boolean[sections.length];
+        for (int sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+            candidateSections[sectionIndex] = sections[sectionIndex]
+                    .maybeHas(state -> state.is(CaveTrapBlocks.CAVE_TRAP_POWDER_SNOW));
+        }
+        for (int sectionIndex : CaveTrapEntranceScan.candidateSectionIndices(candidateSections)) {
+            LevelChunkSection section = sections[sectionIndex];
+            int sectionMinY = CaveTrapEntranceScan.sectionStartY(chunk.getMinY(), sectionIndex);
+            for (int localX = 0; localX < 16; localX++) {
+                for (int localY = 0; localY < 16; localY++) {
+                    for (int localZ = 0; localZ < 16; localZ++) {
+                        if (section.getBlockState(localX, localY, localZ)
+                                .is(CaveTrapBlocks.CAVE_TRAP_POWDER_SNOW)) {
+                            out.add(new CaveTrapEntranceScan.Cell(
+                                    (chunkX << 4) + localX, sectionMinY + localY, (chunkZ << 4) + localZ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- /latdev markChambers + /latdev locateChamber -- physical locators for the globe:hidden_glacial_chamber
+    // encounter. Both consume ONE reconstruction, HiddenChamberScan, over REAL blocks: no planner, no world
+    // seed, no debug counter, so a chamber is reported complete only when its own blocks say so. markChambers
+    // reads what is already loaded and answers immediately; locateChamber is the patient wide search and is
+    // allowed to generate terrain, one bounded slice per tick. ---------------------------------------------------
+
+    /** A chamber reconstruction reads a wide box per mouth, so the immediate scan stays at 5x5 loaded chunks. */
+    private static final int DEFAULT_CHAMBER_RADIUS_CHUNKS = 2;
+    private static final int MAX_CHAMBER_RADIUS_CHUNKS = 4;
+    private static final int CHAMBER_CHAT_CAP = 10;
+    private static final int CHAMBER_MARKER_CAP = 200;
+
+    /** locateChamber's radius is a SEARCH distance, not a load promise -- the sweep may generate as it goes. */
+    private static final int DEFAULT_LOCATE_CHAMBER_RADIUS_CHUNKS = 32;
+    private static final int MAX_LOCATE_CHAMBER_RADIUS_CHUNKS = 64;
+    /** Chunks per server tick. Two keeps a live server smooth; the wall-clock guard below is the real brake. */
+    private static final int LOCATE_CHAMBER_CHUNKS_PER_TICK = 2;
+    /** Wall-clock guard per tick (ns). Under a 50 ms tick this leaves the server most of its budget. */
+    private static final long LOCATE_CHAMBER_TICK_BUDGET_NANOS = 15_000_000L;
+    /** How often the search says it is still alive, in chunks visited. */
+    private static final int LOCATE_CHAMBER_PROGRESS_INTERVAL = 64;
+
+    /**
+     * Immediate chamber readout over already-loaded chunks: every collapse mouth in range is reconstructed and
+     * each complete chamber gets a green entrance pillar, a white exit column, and one chat line carrying its
+     * three landmarks and a clickable teleport to a safe stance beside the mouth. Mouths that do not reconstruct
+     * are counted with the stage they stopped at, so "nothing here" and "something here is broken" never look
+     * alike. Unloaded chunks are skipped, never generated -- use {@code locateChamber} to search wider.
+     */
+    private static int markChambers(CommandContext<CommandSourceStack> ctx, int radiusChunks) {
+        CommandSourceStack src = ctx.getSource();
+        try {
+            ServerPlayer player = src.getPlayerOrException();
+            return markChambersCore(src, src.getLevel(), player, radiusChunks);
+        } catch (Exception e) {
+            src.sendFailure(Component.literal("[latdev] markChambers failed: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int markChambersCore(
+            CommandSourceStack src, ServerLevel world, ServerPlayer player, int radiusChunks) {
+        if (CaveTrapBlocks.CAVE_TRAP_POWDER_SNOW == null) {
+            src.sendFailure(Component.literal(
+                    "[latdev] the globe:cave_trap_powder_snow signature is not registered in this session."));
+            return 0;
+        }
+        int r = Mth.clamp(radiusChunks, 1, MAX_CHAMBER_RADIUS_CHUNKS);
+        clearGreenMarkers(); // a new scan must never leave a prior entrance or exit highlighted
+        CollapseSweep sweep = sweepLoadedCollapseSignature(world, player.getX(), player.getZ(), r);
+        List<HiddenChamberScan.Position> collapse = new ArrayList<>();
+        for (CaveTrapEntranceScan.Cell cell : sweep.signatures()) {
+            collapse.add(new HiddenChamberScan.Position(cell.x(), cell.y(), cell.z()));
+        }
+        HiddenChamberScan.ChamberScanReport report = HiddenChamberScan.classifyPatches(
+                new ChamberCellReader(world, false),
+                HiddenChamberScan.groupCollapsePatches(collapse),
+                collapse.size());
+
+        List<ChamberFind> finds = new ArrayList<>();
+        for (HiddenChamberScan.Completed chamber : report.completed()) {
+            finds.add(chamberFind(world, chamber, sweep.loadedChunks(),
+                    player.getX(), player.getY(), player.getZ()));
+        }
+        finds.sort(Comparator.comparingDouble(ChamberFind::distanceBlocks)
+                .thenComparing(find -> find.chamber().mouthCentroid()));
+
+        int marked = 0;
+        int lines = 0;
+        for (ChamberFind find : finds) {
+            if (marked < CHAMBER_MARKER_CAP) {
+                markChamber(world, find.chamber());
+                marked++;
+            }
+            if (lines < CHAMBER_CHAT_CAP) {
+                MutableComponent line = chamberLine(find);
+                src.sendSuccess(() -> line, false);
+                lines++;
+            }
+        }
+
+        final int fLoaded = sweep.loadedChunkCount();
+        final int fSkipped = sweep.skippedChunkCount();
+        final String fReasons = partialReasonSummary(report.partial());
+        src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "[latdev] markChambers (r=%d chunks): %d collapse blocks, %d mouths, %d complete chambers"
+                        + " | partial=%d%s, legacy drop traps=%d"
+                        + " | scanned %d FULL loaded chunks, skipped %d unloaded chunks",
+                r, report.collapseCells(), report.patches(), report.completedCount(),
+                report.partialCount(), fReasons, report.legacyCount(), fLoaded, fSkipped)), false);
+        if (report.completedCount() == 0) {
+            String commandRoot = commandRootForEnvironment();
+            if (fLoaded == 0) {
+                src.sendFailure(Component.literal(
+                        "[latdev] no FULL chunks were loaded to scan — load this cave area, then run "
+                                + commandRoot + " markChambers again."));
+            } else if (report.patches() == 0) {
+                src.sendSuccess(() -> Component.literal(
+                        "[latdev] no collapse mouth was found in the loaded chunks; unloaded chunks were"
+                                + " skipped, not searched. Use " + commandRoot
+                                + " locateChamber to search outward from here."), false);
+            } else {
+                src.sendSuccess(() -> Component.literal(
+                        "[latdev] collapse mouths were found, but none reconstructed into a complete chamber"
+                                + " (see the partial reasons above); load the neighbouring chunks and rescan."), false);
+            }
+        }
+        if (marked >= CHAMBER_MARKER_CAP || lines >= CHAMBER_CHAT_CAP) {
+            src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    "[latdev] display capped at %d marker pairs and %d chat lines; the summary count is exact.",
+                    CHAMBER_MARKER_CAP, CHAMBER_CHAT_CAP)), false);
+        }
+        return 1;
+    }
+
+    /**
+     * ONE-CYCLE COMPATIBILITY. {@code markCaveTraps} predates the chamber encounter and is still the name a
+     * tester in flight has in muscle memory, but both features now lay the same collapse block. A mouth of
+     * {@link HiddenChamberPlan#MOUTH_MIN_CELLS}..{@link HiddenChamberPlan#MOUTH_MAX_CELLS} cells is a CHAMBER
+     * and can never be the old six-cell drop-trap carpet, so it is run through the same physical
+     * reconstruction {@code markChambers} uses and labelled for what it is. A mouth of
+     * {@link HiddenChamberScan#LEGACY_MIN_CELLS} cells or more is the legacy inner-cave drop trap and keeps its
+     * label and behaviour exactly as before -- no reconstruction is attempted and nothing on that path changes.
+     *
+     * <p>The size is read off the CHAMBER grouping, not the legacy patch's own {@code blockCount}: the legacy
+     * grouping is cardinal and single-Y, so it shatters the authored diagonal mouth masks into loose single
+     * cells and would call every one of them a one-block trap. One chamber can therefore contribute more than
+     * one line here, each labelled correctly -- that redundancy is the price of leaving the legacy grouping
+     * untouched, and it is why {@code markChambers} (one line, with landing, exit and both markers) is the
+     * real readout. This branch is expected to retire with the next cycle of the locator tools.
+     */
+    private static String caveTrapPatchLabel(
+            ServerLevel world, CaveTrapEntranceScan.Patch patch,
+            Map<HiddenChamberScan.Position, List<HiddenChamberScan.Position>> mouthByCell) {
+        CaveTrapEntranceScan.Cell head = patch.cells().get(0);
+        List<HiddenChamberScan.Position> mouth =
+                mouthByCell.get(new HiddenChamberScan.Position(head.x(), head.y(), head.z()));
+        if (mouth == null || mouth.size() < HiddenChamberPlan.MOUTH_MIN_CELLS
+                || mouth.size() > HiddenChamberPlan.MOUTH_MAX_CELLS) {
+            return "GREEN CAVE TRAP";
+        }
+        HiddenChamberScan.PatchOutcome outcome =
+                HiddenChamberScan.classifyPatch(new ChamberCellReader(world, false), mouth);
+        if (outcome instanceof HiddenChamberScan.Completed chamber) {
+            return "GREEN CAVE CHAMBER (" + themeWords(chamber.themeGuess()) + ")";
+        }
+        if (outcome instanceof HiddenChamberScan.Partial partial) {
+            return "GREEN CAVE CHAMBER MOUTH (incomplete: " + partialWords(partial.reason()) + ")";
+        }
+        return "GREEN CAVE TRAP";
+    }
+
+    /**
+     * Index the CHAMBER grouping law by cell, so a legacy trap patch can ask "is this block part of a chamber
+     * mouth, and how big is that mouth?". The two groupings differ on purpose: a drop trap's carpet is a solid
+     * cardinal block at one Y, while an authored chamber mouth may be a pure diagonal laid across a one-block
+     * floor spread, which only the eight-connected chamber law holds together.
+     */
+    private static Map<HiddenChamberScan.Position, List<HiddenChamberScan.Position>> chamberMouthsByCell(
+            List<CaveTrapEntranceScan.Cell> signatures) {
+        List<HiddenChamberScan.Position> collapse = new ArrayList<>();
+        for (CaveTrapEntranceScan.Cell cell : signatures) {
+            collapse.add(new HiddenChamberScan.Position(cell.x(), cell.y(), cell.z()));
+        }
+        Map<HiddenChamberScan.Position, List<HiddenChamberScan.Position>> byCell = new HashMap<>();
+        for (List<HiddenChamberScan.Position> mouth : HiddenChamberScan.groupCollapsePatches(collapse)) {
+            for (HiddenChamberScan.Position cell : mouth) {
+                byCell.put(cell, mouth);
+            }
+        }
+        return byCell;
+    }
+
+    /** One complete chamber, with the distance to the caller and the safe stance to teleport to. */
+    private record ChamberFind(HiddenChamberScan.Completed chamber, BlockPos arrival, double distanceBlocks) {
+    }
+
+    private static ChamberFind chamberFind(ServerLevel world, HiddenChamberScan.Completed chamber,
+                                           Set<LoadedChunk> loadedChunks,
+                                           double fromX, double fromY, double fromZ) {
+        HiddenChamberScan.Position entrance = chamber.mouthCentroid();
+        double dx = entrance.x() + 0.5 - fromX;
+        double dy = entrance.y() + 0.5 - fromY;
+        double dz = entrance.z() + 0.5 - fromZ;
+        return new ChamberFind(chamber, safeChamberArrival(world, chamber, loadedChunks),
+                Math.sqrt(dx * dx + dy * dy + dz * dz));
+    }
+
+    /** The mouth is a hole; the arrival is beside it. Reuses the trap locator's exact standing-space test. */
+    private static BlockPos safeChamberArrival(
+            ServerLevel world, HiddenChamberScan.Completed chamber, Set<LoadedChunk> loadedChunks) {
+        for (HiddenChamberScan.Position cell : chamber.mouthCells()) {
+            BlockPos arrival = safeArrivalBeside(world, cell.x(), cell.y(), cell.z(), loadedChunks);
+            if (arrival != null) {
+                return arrival;
+            }
+        }
+        return null;
+    }
+
+    /** GREEN pillar on the entrance you fall through, WHITE column on the second opening you climb out of. */
+    private static void markChamber(ServerLevel world, HiddenChamberScan.Completed chamber) {
+        HiddenChamberScan.Position entrance = chamber.mouthCentroid();
+        HiddenChamberScan.Position exit = chamber.exitOpening();
+        greenBeacon(world, entrance.x(), entrance.y(), entrance.y() + TRAP_PILLAR_HEIGHT, entrance.z());
+        exitBeacon(world, exit.x(), exit.y(), exit.y() + TRAP_PILLAR_HEIGHT, exit.z());
+    }
+
+    /** The chat line every chamber report shares: what it is, its three landmarks, and a teleport to it. */
+    private static MutableComponent chamberLine(ChamberFind find) {
+        HiddenChamberScan.Completed chamber = find.chamber();
+        HiddenChamberScan.Position entrance = chamber.mouthCentroid();
+        HiddenChamberScan.Position landing = chamber.landing();
+        HiddenChamberScan.Position exit = chamber.exitOpening();
+        MutableComponent line = Component.literal(String.format(Locale.ROOT,
+                "[latdev]   CHAMBER (%s): %d blocks away | entrance x=%d y=%d z=%d | landing x=%d y=%d z=%d"
+                        + " | exit x=%d y=%d z=%d | %d-block fall, %d-block room, %d bends ",
+                themeWords(chamber.themeGuess()), Math.round(find.distanceBlocks()),
+                entrance.x(), entrance.y(), entrance.z(),
+                landing.x(), landing.y(), landing.z(),
+                exit.x(), exit.y(), exit.z(),
+                chamber.drop(), chamber.voidVolume(), chamber.bends()));
+        if (find.arrival() == null) {
+            return line.append(Component.literal("| no safe arrival beside the entrance"));
+        }
+        String tpCommand = String.format(Locale.ROOT, "/tp @s %.1f %d %.1f",
+                find.arrival().getX() + 0.5, find.arrival().getY(), find.arrival().getZ() + 0.5);
+        return line.append(Component.literal(String.format(Locale.ROOT,
+                        "| safe arrival x=%d y=%d z=%d ",
+                        find.arrival().getX(), find.arrival().getY(), find.arrival().getZ())))
+                .append(Component.literal("[teleport]").withStyle(style -> style
+                        .withClickEvent(new ClickEvent.RunCommand(tpCommand))
+                        .withUnderlined(true)));
+    }
+
+    /** Themes and stages are reported in words, not enum spelling -- these lines are read in a chat box. */
+    private static String themeWords(HiddenChamberScan.Theme theme) {
+        return theme.name().toLowerCase(Locale.ROOT).replace('_', ' ');
+    }
+
+    private static String partialWords(HiddenChamberScan.PartialReason reason) {
+        return switch (reason) {
+            case MOUTH_SIZE -> "a single collapse block, too small to judge";
+            case NO_SHAFT -> "no clear fall under the mouth";
+            case NO_CUSHION -> "no deep powder cushion at the bottom";
+            case NO_SHELF -> "no firm shelf to climb out onto";
+            case NO_CHAMBER_VOID -> "no carved room under the fall";
+            case NO_EXIT -> "no second way out";
+            case BOUNDARY_UNREADABLE -> "chunks around it are not loaded";
+        };
+    }
+
+    /** " (no second way out=2, no firm shelf...=1)", or "" when nothing stopped short. */
+    private static String partialReasonSummary(List<HiddenChamberScan.Partial> partials) {
+        Map<HiddenChamberScan.PartialReason, Integer> tally =
+                new EnumMap<>(HiddenChamberScan.PartialReason.class);
+        for (HiddenChamberScan.Partial partial : partials) {
+            tally.merge(partial.reason(), 1, Integer::sum);
+        }
+        return partialReasonSummary(tally);
+    }
+
+    private static String partialReasonSummary(Map<HiddenChamberScan.PartialReason, Integer> tally) {
+        if (tally.isEmpty()) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(" (");
+        boolean first = true;
+        for (Map.Entry<HiddenChamberScan.PartialReason, Integer> entry : tally.entrySet()) {
+            if (!first) {
+                out.append(", ");
+            }
+            out.append(partialWords(entry.getKey())).append('=').append(entry.getValue());
+            first = false;
+        }
+        return out.append(')').toString();
+    }
+
+    /**
+     * The block-to-{@link HiddenChamberScan.ScanCell} mapping: the ONE place the pure scanner's vocabulary
+     * meets Minecraft. The scanner never sees a {@code BlockState} and this class never sees a chamber law, so
+     * a palette change in {@code HiddenGlacialChamberFeature} is answered here and nowhere else.
+     *
+     * <p>Named chamber materials are tested first, because several of them (powder snow above all) would
+     * otherwise be mistaken for empty space by a collision test. What is left resolves by physics: air is air,
+     * a fluid is water or some other fluid, anything a player can walk through (a snow layer, a frost mote) is
+     * clear space, and everything else is solid. A block this reader cannot see -- an unloaded chunk, a
+     * coordinate outside the world -- answers {@link HiddenChamberScan.ScanCell#UNREADABLE}, never a guess,
+     * which is what lets the scanner fail closed instead of inventing geometry.
+     *
+     * <p>{@code mayGenerate} separates the two callers. The immediate scans pass {@code false} and read only
+     * what a player has already loaded. The wide search passes {@code true}: it is already generating the
+     * terrain it sweeps, so refusing to read a chamber's own far wall would report every find as unreadable.
+     */
+    private static final class ChamberCellReader implements HiddenChamberScan.CellReader {
+        private final ServerLevel world;
+        private final boolean mayGenerate;
+        private final int minY;
+        private final int maxY;
+        private final Map<Long, ChunkAccess> chunks = new HashMap<>();
+        private final Set<Long> unavailable = new HashSet<>();
+        /**
+         * Asked before each NEW chunk this reader would force-generate. The immediate scans pass none; the
+         * wide search passes its job's per-tick allowance, because the chamber box is wide enough to pull a
+         * whole further ring of worldgen into one tick if nothing stops it.
+         */
+        private final java.util.function.BooleanSupplier stopGenerating;
+        private boolean yieldedForBudget;
+
+        private ChamberCellReader(ServerLevel world, boolean mayGenerate) {
+            this(world, mayGenerate, null);
+        }
+
+        private ChamberCellReader(ServerLevel world, boolean mayGenerate,
+                                  java.util.function.BooleanSupplier stopGenerating) {
+            this.world = world;
+            this.mayGenerate = mayGenerate;
+            this.stopGenerating = stopGenerating;
+            this.minY = world.getMinY();
+            this.maxY = world.getMinY() + world.getHeight() - 1;
+        }
+
+        /**
+         * True once this reader refused to generate a chunk because the tick's allowance was spent. Whatever
+         * it answered after that is built on an UNREADABLE it invented, so the caller must throw the
+         * reconstruction away and re-enter rather than record it.
+         */
+        private boolean yieldedForBudget() {
+            return yieldedForBudget;
+        }
+
+        @Override
+        public HiddenChamberScan.ScanCell cell(int worldX, int y, int worldZ) {
+            if (y < minY || y > maxY) {
+                return HiddenChamberScan.ScanCell.UNREADABLE;
+            }
+            ChunkAccess chunk = chunkAt(worldX >> 4, worldZ >> 4);
+            if (chunk == null) {
+                return HiddenChamberScan.ScanCell.UNREADABLE;
+            }
+            BlockPos pos = new BlockPos(worldX, y, worldZ);
+            return classify(chunk.getBlockState(pos), pos);
+        }
+
+        private ChunkAccess chunkAt(int chunkX, int chunkZ) {
+            long key = (((long) chunkX) << 32) ^ (chunkZ & 0xFFFFFFFFL);
+            ChunkAccess cached = chunks.get(key);
+            if (cached != null) {
+                return cached;
+            }
+            if (unavailable.contains(key)) {
+                return null;
+            }
+            ChunkAccess chunk = world.getChunkSource().getChunkNow(chunkX, chunkZ);
+            if (chunk == null && mayGenerate) {
+                if (stopGenerating != null && stopGenerating.getAsBoolean()) {
+                    // The tick's allowance is spent. Answer "cannot read" rather than run another full
+                    // worldgen pipeline; the caller sees yieldedForBudget() and re-enters next tick.
+                    yieldedForBudget = true;
+                    return null;
+                }
+                chunk = world.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, true);
+            }
+            if (chunk == null) {
+                unavailable.add(key);
+                return null;
+            }
+            chunks.put(key, chunk);
+            return chunk;
+        }
+
+        private HiddenChamberScan.ScanCell classify(BlockState state, BlockPos pos) {
+            if (CaveTrapBlocks.CAVE_TRAP_POWDER_SNOW != null
+                    && state.is(CaveTrapBlocks.CAVE_TRAP_POWDER_SNOW)) {
+                return HiddenChamberScan.ScanCell.COLLAPSE_POWDER;
+            }
+            if (state.is(Blocks.POWDER_SNOW)) {
+                return HiddenChamberScan.ScanCell.POWDER_SNOW;
+            }
+            if (state.is(Blocks.SNOW_BLOCK)) {
+                return HiddenChamberScan.ScanCell.SNOW_FIRM;
+            }
+            if (state.is(Blocks.PACKED_ICE)) {
+                return HiddenChamberScan.ScanCell.ICE_PACKED;
+            }
+            if (state.is(Blocks.BLUE_ICE)) {
+                return HiddenChamberScan.ScanCell.ICE_BLUE;
+            }
+            if (state.is(Blocks.ICE)) {
+                return HiddenChamberScan.ScanCell.ICE_PLAIN;
+            }
+            if (IcicleBlocks.ICICLE != null && state.is(IcicleBlocks.ICICLE)) {
+                return HiddenChamberScan.ScanCell.ICICLE;
+            }
+            if (state.is(Blocks.BONE_BLOCK)) {
+                return HiddenChamberScan.ScanCell.BONE;
+            }
+            if (state.is(Blocks.LANTERN)) {
+                return HiddenChamberScan.ScanCell.LANTERN;
+            }
+            if (state.is(Blocks.CHEST)) {
+                return HiddenChamberScan.ScanCell.CHEST;
+            }
+            if (state.is(Blocks.SPRUCE_FENCE)) {
+                return HiddenChamberScan.ScanCell.WOOD_DEBRIS;
+            }
+            if (state.isAir()) {
+                return HiddenChamberScan.ScanCell.AIR;
+            }
+            if (!state.getFluidState().isEmpty()) {
+                return state.getFluidState().is(net.minecraft.tags.FluidTags.WATER)
+                        ? HiddenChamberScan.ScanCell.WATER
+                        : HiddenChamberScan.ScanCell.OTHER_FLUID;
+            }
+            if (state.getCollisionShape(world, pos).isEmpty()) {
+                return HiddenChamberScan.ScanCell.AIR; // walk-through dressing is clear space to a player
+            }
+            return HiddenChamberScan.ScanCell.OTHER_SOLID;
+        }
+    }
+
+    // --- /latdev locateChamber -- the wide search. Self-contained on purpose: the internal dev package
+    // (ChunkPregenerator and friends) is STRIPPED from shipped jars, so a shippable command may copy its
+    // tick-budgeted job shape but must never import it. --------------------------------------------------------
+
+    /** The one running search. Server-thread only: commands and END_SERVER_TICK both run there. */
+    private static ChamberSearchJob activeChamberSearch;
+    private static boolean chamberSearchTickHookRegistered;
+
+    /**
+     * Search outward for the nearest complete chamber, generating terrain as it goes, a couple of chunks per
+     * tick so the server stays playable. The sweep is a Chebyshev ring walk from the caller's chunk: rings are
+     * completed whole, so the chamber reported is the nearest one in the first ring that holds any, not merely
+     * the first one stumbled over. It stops at the first find, at the radius, or at {@code cancel}.
+     */
+    private static int locateChamber(CommandContext<CommandSourceStack> ctx, int radiusChunks) {
+        CommandSourceStack src = ctx.getSource();
+        try {
+            ServerPlayer player = src.getPlayerOrException();
+            ServerLevel world = src.getLevel();
+            if (CaveTrapBlocks.CAVE_TRAP_POWDER_SNOW == null) {
+                src.sendFailure(Component.literal(
+                        "[latdev] the globe:cave_trap_powder_snow signature is not registered in this session."));
+                return 0;
+            }
+            ChamberSearchJob running = activeChamberSearch;
+            if (running != null) {
+                src.sendFailure(Component.literal(String.format(Locale.ROOT,
+                        "[latdev] a chamber search is already running (%d chunks searched, ring %d/%d); stop it"
+                                + " with %s locateChamber cancel.",
+                        running.chunksVisited, Math.max(running.ringRadius, 0), running.radiusChunks,
+                        commandRootForEnvironment())));
+                return 0;
+            }
+            int r = Mth.clamp(radiusChunks, 1, MAX_LOCATE_CHAMBER_RADIUS_CHUNKS);
+            ensureChamberSearchTickHook();
+            clearGreenMarkers(); // the search's own find is the only thing that should be glowing when it ends
+            activeChamberSearch = new ChamberSearchJob(src, world, player, r);
+            src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    "[latdev] locateChamber: searching out to %d chunks, %d chunks per tick — this generates"
+                            + " terrain and may take a while. Stop it with %s locateChamber cancel.",
+                    r, LOCATE_CHAMBER_CHUNKS_PER_TICK, commandRootForEnvironment())), false);
+            return 1;
+        } catch (Exception e) {
+            src.sendFailure(Component.literal("[latdev] locateChamber failed: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int locateChamberCancel(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack src = ctx.getSource();
+        ChamberSearchJob job = activeChamberSearch;
+        if (job == null) {
+            src.sendSuccess(() -> Component.literal("[latdev] no chamber search is running."), false);
+            return 0;
+        }
+        activeChamberSearch = null;
+        src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "[latdev] locateChamber cancelled at ring %d of %d | %d chunks searched (%d generated)"
+                        + " | %d mouths, partial=%d%s, legacy drop traps=%d",
+                Math.max(job.ringRadius, 0), job.radiusChunks, job.chunksVisited, job.chunksGenerated,
+                job.mouthsSeen, job.partialCount, partialReasonSummary(job.partialReasons),
+                job.legacyCount)), false);
+        return 1;
+    }
+
+    /**
+     * Lazy hook registration: nothing is attached to the server tick until a tester actually runs a search,
+     * and a server shutdown drops the job instead of leaving it pointing at a dead world.
+     */
+    private static void ensureChamberSearchTickHook() {
+        if (chamberSearchTickHookRegistered) {
+            return;
+        }
+        ServerTickEvents.END_SERVER_TICK.register(LatitudeDevCommands::onChamberSearchTick);
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            ChamberSearchJob job = activeChamberSearch;
+            if (job != null && job.server == server) {
+                activeChamberSearch = null;
+            }
+        });
+        chamberSearchTickHookRegistered = true;
+    }
+
+    private static void onChamberSearchTick(MinecraftServer server) {
+        ChamberSearchJob job = activeChamberSearch;
+        if (job == null) {
+            return;
+        }
+        if (job.server != server || job.world.getServer() != server) {
+            activeChamberSearch = null; // a different (or shutting-down) server: never touch a stale world
+            return;
+        }
+        job.beginTick(System.nanoTime());
+        int budget = LOCATE_CHAMBER_CHUNKS_PER_TICK;
+        try {
+            while (budget-- > 0) {
+                if (job.tickBudgetSpent()) {
+                    return; // the wall clock wins even when chunks are left in this tick's allowance
+                }
+                if (job.ringQueue.isEmpty()) {
+                    // A ring is walked whole before anything is reported, so the answer is the NEAREST
+                    // chamber in that ring rather than whichever chunk happened to be swept first.
+                    if (job.best != null) {
+                        finishChamberSearchWithFind(job);
+                        return;
+                    }
+                    if (!job.advanceRing()) {
+                        finishChamberSearchExhausted(job);
+                        return;
+                    }
+                    continue;
+                }
+                job.visitNextChunk();
+            }
+        } catch (Exception e) {
+            activeChamberSearch = null;
+            job.source.sendFailure(Component.literal("[latdev] locateChamber failed: " + e.getMessage()));
+        }
+    }
+
+    private static void finishChamberSearchWithFind(ChamberSearchJob job) {
+        activeChamberSearch = null;
+        ChamberFind find = job.best;
+        markChamber(job.world, find.chamber());
+        MutableComponent line = chamberLine(find);
+        job.source.sendSuccess(() -> line, false);
+        job.source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "[latdev] locateChamber: found in ring %d of %d | %d chunks searched (%d generated)"
+                        + " | %d mouths, partial=%d%s, legacy drop traps=%d",
+                Math.max(job.ringRadius, 0), job.radiusChunks, job.chunksVisited, job.chunksGenerated,
+                job.mouthsSeen, job.partialCount, partialReasonSummary(job.partialReasons),
+                job.legacyCount)), false);
+    }
+
+    private static void finishChamberSearchExhausted(ChamberSearchJob job) {
+        activeChamberSearch = null;
+        job.source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "[latdev] locateChamber: no complete chamber within %d chunks | %d chunks searched"
+                        + " (%d generated) | %d mouths, partial=%d%s, legacy drop traps=%d",
+                job.radiusChunks, job.chunksVisited, job.chunksGenerated, job.mouthsSeen,
+                job.partialCount, partialReasonSummary(job.partialReasons), job.legacyCount)), false);
+        String commandRoot = commandRootForEnvironment();
+        if (job.mouthsSeen == 0) {
+            job.source.sendSuccess(() -> Component.literal(
+                    "[latdev] not one collapse mouth generated in that radius — chambers are rare and only sit"
+                            + " in glacial cave floors. Try a wider radius (max " + MAX_LOCATE_CHAMBER_RADIUS_CHUNKS
+                            + ") or fly to another polar cave field and search again."), false);
+        } else {
+            job.source.sendSuccess(() -> Component.literal(
+                    "[latdev] mouths were found but none reconstructed — stand beside one and run "
+                            + commandRoot + " markChambers to see which stage its blocks are missing."), false);
+        }
+    }
+
+    /**
+     * One outward search. It owns its own cursor (which ring, which chunks are left in it) so a tick can stop
+     * anywhere and resume next tick without re-reading a chunk.
+     */
+    private static final class ChamberSearchJob {
+        private static final int[][] CARDINAL_CHUNKS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+
+        private final CommandSourceStack source;
+        private final ServerLevel world;
+        private final MinecraftServer server;
+        private final int originChunkX;
+        private final int originChunkZ;
+        private final double originX;
+        private final double originY;
+        private final double originZ;
+        private final int radiusChunks;
+        private final ArrayDeque<int[]> ringQueue = new ArrayDeque<>();
+        private final Map<HiddenChamberScan.PartialReason, Integer> partialReasons =
+                new EnumMap<>(HiddenChamberScan.PartialReason.class);
+        private int ringRadius = -1;
+        private int chunksVisited;
+        private int chunksGenerated;
+        private int mouthsSeen;
+        private int partialCount;
+        private int legacyCount;
+        private ChamberFind best;
+        /** Start of the tick currently being served, so every budget check measures the same allowance. */
+        private long tickStartNanos = System.nanoTime();
+        /**
+         * A chunk whose mouths were only half classified when the tick's allowance ran out. It goes back to
+         * the FRONT of the ring queue: the classification is re-entered next tick rather than lost, so a
+         * budget stop can never make the search silently skip a chamber.
+         */
+        private int[] requeued;
+
+        private ChamberSearchJob(CommandSourceStack source, ServerLevel world, ServerPlayer player,
+                                 int radiusChunks) {
+            this.source = source;
+            this.world = world;
+            this.server = world.getServer();
+            this.originX = player.getX();
+            this.originY = player.getY();
+            this.originZ = player.getZ();
+            this.originChunkX = Math.floorDiv(Mth.floor(player.getX()), 16);
+            this.originChunkZ = Math.floorDiv(Mth.floor(player.getZ()), 16);
+            this.radiusChunks = radiusChunks;
+        }
+
+        /** Queue the next Chebyshev ring, in a fixed order. False when the radius is exhausted. */
+        private boolean advanceRing() {
+            ringRadius++;
+            if (ringRadius > radiusChunks) {
+                return false;
+            }
+            for (int dx = -ringRadius; dx <= ringRadius; dx++) {
+                for (int dz = -ringRadius; dz <= ringRadius; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) == ringRadius) {
+                        ringQueue.addLast(new int[]{originChunkX + dx, originChunkZ + dz});
+                    }
+                }
+            }
+            return true;
+        }
+
+        /** One tick's wall-clock allowance, shared by the ring walk and by every chunk it generates below it. */
+        private void beginTick(long nanos) {
+            tickStartNanos = nanos;
+        }
+
+        /** True once this tick has used its share of the server's frame. */
+        private boolean tickBudgetSpent() {
+            return (System.nanoTime() - tickStartNanos) >= LOCATE_CHAMBER_TICK_BUDGET_NANOS;
+        }
+
+        private void visitNextChunk() {
+            int[] next = ringQueue.removeFirst();
+            int chunkX = next[0];
+            int chunkZ = next[1];
+            boolean revisit = requeued != null && requeued[0] == chunkX && requeued[1] == chunkZ;
+            requeued = null;
+            boolean wasLoaded = world.getChunkSource().getChunkNow(chunkX, chunkZ) != null;
+            // Deliberately the generating call: a search that only looked at loaded chunks would answer
+            // "nothing here" for terrain nobody has visited yet, which is the whole point of the command.
+            ChunkAccess chunk = world.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, true);
+            if (!revisit) {
+                chunksVisited++;
+                if (!wasLoaded) {
+                    chunksGenerated++;
+                }
+            }
+            if (chunk != null) {
+                List<CaveTrapEntranceScan.Cell> cells = new ArrayList<>();
+                collectCollapseCells(chunk, chunkX, chunkZ, cells);
+                if (!cells.isEmpty()) {
+                    classifyAround(chunkX, chunkZ, cells);
+                }
+            }
+            if (chunksVisited % LOCATE_CHAMBER_PROGRESS_INTERVAL == 0) {
+                int visited = chunksVisited;
+                int generated = chunksGenerated;
+                int ring = ringRadius;
+                int mouths = mouthsSeen;
+                source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                        "[latdev] locateChamber: %d chunks searched (%d generated), ring %d of %d, %d mouths"
+                                + " so far…", visited, generated, ring, radiusChunks, mouths)), false);
+            }
+        }
+
+        /**
+         * Reconstruct the mouths this chunk owns. The four cardinal neighbours are brought to FULL first (a
+         * mouth may straddle a chunk border, and half a mouth reads as a different encounter), and a patch is
+         * CLAIMED by the chunk holding its first cell, so a mouth spanning two chunks is reconstructed once.
+         *
+         * <p>Budget: one ring chunk is not one chunk of WORK. This method force-generates four neighbours, and
+         * the reconstruction below reads a box wide enough to pull in a further ring through its generating
+         * reader -- up to a 7x7 block of full worldgen runs, all on the server thread, all inside the single
+         * tick the ring walk's own check let through. So the allowance is re-checked after every chunk brought
+         * to FULL here, and when it is spent the chunk goes back to the front of the ring queue and nothing
+         * this call measured is committed. Next tick re-enters with every chunk already cached, so the repeat
+         * is cheap and no mouth is ever skipped. The reconstruction READS that follow generation are allowed
+         * to finish; only new generation yields.
+         */
+        private void classifyAround(int chunkX, int chunkZ, List<CaveTrapEntranceScan.Cell> ownCells) {
+            List<CaveTrapEntranceScan.Cell> cells = new ArrayList<>(ownCells);
+            Set<LoadedChunk> neighbourhood = new HashSet<>();
+            neighbourhood.add(new LoadedChunk(chunkX, chunkZ));
+            for (int[] step : CARDINAL_CHUNKS) {
+                int neighbourX = chunkX + step[0];
+                int neighbourZ = chunkZ + step[1];
+                ChunkAccess neighbour =
+                        world.getChunkSource().getChunk(neighbourX, neighbourZ, ChunkStatus.FULL, true);
+                if (tickBudgetSpent()) {
+                    requeue(chunkX, chunkZ);
+                    return;
+                }
+                if (neighbour == null) {
+                    continue;
+                }
+                neighbourhood.add(new LoadedChunk(neighbourX, neighbourZ));
+                collectCollapseCells(neighbour, neighbourX, neighbourZ, cells);
+            }
+            List<HiddenChamberScan.Position> collapse = new ArrayList<>();
+            for (CaveTrapEntranceScan.Cell cell : cells) {
+                collapse.add(new HiddenChamberScan.Position(cell.x(), cell.y(), cell.z()));
+            }
+            ChamberCellReader reader = new ChamberCellReader(world, true, this::tickBudgetSpent);
+
+            /* Nothing is committed until the whole chunk is classified, so a mid-way yield cannot leave half
+             * a chunk's mouths counted and then count them again on the re-entry. */
+            int mouths = 0;
+            int partials = 0;
+            int legacy = 0;
+            Map<HiddenChamberScan.PartialReason, Integer> reasons =
+                    new EnumMap<>(HiddenChamberScan.PartialReason.class);
+            ChamberFind found = null;
+            for (List<HiddenChamberScan.Position> patch : HiddenChamberScan.groupCollapsePatches(collapse)) {
+                HiddenChamberScan.Position first = patch.get(0);
+                if ((first.x() >> 4) != chunkX || (first.z() >> 4) != chunkZ) {
+                    continue; // another chunk in the sweep owns this mouth
+                }
+                mouths++;
+                HiddenChamberScan.PatchOutcome outcome = HiddenChamberScan.classifyPatch(reader, patch);
+                if (reader.yieldedForBudget()) {
+                    requeue(chunkX, chunkZ);
+                    return;
+                }
+                if (outcome instanceof HiddenChamberScan.Completed chamber) {
+                    ChamberFind find =
+                            chamberFind(world, chamber, neighbourhood, originX, originY, originZ);
+                    if (found == null || find.distanceBlocks() < found.distanceBlocks()) {
+                        found = find;
+                    }
+                } else if (outcome instanceof HiddenChamberScan.Partial partial) {
+                    partials++;
+                    reasons.merge(partial.reason(), 1, Integer::sum);
+                } else if (outcome instanceof HiddenChamberScan.Legacy) {
+                    legacy++;
+                }
+            }
+            mouthsSeen += mouths;
+            partialCount += partials;
+            legacyCount += legacy;
+            reasons.forEach((reason, count) -> partialReasons.merge(reason, count, Integer::sum));
+            if (found != null && (best == null || found.distanceBlocks() < best.distanceBlocks())) {
+                best = found;
+            }
+        }
+
+        /** Put a half-classified chunk back at the FRONT of the ring, to be re-entered next tick. */
+        private void requeue(int chunkX, int chunkZ) {
+            requeued = new int[] {chunkX, chunkZ};
+            ringQueue.addFirst(requeued);
         }
     }
 
@@ -1215,9 +2281,30 @@ public final class LatitudeDevCommands {
         emitMark(world, x, lo, hi, z, MARK_KIND_TRAP);
     }
 
-    /** Marker kinds: GREEN = a real trap roof (the goal), BLUE = an open crevasse (context). */
+    /**
+     * A WHITE end-rod column over a hidden chamber's SECOND opening -- the way back out. Deliberately the same
+     * height as the green entrance pillar so the pair reads as one encounter from across a cave: green is the
+     * hole you fall through, white is where you climb out, and neither can be confused with the low blue
+     * crevasse mark.
+     */
+    private static void exitBeacon(ServerLevel world, int x, int yLo, int yHi, int z) {
+        int lo = Math.min(yLo, yHi);
+        int hi = Math.max(yLo, yHi);
+        synchronized (GREEN_MARKS) {
+            if (GREEN_MARKS.size() < MARKER_QUEUE_CAP) {
+                GREEN_MARKS.add(new int[]{x, lo, hi, z, 0, MARK_KIND_EXIT});
+            }
+        }
+        emitMark(world, x, lo, hi, z, MARK_KIND_EXIT);
+    }
+
+    /**
+     * Marker kinds: GREEN = a real trap roof or chamber entrance (the goal), BLUE = an open crevasse (context),
+     * WHITE = the second opening of a hidden chamber (the way out of the goal).
+     */
     private static final int MARK_KIND_TRAP = 0;
     private static final int MARK_KIND_SLOT = 1;
+    private static final int MARK_KIND_EXIT = 2;
 
     /** Live markers: {x, yLo, yHi, z, ageTicks, kind}. Bounded by {@link #MARKER_QUEUE_CAP}; a new markGlacial
      *  run clears the previous set (see {@code markGlacialCore}) so stale marks never mislead. */
@@ -1274,9 +2361,23 @@ public final class LatitudeDevCommands {
             world.sendParticles(ParticleTypes.SOUL_FIRE_FLAME, true, true, cx, lo + 0.5, cz, 2, 0.2, 0.2, 0.2, 0.0);
             return;
         }
+        if (kind == MARK_KIND_EXIT) {
+            // Chamber exit: a WHITE end-rod column. A different particle, not a different shade of the same one
+            // -- green happy-villager and white end-rod stay apart at any distance and in any biome light.
+            for (int y = lo; y <= hi; y++) {
+                world.sendParticles(ParticleTypes.END_ROD, true, true, cx, y + 0.5, cz, 3, 0.12, 0.12, 0.12, 0.0);
+            }
+            return;
+        }
         // Trap roof: a solid GREEN pillar every block from the roof up, so it reads as one column from afar.
         for (int y = lo; y <= hi; y++) {
             world.sendParticles(ParticleTypes.HAPPY_VILLAGER, true, true, cx, y + 0.5, cz, 4, 0.15, 0.15, 0.15, 0.0);
+        }
+        // A small cardinal ring at the exact source block distinguishes the entrance itself from the tall
+        // waypoint pillar. It is re-emitted by the same 60-second heartbeat, not a one-shot decoration.
+        for (double[] offset : new double[][] {{0.7, 0.0}, {-0.7, 0.0}, {0.0, 0.7}, {0.0, -0.7}}) {
+            world.sendParticles(ParticleTypes.HAPPY_VILLAGER, true, true,
+                    cx + offset[0], lo + 0.5, cz + offset[1], 3, 0.08, 0.08, 0.08, 0.0);
         }
     }
 

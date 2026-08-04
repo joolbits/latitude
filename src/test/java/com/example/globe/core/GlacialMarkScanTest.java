@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -274,43 +275,180 @@ class GlacialMarkScanTest {
     }
 
     @Test
-    void red05_escapeIsDiscoveredFromBlocksAndRejectsSealsOrFallShortcuts() {
+    void red05_downwardDescentIsDiscoveredFromBlocksAndRejectsOldClimbOutOnlySpecimens() {
         PhysicalFixture valid = PhysicalFixture.validSnowfieldTrap();
         ScanView green = scan(valid, "RED-05");
         assertEquals(1, green.count("validEscapeRoutes"),
-                "RED-05: cardinal, two-high, one-step-rise route reaches a mineable snow tail and intact plug");
+                "RED-05: a two-wide, three-high route descends from the landing into a lower natural cave");
 
         PhysicalFixture sealed = valid.copy()
                 .set(11, 6, 5, "DRY_SOLID")
                 .set(11, 7, 5, "DRY_SOLID");
-        assertRejected(sealed, "MISSING_ESCAPE", "RED-05 sealed landing chamber");
+        assertRejected(sealed, "MISSING_DESCENT", "RED-05 sealed descent headroom");
 
-        PhysicalFixture noHeadroom = valid.copy().set(12, 7, 5, "DRY_SOLID");
-        assertRejected(noHeadroom, "MISSING_ESCAPE", "RED-05 one-block-high tunnel");
+        PhysicalFixture noThirdHeadroom = valid.copy().set(12, 7, 5, "DRY_SOLID");
+        assertRejected(noThirdHeadroom, "MISSING_DESCENT", "RED-05 two-high descent is not usable");
 
-        PhysicalFixture steepStep = valid.copy();
-        int[] step = steepStep.escapeRoute.get(4);
-        steepStep.set(step[0], step[1], step[2], "AIR");
-        steepStep.set(step[0], step[1] + 1, step[2], "SNOW_BLOCK");
-        steepStep.set(step[0], step[1] + 2, step[2], "AIR");
-        steepStep.set(step[0], step[1] + 3, step[2], "AIR");
-        assertRejected(steepStep, "MISSING_ESCAPE", "RED-05 two-block upward step");
+        PhysicalFixture oldClimbOutOnly = new PhysicalFixture();
+        oldClimbOutOnly.installOldClimbOutOnly();
+        assertRejected(oldClimbOutOnly, "MISSING_DESCENT",
+                "RED-05 a retired upward surface route cannot impersonate a descent trap");
 
-        PhysicalFixture shortcut = valid.copy();
-        int routeFloor = shortcut.routeFloorAt(12, 6);
-        shortcut.set(11, routeFloor + 1, 6, "AIR");
-        shortcut.set(11, routeFloor + 2, 6, "AIR");
-        assertRejected(shortcut, "ESCAPE_SHORTCUT_TO_FALL",
-                "RED-05 route reconnects to fall volume away from its landing doorway");
+        PhysicalFixture tooSmallCave = valid.copy().sealNaturalCaveExceptTargets();
+        assertRejected(tooSmallCave, "MISSING_DESCENT", "RED-05 lower cave needs eight connected natural floors");
+    }
 
-        PhysicalFixture missingTail = valid.copy()
-                .set(13, 22, 6, "AIR")
-                .set(13, 23, 6, "AIR")
-                .set(13, 24, 6, "AIR");
-        assertRejected(missingTail, "MISSING_ESCAPE_TAIL", "RED-05 missing snow-only mine tail");
+    @Test
+    void physicalScannerAcceptsEveryProductionDescentLengthAndRejectsLengthsOutsideIt() {
+        for (int distance : List.of(4, 8)) {
+            ScanView scan = scan(PhysicalFixture.snowfieldTrapWithDescentDistance(distance),
+                    "distance-" + distance + " descent");
+            assertEquals(1, scan.count("validTraps"),
+                    "the scanner must recognize the planner's " + distance + "-station descent");
+        }
+        assertRejected(PhysicalFixture.snowfieldTrapWithDescentDistance(2), "MISSING_DESCENT",
+                "a two-station descent is below the planner minimum");
+        assertRejected(PhysicalFixture.snowfieldTrapWithDescentDistance(9), "MISSING_DESCENT",
+                "a nine-station descent is beyond the planner maximum");
+    }
 
-        PhysicalFixture openPlug = valid.copy().set(13, 25, 7, "AIR");
-        assertRejected(openPlug, "OPEN_SURFACE_PLUG", "RED-05 already-open surface plug");
+    @Test
+    void naturalEndpointRemainsValidWhenBiomeEvidenceIsPresentButNonGlacial() {
+        PhysicalFixture fixture = PhysicalFixture.validSnowfieldTrap();
+        GlacialMarkScan.PhysicalScanReport report = GlacialMarkScan.scanPhysicalTrapVolume(
+                fixture.measuredCells(), fixture.measuredBiomes(), MINIMUM_DROP);
+
+        assertEquals(1, report.validTraps());
+        assertEquals(GlacialMarkScan.EndpointKind.NATURAL_CAVE,
+                report.validTrapEvidence().getFirst().endpointKind());
+    }
+
+    @Test
+    void irregularAuthoredCavernIsReconstructedFromBlocksAndSavedBiomesAlone() {
+        GlacialMarkScan.PhysicalScanReport report = scanWithBiomes(
+                PhysicalFixture.authoredCavernTrap());
+
+        assertEquals(1, report.validTraps(), report.rejectionReasons().toString());
+        GlacialMarkScan.PhysicalTrapEvidence evidence = report.validTrapEvidence().getFirst();
+        assertEquals(GlacialMarkScan.EndpointKind.AUTHORED_CAVERN, evidence.endpointKind());
+        assertTrue(evidence.cavern().floorColumns() >= 96);
+        assertTrue(evidence.cavern().span() >= 18);
+        assertTrue(evidence.cavern().boundingFill() >= 0.45);
+        assertTrue(evidence.cavern().boundingFill() <= 0.75);
+        assertTrue(evidence.cavern().distinctClearHeights() >= 3);
+        assertTrue(evidence.cavern().bent());
+        assertTrue(evidence.cavern().contractPassed());
+        assertTrue(evidence.route().downwardOrLevel());
+        assertTrue(evidence.route().neverReversesInitial());
+        assertTrue(evidence.route().turns() <= 2);
+    }
+
+    @Test
+    void authoredCavernEvidenceNamesItsOwnerAndOneCardinalNeighbour() {
+        GlacialMarkScan.PhysicalCavernEvidence cavern = scanWithBiomes(
+                PhysicalFixture.authoredCavernTrap())
+                .validTrapEvidence().getFirst().cavern();
+
+        assertTrue(cavern.crossesOwnerNeighbour());
+        assertEquals(cavern.ownerChunkX() + 1, cavern.neighbourChunkX());
+        assertEquals(cavern.ownerChunkZ(), cavern.neighbourChunkZ());
+        assertEquals("EAST", cavern.direction());
+    }
+
+    @Test
+    void authoredCavernRejectsHeightBiomePortalAndHazardsWithStableReasons() {
+        assertCavernRejected(PhysicalFixture.authoredCavernTrap()
+                        .set(12, 4, 4, "DRY_SOLID"),
+                "AUTHORED_CAVERN_CLEAR_HEIGHT");
+        assertCavernRejected(PhysicalFixture.authoredCavernTrap()
+                        .setBiome(12, 3, 4, "OTHER"),
+                "AUTHORED_CAVERN_BIOME");
+        assertCavernRejected(PhysicalFixture.authoredCavernTrap()
+                        .set(11, 0, 8, "DRY_SOLID")
+                        .set(12, 0, 8, "DRY_SOLID"),
+                "AUTHORED_CAVERN_PORTAL");
+        assertCavernRejected(PhysicalFixture.authoredCavernTrap()
+                        .set(12, 0, 4, "MAGMA"),
+                "AUTHORED_CAVERN_HAZARD");
+        assertCavernRejected(PhysicalFixture.authoredCavernTrap()
+                        .set(12, 6, 4, "MAGMA"),
+                "AUTHORED_CAVERN_HAZARD");
+    }
+
+    @Test
+    void authoredPortalMustContinueOnlyAlongTheRoutesFinalHeading() {
+        assertTrue(GlacialMarkScan.authoredPortalFollowsFinalHeading(0, -1, 0, -1));
+        assertFalse(GlacialMarkScan.authoredPortalFollowsFinalHeading(0, -1, 1, 0),
+                "sideways cavern is not the route endpoint");
+        assertFalse(GlacialMarkScan.authoredPortalFollowsFinalHeading(0, -1, 0, 1),
+                "rear cavern is not the route endpoint");
+    }
+
+    @Test
+    void fullScannerRejectsOtherwiseValidSidewaysAndRearCavernPortals() {
+        assertCavernRejected(PhysicalFixture.authoredCavernTrap()
+                        .moveCavernPortalToSide(),
+                "AUTHORED_CAVERN_PORTAL");
+        assertCavernRejected(PhysicalFixture.authoredCavernTrap()
+                        .moveCavernPortalToRear(),
+                "AUTHORED_CAVERN_PORTAL");
+    }
+
+    @Test
+    void authoredCavernRejectsAQualifyingContinuationIntoASecondCardinalNeighbour() {
+        assertCavernRejected(PhysicalFixture.authoredCavernTrap()
+                        .continueIntoSecondNeighbour(),
+                "AUTHORED_CAVERN_OWNER_NEIGHBOR");
+    }
+
+    @Test
+    void authoredCavernRejectsSealedFiveByFiveTinyWrongSpanAndWrongFill() {
+        assertCavernInvalid(PhysicalFixture.authoredCavernTrap()
+                .replaceCavernWithPocket(5, 5), "sealed 5x5 room");
+        assertCavernInvalid(PhysicalFixture.authoredCavernTrap()
+                .replaceCavernWithPocket(3, 3), "tiny pocket");
+        assertCavernRejected(PhysicalFixture.authoredCavernTrap()
+                .truncateCavernSpan(), "AUTHORED_CAVERN_SPAN");
+        assertCavernRejected(PhysicalFixture.authoredCavernTrap()
+                .stretchCavernToLowFill(), "AUTHORED_CAVERN_FILL");
+    }
+
+    @Test
+    void authoredCavernRejectsFilledFiveByFiveMissingLobeBrokenThroatAndStraightPassage() {
+        assertCavernRejected(PhysicalFixture.authoredCavernTrap()
+                .fillOneFiveByFiveRoom(), "AUTHORED_CAVERN_FULL_5X5");
+        assertCavernInvalid(PhysicalFixture.authoredCavernTrap()
+                .removePrimaryLobe(), "one-lobe pocket");
+        assertCavernInvalid(PhysicalFixture.authoredCavernTrap()
+                .severThroat(), "broken throat");
+        assertCavernInvalid(PhysicalFixture.authoredCavernTrap()
+                .straightenLobes(), "unbent straight passage");
+    }
+
+    @Test
+    void authoredRouteRejectsRiseReverseAndDisconnect() {
+        assertCavernRejected(PhysicalFixture.authoredCavernTrap().routeRises(),
+                "AUTHORED_ROUTE_RISE");
+        assertCavernRejected(PhysicalFixture.authoredCavernTrap().routeReverses(),
+                "AUTHORED_ROUTE_REVERSE");
+        assertCavernRejected(PhysicalFixture.authoredCavernTrap().routeDisconnects(),
+                "AUTHORED_ROUTE_DISCONNECTED");
+    }
+
+    @Test
+    void authoredCavernRejectionNamesAreStableEnums() {
+        assertEquals(Set.of(
+                        "AUTHORED_CAVERN_SIZE", "AUTHORED_CAVERN_SPAN",
+                        "AUTHORED_CAVERN_FILL", "AUTHORED_CAVERN_FULL_5X5",
+                        "AUTHORED_CAVERN_LOBES", "AUTHORED_CAVERN_THROAT",
+                        "AUTHORED_CAVERN_CLEAR_HEIGHT", "AUTHORED_CAVERN_BIOME",
+                        "AUTHORED_CAVERN_BEND", "AUTHORED_CAVERN_PORTAL",
+                        "AUTHORED_CAVERN_ABOVE_Y0", "AUTHORED_CAVERN_OWNER_NEIGHBOR",
+                        "AUTHORED_CAVERN_SHELL", "AUTHORED_CAVERN_HAZARD",
+                        "AUTHORED_ROUTE_RISE", "AUTHORED_ROUTE_REVERSE",
+                        "AUTHORED_ROUTE_DISCONNECTED"),
+                Arrays.stream(GlacialMarkScan.AuthoredCavernRejection.values())
+                        .map(Enum::name).collect(java.util.stream.Collectors.toSet()));
     }
 
     @Test
@@ -350,7 +488,8 @@ class GlacialMarkScanTest {
         assertEquals(2, broad.count("candidates"));
 
         Object report = GlacialMarkScan.scanPhysicalTrapVolumeAt(
-                fixture.measuredCells(), MINIMUM_DROP, 5, 5);
+                fixture.measuredCells(), MINIMUM_DROP,
+                5 + PhysicalFixture.HORIZONTAL_OFFSET, 5 + PhysicalFixture.HORIZONTAL_OFFSET);
         ScanView anchored = new ScanView(report, "anchor selected census");
         assertEquals(1, anchored.count("candidates"));
         assertEquals(1, anchored.count("validTraps"));
@@ -467,47 +606,29 @@ class GlacialMarkScanTest {
     }
 
     @Test
-    void finalTailMayMeetBareFullSnowOrFullSnowUnderAThinLayer() {
+    void surfaceSnowCamouflageRemainsIndependentOfTheDeepDescent() {
         ScanView thinLayer = scan(
-                PhysicalFixture.validSnowfieldTrap(), "thin layer over final tail head");
+                PhysicalFixture.validSnowfieldTrap(), "thin surface layer over the descent trap");
         assertEquals(1, thinLayer.count("validEscapeRoutes"));
 
         PhysicalFixture bareFullSnow = PhysicalFixture.validSnowfieldTrap()
                 .set(13, PhysicalFixture.SURFACE_LAYER_Y, 7, "AIR");
-        ScanView bare = scan(bareFullSnow, "bare full-snow final tail head");
+        ScanView bare = scan(bareFullSnow, "bare full-snow surface beside descent trap");
         assertEquals(1, bare.count("validEscapeRoutes"));
     }
 
     @Test
-    void thinCappedTailNeedsTheOneAirCellBeyondTheLayerAndNeverTreatsUnloadedAsAir() {
-        PhysicalFixture fixture = PhysicalFixture.validThinCappedTailThreeAboveCover();
-        int savedWorldYOffset = 71;
-        assertEquals(27, fixture.powderCovers.size());
-        assertEquals(95, fixture.powderCovers.stream()
-                .mapToInt(cover -> cover[1] + savedWorldYOffset).max().orElseThrow());
-        assertEquals(List.of("SNOW_BLOCK", "SNOW_BLOCK", "SNOW_BLOCK", "SNOW_LAYER", "AIR"),
-                java.util.stream.IntStream.rangeClosed(94, 98)
-                        .mapToObj(worldY -> fixture.cells[13][worldY - savedWorldYOffset][7])
-                        .toList(),
-                "saved tail Y=94..96, thin layer Y=97, and required air Y=98 are exact");
+    void downwardDescentNeedsAllThreeLoadedHeadroomCellsAndNeverTreatsUnloadedAsAir() {
+        ScanView complete = scan(PhysicalFixture.validSnowfieldTrap(), "complete downward descent");
+        assertEquals(1, complete.count("validTraps"));
 
-        ScanView extended = scanMeasured(
-                fixture.measuredCellsThrough(98 - savedWorldYOffset),
-                "saved trap extended through air at Y=98");
-        assertEquals(1, extended.count("candidates"));
-        assertEquals(1, extended.count("validTraps"), extended.reasons().toString());
-        assertEquals(1, extended.count("encounters"));
-        assertEquals(27, extended.count("coverColumns"));
-        assertEquals(27, extended.count("cushionMatches"));
-        assertEquals(1, extended.count("validEscapeRoutes"));
-
-        ScanView truncated = scanMeasured(
-                fixture.measuredCellsThrough(97 - savedWorldYOffset),
-                "saved trap truncated at thin layer Y=97");
+        PhysicalFixture unloadedHeadroom = PhysicalFixture.validSnowfieldTrap()
+                .set(14, 5, 5, "UNLOADED");
+        ScanView truncated = scan(unloadedHeadroom, "lower-cave third headroom is unloaded");
         assertEquals(0, truncated.count("validTraps"));
         assertEquals(0, truncated.count("encounters"));
-        assertEquals(1, truncated.reason("MISSING_ESCAPE_TAIL"),
-                "saved Y=98 (fixture-local Y=27) is UNLOADED past the layer; it must never be invented as air: "
+        assertEquals(1, truncated.reason("MISSING_DESCENT"),
+                "the lower cave's missing third headroom cell must never be invented as air: "
                         + truncated.reasons());
     }
 
@@ -545,6 +666,25 @@ class GlacialMarkScanTest {
         assertEquals(0, scan.count("validTraps"), label + " must not count valid");
         assertEquals(0, scan.count("encounters"), label + " must not count as an encounter");
         assertTrue(scan.reason(reason) >= 1, label + " must report " + reason);
+    }
+
+    private static GlacialMarkScan.PhysicalScanReport scanWithBiomes(PhysicalFixture fixture) {
+        return GlacialMarkScan.scanPhysicalTrapVolume(
+                fixture.measuredCells(), fixture.measuredBiomes(), MINIMUM_DROP);
+    }
+
+    private static void assertCavernRejected(PhysicalFixture fixture, String reason) {
+        GlacialMarkScan.PhysicalScanReport report = scanWithBiomes(fixture);
+        assertEquals(0, report.validTraps(), reason + " must reject");
+        assertEquals(1, report.rejectionReasons().getOrDefault(reason, 0),
+                report.rejectionReasons().toString());
+    }
+
+    private static void assertCavernInvalid(PhysicalFixture fixture, String label) {
+        GlacialMarkScan.PhysicalScanReport report = scanWithBiomes(fixture);
+        assertEquals(0, report.validTraps(), label + " must reject");
+        assertEquals(0, report.encounters(), label + " cannot count as an encounter");
+        assertTrue(!report.rejectionReasons().isEmpty(), label + " needs a stable rejection reason");
     }
 
     private static int physicalSampleMaxYInclusive(int maxCoverY, int worldMaxYExclusive) {
@@ -685,12 +825,16 @@ class GlacialMarkScanTest {
         private static final int CUSHION_Y = 6;
         private static final int CUSHION_SUPPORT_Y = 5;
 
-        private final int sizeX = 16;
-        private final int sizeY = 30;
-        private final int sizeZ = 16;
+        private static final int HORIZONTAL_OFFSET = 16;
+        private static final int VERTICAL_OFFSET = 10;
+        private final int sizeX = 52;
+        private final int sizeY = 50;
+        private final int sizeZ = 52;
         private final String[][][] cells = new String[sizeX][sizeY][sizeZ];
+        private final String[][][] biomes = new String[sizeX][sizeY][sizeZ];
         private final List<int[]> powderCovers = new ArrayList<>();
-        private final List<int[]> escapeRoute = new ArrayList<>();
+        private final List<int[]> descentRoute = new ArrayList<>();
+        private final List<int[]> cavernFloors = new ArrayList<>();
 
         private PhysicalFixture() {
             for (String[][] ys : cells) {
@@ -698,18 +842,27 @@ class GlacialMarkScanTest {
                     Arrays.fill(zs, "DRY_SOLID");
                 }
             }
+            for (String[][] ys : biomes) {
+                for (String[] zs : ys) {
+                    Arrays.fill(zs, "OTHER");
+                }
+            }
             for (int x = 0; x < sizeX; x++) {
                 for (int z = 0; z < sizeZ; z++) {
-                    for (int y = SURFACE_LAYER_Y + 1; y < sizeY; y++) {
-                        set(x, y, z, "AIR");
+                    for (int y = SURFACE_LAYER_Y + VERTICAL_OFFSET + 1; y < sizeY; y++) {
+                        setRaw(x, y, z, "AIR");
                     }
-                    set(x, SURFACE_SUPPORT_Y, z, "SNOW_BLOCK");
-                    set(x, SURFACE_LAYER_Y, z, "SNOW_LAYER");
+                    setRaw(x, SURFACE_SUPPORT_Y + VERTICAL_OFFSET, z, "SNOW_BLOCK");
+                    setRaw(x, SURFACE_LAYER_Y + VERTICAL_OFFSET, z, "SNOW_LAYER");
                 }
             }
         }
 
         static PhysicalFixture validSnowfieldTrap() {
+            return snowfieldTrapWithDescentDistance(3);
+        }
+
+        static PhysicalFixture snowfieldTrapWithDescentDistance(int distance) {
             PhysicalFixture fixture = new PhysicalFixture();
             int[][] spans = {
                 {5, 7},
@@ -725,7 +878,20 @@ class GlacialMarkScanTest {
                     fixture.installDropColumn(x, z);
                 }
             }
-            fixture.installEscape();
+            fixture.installDescent(distance);
+            return fixture;
+        }
+
+        static PhysicalFixture authoredCavernTrap() {
+            PhysicalFixture fixture = new PhysicalFixture();
+            int[][] spans = {{5, 7}, {4, 9}, {5, 7}, {4, 9}, {6, 8}, {4, 9}};
+            for (int station = 0; station < spans.length; station++) {
+                for (int z = spans[station][0]; z <= spans[station][1]; z++) {
+                    fixture.installDropColumn(2 + station, z);
+                }
+            }
+            fixture.installDropColumn(5, 10);
+            fixture.installAuthoredCavern();
             return fixture;
         }
 
@@ -752,21 +918,35 @@ class GlacialMarkScanTest {
             for (int x = 0; x < sizeX; x++) {
                 for (int y = 0; y < sizeY; y++) {
                     System.arraycopy(cells[x][y], 0, copy.cells[x][y], 0, sizeZ);
+                    System.arraycopy(biomes[x][y], 0, copy.biomes[x][y], 0, sizeZ);
                 }
             }
             copy.powderCovers.clear();
             for (int[] cover : powderCovers) {
                 copy.powderCovers.add(cover.clone());
             }
-            copy.escapeRoute.clear();
-            for (int[] step : escapeRoute) {
-                copy.escapeRoute.add(step.clone());
+            copy.descentRoute.clear();
+            for (int[] step : descentRoute) {
+                copy.descentRoute.add(step.clone());
+            }
+            copy.cavernFloors.clear();
+            for (int[] floor : cavernFloors) {
+                copy.cavernFloors.add(floor.clone());
             }
             return copy;
         }
 
         PhysicalFixture set(int x, int y, int z, String kind) {
+            return setRaw(x + HORIZONTAL_OFFSET, y + VERTICAL_OFFSET, z + HORIZONTAL_OFFSET, kind);
+        }
+
+        private PhysicalFixture setRaw(int x, int y, int z, String kind) {
             cells[x][y][z] = kind;
+            return this;
+        }
+
+        PhysicalFixture setBiome(int x, int y, int z, String kind) {
+            biomes[x + HORIZONTAL_OFFSET][y + VERTICAL_OFFSET][z + HORIZONTAL_OFFSET] = kind;
             return this;
         }
 
@@ -778,6 +958,19 @@ class GlacialMarkScanTest {
                     for (int z = 0; z < sizeZ; z++) {
                         measured[x][y][z] =
                                 GlacialMarkScan.PhysicalCellKind.valueOf(cells[x][y][z]);
+                    }
+                }
+            }
+            return measured;
+        }
+
+        GlacialMarkScan.PhysicalBiomeKind[][][] measuredBiomes() {
+            GlacialMarkScan.PhysicalBiomeKind[][][] measured =
+                    new GlacialMarkScan.PhysicalBiomeKind[sizeX][sizeY][sizeZ];
+            for (int x = 0; x < sizeX; x++) {
+                for (int y = 0; y < sizeY; y++) {
+                    for (int z = 0; z < sizeZ; z++) {
+                        measured[x][y][z] = GlacialMarkScan.PhysicalBiomeKind.valueOf(biomes[x][y][z]);
                     }
                 }
             }
@@ -850,7 +1043,7 @@ class GlacialMarkScanTest {
         }
 
         void setThinSnowEffectiveY(int x, int z, int effectiveY) {
-            for (int y = effectiveY + 1; y < sizeY; y++) {
+            for (int y = effectiveY + 1; y < sizeY - VERTICAL_OFFSET; y++) {
                 set(x, y, z, "AIR");
             }
             set(x, effectiveY, z, "SNOW_BLOCK");
@@ -858,27 +1051,27 @@ class GlacialMarkScanTest {
         }
 
         void setBareFullSnowEffectiveY(int x, int z, int effectiveY) {
-            for (int y = effectiveY + 1; y < sizeY; y++) {
+            for (int y = effectiveY + 1; y < sizeY - VERTICAL_OFFSET; y++) {
                 set(x, y, z, "AIR");
             }
             set(x, effectiveY, z, "SNOW_BLOCK");
         }
 
         void openCrevasseAt(int x, int z, int floorY) {
-            for (int y = floorY + 1; y < sizeY; y++) {
+            for (int y = floorY + 1; y < sizeY - VERTICAL_OFFSET; y++) {
                 set(x, y, z, "AIR");
             }
         }
 
         int routeFloorAt(int x, int z) {
-            return escapeRoute.stream()
+            return descentRoute.stream()
                     .filter(step -> step[0] == x && step[2] == z)
                     .mapToInt(step -> step[1])
                     .findFirst().orElseThrow();
         }
 
         private void movePowderCoverTo(int[] cover, int newY) {
-            for (int y = newY + 1; y < sizeY; y++) {
+            for (int y = newY + 1; y < sizeY - VERTICAL_OFFSET; y++) {
                 set(cover[0], y, cover[2], "AIR");
             }
             set(cover[0], newY, cover[2], "POWDER_SNOW");
@@ -899,33 +1092,311 @@ class GlacialMarkScanTest {
             powderCovers.add(new int[]{x, SURFACE_LAYER_Y, z});
         }
 
-        private void installEscape() {
-            int[][] horizontal = {
-                {11, 5}, {12, 5}, {12, 4}, {12, 3}, {12, 2},
-                {11, 2}, {10, 2}, {9, 2}, {8, 2}, {7, 2}, {6, 2}, {5, 2}, {4, 2}, {3, 2},
-                {3, 3},
-                {3, 4}, {3, 5}, {3, 6}, {3, 7}, {3, 8}, {3, 9}, {3, 10}, {3, 11},
-                {4, 11}, {5, 11}, {6, 11}, {7, 11}, {8, 11}, {9, 11}, {10, 11}, {11, 11},
-                {12, 11}, {12, 10}, {12, 9}, {12, 8}, {12, 7}, {12, 6},
+        private void installDescent(int distance) {
+            for (int station = 0; station < distance; station++) {
+                int x = 11 + station;
+                int floorY = CUSHION_SUPPORT_Y - station;
+                for (int z : new int[]{5, 6}) {
+                    set(x, floorY, z, "SNOW_BLOCK");
+                    for (int dy = 1; dy <= 3; dy++) {
+                        set(x, floorY + dy, z, "AIR");
+                    }
+                    descentRoute.add(new int[]{x, floorY, z});
+                }
+            }
+            // The untouched lower cave begins one station beyond the authored stairs and supplies eight
+            // connected dry, three-high natural floor columns.
+            int naturalFloorY = CUSHION_SUPPORT_Y - distance;
+            for (int x : new int[]{11 + distance, 12 + distance}) {
+                for (int z = 4; z <= 7; z++) {
+                    set(x, naturalFloorY, z, "DRY_SOLID");
+                    for (int dy = 1; dy <= 3; dy++) {
+                        set(x, naturalFloorY + dy, z, "AIR");
+                    }
+                }
+            }
+        }
+
+        private void installAuthoredCavern() {
+            int[][][] stations = {
+                {{6, 10}, {6, 11}},
+                {{7, 10}, {7, 11}},
+                {{8, 10}, {8, 11}},
+                {{9, 10}, {9, 11}},
+                {{10, 10}, {10, 11}},
+                {{11, 10}, {11, 11}},
+                {{11, 9}, {12, 9}}
             };
-            for (int i = 0; i < horizontal.length; i++) {
-                int floorY = CUSHION_SUPPORT_Y + Math.max(1, Math.min(16, i / 2));
-                int x = horizontal[i][0];
-                int z = horizontal[i][1];
-                set(x, floorY, z, "SNOW_BLOCK");
-                set(x, floorY + 1, z, "AIR");
-                set(x, floorY + 2, z, "AIR");
-                escapeRoute.add(new int[]{x, floorY, z});
+            for (int station = 0; station < stations.length; station++) {
+                int floorY = CUSHION_SUPPORT_Y - Math.min(station, 5);
+                for (int[] xz : stations[station]) {
+                    set(xz[0], floorY, xz[1], "SNOW_BLOCK");
+                    for (int dy = 1; dy <= 3; dy++) {
+                        set(xz[0], floorY + dy, xz[1], "AIR");
+                    }
+                    descentRoute.add(new int[]{xz[0], floorY, xz[1]});
+                }
             }
 
-            // Two rising three-high snow columns form the mineable tail. The final column's head is the
-            // original full-snow surface support, with its thin surface layer still untouched above it.
-            set(13, 22, 6, "SNOW_BLOCK");
-            set(13, 23, 6, "SNOW_BLOCK");
-            set(13, 24, 6, "SNOW_BLOCK");
-            set(13, 23, 7, "SNOW_BLOCK");
-            set(13, 24, 7, "SNOW_BLOCK");
-            set(13, 25, 7, "SNOW_BLOCK");
+            Set<Long> floorMask = new HashSet<>();
+            for (int x = 10; x <= 17; x++) {
+                for (int z = 2; z <= 8; z++) {
+                    floorMask.add(pack(x, z));
+                }
+            }
+            for (int x = 16; x <= 21; x++) {
+                for (int z = 5; z <= 7; z++) {
+                    floorMask.add(pack(x, z));
+                }
+            }
+            for (int x = 19; x <= 21; x++) {
+                for (int z = 5; z <= 9; z++) {
+                    floorMask.add(pack(x, z));
+                }
+            }
+            for (int x = 20; x <= 29; x++) {
+                for (int z = 7; z <= 13; z++) {
+                    floorMask.add(pack(x, z));
+                }
+            }
+            for (long removed : Set.of(
+                    pack(10, 2), pack(17, 2), pack(10, 8), pack(17, 8),
+                    pack(13, 5), pack(16, 5), pack(20, 7), pack(29, 7),
+                    pack(20, 13), pack(29, 13), pack(23, 10), pack(27, 10))) {
+                floorMask.remove(removed);
+            }
+            for (long packed : floorMask) {
+                int x = (int) (packed >> 32);
+                int z = (int) packed;
+                int floorY = cavernFloorY(x, z);
+                int clearHeight = 4 + Math.floorMod(x + z * 2, 4);
+                installCavernColumn(x, floorY, z, clearHeight);
+            }
+        }
+
+        private int cavernFloorY(int x, int z) {
+            if (x >= 20 && x <= 29 && z >= 7 && z <= 13) {
+                return -2;
+            }
+            if ((x >= 16 && x <= 21 && z >= 5 && z <= 7)
+                    || (x >= 19 && x <= 21 && z >= 5 && z <= 9)) {
+                return -1;
+            }
+            return 0;
+        }
+
+        private void installCavernColumn(int x, int floorY, int z, int clearHeight) {
+            set(x, floorY, z, "SNOW_BLOCK");
+            setBiome(x, floorY, z, "GLACIAL_CAVES");
+            for (int dy = 1; dy <= clearHeight; dy++) {
+                set(x, floorY + dy, z, "AIR");
+                setBiome(x, floorY + dy, z, "GLACIAL_CAVES");
+            }
+            cavernFloors.removeIf(floor -> floor[0] == x && floor[2] == z);
+            cavernFloors.add(new int[]{x, floorY, z, clearHeight});
+        }
+
+        PhysicalFixture replaceCavernWithPocket(int width, int depth) {
+            clearCavern();
+            int minX = 10;
+            int maxZ = 8;
+            for (int x = minX; x < minX + width; x++) {
+                for (int z = maxZ - depth + 1; z <= maxZ; z++) {
+                    installCavernColumn(x, 0, z, 4 + Math.floorMod(x + z, 4));
+                }
+            }
+            return this;
+        }
+
+        PhysicalFixture truncateCavernSpan() {
+            removeCavernWhere(floor -> floor[0] >= 27);
+            return this;
+        }
+
+        PhysicalFixture stretchCavernToLowFill() {
+            for (int x = 0; x <= 10; x++) {
+                installCavernColumn(x, 0, 2, 4 + Math.floorMod(x, 4));
+            }
+            for (int z = 0; z <= 15; z++) {
+                installCavernColumn(0, 0, z, 4 + Math.floorMod(z, 4));
+            }
+            return this;
+        }
+
+        PhysicalFixture continueIntoSecondNeighbour() {
+            for (int z = 1; z >= -1; z--) {
+                installCavernColumn(11, 0, z, 4 + Math.floorMod(z, 4));
+            }
+            return this;
+        }
+
+        PhysicalFixture moveCavernPortalToSide() {
+            moveCavern(2, 1);
+            return this;
+        }
+
+        PhysicalFixture moveCavernPortalToRear() {
+            // Keep the otherwise-valid cavern wholly behind the terminal without overwriting the
+            // approach route that necessarily occupies the immediately-adjacent rear footprint.
+            moveCavern(0, 10);
+            return this;
+        }
+
+        private void moveCavern(int dx, int dz) {
+            List<int[]> previous = cavernFloors.stream().map(int[]::clone).toList();
+            clearCavern();
+            for (int[] floor : previous) {
+                installCavernColumn(
+                        floor[0] + dx, floor[1], floor[2] + dz, floor[3]);
+            }
+        }
+
+        PhysicalFixture fillOneFiveByFiveRoom() {
+            for (int x = 10; x <= 14; x++) {
+                for (int z = 2; z <= 6; z++) {
+                    installCavernColumn(x, 0, z, 4 + Math.floorMod(x + z * 2, 4));
+                }
+            }
+            return this;
+        }
+
+        PhysicalFixture removePrimaryLobe() {
+            removeCavernWhere(floor -> floor[0] >= 20 && floor[2] >= 7);
+            return this;
+        }
+
+        PhysicalFixture severThroat() {
+            removeCavernWhere(floor -> floor[0] == 18);
+            return this;
+        }
+
+        PhysicalFixture straightenLobes() {
+            removeCavernWhere(floor -> floor[0] >= 20 && floor[2] >= 7);
+            Set<Long> removed = Set.of(
+                    pack(20, 2), pack(29, 2), pack(20, 8), pack(29, 8),
+                    pack(23, 5), pack(27, 5));
+            for (int x = 20; x <= 29; x++) {
+                for (int z = 2; z <= 8; z++) {
+                    if (!removed.contains(pack(x, z))) {
+                        installCavernColumn(x, -2, z, 4 + Math.floorMod(x + z * 2, 4));
+                    }
+                }
+            }
+            return this;
+        }
+
+        PhysicalFixture routeRises() {
+            clearRoutePair(7, 4, 10, 11);
+            installRoutePair(7, 5, 10, 11);
+            return this;
+        }
+
+        PhysicalFixture routeReverses() {
+            for (int[] floor : new ArrayList<>(descentRoute)) {
+                if (!(floor[0] == 6 && (floor[2] == 10 || floor[2] == 11))) {
+                    clearRouteCell(floor[0], floor[1], floor[2]);
+                }
+            }
+            installRoutePair(7, 4, 10, 11);
+            installRoutePairHorizontal(7, 8, 3, 12);
+            installRoutePairHorizontal(7, 8, 2, 13);
+            installRoutePair(6, 1, 13, 14);
+            return this;
+        }
+
+        PhysicalFixture routeDisconnects() {
+            clearRoutePair(8, 3, 10, 11);
+            return this;
+        }
+
+        private void clearCavern() {
+            removeCavernWhere(ignored -> true);
+        }
+
+        private void removeCavernWhere(java.util.function.Predicate<int[]> predicate) {
+            for (int[] floor : new ArrayList<>(cavernFloors)) {
+                if (!predicate.test(floor)) {
+                    continue;
+                }
+                set(floor[0], floor[1], floor[2], "DRY_SOLID");
+                setBiome(floor[0], floor[1], floor[2], "OTHER");
+                for (int dy = 1; dy <= floor[3]; dy++) {
+                    set(floor[0], floor[1] + dy, floor[2], "DRY_SOLID");
+                    setBiome(floor[0], floor[1] + dy, floor[2], "OTHER");
+                }
+                cavernFloors.remove(floor);
+            }
+        }
+
+        private void clearRoutePair(int x, int floorY, int firstZ, int secondZ) {
+            clearRouteCell(x, floorY, firstZ);
+            clearRouteCell(x, floorY, secondZ);
+        }
+
+        private void clearRouteCell(int x, int floorY, int z) {
+            set(x, floorY, z, "DRY_SOLID");
+            for (int dy = 1; dy <= 3; dy++) {
+                set(x, floorY + dy, z, "DRY_SOLID");
+            }
+        }
+
+        private void installRoutePair(int x, int floorY, int firstZ, int secondZ) {
+            for (int z : new int[]{firstZ, secondZ}) {
+                set(x, floorY, z, "SNOW_BLOCK");
+                for (int dy = 1; dy <= 3; dy++) {
+                    set(x, floorY + dy, z, "AIR");
+                }
+            }
+        }
+
+        private void installRoutePairHorizontal(
+                int firstX, int secondX, int floorY, int z) {
+            for (int x : new int[]{firstX, secondX}) {
+                set(x, floorY, z, "SNOW_BLOCK");
+                for (int dy = 1; dy <= 3; dy++) {
+                    set(x, floorY + dy, z, "AIR");
+                }
+            }
+        }
+
+        PhysicalFixture clearRouteStation(int x, int floorY) {
+            for (int z : new int[]{5, 6}) {
+                set(x, floorY, z, "DRY_SOLID");
+                for (int dy = 1; dy <= 3; dy++) {
+                    set(x, floorY + dy, z, "DRY_SOLID");
+                }
+            }
+            return this;
+        }
+
+        private void installOldClimbOutOnly() {
+            int[][] spans = {{5, 7}, {4, 9}, {5, 7}, {4, 9}, {6, 8}, {4, 9}};
+            for (int station = 0; station < spans.length; station++) {
+                for (int z = spans[station][0]; z <= spans[station][1]; z++) {
+                    installDropColumn(5 + station, z);
+                }
+            }
+            for (int step = 0; step < 3; step++) {
+                int x = 11 + step;
+                int floorY = CUSHION_SUPPORT_Y + step;
+                set(x, floorY, 5, "SNOW_BLOCK");
+                set(x, floorY + 1, 5, "AIR");
+                set(x, floorY + 2, 5, "AIR");
+            }
+        }
+
+        private PhysicalFixture sealNaturalCaveExceptTargets() {
+            for (int x : new int[]{14, 15}) {
+                for (int z = 4; z <= 7; z++) {
+                    if (x == 14 && (z == 5 || z == 6)) {
+                        continue;
+                    }
+                    for (int y = 2; y <= 5; y++) {
+                        set(x, y, z, "DRY_SOLID");
+                    }
+                }
+            }
+            return this;
         }
     }
 }

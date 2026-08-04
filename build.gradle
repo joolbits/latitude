@@ -116,6 +116,47 @@ loom {
             vmArg "-Dlatdev.caveDropAudit.minOrdinary=${System.getProperty('latdev.caveDropAudit.minOrdinary', '')}"
             vmArg "-Dlatdev.caveDropAudit.minFlooded=${System.getProperty('latdev.caveDropAudit.minFlooded', '')}"
             vmArg "-Dlatdev.caveDropAudit.minProspector=${System.getProperty('latdev.caveDropAudit.minProspector', '')}"
+            // Read-only saved-world diagnosis for the surface connector search. Kept beside caveDropAudit so
+            // every property is forwarded into the forked biomePreview JVM rather than only Gradle's JVM.
+            vmArg "-Dlatdev.surfaceConnectorAudit=${System.getProperty('latdev.surfaceConnectorAudit', 'false')}"
+            vmArg "-Dlatdev.surfaceConnectorAudit.chunks=${System.getProperty('latdev.surfaceConnectorAudit.chunks', '')}"
+            vmArg "-Dlatdev.surfaceConnectorAudit.maxHorizontal=${System.getProperty('latdev.surfaceConnectorAudit.maxHorizontal', '')}"
+            vmArg "-Dlatdev.surfaceConnectorAudit.maxVerticalDrop=${System.getProperty('latdev.surfaceConnectorAudit.maxVerticalDrop', '')}"
+            vmArg "-Dlatdev.surfaceConnectorAudit.out=${System.getProperty('latdev.surfaceConnectorAudit.out', '')}"
+            vmArg "-Dlatdev.surfaceTrapPhysicalAudit=${System.getProperty('latdev.surfaceTrapPhysicalAudit', 'false')}"
+            vmArg "-Dlatdev.surfaceTrapPhysicalAudit.targetChunkMinX=${System.getProperty('latdev.surfaceTrapPhysicalAudit.targetChunkMinX', '')}"
+            vmArg "-Dlatdev.surfaceTrapPhysicalAudit.targetChunkMinZ=${System.getProperty('latdev.surfaceTrapPhysicalAudit.targetChunkMinZ', '')}"
+            vmArg "-Dlatdev.surfaceTrapPhysicalAudit.targetChunkSpan=${System.getProperty('latdev.surfaceTrapPhysicalAudit.targetChunkSpan', '')}"
+            vmArg "-Dlatdev.surfaceTrapPhysicalAudit.scanChunkMinX=${System.getProperty('latdev.surfaceTrapPhysicalAudit.scanChunkMinX', '')}"
+            vmArg "-Dlatdev.surfaceTrapPhysicalAudit.scanChunkMinZ=${System.getProperty('latdev.surfaceTrapPhysicalAudit.scanChunkMinZ', '')}"
+            vmArg "-Dlatdev.surfaceTrapPhysicalAudit.scanChunkSpan=${System.getProperty('latdev.surfaceTrapPhysicalAudit.scanChunkSpan', '')}"
+            vmArg "-Dlatdev.surfaceTrapPhysicalAudit.centerX=${System.getProperty('latdev.surfaceTrapPhysicalAudit.centerX', '')}"
+            vmArg "-Dlatdev.surfaceTrapPhysicalAudit.centerZ=${System.getProperty('latdev.surfaceTrapPhysicalAudit.centerZ', '')}"
+            vmArg "-Dlatdev.surfaceTrapPhysicalAudit.radiusChunks=${System.getProperty('latdev.surfaceTrapPhysicalAudit.radiusChunks', '')}"
+            vmArg "-Dlatdev.surfaceTrapPhysicalAudit.out=${System.getProperty('latdev.surfaceTrapPhysicalAudit.out', '')}"
+            // Fresh-world physical proof for globe:hidden_glacial_chamber
+            // (com.example.globe.dev.HiddenChamberPhysicalAudit). Same forwarding law as the block above:
+            // every knob must reach the FORKED biomePreview JVM, not merely Gradle's own.
+            vmArg "-Dlatdev.chamberAudit=${System.getProperty('latdev.chamberAudit', 'false')}"
+            vmArg "-Dlatdev.chamberAudit.targetChunkMinX=${System.getProperty('latdev.chamberAudit.targetChunkMinX', '')}"
+            vmArg "-Dlatdev.chamberAudit.targetChunkMinZ=${System.getProperty('latdev.chamberAudit.targetChunkMinZ', '')}"
+            vmArg "-Dlatdev.chamberAudit.targetChunkSpan=${System.getProperty('latdev.chamberAudit.targetChunkSpan', '')}"
+            vmArg "-Dlatdev.chamberAudit.scanChunkMinX=${System.getProperty('latdev.chamberAudit.scanChunkMinX', '')}"
+            vmArg "-Dlatdev.chamberAudit.scanChunkMinZ=${System.getProperty('latdev.chamberAudit.scanChunkMinZ', '')}"
+            vmArg "-Dlatdev.chamberAudit.scanChunkSpan=${System.getProperty('latdev.chamberAudit.scanChunkSpan', '')}"
+            vmArg "-Dlatdev.chamberAudit.centerX=${System.getProperty('latdev.chamberAudit.centerX', '')}"
+            vmArg "-Dlatdev.chamberAudit.centerZ=${System.getProperty('latdev.chamberAudit.centerZ', '')}"
+            vmArg "-Dlatdev.chamberAudit.radiusChunks=${System.getProperty('latdev.chamberAudit.radiusChunks', '')}"
+            vmArg "-Dlatdev.chamberAudit.out=${System.getProperty('latdev.chamberAudit.out', '')}"
+            vmArg "-Dlatdev.chamberAudit.settleTicks=${System.getProperty('latdev.chamberAudit.settleTicks', '')}"
+            vmArg "-Dlatdev.chamberAudit.mobAssay=${System.getProperty('latdev.chamberAudit.mobAssay', '')}"
+            vmArg "-Dlatdev.chamberAudit.locatorCheck=${System.getProperty('latdev.chamberAudit.locatorCheck', '')}"
+            vmArg "-Dlatdev.chamberAudit.expectTheme=${System.getProperty('latdev.chamberAudit.expectTheme', '')}"
+            vmArg "-Dlatdev.chamberAudit.minCompleted=${System.getProperty('latdev.chamberAudit.minCompleted', '')}"
+            vmArg "-Dlatdev.chamberAudit.expectGallerySpires=${System.getProperty('latdev.chamberAudit.expectGallerySpires', '')}"
+            // HiddenGlacialChamberFeature reads this in the FORKED server JVM at class-init. Without the
+            // forward, gate-3 theme forcing silently does nothing -- exactly the trap documented above.
+            vmArg "-Dlatitude.chamber.forceTheme=${System.getProperty('latitude.chamber.forceTheme', '')}"
             vmArg "-Dlatitude.debugWorldgenPath=${System.getProperty('latitude.debugWorldgenPath', 'false')}"
             // Phase 4 terrain-wrapper mechanical proof harness (com.example.globe.dev.TerrainProofHarness).
             // See docs/design/terrain-wrapper-design-20260705.md §6/§8 items 7-9.
@@ -196,6 +237,7 @@ loom {
             vmArg "-Dlatitude.debugGlacialDressing=${System.getProperty('latitude.debugGlacialDressing', 'false')}"
             // Legacy broad diagnostics remain forwarded as a backward-compatible alternate trigger.
             vmArg "-Dlatitude.debugCollapse=${System.getProperty('latitude.debugCollapse', 'false')}"
+            vmArg "-Dlatitude.debugRoofedCavern=${System.getProperty('latitude.debugRoofedCavern', 'false')}"
             // Polar water freeze (default TRUE, matching LatitudeV2Flags; byte-identical when explicitly
             // set off). Forwarded on sight this round -- the L17 forwarding class has bitten this repo
             // twice before (climateV2/biomeConsumerV2 2026-07-07); don't let a third flag go unforwarded.

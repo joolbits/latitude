@@ -67,20 +67,22 @@ class PowderCrevasseRoofJsonSchemaTest {
     }
 
     @Test
-    void barrensListsTheTrapAtTopLayerAfterFreeze() {
+    void barrensTopLayerKeepsFreezeAndQuenchAndNoLongerSchedulesTheRoof() {
         JsonObject barrens = load("/data/globe/worldgen/biome/polar_barrens.json");
-        // Step 10 = top_layer_modification. The trap remains after freeze_top_layer, while the magma quench
-        // stays last so a late spring/freeze writer cannot leave flooded magma bare.
+        // Step 10 = top_layer_modification. The freeze still leads and the magma quench still runs last so a
+        // late spring/freeze writer cannot leave flooded magma bare -- those two pins are untouched.
         List<String> topLayer = featureStep(barrens, 10);
         assertEquals("minecraft:freeze_top_layer", topLayer.get(0),
                 "freeze_top_layer stays first in the top-layer step");
         assertEquals("globe:magma_quench_sweep", topLayer.get(topLayer.size() - 1),
                 "the magma quench is appended LAST in the top-layer step");
-        assertTrue(topLayer.indexOf("minecraft:freeze_top_layer") < topLayer.indexOf(ID),
-                "the trap must run strictly after the freeze pass");
-        assertTrue(topLayer.indexOf(ID) < topLayer.indexOf("globe:magma_quench_sweep"),
-                "the final quench must follow the powder roof");
-        // It is a SURFACE trap on the barrens -- it must NOT appear in glacial_caves (the underground biome).
+        // The surface powder roof is UNWIRED: the hidden glacial chamber pass retired it from the barrens.
+        // Its configured/placed JSON halves and its registration remain (existing-world compatibility);
+        // only its biome membership ended, so no biome may schedule it any more.
+        for (int step = 0; step < barrens.getAsJsonArray("features").size(); step++) {
+            assertFalse(featureStep(barrens, step).contains(ID),
+                    "the powder-roof trap is unwired from polar_barrens; found it in step " + step);
+        }
         JsonObject caves = load("/data/globe/worldgen/biome/glacial_caves.json");
         for (int step = 0; step < caves.getAsJsonArray("features").size(); step++) {
             assertFalse(featureStep(caves, step).contains(ID),

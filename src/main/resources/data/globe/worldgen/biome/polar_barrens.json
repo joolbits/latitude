@@ -85,7 +85,6 @@
     ],
     [
       "minecraft:freeze_top_layer",
-      "globe:powder_crevasse_roof",
       "globe:magma_quench_sweep"
     ]
   ],

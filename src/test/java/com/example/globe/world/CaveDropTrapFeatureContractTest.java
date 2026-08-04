@@ -1367,8 +1367,10 @@ class CaveDropTrapFeatureContractTest {
                 "src/main/resources/data/globe/worldgen/biome/glacial_caves.json"));
         assertFalse(polarBarrens.contains("\"globe:cave_drop_trap\""),
                 "polar barrens must never schedule cave-drop traps");
-        assertTrue(glacialCaves.contains("\"globe:cave_drop_trap\""),
-                "the existing glacial-caves trap entry remains the only biome schedule");
+        assertFalse(glacialCaves.contains("\"globe:cave_drop_trap\""),
+                "the hidden-glacial-chamber pass took the trap's vegetal-decoration slot, so NO biome "
+                        + "schedules the trap any more -- its registration, blocks, and configured/placed "
+                        + "JSON halves all remain for worlds that already generated it");
     }
 
     @Test

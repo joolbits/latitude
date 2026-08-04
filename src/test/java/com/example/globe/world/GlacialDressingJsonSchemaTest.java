@@ -43,8 +43,12 @@ class GlacialDressingJsonSchemaTest {
     }
 
     private static List<JsonObject> placementChain(JsonObject placedJson) {
+        return placementChain(placedJson.getAsJsonArray("placement"));
+    }
+
+    private static List<JsonObject> placementChain(JsonArray placement) {
         List<JsonObject> chain = new ArrayList<>();
-        placedJson.getAsJsonArray("placement").forEach(e -> chain.add(e.getAsJsonObject()));
+        placement.forEach(e -> chain.add(e.getAsJsonObject()));
         return chain;
     }
 
@@ -57,6 +61,14 @@ class GlacialDressingJsonSchemaTest {
         List<JsonObject> out = new ArrayList<>();
         chain.stream().filter(m -> type.equals(m.get("type").getAsString())).forEach(out::add);
         return out;
+    }
+
+    /** The custom modifier checks only the candidate's vertical column and returns that candidate unchanged.
+     * Its pure predicate test pins the 128-block roof range and open-sky rejection. */
+    private static void assertRoofedCavernGate(List<JsonObject> chain, int index, String name) {
+        assertTrue(chain.size() > index, name + ": missing roofed-cavern gate");
+        assertEquals("globe:roofed_cavern", chain.get(index).get("type").getAsString(),
+                name + ": must use the non-relocating roof predicate, not an environment scan round trip");
     }
 
     /** Every dressing placement must end with the biome filter (so a feature never leaks outside its
@@ -225,12 +237,15 @@ class GlacialDressingJsonSchemaTest {
                         "placed feature " + featureId + " needs its configured_feature JSON");
             }
         }
-        assertEquals(19, globeFeatures, "nineteen globe features after S50 added the magma quench sweep to the S48 eighteen: "
-                + "(icicle_cluster needles + the PROVISIONAL low-rate ice_spear_patch) onto the S45 nineteen: the S44 nine "
-                + "(hanging_icicles, snow_drift, powder_pocket, frost_carpet, slush_floe, cave_drop_trap, "
-                + "glow_lichen + 2 ice blobs) + frost_bloom, brine_pool (lakes), ice_geode (step 2), "
-                + "moraine stone/gravel + ice-ore coal/iron/copper (step 6), ice_spire_cluster, ice_spire "
-                + "(step 7), no silent drops");
+        assertEquals(19, globeFeatures, "still nineteen globe features after the hidden-glacial-chamber pass: "
+                + "that pass is a one-for-one SWAP in vegetal decoration (globe:cave_drop_trap out, "
+                + "globe:hidden_glacial_chamber in), so the S50 count is unchanged. The trap's own "
+                + "configured/placed JSON halves stay on disk for existing worlds; only its biome membership "
+                + "ended. The nineteen: the S44 nine (hanging_icicles, snow_drift, powder_pocket, "
+                + "frost_carpet, slush_floe, hidden_glacial_chamber, glow_lichen + 2 ice blobs) + frost_bloom, "
+                + "brine_pool (lakes), ice_geode (step 2), moraine stone/gravel (step 6), ice_spire_cluster, "
+                + "ice_spire, icicle_cluster, ice_spear_patch (step 7), lake_ice_fringe + magma_quench_sweep "
+                + "(step 10), no silent drops");
     }
 
     /** The cave-only lake fringe is a custom feature because single data-pack blocks cannot reason about a
@@ -377,5 +392,80 @@ class GlacialDressingJsonSchemaTest {
                 .get("direction_of_search").getAsString(), "carpet dusts the FLOOR (scan down)");
         assertEquals(1, modifier(chain, "minecraft:random_offset").get("y_spread").getAsInt(),
                 "step one above the floor block into the air cell");
+    }
+
+    @Test
+    void iceSpiresRequireRoofedCavernsDirectlyAndInsideClusters() {
+        List<JsonObject> direct = placementChain(placed("ice_spire"));
+        assertEquals(7, direct.size(), "direct spires add only the non-relocating roof gate");
+        assertEquals("minecraft:count", direct.get(0).get("type").getAsString());
+        JsonObject directCount = direct.get(0).getAsJsonObject("count");
+        assertEquals(8, directCount.get("min_inclusive").getAsInt(), "keep the direct 8-16 attempt count");
+        assertEquals(16, directCount.get("max_inclusive").getAsInt(), "keep the direct 8-16 attempt count");
+        JsonObject height = direct.get(2).getAsJsonObject("height");
+        assertEquals(0, height.getAsJsonObject("min_inclusive").get("absolute").getAsInt(),
+                "keep the direct Y0-100 range");
+        assertEquals(100, height.getAsJsonObject("max_inclusive").get("absolute").getAsInt(),
+                "keep the direct Y0-100 range");
+        JsonObject perAttempt = direct.get(3).getAsJsonObject("count");
+        assertEquals(1, perAttempt.get("min_inclusive").getAsInt(), "keep the 1-3 inner attempts");
+        assertEquals(3, perAttempt.get("max_inclusive").getAsInt(), "keep the 1-3 inner attempts");
+        JsonObject directOffset = direct.get(4).getAsJsonObject("xz_spread");
+        assertEquals(3.0, directOffset.get("deviation").getAsDouble(), 1e-9,
+                "keep the direct horizontal offset shape");
+        assertEquals(-10, directOffset.get("min_inclusive").getAsInt(), "keep the direct horizontal offset");
+        assertEquals(10, directOffset.get("max_inclusive").getAsInt(), "keep the direct horizontal offset");
+        JsonObject directVerticalOffset = direct.get(4).getAsJsonObject("y_spread");
+        assertEquals(0.6, directVerticalOffset.get("deviation").getAsDouble(), 1e-9,
+                "keep the direct vertical offset shape");
+        assertEquals(-2, directVerticalOffset.get("min_inclusive").getAsInt(), "keep the direct vertical offset");
+        assertEquals(2, directVerticalOffset.get("max_inclusive").getAsInt(), "keep the direct vertical offset");
+        assertRoofedCavernGate(direct, 5, "direct ice_spire");
+        assertEquals("minecraft:biome", direct.get(6).get("type").getAsString(),
+                "the biome filter stays last after the roof gate");
+
+        JsonObject cluster = configured("ice_spire_cluster");
+        assertEquals("minecraft:sequence", cluster.get("type").getAsString());
+        JsonArray children = cluster.getAsJsonObject("config").getAsJsonArray("features");
+        assertEquals(5, children.size(), "keep the existing five-spire cluster shape");
+        for (int childIndex = 0; childIndex < children.size(); childIndex++) {
+            JsonObject child = children.get(childIndex).getAsJsonObject();
+            // Sequence children name a configured feature and own their inline placement chain; they do not
+            // invoke globe:ice_spire's placed_feature modifiers, so every child must carry this gate itself.
+            assertEquals("globe:ice_spire", child.get("feature").getAsString(),
+                    "cluster child " + childIndex + " must retain the ice-spire configured feature");
+            List<JsonObject> childPlacement = placementChain(child.getAsJsonArray("placement"));
+            int gateIndex = childIndex == 0 ? 0 : 1;
+            assertEquals(gateIndex + 1, childPlacement.size(),
+                    "cluster child " + childIndex + " may add only the non-relocating roof gate");
+            if (childIndex > 0) {
+                assertEquals("minecraft:random_offset", childPlacement.get(0).get("type").getAsString(),
+                        "keep the cluster child's existing lateral offset before its roof check");
+                assertEquals(0, childPlacement.get(0).get("y_spread").getAsInt(),
+                        "cluster offsets remain lateral-only");
+                int spread = childIndex < 3 ? 5 : 7;
+                double deviation = childIndex < 3 ? 2.5 : 3.0;
+                JsonObject childOffset = childPlacement.get(0).getAsJsonObject("xz_spread");
+                assertEquals(deviation, childOffset.get("deviation").getAsDouble(), 1e-9,
+                        "keep cluster child " + childIndex + " offset shape");
+                assertEquals(-spread, childOffset.get("min_inclusive").getAsInt(),
+                        "keep cluster child " + childIndex + " offset reach");
+                assertEquals(spread, childOffset.get("max_inclusive").getAsInt(),
+                        "keep cluster child " + childIndex + " offset reach");
+            }
+            assertRoofedCavernGate(childPlacement, gateIndex, "cluster ice_spire child " + childIndex);
+        }
+
+        JsonArray variants = configured("ice_spire").getAsJsonObject("config").getAsJsonArray("features");
+        assertEquals(2, variants.size(), "keep the packed-ice and blue-ice spire variants");
+        List<String> materials = new ArrayList<>();
+        for (JsonElement variant : variants) {
+            JsonObject spike = variant.getAsJsonObject().getAsJsonObject("data").getAsJsonObject("feature");
+            assertEquals("minecraft:spike", spike.get("type").getAsString(),
+                    "roof gating must not change the spire shape");
+            materials.add(spike.getAsJsonObject("config").getAsJsonObject("state").get("Name").getAsString());
+        }
+        assertEquals(List.of("minecraft:packed_ice", "minecraft:blue_ice"), materials,
+                "roof gating adds no surface snow authoring or ice-material change");
     }
 }

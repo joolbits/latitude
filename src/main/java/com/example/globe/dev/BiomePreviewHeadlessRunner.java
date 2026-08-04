@@ -98,6 +98,25 @@ public final class BiomePreviewHeadlessRunner {
             return;
         }
 
+        if (SurfaceTrapConnectorAudit.isEnabled()) {
+            // Saved-world diagnostic only: this must run before every path that can request new chunk work.
+            server.execute(() -> SurfaceTrapConnectorAudit.runAndStop(server));
+            return;
+        }
+
+        if (SurfaceTrapPhysicalAudit.isEnabled()) {
+            // Fresh-world physical proof: generate its declared window before any other generating mode.
+            SurfaceTrapPhysicalAudit.start(server);
+            return;
+        }
+
+        if (HiddenChamberPhysicalAudit.isEnabled()) {
+            // The chamber twin of the physical proof above: it too owns its declared FULL-chunk window and
+            // must claim it before any later mode can request chunk work of its own.
+            HiddenChamberPhysicalAudit.start(server);
+            return;
+        }
+
         if (TerrainProofHarness.isTriggered()) {
             server.execute(() -> TerrainProofHarness.runAndStop(server));
             return;

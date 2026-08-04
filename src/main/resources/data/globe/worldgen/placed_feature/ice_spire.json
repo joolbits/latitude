@@ -50,6 +50,9 @@
       }
     },
     {
+      "type": "globe:roofed_cavern"
+    },
+    {
       "type": "minecraft:biome"
     }
   ]

@@ -2,8 +2,10 @@ package com.example.globe.world;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.core.LatitudeV2Flags;
+import com.example.globe.core.PolarBarrensBand;
 import com.mojang.serialization.Codec;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.QuartPos;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
@@ -46,8 +48,9 @@ import java.util.Set;
  * keep a half-open shell. S52: vanilla 26.2 {@code underwater_magma} has
  * {@code placement_radius_around_floor=1}, so the final sweep scans the invoking chunk plus exactly one
  * X/Z block of halo. That catches a neighbor feature's one-block spill into an already-swept owner chunk;
- * repeat sightings are harmless because the shell transform is idempotent. Scan band Y0..{@link #SCAN_TOP_Y}: the ice
- * country -- sub-Y0 stone-cellar magma is the deepslate world's own business (the S49 cellar ruling).
+ * repeat sightings are harmless because the shell transform is idempotent. Scan band
+ * {@link #SCAN_BOTTOM_Y}..{@link #SCAN_TOP_Y}: the ice country, including the short sub-Y0 diffusion
+ * tail. Magma below that tail remains the deepslate world's own business (the S49 cellar ruling).
  *
  * <p>Census line under {@code -Dlatitude.debugGlacialDressing=true} (or the backward-compatible
  * {@code -Dlatitude.debugCollapse=true}): {@code [LAT][QUENCH] chunk=...
@@ -64,7 +67,8 @@ public final class MagmaQuenchSweepFeature extends Feature<NoneFeatureConfigurat
     private static final Identifier POLAR_BARRENS = Identifier.fromNamespaceAndPath(GlobeMod.MOD_ID, "polar_barrens");
 
     private static final int SCAN_TOP_Y = 100;
-    private static final int SCAN_BOTTOM_Y = 0;
+    static final int SCAN_BOTTOM_Y = PolarBarrensBand.ICE_BODY_FLOOR_Y
+            - PolarBarrensBand.PERMAFROST_BAND_BLOCKS;
     static final int SCAN_HORIZONTAL_HALO = 1;
 
     private static final boolean DEBUG = debugEnabled(
@@ -96,7 +100,15 @@ public final class MagmaQuenchSweepFeature extends Feature<NoneFeatureConfigurat
     }
 
     private static boolean isGlacialHost(WorldGenLevel level, BlockPos pos) {
-        return level.getBiome(pos).unwrapKey().map(ResourceKey::identifier)
+        // LevelReader#getBiome uses a fuzzy eight-quart sampler. At an exact glacial boundary that
+        // sampler can select a neighboring non-glacial quart, leaving a real glacial magma pocket
+        // unswept. The stored noise-biome quart owns this exact block and stays inside the feature's
+        // legal owner-plus-halo region, matching the lake-fringe lookup contract.
+        return level.getNoiseBiome(
+                        QuartPos.fromBlock(pos.getX()),
+                        QuartPos.fromBlock(pos.getY()),
+                        QuartPos.fromBlock(pos.getZ()))
+                .unwrapKey().map(ResourceKey::identifier)
                 .map(id -> id.equals(GLACIAL_CAVES) || id.equals(POLAR_BARRENS))
                 .orElse(false);
     }
@@ -199,7 +211,7 @@ public final class MagmaQuenchSweepFeature extends Feature<NoneFeatureConfigurat
                         continue;
                     }
                     int ny = magma.getY() + dy;
-                    if (ny <= level.getMinY() || ny >= level.getMaxY()) {
+                    if (ny < SCAN_BOTTOM_Y || ny <= level.getMinY() || ny >= level.getMaxY()) {
                         continue;
                     }
                     cursor.set(magma.getX() + dx, ny, magma.getZ() + dz);
@@ -231,7 +243,7 @@ public final class MagmaQuenchSweepFeature extends Feature<NoneFeatureConfigurat
                         continue;
                     }
                     int ny = magma.getY() + dy;
-                    if (ny <= level.getMinY() || ny >= level.getMaxY()) {
+                    if (ny < SCAN_BOTTOM_Y || ny <= level.getMinY() || ny >= level.getMaxY()) {
                         continue;
                     }
                     cursor.set(magma.getX() + dx, ny, magma.getZ() + dz);
@@ -273,7 +285,7 @@ public final class MagmaQuenchSweepFeature extends Feature<NoneFeatureConfigurat
                             continue;
                         }
                         int ny = magma.getY() + dy;
-                        if (ny <= level.getMinY() || ny >= level.getMaxY()) {
+                        if (ny < SCAN_BOTTOM_Y || ny <= level.getMinY() || ny >= level.getMaxY()) {
                             continue;
                         }
                         cursor.set(magma.getX() + dx, ny, magma.getZ() + dz);

@@ -180,14 +180,17 @@ class GlacialCavesBiomeJsonSchemaTest {
         assertEquals("globe:magma_quench_sweep", featureStep(caves, 10).get(featureStep(caves, 10).size() - 1));
         assertEquals("globe:magma_quench_sweep", featureStep(barrens, 10).get(featureStep(barrens, 10).size() - 1));
 
-        assertEquals(List.of("globe:cave_drop_trap", "globe:glacial_glow_lichen"),
+        assertEquals(List.of("globe:hidden_glacial_chamber", "globe:glacial_glow_lichen"),
                 featureStep(caves, 9),
-                "intentional new-generation migration: the cave trap runs FIRST in vegetal decoration, "
+                "the hidden glacial chamber takes the trap's slot: it runs FIRST in vegetal decoration, "
                         + "after the complete cave floor exists, then sparse glow lichen. "
                         + "S40 (owner: \"remove pale moss, hanging moss\") deleted both pale-moss atmosphere "
                         + "features that S37 had appended here");
-        assertEquals(1, featureReferenceCount(caves, "globe:cave_drop_trap"),
-                "glacial_caves lists the migrated trap exactly once");
+        assertEquals(0, featureReferenceCount(caves, "globe:cave_drop_trap"),
+                "the drop trap's biome membership ended with the chamber pass; its JSON halves and its "
+                        + "registration stay for existing worlds, but no biome schedules it any more");
+        assertEquals(1, featureReferenceCount(caves, "globe:hidden_glacial_chamber"),
+                "glacial_caves lists the hidden chamber exactly once");
     }
 
     @Test
