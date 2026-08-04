@@ -1,5 +1,13 @@
 # Release checklist
 
+## Standing policy (all versions)
+
+Artifact content is governed by
+[<home>/CascadeProjects/Latitude-1.5-26.2/docs/release/artifact-content-policy.md](<home>/CascadeProjects/Latitude-1.5-26.2/docs/release/artifact-content-policy.md),
+established 2026-08-04 by owner directive: public release artifacts ship operator-usable Latitude
+commands and never ship recording, sentinel, or auto-harness work. That policy's enforcement points and
+per-release verification apply to any candidate cut from this line.
+
 > **Latitude 2.0 overhaul note (2026-07-02):** The future overhaul plan lives at
 > `docs/LATITUDE_2_0_OVERHAUL.md`. That plan does not authorize release, upload, branch/tag push, or profile
 > mutation. This release checklist remains the current 26.1.2 release/readiness gate.
