@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import net.fabricmc.fabric.api.tag.convention.v2.ConventionalBiomeTags;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
@@ -408,6 +409,10 @@ public final class LatitudeBiomes {
     private static volatile VanillaSurfaceWaterCoveragePlan ACTIVE_SURFACE_WATER_COVERAGE_PLAN = null;
     /** Birth-locked V3 size-aware targets. Null for every legacy/V1/V2 world. */
     private static volatile VanillaBiomeRepresentationProfile ACTIVE_VANILLA_REPRESENTATION_PROFILE = null;
+    /** Birth-locked V4 underground coverage. Null for every legacy/V1/V2/V3 world. */
+    private static volatile CaveBiomeRepresentationProfile ACTIVE_CAVE_REPRESENTATION_PROFILE = null;
+    /** V4 anchors only replace cells that the donor source already identified as underground caves. */
+    private static volatile CaveBiomeCoveragePlan ACTIVE_CAVE_COVERAGE_PLAN = null;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
     private static volatile boolean ACTIVE_WORLDGEN_AUTHORITY = false;
     private static OceanDistanceField OCEAN_DISTANCE_FIELD = null;
@@ -561,6 +566,8 @@ public final class LatitudeBiomes {
             Collections.synchronizedMap(new IdentityHashMap<>());
     private static final Map<Collection<Holder<Biome>>, Map<String, Holder<Biome>>> VANILLA_COVERAGE_SOURCE_CACHE =
             Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<Collection<Holder<Biome>>, Map<String, Holder<Biome>>> CAVE_COVERAGE_SOURCE_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
     private static final Map<Registry<Biome>, Map<Integer, List<Holder<Biome>>>> ALLOWED_LAND_POOL_REGISTRY_CACHE =
             Collections.synchronizedMap(new IdentityHashMap<>());
     private static final Map<Collection<Holder<Biome>>, Map<Integer, List<Holder<Biome>>>> ALLOWED_LAND_POOL_SOURCE_CACHE =
@@ -707,7 +714,7 @@ public final class LatitudeBiomes {
                                                              BiomeSource donorSource,
                                                              int seaLevel) {
         activateWorldgenContext(radiusBlocks, seed, policy, providerTicketProfile, null,
-                sampler, donorSource, seaLevel);
+                null, sampler, donorSource, seaLevel);
     }
 
     public static synchronized void activateWorldgenContext(int radiusBlocks, long seed,
@@ -717,14 +724,30 @@ public final class LatitudeBiomes {
                                                              Climate.Sampler sampler,
                                                              BiomeSource donorSource,
                                                              int seaLevel) {
+        activateWorldgenContext(radiusBlocks, seed, policy, providerTicketProfile,
+                representationProfile, null, sampler, donorSource, seaLevel);
+    }
+
+    public static synchronized void activateWorldgenContext(int radiusBlocks, long seed,
+                                                             WorldgenPolicyVersion policy,
+                                                             BiomeSelectionProfile providerTicketProfile,
+                                                             VanillaBiomeRepresentationProfile representationProfile,
+                                                             CaveBiomeRepresentationProfile caveRepresentationProfile,
+                                                             Climate.Sampler sampler,
+                                                             BiomeSource donorSource,
+                                                             int seaLevel) {
         ACTIVE_WORLDGEN_AUTHORITY = false;
         ACTIVE_WORLDGEN_POLICY = policy != null ? policy : WorldgenPolicyVersion.MODERN_1_3;
         ACTIVE_PROVIDER_TICKET_PROFILE = isProviderTicketPolicy(ACTIVE_WORLDGEN_POLICY)
                 ? providerTicketProfile
                 : null;
         ACTIVE_VANILLA_REPRESENTATION_PROFILE =
-                ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
+                (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
+                        || ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE)
                         ? representationProfile : null;
+        ACTIVE_CAVE_REPRESENTATION_PROFILE =
+                ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                        ? caveRepresentationProfile : null;
         ACTIVE_RADIUS_BLOCKS = Math.max(0, radiusBlocks);
         WORLD_SEED = seed;
         OCEAN_DISTANCE_FIELD = new OceanDistanceField(seed);
@@ -733,8 +756,9 @@ public final class LatitudeBiomes {
         PROVINCE_AUTHORITY = null;
         rebuildProvinceAuthority();
         boolean exactV2 = ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE;
-        boolean sizeAwareV3 = ACTIVE_WORLDGEN_POLICY
+        boolean sizeAwareV3 = (ACTIVE_WORLDGEN_POLICY
                 == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
+                || ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE)
                 && ACTIVE_VANILLA_REPRESENTATION_PROFILE != null;
         Map<String, BiomeRoute> landTargets = sizeAwareV3
                 ? ACTIVE_VANILLA_REPRESENTATION_PROFILE.landTargets()
@@ -777,8 +801,25 @@ public final class LatitudeBiomes {
                     ACTIVE_SURFACE_WATER_COVERAGE_PLAN.missingBiomeIds(),
                     ACTIVE_SURFACE_WATER_COVERAGE_PLAN.missingDiagnostics());
         }
+        ACTIVE_CAVE_COVERAGE_PLAN = ACTIVE_WORLDGEN_POLICY
+                == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                && ACTIVE_CAVE_REPRESENTATION_PROFILE != null
+                && donorSource != null
+                && sampler != null
+                ? CaveBiomeCoveragePlan.build(
+                        ACTIVE_RADIUS_BLOCKS,
+                        WORLD_SEED,
+                        ACTIVE_CAVE_REPRESENTATION_PROFILE,
+                        (route, x, y, z) -> caveCoverageRouteEligible(
+                                route, x, y, z, donorSource, sampler))
+                : null;
+        if (ACTIVE_CAVE_COVERAGE_PLAN != null && !ACTIVE_CAVE_COVERAGE_PLAN.complete()) {
+            LOGGER.error("[Latitude] Fresh-world cave coverage plan is incomplete; missing cave identities: {}",
+                    ACTIVE_CAVE_COVERAGE_PLAN.missingBiomeIds());
+        }
         if (sizeAwareV3) {
-            LOGGER.info("[Latitude] V3 {} representation: landTargets={} omittedExact={} omissions={}",
+            LOGGER.info("[Latitude] {} {} surface representation: landTargets={} omittedExact={} omissions={}",
+                    ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE ? "V4" : "V3",
                     ACTIVE_VANILLA_REPRESENTATION_PROFILE.worldSize(),
                     landTargets.size(),
                     ACTIVE_VANILLA_REPRESENTATION_PROFILE.omittedExactIds().size(),
@@ -805,6 +846,8 @@ public final class LatitudeBiomes {
         ACTIVE_VANILLA_COVERAGE_PLAN = null;
         ACTIVE_SURFACE_WATER_COVERAGE_PLAN = null;
         ACTIVE_VANILLA_REPRESENTATION_PROFILE = null;
+        ACTIVE_CAVE_REPRESENTATION_PROFILE = null;
+        ACTIVE_CAVE_COVERAGE_PLAN = null;
     }
 
     public static boolean hasActiveWorldgenAuthority() {
@@ -821,6 +864,7 @@ public final class LatitudeBiomes {
         PROVIDER_TICKET_REGISTRY_ROUTE_CACHE.clear();
         PROVIDER_TICKET_SOURCE_ROUTE_CACHE.clear();
         VANILLA_COVERAGE_SOURCE_CACHE.clear();
+        CAVE_COVERAGE_SOURCE_CACHE.clear();
         ALLOWED_LAND_POOL_REGISTRY_CACHE.clear();
         ALLOWED_LAND_POOL_SOURCE_CACHE.clear();
         FILTERED_LAND_POOL_REGISTRY_CACHE.clear();
@@ -841,7 +885,8 @@ public final class LatitudeBiomes {
     private static boolean isProviderTicketPolicy(WorldgenPolicyVersion policy) {
         return policy == WorldgenPolicyVersion.PROVIDER_TICKET_V1
                 || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE
-                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE;
+                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
+                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE;
     }
 
     private static boolean vanillaCoverageRouteEligible(String biomeId, BiomeRoute route,
@@ -876,7 +921,22 @@ public final class LatitudeBiomes {
                     || aridHotspotHere(WORLD_SEED, blockX, blockZ));
             case SUBPOLAR_LOWLAND -> band == BAND_SUBPOLAR && !mountain;
             case POLAR_LOWLAND -> band == BAND_POLAR && !mountain;
+            case CAVE_SHALLOW, CAVE_DEEP -> false;
         };
+    }
+
+    private static boolean caveCoverageRouteEligible(BiomeRoute route, int blockX, int blockY, int blockZ,
+                                                      BiomeSource donorSource, Climate.Sampler sampler) {
+        if (route == null || donorSource == null || sampler == null || blockY > 96) return false;
+        Holder<Biome> donor = donorSource.getNoiseBiome(blockX >> 2, blockY >> 2, blockZ >> 2, sampler);
+        if (!isUndergroundCaveBiome(donor)) return false;
+        return route != BiomeRoute.CAVE_DEEP || blockY <= -16;
+    }
+
+    private static boolean isUndergroundCaveBiome(Holder<Biome> biome) {
+        return biome != null && (biome.is(ConventionalBiomeTags.IS_CAVE)
+                || biome.is(ConventionalBiomeTags.IS_UNDERGROUND)
+                || SURFACE_CAVE_DENYLIST.contains(biomeId(biome)));
     }
 
     private static boolean surfaceWaterRouteEligible(
@@ -963,6 +1023,60 @@ public final class LatitudeBiomes {
                 }
                 resolved = Map.copyOf(found);
                 VANILLA_COVERAGE_SOURCE_CACHE.put(biomes, resolved);
+            }
+        }
+        return resolved.get(biomeId);
+    }
+
+    /**
+     * Applies a V4 cave reservation only after the caller has established that this is a real,
+     * legal donor cave cell. This cannot create a cave biome at the surface or in ordinary stone.
+     */
+    public static Holder<Biome> caveCoverageOverride(
+            Registry<Biome> biomes, Holder<Biome> current, int blockX, int blockY, int blockZ) {
+        CaveBiomeCoveragePlan plan = ACTIVE_CAVE_COVERAGE_PLAN;
+        if (plan == null || !isUndergroundCaveBiome(current)) return current;
+        CaveBiomeCoveragePlan.Anchor anchor = plan.match(blockX, blockY, blockZ);
+        if (anchor == null || !caveAnchorLegal(anchor, blockY)) return current;
+        try {
+            Holder<Biome> target = biome(biomes, anchor.biomeId());
+            setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "cave_coverage_v4", target);
+            return target;
+        } catch (Throwable ignored) {
+            return current;
+        }
+    }
+
+    /** Collection-picker companion using a context-bound ID cache rather than a per-cell scan. */
+    public static Holder<Biome> caveCoverageOverride(
+            Collection<Holder<Biome>> biomes, Holder<Biome> current, int blockX, int blockY, int blockZ) {
+        CaveBiomeCoveragePlan plan = ACTIVE_CAVE_COVERAGE_PLAN;
+        if (plan == null || !isUndergroundCaveBiome(current)) return current;
+        CaveBiomeCoveragePlan.Anchor anchor = plan.match(blockX, blockY, blockZ);
+        if (anchor == null || !caveAnchorLegal(anchor, blockY)) return current;
+        Holder<Biome> target = resolveCaveCoverageBiome(biomes, anchor.biomeId());
+        if (target == null) return current;
+        setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "cave_coverage_v4", target);
+        return target;
+    }
+
+    private static boolean caveAnchorLegal(CaveBiomeCoveragePlan.Anchor anchor, int blockY) {
+        return blockY <= 96 && (anchor.route() != BiomeRoute.CAVE_DEEP || blockY <= -16);
+    }
+
+    private static Holder<Biome> resolveCaveCoverageBiome(
+            Collection<Holder<Biome>> biomes, String biomeId) {
+        Map<String, Holder<Biome>> resolved;
+        synchronized (CAVE_COVERAGE_SOURCE_CACHE) {
+            resolved = CAVE_COVERAGE_SOURCE_CACHE.get(biomes);
+            if (resolved == null) {
+                Map<String, Holder<Biome>> found = new HashMap<>();
+                for (Holder<Biome> entry : biomes) {
+                    String id = biomeId(entry);
+                    if (BiomeDescriptorLedger.isCaveDescriptor(id)) found.put(id, entry);
+                }
+                resolved = Map.copyOf(found);
+                CAVE_COVERAGE_SOURCE_CACHE.put(biomes, resolved);
             }
         }
         return resolved.get(biomeId);
@@ -7516,6 +7630,7 @@ public final class LatitudeBiomes {
                 case TAIGA -> VillageBiomeFamily.TAIGA;
                 case POLAR -> VillageBiomeFamily.SNOWY;
                 case FOREST, UPLAND -> VillageBiomeFamily.TEMPERATE_OPEN;
+                case CAVE -> null;
             };
         }
         String biome = biomeId.toLowerCase(java.util.Locale.ROOT);

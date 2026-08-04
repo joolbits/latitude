@@ -20,5 +20,9 @@ public enum BiomeRoute {
     ARID_LOWLAND,
     ARID_UPLAND,
     SUBPOLAR_LOWLAND,
-    POLAR_LOWLAND
+    POLAR_LOWLAND,
+    /** Underground cave climate selected only after the donor source has identified a real cave cell. */
+    CAVE_SHALLOW,
+    /** Deep underground cave climate, including the Deep Dark hard authority. */
+    CAVE_DEEP
 }

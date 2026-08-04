@@ -314,7 +314,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 }
             }
             if (caveCurrent) {
-                return current;
+                return LatitudeBiomes.caveCoverageOverride(biomes, current, blockX, blockY, blockZ);
             }
 
             // Latitude's non-cave selection is column-based: caller Y is used only for a debug

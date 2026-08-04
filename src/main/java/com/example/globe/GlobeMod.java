@@ -6,6 +6,7 @@ import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeWorldState;
 import com.example.globe.world.BiomeSelectionProfile;
 import com.example.globe.world.VanillaBiomeRepresentationProfile;
+import com.example.globe.world.CaveBiomeRepresentationProfile;
 import com.example.globe.world.SpawnSafetyPolicy;
 import com.example.globe.world.WorldgenGeneratorAuthorityPolicy;
 import com.example.globe.util.BiomeSamplerTools;
@@ -259,8 +260,10 @@ public class GlobeMod implements ModInitializer {
             worldState.setProviderTicketProfile(profile);
             worldState.setVanillaRepresentationProfile(
                     VanillaBiomeRepresentationProfile.capture(pendingRadius, seed, profile));
+            worldState.setCaveRepresentationProfile(
+                    CaveBiomeRepresentationProfile.capture(pendingRadius, profile));
             worldState.setWorldgenPolicy(
-                    LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE);
+                    LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE);
             LOGGER.info("[Latitude] Recorded Globe world: border radius {} (from create-world selection)", pendingRadius);
         }
         ChunkGenerator generator = world.getChunkSource().getGenerator();
@@ -272,6 +275,7 @@ public class GlobeMod implements ModInitializer {
         LatitudeBiomes.activateWorldgenContext(radius, seed, worldState.getWorldgenPolicy(),
                 worldState.getProviderTicketProfile().orElse(null),
                 worldState.getVanillaRepresentationProfile().orElse(null),
+                worldState.getCaveRepresentationProfile().orElse(null),
                 world.getChunkSource().randomState().sampler(),
                 donorBiomeSource(generator),
                 generator.getSeaLevel());
@@ -302,6 +306,7 @@ public class GlobeMod implements ModInitializer {
         LatitudeBiomes.activateWorldgenContext(borderRadiusBlocks, seed, worldState.getWorldgenPolicy(),
                 worldState.getProviderTicketProfile().orElse(null),
                 worldState.getVanillaRepresentationProfile().orElse(null),
+                worldState.getCaveRepresentationProfile().orElse(null),
                 overworld.getChunkSource().randomState().sampler(),
                 donorBiomeSource(generator),
                 generator.getSeaLevel());
