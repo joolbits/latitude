@@ -2,11 +2,13 @@
 
 ---
 
-_**A world generation mod built around *geography* instead of randomness.**_
+_**Your Minecraft world becomes a planet.**_
 
-Latitude reorganizes Minecraft's biomes by latitude — jungles near the equator, tundra at the poles, and everything in between laid out the way it would be on a real planet. The world has a center (the equator) and edges (the poles), and the climate shifts as you travel between them.
+Vanilla scatters its biomes at random — a desert beside a taiga beside a mushroom island, with no rhyme and no *where*. Latitude replaces the shuffle with **geography**. Your world gets an equator at its heart, tropics around it, temperate country beyond that, and frozen poles at the far edge of the map. Climate isn't a dice roll anymore; it's a **place on the planet**.
 
-Latitude doesn't add biomes of its own. It takes the biomes you already have — vanilla, **plus packs like Biomes O' Plenty, Terralith, and Promenade** — and places them where they'd geographically belong. The result is a world that feels like it has real geography: coherent regions, believable transitions, and a reason to point your compass somewhere.
+That changes how it feels to play. North actually means something. A long journey passes through climates in the right order — jungle thinning into savanna, savanna drying into desert, forests going birch, then spruce, then snow. When your HUD reads **54°S**, you know exactly how far you are from home, and what the land will look like when you get where you're going.
+
+Latitude doesn't add biomes of its own. It takes the biomes you already have — vanilla, **plus packs like Biomes O' Plenty, Terralith, and Promenade** — and puts them where they'd belong on a real planet.
 
 ---
 
@@ -14,20 +16,9 @@ Latitude doesn't add biomes of its own. It takes the biomes you already have —
 
 ---
 
-## 📦 Which version do I get?
+## 🗺️ A world with real geography
 
-**Always download the file that matches your Minecraft version.**
-
-| Minecraft | Latitude | What you get |
-|---|---|---|
-| **26.2** | **1.5.0** — the final polish release of the 1.x line | Everything on this page |
-| 26.1.x / 1.21.11 / 1.21.1 / 1.20.1 | 1.3.0 | Core latitude worldgen + compass & HUD |
-
----
-
-## 🗺️ Climate Zones
-
-Five climate bands radiate outward from the equator at the center of the world toward the poles at the edges:
+Five climate bands radiate outward from the equator at the center of the world to the poles at its edges:
 
 | Zone | Character | Typical Biomes |
 |---|---|---|
@@ -37,21 +28,31 @@ Five climate bands radiate outward from the equator at the center of the world t
 | 🌨️ **Subpolar** | Cold, stark, increasingly sparse | Taiga, Snowy Plains, Grove |
 | ❄️ **Polar** | Frozen and forbidding | Snowy Plains, Ice Spikes, Frozen Ocean |
 
-Zones blend gradually — no hard lines where jungle suddenly becomes tundra. The equator reads as a humid, *varied* rainforest belt; true arid country sits out in the subtropics where it belongs, grading through a natural jungle → savanna → desert transition; and coherent regions replace biome "confetti."
-
-**When you create a world, you choose the climate where your journey begins** — any of the five zones, or Random — from Latitude's own create-world screen, with a live Atlas preview of your world.
+Zones blend gradually — no hard line where jungle becomes tundra. The equator reads as a humid, *varied* rainforest belt; true arid country sits out in the subtropics where it belongs; and biomes form coherent regions you can name and come back to, not single-block confetti.
 
 ---
 
 ## ⛰️ Mountains feel like mountains
 
-New in 1.5, on by default: climb high enough and forests thin out into a real **tree line**, ground gives way to **exposed alpine rock**, and the peaks above wear **snow caps whose snowline follows latitude** — lowest near the poles, highest in the dry subtropics, and absent at the equator, just like Earth's. The snowline is noise-warped rather than a flat contour, so caps sit unevenly along a ridge the way real snow does.
+Climb, and the world behaves the way a planet should. Forests thin out into a real **tree line**. Above it, the ground breaks into **exposed alpine rock**. And the peaks wear **snow caps whose snowline follows latitude** — hugging the ground near the poles, retreating to only the highest summits in the dry subtropics, and vanishing entirely at the equator, just like Earth's. The snowline wanders like real snow does, so no two ridgelines are capped the same way.
 
 ---
 
-## 🌐 World Sizes
+## 🥶 The world has edges — and they bite
 
-You pick a world size when you create the world. This controls how far the equator-to-pole journey is:
+A planet-shaped map makes the frontier a real place, with real stakes:
+
+- **Push toward the poles** and the cold turns against you — visibility collapses into a whiteout, frost creeps in, and the final stretch will kill the unprepared.
+- **Push east or west** and storms build at the rim of the map, with fair warning before you're in real trouble.
+- Zone and hemisphere titles announce your crossings, and even the loading screen knows where you are — it greets you with the climate zone you're loading into.
+
+Reaching a pole isn't a coordinate. It's an **expedition**.
+
+---
+
+## 🌐 Your planet, your scale
+
+Pick a world size when you create it — this sets how far the equator-to-pole journey is:
 
 | Size | Diameter | Feel |
 |---|---|---|
@@ -62,40 +63,30 @@ You pick a world size when you create the world. This controls how far the equat
 | Large | 30,000 × 30,000 | Long-haul survival |
 | Ginormous | 40,000 × 40,000 | Continental-scale trek |
 
-_Everything scales with the size you pick — biome band widths, border behavior, latitude math. A "Tiny" world doesn't just cut off a "Regular" world; it compresses the whole climate system proportionally._
+_Everything scales with the size you pick — band widths, border behavior, latitude math. A smaller world doesn't cut off a bigger one; it compresses the whole climate system proportionally._
 
-Latitude is **on by default** in the create-world screen; you can switch back to a vanilla or superflat world right there.
-
----
-
-## 🥶 The world has edges — and they bite
-
-A planet-shaped map means the frontier is a real place:
-
-- **Push toward the poles** and the cold turns hostile: visibility collapses into a whiteout, frost sets in, and the final stretch will kill the unprepared.
-- **Push east or west** and storms build at the edge of the map, with a fair warning before you're in trouble.
-- Zone and hemisphere titles announce your crossings, and the loading screen tells you which climate zone you're entering — new worlds and old saves alike.
+**And you choose where on the planet your story starts.** Latitude's create-world screen shows a live Atlas of your world — pick any of the five climate zones as your starting latitude, or leave it to fate with Random. Start easy in the temperate belt, or spawn at the frozen rim and earn your way to warmth. Latitude is on by default when you create a world, and you can switch back to vanilla right there.
 
 ---
 
-## 🧭 Compass & HUD
+## 🧭 Navigate like an explorer
 
-Latitude ships a built-in navigation HUD:
+Latitude ships a built-in navigation HUD, because on a planet, knowing *where you are* matters:
 
 - **Compass** — digital (cardinal, 8-way, or degrees) or analog with six color themes
-- **Latitude readout** — your current latitude, updating live
-- **Biome & zone detail** — where you are and what climate you're in, with its own text scaling
+- **Latitude readout** — your position on the planet, updating live
+- **Biome & zone detail** — what the land is, and what climate it belongs to
 - Everything customizable — size, color, opacity, position
 
 **HUD Studio:** press **F9** in-game (rebindable) to open a live editing screen — drag the title, compass, and location readout wherever you want, snap-to-grid or free. A quick keybind toggles the compass on and off.
 
-For server operators, release builds also include a small `/latitude` command set (`here`, `explainHere`, `probe`, `tpLat`, `tpBand`) for inspecting and navigating the climate map.
+For server operators, release builds include a small `/latitude` command set (`here`, `explainHere`, `probe`, `tpLat`, `tpBand`) for inspecting and navigating the climate map.
 
 ---
 
-## 🧩 Compatibility
+## 🧩 Plays well with others
 
-Latitude works through Minecraft's biome-tag system and **never hard-depends** on other mods — anything not installed is simply ignored. Only **Fabric API** is required. It plays well with terrain-shaping mods like **Tectonic**, **Geophilic**, and **William Wyther's Overhauled Overworld**.
+Latitude works through Minecraft's biome-tag system and **never hard-depends** on other mods — anything not installed is simply ignored. Only **Fabric API** is required. It pairs nicely with terrain-shaping mods like **Tectonic**, **Geophilic**, and **William Wyther's Overhauled Overworld**.
 
 **Custom biome packs are first-class citizens.** Biomes from **Biomes O' Plenty, Terralith, and Promenade** sort themselves into the right climate bands automatically — no setup, no config — with a safety rail that keeps biomes out of climates they don't belong in. In 1.5 the selection was rebuilt to be *provider-fair*: big packs no longer crowd each other out, and every world's mix follows its own seed. Pack authors can add support for other mods via datapack biome tags.
 
@@ -117,7 +108,7 @@ _**Lithosphere** compatibility is in active development._
 
 # 💛 About & Support
 
-If you've ever thought vanilla biome placement felt random and disconnected — a mushroom island next to a desert next to a taiga — this fixes that. Latitude is great for long-term survival worlds, exploration-focused playthroughs, and modpacks that want geographic coherence without piling on new content.
+If you've ever thought vanilla biome placement felt random and disconnected — this fixes that. Latitude is built for long-term survival worlds, exploration-focused playthroughs, and modpacks that want a world that feels like a real place without piling on new content.
 
 > 🧭 **A solo passion project — and my first mod.** Thank you for playing with Latitude; I hope you enjoy it as much as I do! :D
 >
