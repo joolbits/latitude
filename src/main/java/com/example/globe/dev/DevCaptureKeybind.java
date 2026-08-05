@@ -125,7 +125,7 @@ public final class DevCaptureKeybind {
                 requestOwned = true;
             }
             snapshot = freezeSnapshot(client);
-            RenderTarget framebuffer = client.gameRenderer.mainRenderTarget();
+            RenderTarget framebuffer = client.getMainRenderTarget();
             CaptureSnapshot frozenSnapshot = snapshot;
             Screenshot.takeScreenshot(
                     framebuffer,

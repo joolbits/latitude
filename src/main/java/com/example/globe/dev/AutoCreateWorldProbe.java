@@ -129,7 +129,7 @@ public final class AutoCreateWorldProbe {
             return;
         }
 
-        Screen screen = client.gui.screen();
+        Screen screen = client.screen;
 
         if (screen == null && client.level != null && client.player != null) {
             if (!AutoCreateWorldProbeState.isWorldEntered()) {
@@ -155,8 +155,8 @@ public final class AutoCreateWorldProbe {
                         return;
                     }
                     GlobeMod.LOGGER.info("[LAT][CWPATH] opening create-world probe");
-                    CreateWorldScreen.openFresh(client, () -> client.gui.setScreen(new TitleScreen()));
-                    Screen afterOpen = client.gui.screen();
+                    CreateWorldScreen.openFresh(client, () -> client.setScreen(new TitleScreen()));
+                    Screen afterOpen = client.screen;
                     GlobeMod.LOGGER.info("[LAT][CWPATH] current screen after open: {}",
                             afterOpen == null ? "null" : afterOpen.getClass().getName());
                 });
@@ -183,7 +183,7 @@ public final class AutoCreateWorldProbe {
                     if (AutoCreateWorldProbeState.isTimedOut()) {
                         return;
                     }
-                    Screen active = client.gui.screen();
+                    Screen active = client.screen;
                     if (!(active instanceof LatitudeCreateWorldScreen currentLatitudeScreen)) {
                         GlobeMod.LOGGER.info("[LAT][CWPATH] auto-confirm skipped; current screen is {}",
                                 active == null ? "null" : active.getClass().getName());
@@ -197,7 +197,7 @@ public final class AutoCreateWorldProbe {
                     }
                     GlobeMod.LOGGER.info("[LAT][CWPATH] auto-confirming world creation");
                     currentLatitudeScreen.probeAutoConfirmWorldCreation();
-                    Screen afterConfirm = client.gui.screen();
+                    Screen afterConfirm = client.screen;
                     GlobeMod.LOGGER.info("[LAT][CWPATH] current screen after confirm: {}",
                             afterConfirm == null ? "null" : afterConfirm.getClass().getName());
                 });
@@ -210,7 +210,7 @@ public final class AutoCreateWorldProbe {
                 && client.player != null) {
             GlobeMod.LOGGER.info("[LAT][CWPATH] world entry detected: level={} screen={}",
                     client.level.getClass().getName(),
-                    client.gui.screen() == null ? "null" : client.gui.screen().getClass().getName());
+                    client.screen == null ? "null" : client.screen.getClass().getName());
             AutoCreateWorldProbeState.markWorldEntered(client.level.getGameTime());
         }
 
@@ -305,8 +305,8 @@ public final class AutoCreateWorldProbe {
         GlobeMod.LOGGER.info("[LAT][CWPATH] clearing pause screen during autoCreateWorldProbe phase={} worldTime={}",
                 AutoCreateWorldProbeState.getPhase(),
                 client.level.getGameTime());
-        client.gui.setScreen(null);
-        return client.gui.screen();
+        client.setScreen(null);
+        return client.screen;
     }
 
     private static void emitAutoCreateWorldProbeTimeoutDiagnostics(Minecraft client, long startMs, long timeoutMs) {
@@ -316,7 +316,7 @@ public final class AutoCreateWorldProbe {
                 ? Math.max(0L, client.level != null ? client.level.getGameTime() - AutoCreateWorldProbeState.getWorldEnteredGameTime() : 0L)
                 : Math.max(0L, elapsedMs / 50L);
 
-        Screen current = client.gui.screen();
+        Screen current = client.screen;
         boolean hasWorld = client.level != null;
         boolean hasPlayer = client.player != null;
 
@@ -585,7 +585,7 @@ public final class AutoCreateWorldProbe {
                     worldName, seed, size);
             LatitudeCreateWorldScreen.openLoaded(
                     client,
-                    () -> client.gui.setScreen(new TitleScreen()),
+                    () -> client.setScreen(new TitleScreen()),
                     null,
                     recreatedState,
                     true);

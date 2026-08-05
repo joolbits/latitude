@@ -76,7 +76,7 @@ public final class CompassHud {
         }
 
         var cfg = CompassHudConfig.get();
-        boolean studioPreview = client.gui.screen() instanceof LatitudeHudStudioScreen;
+        boolean studioPreview = client.screen instanceof LatitudeHudStudioScreen;
 
         if (forceVisible && (studioPreview || client.player == null || client.level == null)) {
             if (studioPreview && shouldRenderPreviewHotbar(cfg)) {
@@ -91,7 +91,7 @@ public final class CompassHud {
             return;
         }
 
-        if (!forceVisible && client.gui.screen() != null) {
+        if (!forceVisible && client.screen != null) {
             return;
         }
 
@@ -146,7 +146,7 @@ public final class CompassHud {
     }
 
     public static HudBounds computeBounds(Minecraft client, CompassHudConfig cfg) {
-        boolean studioPreview = client.gui.screen() instanceof LatitudeHudStudioScreen;
+        boolean studioPreview = client.screen instanceof LatitudeHudStudioScreen;
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
             return computeAnalogBounds(
                     client.getWindow().getGuiScaledWidth(),
@@ -168,7 +168,7 @@ public final class CompassHud {
     }
 
     public static HudPoint computeBasePosition(Minecraft client, CompassHudConfig cfg) {
-        boolean studioPreview = client.gui.screen() instanceof LatitudeHudStudioScreen;
+        boolean studioPreview = client.screen instanceof LatitudeHudStudioScreen;
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
             return computeAnalogBasePosition(
                     client,
@@ -410,7 +410,7 @@ public final class CompassHud {
         double angle = Math.toRadians(Mth.wrapDegrees(yaw + 180.0f));
 
         if (isPreview
-                && client.gui.screen() instanceof LatitudeHudStudioScreen studio
+                && client.screen instanceof LatitudeHudStudioScreen studio
                 && studio.faceOpacityAdjustActive()) {
             drawTransparencyCheckerboard(ctx, x, compassY, diameter, diameter);
         }

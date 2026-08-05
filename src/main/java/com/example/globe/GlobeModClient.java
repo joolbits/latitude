@@ -138,13 +138,13 @@ public class GlobeModClient implements ClientModInitializer {
         }
 
         while (ClientKeybinds.OPEN_SETTINGS.consumeClick()) {
-            if (client.gui.screen() instanceof LatitudeHudStudioScreen) {
+            if (client.screen instanceof LatitudeHudStudioScreen) {
                 continue;
             }
-            if (client.gui.screen() == null) {
-                client.gui.setScreen(new LatitudeHudStudioScreen(null));
+            if (client.screen == null) {
+                client.setScreen(new LatitudeHudStudioScreen(null));
             } else {
-                client.gui.setScreen(new LatitudeHudStudioScreen(client.gui.screen()));
+                client.setScreen(new LatitudeHudStudioScreen(client.screen));
             }
         }
     }

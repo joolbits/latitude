@@ -46,7 +46,7 @@ public final class SeamAuditClientBridge {
         }
         client.execute(() -> {
             try {
-                RenderTarget framebuffer = client.gameRenderer.mainRenderTarget();
+                RenderTarget framebuffer = client.getMainRenderTarget();
                 if (framebuffer == null) {
                     GlobeMod.LOGGER.warn("[seamAudit] no framebuffer; skipping screenshot");
                     return;

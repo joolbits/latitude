@@ -300,7 +300,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 initialState.getName(),
                 initialState.getSeed() != null && !initialState.getSeed().isBlank(),
                 initialState.getSettings());
-        client.gui.setScreen(new LatitudeCreateWorldScreen(
+        client.setScreen(new LatitudeCreateWorldScreen(
                 onClose, parent, initialState, recreated, recreatedPresetId));
     }
 
@@ -474,22 +474,22 @@ public class LatitudeCreateWorldScreen extends Screen {
                     if (throwable != null) {
                         LOGGER.error("Failed to load datapacks for Latitude create-world screen", throwable);
                         onClose.run();
-                        if (client.gui.screen() == null || client.gui.screen() instanceof GenericMessageScreen) {
-                            client.gui.setScreen(parent);
+                        if (client.screen == null || client.screen instanceof GenericMessageScreen) {
+                            client.setScreen(parent);
                         }
                         return;
                     }
 
                     // Open the bespoke screen with the loaded holder.
-                    client.gui.setScreen(new LatitudeCreateWorldScreen(onClose, parent, loadedHolder));
+                    client.setScreen(new LatitudeCreateWorldScreen(onClose, parent, loadedHolder));
                 });
             });
         } catch (Exception e) {
             LOGGER.error("Failed to load datapacks for Latitude create-world screen", e);
             // 5A error path: return to caller screen, never show bespoke screen
             onClose.run();
-            if (client.gui.screen() == null || client.gui.screen() instanceof GenericMessageScreen) {
-                client.gui.setScreen(parent);
+            if (client.screen == null || client.screen instanceof GenericMessageScreen) {
+                client.setScreen(parent);
             }
         }
     }
@@ -1280,15 +1280,15 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void openGameRules() {
         if (this.minecraft == null) return;
-        this.minecraft.gui.setScreen(new WorldCreationGameRulesScreen(this.gameRules, optional -> {
+        this.minecraft.setScreen(new WorldCreationGameRulesScreen(this.gameRules, optional -> {
             optional.ifPresent(rules -> this.gameRules = rules);
-            this.minecraft.gui.setScreen(this);
+            this.minecraft.setScreen(this);
         }));
     }
 
     private void openHudStudio() {
         if (this.minecraft == null) return;
-        this.minecraft.gui.setScreen(new LatitudeHudStudioScreen(this));
+        this.minecraft.setScreen(new LatitudeHudStudioScreen(this));
     }
 
     // ── Begin Expedition ──
@@ -1348,8 +1348,8 @@ public class LatitudeCreateWorldScreen extends Screen {
     @Override
     public void onClose() {
         this.onClose.run();
-        if (this.minecraft != null && (this.minecraft.gui.screen() == this || this.minecraft.gui.screen() == null)) {
-            this.minecraft.gui.setScreen(this.parent);
+        if (this.minecraft != null && (this.minecraft.screen == this || this.minecraft.screen == null)) {
+            this.minecraft.setScreen(this.parent);
         }
     }
 
