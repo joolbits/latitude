@@ -43,10 +43,11 @@ roll, which let big packs crowd out entire providers and made different worlds r
 Latitude now picks a provider first, then a biome inside it, using your world seed — so a pack's share
 no longer depends on how many biomes it happens to ship.
 
-With Biomes O' Plenty and Terralith both installed, a measured world came out around 22% BoP /
-26–30% Terralith / ~50% vanilla, with 49 distinct custom biomes present. Terralith's orchid swamp and
-amethyst regions and BoP's marsh, wetland and tropics all show up in the right latitudes, and temperate
-forest dropped from a near-monoculture to a mix.
+With Biomes O' Plenty and Terralith both installed, sampled worlds came out around a fifth BoP, a
+quarter to a third Terralith, and about half vanilla, with dozens of distinct custom biomes present.
+Terralith's orchid swamp and amethyst regions and BoP's marsh, wetland and tropics all show up in the
+right latitudes, and temperate forest went from a near-monoculture to a genuine mix. Exact shares vary
+by seed, world size, and which packs you have installed.
 
 #### The poles feel like the poles
 
@@ -99,7 +100,7 @@ Highlights:
 - Biome coherence pass: accent biomes form patches, not confetti; no equatorial badlands; reduced
   cross-province bleed
 - Custom-biome provider selection rebuilt — packs are chosen by provider first, so large packs no
-  longer crowd each other out (measured ~22% BoP / 26–30% Terralith / ~50% vanilla with both installed)
+  longer crowd each other out
 - Pale Garden coherence, Mushroom Fields as real land, guaranteed cave representation, temperate coast
   and beach fixes
 - Polar whiteout fog replacing blindness; steadied frost damage; polar foliage suppression beyond 80°
