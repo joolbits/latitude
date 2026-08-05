@@ -80,6 +80,50 @@ mixin that cannot prove it applies; any temptation to copy algorithms by hand in
 transplanting (the algorithm is already on your branch — you cut from the 1.5 tag); any 2.0
 source/history inspection; scope creep beyond the kickoff's allowlist.
 
+## Model / reasoning-effort per thread
+
+Derived from `docs/binder/model-effort-strategy-20260702.md` (which lives on the 2.0 lineage that
+port threads must not browse — its governing conclusions are reproduced here).
+
+**Standing policy from that note, unchanged:**
+- **Fable is not in the default rotation.** Evidence: one large unrelated task consumed $45 and
+  exhausted a multi-day allocation on its first day. Ration it to a rare exception where a specific
+  wall provably resists Opus at max effort — not as a starting option.
+- **Ultracode / multi-agent is a coverage multiplier, not an execution mode.** Reserve it for
+  adversarial verification and for large mechanical migrations *after* a design is locked. Cost
+  scales with agent count regardless of the per-agent model.
+- **A thread cannot change its own ambient model** (that's `/model`, the maintainer's local command). It
+  *can* delegate one bounded question to a stronger model via the `Agent` tool's `model`/`effort`
+  params. **Protocol: at the start of each slice, say plainly which path you're taking** —
+  "recommend switching `/model` for this slice" vs "delegating this one decision to an Opus agent,
+  staying on the ambient model." Never silently do neither.
+
+**Per thread:**
+
+| Thread | Recommended | Escalate for |
+| --- | --- | --- |
+| 1 · 26.1.2 | **Opus, high** | Nothing expected — bounded reversal of a documented delta. Sonnet/medium is defensible if budget is tight; it is the pipeline's first run, which is the only argument for the higher tier. |
+| 2 · 1.21.11 | **Opus, high** | The render-extraction reversal *design* (one decision: how `extractRenderState`/`extractContent` map to `render` consistently across 4 screens + 5 mixins). Take that single decision to **xhigh/max** — it becomes the template threads 3 and 4 replay, so an error here has 3× blast radius. |
+| 3 · 1.21.1 | **Sonnet, medium** (mostly replays thread 2) | The **Lithosphere stretch slice** — genuinely novel, previously blocked on proof design. That is Opus **high/xhigh** work by the strategy note's own criteria. |
+| 4 · 1.20.1 | **Opus, high** | The networking rewrite if the `port-1.20.1-*.txt` corpus doesn't cover it cleanly. |
+
+**Why not ultracode during a port:** a port is a *serial* compile → fix → verify loop; you cannot
+parallelize "fix the next compiler RED," and `CLAUDE.md` forbids delegating long gradle runs to
+subagents (they strand and report completion with no findings). Fan-out would spend heavily to
+analyze work that must happen in sequence anyway.
+
+**Where ultracode does earn its cost:** one **pre-release adversarial sweep per port**, on the
+staged TEST jar, before the maintainer's live acceptance — the bug-catcher pattern the strategy note
+explicitly endorses. One shot, at the end, after the design is settled.
+
+**A note on what actually goes wrong.** Retrospective on the 1.5 release slice: every defect that
+reached a running client (a `@Shadow` on inherited methods that failed to apply, a
+`StringWidget.getWidth()` semantics assumption, a double-`activateLatitudeLoading()` that wiped
+state, a source-scan that missed list-element exclusions) was caught by **empirical verification** —
+decompiling the real class, running a negative fixture, live-testing — and not by additional
+reasoning. Buy verification discipline before buying model horsepower; the gates in this campaign
+are worth more than a tier upgrade.
+
 ## Per-target toolchain (from the proven 1.4-era branches; revalidate in Slice A)
 
 | Target | Loom | Java | Loader | Fabric API | Mappings (fallback) | Mixin level |

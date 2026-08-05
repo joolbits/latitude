@@ -11,6 +11,7 @@ conventions. This doc is only what is specific to 26.1.2.
   demands. **Forbidden**: everything on the Phase-5 denylist; 2.0 anything; scope creep.
 - **Why warm-up first**: cheapest port possible; validates the whole per-port pipeline
   (branch → gates → profile → TEST → release) before the real gaps.
+- **Model/effort**: Opus, high (Sonnet/medium defensible — bounded work; this is the pipeline's first run). See the campaign doc's model section; state your path at each slice.
 
 ## The map is exact: reverse these commits
 The Phase-5 port (26.1x→26.2) was 6 commits, 33 files, +182/−173 — reverse their intent from the

@@ -9,6 +9,7 @@ diffs replay here.
   `<home>/CascadeProjects/Latitude-port-1.5-1.21.1`, branch `port/1.5.0-1.21.1` (cut from
   `v1.5.0+26.2`). Mojmap spike per campaign; fallback Yarn `1.21.1+build.3`.
 - Toolchain: Java 21, loader 0.17.3, fabric-api 0.115.x+1.21.1, Loom ~1.14.10.
+- **Model/effort**: Sonnet, medium for the replay of thread 2; **Opus high/xhigh for the Lithosphere stretch slice** (novel, previously blocked). See the campaign doc's model section; state your path at each slice.
 
 ## Deltas BEYOND the 1.21.11 port (1.21.1 < 1.21.6, so these APIs vanish)
 - `MouseButtonEvent`/`KeyEvent` → primitive-arg signatures (`mouseClicked(double,double,int)`,
