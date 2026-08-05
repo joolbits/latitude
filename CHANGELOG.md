@@ -15,11 +15,14 @@ Latitude 1.5 targets **Minecraft 26.2**.
 - **Back up your worlds first.** If you are coming from 1.3 (Minecraft 1.21.11) or 1.4
   (Minecraft 26.1.2), Minecraft itself converts your save to the 26.2 format the first time you open
   it, and that conversion cannot be undone. Keep a copy of the save folder before you launch.
-- **Existing worlds keep the generation they were created with.** A world made before 1.5 keeps its
-  original worldgen — including in chunks you have not visited yet. The rebuilt climate model,
-  provider selection, and biome diversity described below apply to **newly created worlds**. This is
-  deliberate: it stops terrain you have already explored from changing underneath you, and it means
-  updating will not retroactively improve an existing save.
+- **Existing worlds keep their original biome selection.** A world made before 1.5 stays pinned to the
+  biome policy it was created under, including in chunks you have not visited yet. The rebuilt climate
+  model, provider selection, and biome-diversity work below therefore apply to **newly created
+  worlds**. This is deliberate: it stops terrain you have already explored from changing underneath you.
+- **Surface-level features are not pinned that way.** The tree line and alpine snow caps below are
+  applied as terrain is generated, so they *will* appear in newly generated chunks of an existing
+  world. Already-generated chunks are untouched, which means an older save can show a visible seam
+  where forested summits meet the new bare-and-snowcapped ones.
 
 ### The climate map reads like a real world now
 
@@ -48,6 +51,32 @@ how climate is decided.
   materializing its planned island terrain; placement now reaches the actual chunk-writing path.
 - **Cave representation is guaranteed** rather than incidental, without unsafe surface expression.
 - **Meadow** no longer leaks into the lowland fallback, and flat wetlands stay off mountain terrain.
+
+### Mountains feel like mountains
+
+New in this release and on by default: a real tree line, and snow-capped peaks whose snowline follows
+latitude.
+
+- **Forests now thin out with altitude instead of climbing to the summit.** Trees start dropping away
+  around Y140 and stop entirely by Y168, so the tree line arrives as a gradual thinning rather than a
+  hard edge.
+- **Above the line, ground gives way to exposed alpine rock**, with a fading shelf of meadow just above
+  it so the change does not read as a painted stripe.
+- **Higher still, peaks wear snow — and where snow begins depends on your latitude**, shaped after
+  Earth's real climatic snowline, which sits lowest near the poles and rises toward the dry subtropics:
+
+  | Band | Snow begins |
+  | --- | --- |
+  | Polar | essentially all high terrain |
+  | Subpolar | low snowline, near-full alpine cover |
+  | Temperate | on the peaks |
+  | Subtropical | only the highest summits |
+  | Tropical | none — no equatorial glaciers |
+
+- **The snowline is noise-warped rather than a flat contour**, so caps sit unevenly along a ridge the
+  way real snow does instead of cutting every peak at the same height.
+- **Nothing pokes through the caps.** The snow zone deliberately carries no grass, so you will not get
+  flowers and tufts standing up through a snowfield.
 
 ### Custom biome support (Biomes O' Plenty, Terralith, and friends)
 

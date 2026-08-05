@@ -23,10 +23,32 @@ If you played 1.3, this will not feel like a point release.
 your save to the 26.2 format on first open, and that conversion cannot be undone. Keep a copy of the
 save folder before you launch.
 
-**Existing worlds keep the generation they were created with** — including in chunks you have not
-visited yet. Everything below applies to **newly created worlds**. That is deliberate: it stops
-terrain you have already explored from changing underneath you, and it means updating will not
-retroactively improve an existing save.
+**Existing worlds keep their original biome selection** — including in chunks you have not visited
+yet. The climate-model and custom-biome work below therefore applies to **newly created worlds**. That
+is deliberate: it stops terrain you have already explored from changing underneath you.
+
+**The tree line and snow caps are the exception.** Those are applied as terrain generates, so they will
+show up in newly generated chunks of an existing world too. Already-generated chunks are untouched, so
+an older save can show a seam where forested summits meet the new bare-and-snowcapped ones.
+
+#### Mountains feel like mountains
+
+New in this release and on by default: a real tree line, and snow-capped peaks whose snowline follows
+latitude.
+
+Forests now thin out with altitude instead of climbing to the summit — trees start dropping away around
+Y140 and stop entirely by Y168, so the tree line arrives as a gradual thinning rather than a hard edge.
+Above it, ground gives way to exposed alpine rock, with a fading shelf of meadow just above the line so
+the change does not read as a painted stripe.
+
+Higher still, peaks wear snow, and where snow begins depends on your latitude — shaped after Earth's
+real climatic snowline, which sits lowest near the poles and rises toward the dry subtropics. Polar
+terrain is snow-covered almost throughout; subpolar has a low snowline; temperate peaks are capped;
+in the subtropics only the highest summits are; and there are no equatorial glaciers at all.
+
+The snowline is noise-warped rather than a flat contour, so caps sit unevenly along a ridge the way
+real snow does instead of cutting every peak at the same height. And the snow zone deliberately carries
+no grass, so nothing pokes up through the caps.
 
 #### The climate map reads like a real world
 
@@ -108,13 +130,17 @@ full, plus the 1.5 polish campaign.
 
 - **Back up your worlds first.** Coming from 1.3 (MC 1.21.11) or 1.4 (MC 26.1.2), Minecraft converts
   your save to the 26.2 format on first open, and that conversion cannot be undone.
-- **Existing worlds keep the generation they were created with**, including in chunks you have not
-  visited yet. The highlights below apply to **newly created worlds**. This is deliberate: it stops
-  explored terrain changing underneath you, and means updating will not retroactively improve an
-  existing save.
+- **Existing worlds keep their original biome selection**, including in chunks you have not visited
+  yet, so the climate-model and custom-biome work below applies to **newly created worlds**. The tree
+  line and snow caps are the exception — they apply as terrain generates, so they appear in newly
+  generated chunks of existing worlds too, which can leave a visible seam at an old save's frontier.
 
 Highlights:
 
+- **Mountains feel like mountains** — a real tree line (forests thin out with altitude instead of
+  reaching the summit), exposed alpine rock above it, and snow-capped peaks whose snowline follows
+  latitude the way Earth's does: lowest at the poles, highest in the dry subtropics, absent at the
+  equator. On by default.
 - Rebuilt latitude-aware climate model — humid equator, subtropical arid belt, believable
   jungle → savanna → desert gradient
 - Biome coherence pass: accent biomes form patches, not confetti; no equatorial badlands; reduced
