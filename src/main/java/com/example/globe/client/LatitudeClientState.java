@@ -36,10 +36,17 @@ public final class LatitudeClientState {
         if (expeditionStartMs <= 0L) {
             expeditionStartMs = System.currentTimeMillis();
         }
+        if (!latitudeWorldLoading) {
+            // Only clear on this sequence's FIRST activation. activateLatitudeLoading() is called
+            // again later in the SAME sequence — e.g. when the GlobeStatePayload handshake packet
+            // arrives after join — and must not wipe out a label a caller already set for this
+            // load. (Bug: the label was showing for ~1s then vanishing mid-load, because this
+            // second call was clearing it before the loading screen ever closed.)
+            loadingZoneLabel = null;
+        }
         latitudeWorldLoading = true;
         latitudeLoadingProgress = 0f;
         clientReadyObserved = false;
-        loadingZoneLabel = null;
     }
 
     public static boolean isLatitudeWorldLoading() {

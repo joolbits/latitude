@@ -11,6 +11,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
 import net.minecraft.util.Mth;
 import net.minecraft.util.Util;
 import org.spongepowered.asm.mixin.Mixin;
@@ -44,6 +45,9 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     // points, with intentional tracking between letters via literal spaces in the string.
     @Unique private static final float LOADING_TITLE_SCALE = 13.0f / 9.0f;
     @Unique private static final String LOADING_TITLE_TEXT = "L A T I T U D E";
+    // Deliberately quiet: smaller than body text, muted rather than warm-white, italic — a
+    // background detail, not something competing with the title or the rotating phrase.
+    @Unique private static final float ZONE_LABEL_SCALE = 0.75f;
     @Unique private static final float globe$VERSION_LABEL_SCALE = 0.67f;
     @Unique private static final int globe$VERSION_LABEL_GAP = 4;
     @Unique private static final int globe$VERSION_LABEL_SCREEN_MARGIN = 2;
@@ -212,8 +216,8 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         // ── Zone label (optional) — the climate zone this load is entering or resuming ──
         String zoneLabel = LatitudeClientState.loadingZoneLabel();
         if (zoneLabel != null) {
-            globe$drawCentered(context, "Loading " + zoneLabel, cx, cursorY, WARM_WHITE, false);
-            cursorY += this.font.lineHeight + 3;
+            globe$drawMutedItalicCentered(context, "Loading " + zoneLabel, cx, cursorY, ZONE_LABEL_SCALE, MUTED);
+            cursorY += Math.round(this.font.lineHeight * ZONE_LABEL_SCALE) + 3;
         }
 
         // ── Loading hint ──
@@ -306,6 +310,21 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         matrices.translate((float) x, (float) y);
         matrices.scale(scale, scale);
         context.text(this.font, text, 0, 0, color, shadow);
+        matrices.popMatrix();
+    }
+
+    /** Same scaled/centered treatment as globe$drawScaledCentered, but italic — used only for
+     * the quiet zone-label line, never for the title. */
+    @Unique
+    private void globe$drawMutedItalicCentered(GuiGraphicsExtractor context, String text, int cx, int y, float scale, int color) {
+        Component styled = Component.literal(text).withStyle(Style.EMPTY.withItalic(true));
+        int w = Math.round(this.font.width(styled) * scale);
+        int x = cx - w / 2;
+        var matrices = context.pose();
+        matrices.pushMatrix();
+        matrices.translate((float) x, (float) y);
+        matrices.scale(scale, scale);
+        context.text(this.font, styled, 0, 0, color, false);
         matrices.popMatrix();
     }
 

@@ -85,6 +85,9 @@ loom {
             vmArg "-Dlatitude.fixSurfaceDripstone=true"
             vmArg "-Dlatitude.fogClampIndex=${System.getProperty('latitude.fogClampIndex', '-1')}"
             vmArg "-Dlatitude.fogClampValue=${System.getProperty('latitude.fogClampValue', '16.0')}"
+            // AutoCreateWorldProbe defaults ON in a dev environment; forward this so a plain
+            // manual-testing launch can suppress it without touching the default for anyone else.
+            vmArg "-Dlatitude.debug.autoCreateWorldProbe.disable=${System.getProperty('latitude.debug.autoCreateWorldProbe.disable', 'false')}"
         }
         server {
             runDir latitudeRunDir
