@@ -10,6 +10,17 @@ below for reference; everything in them is included here.
 
 Latitude 1.5 targets **Minecraft 26.2**.
 
+### Before you update
+
+- **Back up your worlds first.** If you are coming from 1.3 (Minecraft 1.21.11) or 1.4
+  (Minecraft 26.1.2), Minecraft itself converts your save to the 26.2 format the first time you open
+  it, and that conversion cannot be undone. Keep a copy of the save folder before you launch.
+- **Existing worlds keep the generation they were created with.** A world made before 1.5 keeps its
+  original worldgen — including in chunks you have not visited yet. The rebuilt climate model,
+  provider selection, and biome diversity described below apply to **newly created worlds**. This is
+  deliberate: it stops terrain you have already explored from changing underneath you, and it means
+  updating will not retroactively improve an existing save.
+
 ### The climate map reads like a real world now
 
 This is the headline of the 1.3 → 1.5 span, and it is not a tuning pass — it is a rebuilt model of

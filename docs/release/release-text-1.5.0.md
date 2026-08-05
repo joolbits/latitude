@@ -17,6 +17,17 @@ plus the whole 1.5 polish campaign on top of it.
 
 If you played 1.3, this will not feel like a point release.
 
+#### Before you update
+
+**Back up your worlds first.** Coming from 1.3 (MC 1.21.11) or 1.4 (MC 26.1.2), Minecraft converts
+your save to the 26.2 format on first open, and that conversion cannot be undone. Keep a copy of the
+save folder before you launch.
+
+**Existing worlds keep the generation they were created with** — including in chunks you have not
+visited yet. Everything below applies to **newly created worlds**. That is deliberate: it stops
+terrain you have already explored from changing underneath you, and it means updating will not
+retroactively improve an existing save.
+
 #### The climate map reads like a real world
 
 The warm-side moisture model used to ignore latitude, so deserts scattered evenly across every warm
@@ -92,6 +103,15 @@ Per-pack representation weighting is on the roadmap.
 
 First platform release since 1.3. Includes the previously GitHub-only 1.4 "Cohesive Horizons" line in
 full, plus the 1.5 polish campaign.
+
+### Before you update
+
+- **Back up your worlds first.** Coming from 1.3 (MC 1.21.11) or 1.4 (MC 26.1.2), Minecraft converts
+  your save to the 26.2 format on first open, and that conversion cannot be undone.
+- **Existing worlds keep the generation they were created with**, including in chunks you have not
+  visited yet. The highlights below apply to **newly created worlds**. This is deliberate: it stops
+  explored terrain changing underneath you, and means updating will not retroactively improve an
+  existing save.
 
 Highlights:
 
