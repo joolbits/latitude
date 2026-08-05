@@ -112,6 +112,21 @@ parallelize "fix the next compiler RED," and `CLAUDE.md` forbids delegating long
 subagents (they strand and report completion with no findings). Fan-out would spend heavily to
 analyze work that must happen in sequence anyway.
 
+**Director-pattern token economics (asked and settled 2026-08-05):** an "expensive director,
+cheap workers" setup does NOT save tokens on port work. The director seat accumulates the largest,
+longest-lived context at the priciest rate; and subagents inherit no context — each spawn re-buys
+the kickoff/delta/file context at full input price, while an ambient model iterating on the same
+files pays cheap cache-read rates for everything it already holds. Scale anchors from the release
+session: one 14-agent review workflow = 2.09M subagent tokens; two exploration agents = ~284k.
+Therefore: **ambient = the working model** (per the table above); **delegate UP rarely** (one
+bounded hard decision per thread to a stronger agent); **delegate DOWN only for genuinely parallel
+mechanical batches** (e.g. thread 2's four screens converted concurrently from the locked mapping
+template by Sonnet agents; the end-of-port sweep). Fable as a long-lived director is the worst
+possible token allocation; if used at all, it is a one-shot consult on a proven wall. Budget floor
+if tokens are the binding constraint: Sonnet ambient everywhere + delegate-up for each thread's
+named hard decisions — defensible because this campaign's gate density catches what a mid-tier
+model misses; record the downgrade in the binder if taken.
+
 **Where ultracode does earn its cost:** one **pre-release adversarial sweep per port**, on the
 staged TEST jar, before the maintainer's live acceptance — the bug-catcher pattern the strategy note
 explicitly endorses. One shot, at the end, after the design is settled.
