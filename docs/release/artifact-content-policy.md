@@ -62,12 +62,27 @@ A command may ship when **all** of the following hold:
 | --- | --- | --- |
 | Permitted operator queries | `help`, `here`, `explainHere` (chat-only variant), `probe`, `tpLat`, `tpBand`, `flyspeed` | **Yes** |
 | Recording | `DevTestSession` (`case`/`start`/`mark`/`capture`/`finish`), `DevPresentationTrace` (`presentationTrace`), `BiomePreviewExporter` (`biomePng`, `biomePngY`), `DevCaptureKeybind` + `ClipboardImageWriter`, `BiomePreviewHeadlessRunner`, `LatitudeDevCommand.writeExplainLog` | No |
-| Sentinel | `ChunkPregenerator` jobs (`transect`, `transectDeg`, `slicePoleNS`, `pause`, `resume`, `stop`, `status`, `budgetMs`, `budgetAuto`), `ChunkRegenerator` (`regenSquare`), `SeamAuditCoordinator` (`seamAudit`), `audit/AutonomousSeamAuditJob` | No |
+| Sentinel | `ChunkPregenerator` jobs (`transect`, `transectDeg`, `slicePoleNS`, `pause`, `resume`, `stop`, `status`, `budgetMs`, `budgetAuto`), `ChunkRegenerator` (`regen`, `regenChunk`), `SeamAuditCoordinator` (`seamAudit`), `audit/AutonomousSeamAuditJob` | No |
 | Auto-harness | `AutoCreateWorldProbe`, `client/SeamAuditClientBridge`, `client/audit/SeamAuditHarness` | No |
 
 `explainHere` ships **only** with its file-writing path removed. The development variant writes
 `run/latdev/explain/<timestamp>_x<X>_z<Z>.txt` and `latest.txt`; the shipped variant returns the same
 content as chat output and touches no filesystem path.
+
+### Root verb
+
+The shipping surface is rooted at **`/latitude`**. `/latdev` remains development- and TEST-only.
+Separate roots are deliberate: the two trees never have to merge at runtime, and a public artifact
+does not advertise a development surface.
+
+### Rulings on the boundary (owner, 2026-08-04)
+
+- **Chunk generation is game state, not a record.** `tpLat` and `tpBand` force-generate the
+  destination chunk, which persists region files. That is the same thing walking there would do, so
+  it does not count as recording under excluded-class 1. Recorded here so the boundary is explicit
+  rather than re-litigated each release.
+- **`flyspeed` persistence is game state.** It writes the player's flying speed through Minecraft's
+  own save path; it stores no observation.
 
 ## Enforcement points
 
@@ -83,6 +98,14 @@ edit can quietly widen what ships.
 3. **Verifier assertions.** `tools/verify_phase6_dev_tooling.py` asserts that a public jar contains zero
    `com/example/globe/dev/**` entries, that it *does* contain the shipping `com/example/globe/tools/**`
    surface, and that shipping command sources contain no file-write, tick-listener, or harness references.
+   Its `verify_tools_sources()` also pins the shipped subcommand and argument sets **exactly**, so an
+   unknown new subcommand fails the gate rather than widening the surface silently.
+6. **Build-enforced, not script-enforced.** `latitudeShippingToolsPolicyTest` and
+   `latitudeArtifactPolicySourceScan` run under `check`. This repository has no CI, so a verifier that
+   nothing invokes is not an enforcement point — the boundary has to be wired into the build itself.
+7. **Registration containment.** Command registration exists only in `com.example.globe.tools` and
+   `com.example.globe.dev`; no other package may reference Brigadier. A new command therefore cannot
+   reach a release artifact without passing through the gated surface.
 4. **Artifact identity.** A release artifact carries no `Latitude-Artifact-Role: TEST`, no
    `latitude:test_artifact` custom value, and `Build-Dirty: false`. `LatitudeDevRuntime`'s identity gate
    keeps TEST-only tooling inert in anything that is not a valid TEST artifact.

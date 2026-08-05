@@ -50,6 +50,183 @@ def method_body(source: str, signature: str) -> str:
     return ""
 
 
+PERMITTED_TOOLS_LITERALS = {
+    "latitude",
+    "help",
+    "here",
+    "explainHere",
+    "probe",
+    "tpLat",
+    "tpBand",
+    "flyspeed",
+}
+
+PERMITTED_TOOLS_ARGUMENTS = {
+    "level",
+    "signedDegrees",
+    "x",
+    "band",
+    "edge",
+    "radiusBlocks",
+    "samples",
+}
+
+
+def verify_tools_sources(failures: list[str]) -> None:
+    """Enforce the artifact content policy on the shipping operator surface.
+
+    The dev packaging boundary is closed by build.gradle. This is the equivalent gate for
+    com.example.globe.tools, which IS packaged into release artifacts: it must never acquire
+    recording, sentinel, or auto-harness behaviour. See docs/release/artifact-content-policy.md.
+    """
+    tools_dir = ROOT / "src/main/java/com/example/globe/tools"
+    if not tools_dir.is_dir():
+        failures.append("shipping tools package is missing")
+        return
+
+    command_path = tools_dir / "LatitudeToolsCommand.java"
+    if not command_path.is_file():
+        failures.append("shipping tools package is missing LatitudeToolsCommand.java")
+        return
+
+    sources = {path.name: path.read_text(encoding="utf-8") for path in sorted(tools_dir.glob("*.java"))}
+    combined = "\n".join(sources.values())
+    command = sources["LatitudeToolsCommand.java"]
+
+    # T2 NO RECORDING - nothing in the shipping surface may persist an observation.
+    for needle in (
+        "java.nio.file", "java.io.File", "Files.", "Paths.", "FileOutputStream", "FileWriter",
+        "PrintWriter", "BufferedWriter", "createDirectories", "writeString", "ImageIO",
+        "Screenshot", "Clipboard", "getServerDirectory", "writeExplainLog", "latdev/explain",
+        "latest.txt", "LOGGER", "printStackTrace",
+    ):
+        if needle in combined:
+            failures.append(f"shipping tools source contains recording behaviour: {needle!r}")
+
+    # T3 NO SENTINEL - nothing may keep acting after the command returns.
+    for needle in (
+        "ServerTickEvents", "ClientTickEvents", "ServerLifecycleEvents", "CommandRegistrationCallback",
+        "new Thread", "Executors", "CompletableFuture", "ScheduledExecutor", "new Timer",
+        "ChunkPregenerator", "ChunkRegenerator", "SeamAuditCoordinator", "BiomePreviewExporter",
+    ):
+        if needle in combined:
+            failures.append(f"shipping tools source contains sentinel behaviour: {needle!r}")
+
+    # T4 NO AUTO-HARNESS - nothing may arm itself without an explicit player command.
+    for needle in (
+        "ModInitializer", "ClientModInitializer", "KeyMapping", "KeyBindingHelper",
+        "System.getProperty", "Boolean.getBoolean", "Integer.getInteger", "FabricLoader",
+        "isDevelopmentEnvironment", "AutoCreateWorldProbe", "DevCaptureKeybind",
+        "latitude.debug.", "latitude.dev.",
+    ):
+        if needle in combined:
+            failures.append(f"shipping tools source contains auto-harness behaviour: {needle!r}")
+
+    # T5 NO DEV COUPLING - a class-level reference would force-load an excluded sentinel.
+    for needle in ("com.example.globe.dev", "com.example.globe.debug"):
+        if needle in combined:
+            failures.append(f"shipping tools source couples to an excluded package: {needle!r}")
+
+    # T6 operator gating, applied exactly once at the root.
+    require(command, ".requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))",
+            "shipping operator permission gate", failures)
+    if command.count(".requires(") != 1:
+        failures.append(
+            f"shipping tools must gate exactly once at the root: found {command.count('.requires(')}")
+
+    # T7 exactly one registration.
+    if command.count("dispatcher.register(") != 1:
+        failures.append(
+            f"shipping tools must register exactly one root: found {command.count('dispatcher.register(')}")
+
+    # T8/T9 EXACT literal and argument sets - fail closed, so an unknown new subcommand is a
+    # failure rather than a silent widening. Compare counts as well as sets so that a duplicate
+    # or a dynamically-built literal cannot hide inside a matching set.
+    literals = re.findall(r'Commands\.literal\(\s*"([^"]*)"\s*\)', command)
+    if set(literals) != PERMITTED_TOOLS_LITERALS:
+        failures.append(
+            f"shipping tools literals are not exactly the permitted set: {sorted(set(literals))}")
+    if len(literals) != len(re.findall(r"Commands\.literal\(", command)):
+        failures.append("shipping tools contain a non-literal Commands.literal( call")
+
+    arguments = re.findall(r'Commands\.argument\(\s*"([^"]*)"', command)
+    if set(arguments) != PERMITTED_TOOLS_ARGUMENTS:
+        failures.append(
+            f"shipping tools arguments are not exactly the permitted set: {sorted(set(arguments))}")
+    if len(arguments) != len(re.findall(r"Commands\.argument\(", command)):
+        failures.append("shipping tools contain a non-literal Commands.argument( call")
+
+    # A static import would make literal("x") invisible to both counts above.
+    for needle in ("import static net.minecraft.commands.Commands", "import static com.mojang.brigadier"):
+        if needle in command:
+            failures.append(f"shipping tools must not statically import command builders: {needle!r}")
+
+    # T10 executable count.
+    if command.count(".executes(") != 10:
+        failures.append(
+            f"shipping tools must expose exactly 10 executable nodes: found {command.count('.executes(')}")
+
+    # T11 SHIPPED LATITUDE LAW - the shipped commands must obey the same coordinate laws as dev.
+    require(command, "DoubleArgumentType.doubleArg(-90.0, 90.0)", "shipping latitude domain", failures)
+    require(command, "targetZ + 0.5", "shipping block-center teleport", failures)
+    tp_lat_body = method_body(command, "private static int tpLat(")
+    require(tp_lat_body, "LatitudeMath.worldRadiusBlocks(border)", "shipping tpLat border radius", failures)
+    forbid(tp_lat_body, "authoritativeRadius(source)", "shipping tpLat authority radius misuse", failures)
+    here_body = method_body(command, "private static int here(")
+    require(here_body, "BandTarget.fromZ(radius, pos.getZ())", "shipping here band resolution", failures)
+    radius_body = method_body(command, "private static int authoritativeRadius(")
+    require(radius_body, "LatitudeToolsMath.productionLatitudeRadius(",
+            "shipping production radius law", failures)
+
+    # T12 REGISTRATION SHAPE - registered unconditionally, never behind the dev gate.
+    globe = read("src/main/java/com/example/globe/GlobeMod.java")
+    require(globe, "LatitudeToolsCommand.register(dispatcher)", "shipping tools registration", failures)
+    forbid(method_body(globe, "private static void registerDevOnlyCommand("),
+           "LatitudeToolsCommand", "shipping tools behind the dev gate", failures)
+    forbid(globe, 'invokeDevRegister("com.example.globe.tools',
+           "shipping tools registered reflectively", failures)
+
+    # T13 BRIGADIER CONTAINMENT - command registration may exist only in tools/ and dev/, so a
+    # third package cannot quietly add an unreviewed command to a release artifact.
+    main_root = ROOT / "src/main/java"
+    for path in main_root.rglob("*.java"):
+        relative = path.relative_to(main_root).as_posix()
+        if relative.startswith(("com/example/globe/tools/", "com/example/globe/dev/")):
+            continue
+        text = path.read_text(encoding="utf-8")
+        for needle in ("com.mojang.brigadier", "Commands.literal(", "dispatcher.register("):
+            if needle in text:
+                failures.append(f"command registration outside tools/ and dev/: {relative} ({needle!r})")
+
+    # T14 the packaging boundary must not be re-drawn around the shipping package. Referencing
+    # the package for task wiring is required and fine; EXCLUDING it is the regression.
+    #
+    # Scan the exclusion CONSTRUCTS, not lines containing the word "exclude": pattern-list entries
+    # sit on their own lines, so a line-scoped check silently misses an element added to
+    # releaseArtifactPatternExcludes - which is exactly how a release would ship with zero
+    # operator commands while every other gate stayed green. (Found by negative fixture, 2026-08-04.)
+    build = read("build.gradle")
+    exclusion_blocks: list[str] = []
+    list_start = build.find("def releaseArtifactPatternExcludes")
+    if list_start >= 0:
+        list_end = build.find("]", list_start)
+        exclusion_blocks.append(build[list_start : list_end + 1] if list_end > 0 else build[list_start:])
+    exclusion_blocks.append(method_body(build, "def releaseArtifactExcludeSpec"))
+
+    for block in exclusion_blocks:
+        for pattern in re.findall(r"'([^']*)'", block):
+            if "tools" not in pattern.lower():
+                continue
+            # 'tools/**' is root-anchored: it strips the repository's own tools/ directory from
+            # the artifact and cannot match com/example/globe/tools/. Anything else mentioning
+            # "tools" is treated as an attempt to exclude the shipping package.
+            if pattern == "tools/**":
+                continue
+            failures.append(f"build.gradle exclusion may strip the shipping tools package: {pattern!r}")
+    forbid(read("src/main/resources/fabric.mod.json"), "com.example.globe.tools",
+           "production metadata references the tools package", failures)
+
+
 def verify_sources(failures: list[str]) -> None:
     globe = read("src/main/java/com/example/globe/GlobeMod.java")
     globe_client = read("src/main/java/com/example/globe/GlobeModClient.java")
@@ -566,16 +743,72 @@ def verify_public_entries(
         for name, value in entries.items()
         if name.endswith((".class", ".json", ".properties", ".mf", ".MF"))
     )
+    # NOTE: b"flyspeed" and b"tpLat" were removed from this denylist on 2026-08-04. They are
+    # permitted operator commands that now ship in com.example.globe.tools by owner directive.
+    # Every needle below was measured absent from a real release jar before being added; do NOT
+    # add b"budgetMs" (present in BiomeSamplerTools$InventoryScanProcessor as a parameter name)
+    # or bare generic words like b"pause"/b"stop"/b"regen" (they occur across data/globe/tags).
+    # The excluded-subcommand surface is covered fail-closed by the exact-literal-set assertions
+    # in verify_tools_sources() and by ShippingToolsPolicyTest, not by generic substrings.
     for denied in (
-        b"flyspeed",
-        b"tpLat",
         b"presentationTrace",
         b"case started",
         b"capture_requested",
         b"latitude-dev-case-v1",
+        b"seamAudit",
+        b"biomePng",
+        b"transect",
+        b"slicePoleNS",
+        b"regenChunk",
+        b"budgetAuto",
+        b"captures-v3.csv",
+        b"latdev/explain",
+        b"latdev/cases",
+        b"key.globe.dev_explain_here",
+        b"latitude.debug.autoCreateWorldProbe",
     ):
         if denied in payload:
             failures.append(f"public jar contains Phase 6 action payload: {denied!r}")
+
+    # J2: positive presence. The shipping operator surface must actually be in the artifact.
+    # This is the only mechanical guard against releaseArtifactPatternExcludes silently
+    # swallowing the package: without it, a jar with zero operator commands is fully green.
+    if not any(name.startswith("com/example/globe/tools/") for name in entries):
+        failures.append("public jar is missing the shipping tools package")
+
+    # J6: bytecode scan scoped to the tools prefix ON PURPOSE. GlobeModClient.class legitimately
+    # carries com/example/globe/dev/ constant-pool references behind its isDevelopmentEnvironment
+    # guard (measured), so a whole-jar scan for that needle is a guaranteed false red.
+    tools_payload = b"".join(
+        value
+        for name, value in entries.items()
+        if name.startswith("com/example/globe/tools/")
+    )
+    for denied in (
+        b"com/example/globe/dev/",
+        b"com/example/globe/debug/",
+        b"java/nio/file/Files",
+        b"java/io/FileOutputStream",
+        b"java/io/PrintWriter",
+        b"printStackTrace",
+        b"getServerDirectory",
+        b"latdev/explain",
+        b"ServerTickEvents",
+        b"ClientTickEvents",
+        b"java/lang/Thread",
+        # Deny markers of ACTUAL asynchronous work, not the CompletableFuture type itself:
+        # Brigadier's tab-completion API (SharedSuggestionProvider.suggest) returns an
+        # already-completed CompletableFuture, so any command with suggestions carries that type
+        # in its constant pool. Denying the bare type is a guaranteed false red. (Measured against
+        # a real release jar, 2026-08-04.)
+        b"supplyAsync",
+        b"runAsync",
+        b"Executors",
+        b"ScheduledExecutor",
+    ):
+        if denied in tools_payload:
+            failures.append(f"shipping tools package contains excluded payload: {denied!r}")
+
     if not jar_path.name.endswith(".jar"):
         failures.append(f"public artifact is not a jar: {jar_path.name}")
     return metadata, manifest
@@ -919,6 +1152,7 @@ def main() -> int:
 
     failures: list[str] = []
     verify_sources(failures)
+    verify_tools_sources(failures)
     public_jar = args.public_jar or args.jar
     if args.test_jar and not public_jar:
         failures.append("--test-jar requires --public-jar")

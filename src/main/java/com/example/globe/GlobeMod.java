@@ -125,6 +125,10 @@ public class GlobeMod implements ModInitializer {
 
         GlobeNet.registerPayloads();
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            // Shipping operator commands: unconditional and directly linked. Unlike the dev tree,
+            // com.example.globe.tools is packaged into release artifacts, so a missing class is a
+            // build error worth surfacing rather than something to swallow reflectively.
+            com.example.globe.tools.LatitudeToolsCommand.register(dispatcher);
             registerDevOnlyCommand(dispatcher);
         });
 

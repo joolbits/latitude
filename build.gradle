@@ -643,6 +643,72 @@ tasks.named('check').configure {
     dependsOn tasks.named('latitudeDevToolPolicyTest')
 }
 
+def latitudeSpawnSafetyPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeSpawnSafetyPolicyTest')
+
+tasks.register('compileLatitudeSpawnSafetyPolicyTest', JavaCompile) {
+    group = 'verification'
+    description = 'Compile the dependency-free initial-spawn safety regression'
+    source = fileTree('src/spawnSafetyPolicyTest/java') {
+        include '**/*.java'
+    }
+    classpath = sourceSets.main.runtimeClasspath
+    destinationDirectory.set(latitudeSpawnSafetyPolicyTestClasses)
+    options.release = 25
+    dependsOn classes
+}
+
+tasks.register('latitudeSpawnSafetyPolicyTest', JavaExec) {
+    group = 'verification'
+    description = 'Exercise warning-zone bounds and hazardous spawn-surface policy without launching Minecraft'
+    classpath = files(latitudeSpawnSafetyPolicyTestClasses) + sourceSets.main.runtimeClasspath
+    mainClass = 'com.example.globe.world.SpawnSafetyPolicyTest'
+    dependsOn tasks.named('compileLatitudeSpawnSafetyPolicyTest')
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudeSpawnSafetyPolicyTest')
+}
+
+def latitudeShippingToolsPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeShippingToolsPolicyTest')
+
+tasks.register('compileLatitudeShippingToolsPolicyTest', JavaCompile) {
+    group = 'verification'
+    description = 'Compile the shipping operator-command policy regression'
+    source = fileTree('src/toolsPolicyTest/java') {
+        include '**/*.java'
+    }
+    classpath = sourceSets.main.runtimeClasspath
+    destinationDirectory.set(latitudeShippingToolsPolicyTestClasses)
+    options.release = 25
+    dependsOn classes
+}
+
+tasks.register('latitudeShippingToolsPolicyTest', JavaExec) {
+    group = 'verification'
+    description = 'Prove the shipping tools command tree is exactly the permitted operator set'
+    classpath = files(latitudeShippingToolsPolicyTestClasses) + sourceSets.main.runtimeClasspath
+    mainClass = 'com.example.globe.tools.ShippingToolsPolicyTest'
+    dependsOn tasks.named('compileLatitudeShippingToolsPolicyTest')
+}
+
+// The dev packaging boundary is enforced by build.gradle itself. The shipping tools boundary must
+// be enforced just as mechanically, or the artifact content policy degrades into an intention that
+// nothing checks. There is no CI in this repository, so `check` is the only place this can live.
+tasks.register('latitudeArtifactPolicySourceScan', Exec) {
+    group = 'verification'
+    description = 'Assert the shipping tools surface and dev packaging law at source level'
+    inputs.file('tools/verify_phase6_dev_tooling.py')
+    inputs.dir('src/main/java/com/example/globe/tools')
+    inputs.file('src/main/java/com/example/globe/GlobeMod.java')
+    inputs.file('src/main/java/com/example/globe/dev/LatitudeDevCommand.java')
+    commandLine('python3', file('tools/verify_phase6_dev_tooling.py'))
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudeShippingToolsPolicyTest')
+    dependsOn tasks.named('latitudeArtifactPolicySourceScan')
+}
+
 tasks.register('prepareBiomePreviewRunDir') {
     doLast {
         def dir = file(latitudePreviewRunDir)
