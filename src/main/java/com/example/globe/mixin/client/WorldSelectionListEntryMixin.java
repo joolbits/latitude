@@ -5,10 +5,12 @@ import com.example.globe.client.create.RecreatedWorldPresetCarrier;
 import com.example.globe.util.LatitudeBands;
 import java.io.IOException;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
 import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.storage.LevelSummary;
 import org.slf4j.Logger;
@@ -37,14 +39,11 @@ public abstract class WorldSelectionListEntryMixin {
     @Final
     private LevelSummary summary;
 
+    // Declared directly on the target class, so it shadows safely without a refmap (unlike the
+    // row's geometry accessors, which are only INHERITED here and failed to apply as a shadow).
     @Shadow
-    public abstract int getContentX();
-
-    @Shadow
-    public abstract int getContentY();
-
-    @Shadow
-    public abstract int getContentWidth();
+    @Final
+    private StringWidget idAndLastPlayedText;
 
     @Unique
     private String globe$recreatedWorldPresetId;
@@ -57,35 +56,45 @@ public abstract class WorldSelectionListEntryMixin {
     private String globe$lastKnownBandLabel;
 
     /**
-     * Draws the save's last-known climate zone, read directly from the same on-disk state file
-     * the resumed-world loading screen reads, right-aligned on the row's existing info line.
-     * Silently absent for non-Latitude saves and for saves that predate this field.
+     * Appends the save's last-known climate zone onto the existing "(id (date))" line, e.g.
+     * "world (8/5/26, 9:11 AM) Temperate", read from the same on-disk state file the
+     * resumed-world loading screen reads. Silently absent for non-Latitude saves and for saves
+     * that predate this field.
+     *
+     * <p>This edits the widget's own text rather than drawing a separate overlay, deliberately:
+     * a prior attempt to right-align a second draw call over this row twice landed on top of
+     * vanilla's own text (StringWidget.getWidth() reports the SHORT actual-text width, not the
+     * row's allotted width, so "the far edge" kept resolving to a point right next to the visible
+     * text instead of the row's true right margin). Editing the text directly sidesteps that
+     * class of bug entirely: there is only ever one draw call, so nothing can land on top of it.
+     * Injected at HEAD, before vanilla's own extractContent body renders this widget, so the
+     * combined text is correct from the very first frame.</p>
      */
-    @Inject(method = "extractContent", at = @At("TAIL"))
-    private void globe$drawLastKnownZoneBadge(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
-                                               boolean hovered, float partialTick, CallbackInfo ci) {
-        if (!this.globe$lastKnownBandLoaded) {
-            this.globe$lastKnownBandLoaded = true;
-            try {
-                java.nio.file.Path worldRoot = this.minecraft.getLevelSource()
-                        .getBaseDir()
-                        .resolve(this.summary.getLevelId());
-                String bandId = RecreatedWorldMetadata.lastKnownBandId(worldRoot);
-                LatitudeBands.Band band = LatitudeBands.fromCanonicalId(bandId);
-                this.globe$lastKnownBandLabel = band != null ? band.displayName() : null;
-            } catch (IOException e) {
-                GLOBE_LOGGER.warn("[Latitude] could not read last-known band for world " + this.summary.getLevelId(), e);
-                this.globe$lastKnownBandLabel = null;
-            }
+    @Inject(method = "extractContent", at = @At("HEAD"))
+    private void globe$appendLastKnownZoneToTimestamp(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+                                                        boolean hovered, float partialTick, CallbackInfo ci) {
+        if (this.globe$lastKnownBandLoaded) {
+            return;
+        }
+        this.globe$lastKnownBandLoaded = true;
+        try {
+            java.nio.file.Path worldRoot = this.minecraft.getLevelSource()
+                    .getBaseDir()
+                    .resolve(this.summary.getLevelId());
+            String bandId = RecreatedWorldMetadata.lastKnownBandId(worldRoot);
+            LatitudeBands.Band band = LatitudeBands.fromCanonicalId(bandId);
+            this.globe$lastKnownBandLabel = band != null ? band.displayName() : null;
+        } catch (IOException e) {
+            GLOBE_LOGGER.warn("[Latitude] could not read last-known band for world " + this.summary.getLevelId(), e);
+            this.globe$lastKnownBandLabel = null;
         }
         if (this.globe$lastKnownBandLabel == null) {
             return;
         }
-        Font font = this.minecraft.font;
-        int textWidth = font.width(this.globe$lastKnownBandLabel);
-        int rightEdge = this.getContentX() + this.getContentWidth();
-        int y = this.getContentY() + 9 + 9 + 3; // same row as the vanilla info line
-        graphics.text(font, this.globe$lastKnownBandLabel, rightEdge - textWidth, y, GLOBE_LAST_ZONE_BADGE_COLOR, false);
+        Component suffix = Component.literal(" " + this.globe$lastKnownBandLabel)
+                .withStyle(Style.EMPTY.withColor(GLOBE_LAST_ZONE_BADGE_COLOR));
+        Component combined = Component.empty().append(this.idAndLastPlayedText.getMessage()).append(suffix);
+        this.idAndLastPlayedText.setMessage(combined);
     }
 
     @Redirect(
