@@ -1,5 +1,6 @@
 package com.example.globe.dev;
 
+import com.example.globe.tools.LatitudeToolsMath;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -192,37 +193,9 @@ public final class DevToolPolicy {
             double borderMaxZ,
             double safetyPadding
     ) {
-        requireFinite(requestedDegrees, "latitude");
-        requireFinite(centerZ, "border center");
-        requireFinite(latitudeRadius, "latitude radius");
-        requireFinite(borderMinZ, "border minimum");
-        requireFinite(borderMaxZ, "border maximum");
-        requireFinite(safetyPadding, "safety padding");
-        if (requestedDegrees < -90.0 || requestedDegrees > 90.0) {
-            throw new IllegalArgumentException("latitude must be within [-90..90]");
-        }
-        if (!(latitudeRadius > 0.0)) {
-            throw new IllegalArgumentException("latitude radius must be positive");
-        }
-        if (!(borderMaxZ > borderMinZ)) {
-            throw new IllegalArgumentException("world border bounds are invalid");
-        }
-        if (safetyPadding < 0.0) {
-            throw new IllegalArgumentException("safety padding cannot be negative");
-        }
-
-        long rounded = Math.round(centerZ + (requestedDegrees / 90.0) * latitudeRadius);
-        if (rounded < Integer.MIN_VALUE || rounded > Integer.MAX_VALUE) {
-            throw new IllegalArgumentException("latitude target exceeds block-coordinate range");
-        }
-        int blockZ = (int) rounded;
-        if (!isSafelyInside(blockZ + 0.5, borderMinZ, borderMaxZ, safetyPadding)) {
-            throw new IllegalArgumentException(String.format(Locale.ROOT,
-                    "latitude %.6f\u00b0 is not safely reachable inside this world border",
-                    requestedDegrees));
-        }
-        double actualDegrees = signedLatitudeDegrees(blockZ + 0.5, centerZ, latitudeRadius);
-        return new LatitudeTarget(requestedDegrees, blockZ, actualDegrees);
+        LatitudeToolsMath.LatitudeTarget target = LatitudeToolsMath.latitudeTarget(
+                requestedDegrees, centerZ, latitudeRadius, borderMinZ, borderMaxZ, safetyPadding);
+        return new LatitudeTarget(target.requestedDegrees(), target.blockZ(), target.actualDegrees());
     }
 
     public static int safeHorizontalBlock(
@@ -231,32 +204,11 @@ public final class DevToolPolicy {
             double borderMax,
             double safetyPadding
     ) {
-        requireFinite(requested, "horizontal coordinate");
-        requireFinite(borderMin, "border minimum");
-        requireFinite(borderMax, "border maximum");
-        requireFinite(safetyPadding, "safety padding");
-        if (!(borderMax > borderMin) || safetyPadding < 0.0) {
-            throw new IllegalArgumentException("world border bounds are invalid");
-        }
-        long floored = (long) Math.floor(requested);
-        if (floored < Integer.MIN_VALUE || floored > Integer.MAX_VALUE) {
-            throw new IllegalArgumentException("horizontal coordinate exceeds block-coordinate range");
-        }
-        int block = (int) floored;
-        if (!isSafelyInside(block + 0.5, borderMin, borderMax, safetyPadding)) {
-            throw new IllegalArgumentException("horizontal coordinate is outside the safe world border");
-        }
-        return block;
+        return LatitudeToolsMath.safeHorizontalBlock(requested, borderMin, borderMax, safetyPadding);
     }
 
     public static double signedLatitudeDegrees(double z, double centerZ, double latitudeRadius) {
-        requireFinite(z, "z");
-        requireFinite(centerZ, "border center");
-        requireFinite(latitudeRadius, "latitude radius");
-        if (!(latitudeRadius > 0.0)) {
-            throw new IllegalArgumentException("latitude radius must be positive");
-        }
-        return ((z - centerZ) / latitudeRadius) * 90.0;
+        return LatitudeToolsMath.signedLatitudeDegrees(z, centerZ, latitudeRadius);
     }
 
     /**
@@ -267,14 +219,7 @@ public final class DevToolPolicy {
      * classification or evidence coordinates.</p>
      */
     public static int productionLatitudeRadius(int activeRadius, double worldBorderRadius) {
-        requireFinite(worldBorderRadius, "world-border radius");
-        if (activeRadius > 0) {
-            return activeRadius;
-        }
-        if (!(worldBorderRadius >= 1.0) || worldBorderRadius > Integer.MAX_VALUE) {
-            throw new IllegalArgumentException("world-border radius is outside the supported block range");
-        }
-        return (int) Math.floor(worldBorderRadius);
+        return LatitudeToolsMath.productionLatitudeRadius(activeRadius, worldBorderRadius);
     }
 
     public static MovementDirection movementDirection(double previousAbsoluteDegrees, double currentAbsoluteDegrees) {
@@ -383,10 +328,6 @@ public final class DevToolPolicy {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
-    }
-
-    private static boolean isSafelyInside(double coordinate, double min, double max, double padding) {
-        return coordinate >= min + padding && coordinate < max - padding;
     }
 
     private static void requireFinite(double value, String label) {

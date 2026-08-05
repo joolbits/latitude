@@ -1,4 +1,4 @@
-package com.example.globe.dev;
+package com.example.globe.tools;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;

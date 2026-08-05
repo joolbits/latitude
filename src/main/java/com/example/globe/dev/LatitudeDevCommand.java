@@ -1,6 +1,7 @@
 package com.example.globe.dev;
 
 import com.example.globe.GlobeMod;
+import com.example.globe.tools.RuggednessSensor;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomeSource;
