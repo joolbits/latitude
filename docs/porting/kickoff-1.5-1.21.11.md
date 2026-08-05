@@ -10,6 +10,7 @@ Read `docs/porting/LATITUDE_1_5_BACKPORT_CAMPAIGN.md` first. This doc is only wh
   `port/1.5.0-1.21.11` (cut from `v1.5.0+26.2`; verify clean).
 - **Hour-1 mojmap spike** per campaign doc; fallback Yarn `1.21.11+build.1`.
 - Toolchain: Java 21, loader 0.17.3, fabric-api 0.140.x+1.21.11, Loom ~1.14.10.
+- **Model/effort**: Opus, high — and take the render-extraction reversal *design* to xhigh/max once: it becomes the template threads 3 and 4 replay. See the campaign doc's model section; state your path at each slice.
 
 ## The good news specific to this target
 - **Worldgen JSON: zero changes.** Byte-identical against the old 1.21.11 port (verified diff = 0

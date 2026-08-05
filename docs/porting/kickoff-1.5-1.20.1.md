@@ -13,6 +13,7 @@ Starts after 1.21.1 ships, carrying both prior ports' diffs.
   Gradle wrapper (match the old branch). Gradle itself may still run on a newer JDK
   (`org.gradle.java.home` pattern from the old branch — never commit a machine path).
 - Java-language audit already done: **nothing above 17 in use anywhere.** No de-sugaring.
+- **Model/effort**: Opus, high (escalate for the networking rewrite if the port-1.20.1 corpus doesn't cover it). See the campaign doc's model section; state your path at each slice.
 
 ## Deltas BEYOND the 1.21.1 port
 - **Networking rewrite (the one genuinely new chunk):** `GlobeNet`'s 3 `CustomPacketPayload`
