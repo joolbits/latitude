@@ -17,6 +17,10 @@ plus the whole 1.5 polish campaign on top of it.
 
 If you played 1.3, this will not feel like a point release.
 
+**Latitude 2.0 is still in production.** The larger overhaul being showcased publicly, with its more
+elaborate mechanics, is a separate line and still in development. 1.5 is the final polish release of
+the 1.x line.
+
 #### Before you update
 
 **Back up your worlds first.** Coming from 1.3 (MC 1.21.11) or 1.4 (MC 26.1.2), Minecraft converts
