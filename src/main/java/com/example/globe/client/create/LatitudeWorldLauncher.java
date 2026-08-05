@@ -218,6 +218,9 @@ public final class LatitudeWorldLauncher {
                             : spawnZone.id().toUpperCase(java.util.Locale.ROOT));
                     GlobePending.startWithCompass = startWithCompass;
                     LatitudeClientState.activateLatitudeLoading();
+                    // Known synchronously, no round trip needed: a concrete zone shows its label
+                    // immediately; Random shows nothing until the world has actually been played.
+                    LatitudeClientState.setLoadingZoneLabel(randomSpawnZone ? null : spawnZone.displayName());
                     LOGGER.info("[Latitude lifecycle] bespoke overlay activated — {}ms since beginExpedition",
                             LatitudeClientState.elapsedSinceExpeditionMs());
                 }
