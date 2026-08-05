@@ -1,6 +1,8 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.LatitudeClientState;
+import com.example.globe.client.create.RecreatedWorldMetadata;
+import com.example.globe.util.LatitudeBands;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
@@ -10,6 +12,7 @@ import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
+import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.level.storage.LevelStorageSource;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -58,8 +61,27 @@ public abstract class MinecraftClientStartIntegratedMixin {
         if (!LatitudeClientState.isLatitudeWorldLoading()) {
             LatitudeClientState.beginExpedition(System.currentTimeMillis());
             LatitudeClientState.activateLatitudeLoading();
+            globe$applyResumedZoneLabel(session);
             GLOBE_LOGGER.info("[Latitude lifecycle] integrated-world loading overlay activated — {}ms since beginExpedition (latitudeWorldDetected={})",
                     LatitudeClientState.elapsedSinceExpeditionMs(), detectedLatitudeWorld);
+        }
+    }
+
+    /**
+     * Reads the last-known band straight off disk, before the integrated server has even started,
+     * so a resumed world's loading screen can show it without waiting on any network round trip.
+     * Absent for a save that predates this field, or one that was never actually entered.
+     */
+    @Unique
+    private static void globe$applyResumedZoneLabel(LevelStorageSource.LevelStorageAccess session) {
+        try {
+            String bandId = RecreatedWorldMetadata.lastKnownBandId(session.getLevelPath(LevelResource.ROOT));
+            LatitudeBands.Band band = LatitudeBands.fromCanonicalId(bandId);
+            if (band != null) {
+                LatitudeClientState.setLoadingZoneLabel(band.displayName());
+            }
+        } catch (Exception e) {
+            GLOBE_LOGGER.warn("[Latitude lifecycle] could not read last-known band for the loading screen", e);
         }
     }
 

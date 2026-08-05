@@ -40,6 +40,10 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique private static final int MUTED = 0xFF8C8078;
     @Unique private static final int GRID_COLOR = 0x14504840;
     @Unique private static final int GRID_STEP = 16;
+    // Mirrors LatitudeCreateWorldScreen's title treatment: vanilla's nine-pixel UI font plus four
+    // points, with intentional tracking between letters via literal spaces in the string.
+    @Unique private static final float LOADING_TITLE_SCALE = 13.0f / 9.0f;
+    @Unique private static final String LOADING_TITLE_TEXT = "L A T I T U D E";
     @Unique private static final float globe$VERSION_LABEL_SCALE = 0.67f;
     @Unique private static final int globe$VERSION_LABEL_GAP = 4;
     @Unique private static final int globe$VERSION_LABEL_SCREEN_MARGIN = 2;
@@ -189,13 +193,31 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         // ── Grid decoration ──
         globe$drawGrid(context, paneX, paneY, paneW, paneH);
 
-        // ── Title ──
+        // ── Title ── (mirrors LatitudeCreateWorldScreen's treatment: scaled + letter-spaced when
+        // it fits the pane, falling back to compact unspaced text on very small windows)
         int cx = sw / 2;
-        int titleY = paneY + 12;
-        globe$drawCentered(context, "LATITUDE", cx, titleY, GOLD, true);
+        int cursorY = paneY + 12;
+        int titleAreaW = paneW - 16;
+        int scaledTitleWidth = Math.round(this.font.width(LOADING_TITLE_TEXT) * LOADING_TITLE_SCALE);
+        int titleHeight;
+        if (scaledTitleWidth <= titleAreaW) {
+            globe$drawScaledCentered(context, LOADING_TITLE_TEXT, cx, cursorY, LOADING_TITLE_SCALE, GOLD, true);
+            titleHeight = Math.round(this.font.lineHeight * LOADING_TITLE_SCALE);
+        } else {
+            globe$drawCentered(context, "LATITUDE", cx, cursorY, GOLD, true);
+            titleHeight = this.font.lineHeight;
+        }
+        cursorY += titleHeight + 3;
+
+        // ── Zone label (optional) — the climate zone this load is entering or resuming ──
+        String zoneLabel = LatitudeClientState.loadingZoneLabel();
+        if (zoneLabel != null) {
+            globe$drawCentered(context, "Loading " + zoneLabel, cx, cursorY, WARM_WHITE, false);
+            cursorY += this.font.lineHeight + 3;
+        }
 
         // ── Loading hint ──
-        globe$drawCentered(context, "Press F9 in-game for HUD options", cx, titleY + 12, MUTED, false);
+        globe$drawCentered(context, "Press F9 in-game for HUD options", cx, cursorY, MUTED, false);
 
         // ── Compass with wandering needle ──
         int compassCY = paneY + paneH / 2 - 4;
@@ -272,6 +294,19 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     private void globe$drawCentered(GuiGraphicsExtractor context, String text, int cx, int y, int color, boolean shadow) {
         int w = this.font.width(text);
         context.text(this.font, text, cx - w / 2, y, color, shadow);
+    }
+
+    /** Mirrors LatitudeCreateWorldScreen's drawScaledText, centered on cx instead of a left edge. */
+    @Unique
+    private void globe$drawScaledCentered(GuiGraphicsExtractor context, String text, int cx, int y, float scale, int color, boolean shadow) {
+        int w = Math.round(this.font.width(text) * scale);
+        int x = cx - w / 2;
+        var matrices = context.pose();
+        matrices.pushMatrix();
+        matrices.translate((float) x, (float) y);
+        matrices.scale(scale, scale);
+        context.text(this.font, text, 0, 0, color, shadow);
+        matrices.popMatrix();
     }
 
     @Unique

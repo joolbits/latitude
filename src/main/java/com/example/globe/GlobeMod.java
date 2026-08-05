@@ -186,6 +186,17 @@ public class GlobeMod implements ModInitializer {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(GlobeMod::borderUxTick);
+
+        // Authoritative last-known-band capture at quit time, closing the gap the periodic tick in
+        // borderUxTick leaves if a player quits within moments of crossing a band boundary.
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            ServerPlayer player = handler.player;
+            ServerLevel overworld = server.overworld();
+            if (player == null || overworld == null || player.level() != overworld || !isGlobeOverworld(overworld)) {
+                return;
+            }
+            recordLastKnownBand(overworld, overworld.getWorldBorder(), player);
+        });
     }
 
     private static void registerDevOnlyCommand(Object dispatcher) {
@@ -386,6 +397,12 @@ public class GlobeMod implements ModInitializer {
             double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
             int stageIndex = com.example.globe.util.LatitudeMath.hazardStageIndex(border, player.getZ(), progressZ);
 
+            // Keep the persisted "last known band" fresh for every player, regardless of polar
+            // status, so the loading screen and world-selection list can show it on next open.
+            if (effectsTick) {
+                recordLastKnownBand(overworld, border, player);
+            }
+
             // Check if player is in the active polar band for effects
             if (Math.abs(player.getZ()) < activePoleBandStartAbsZ) {
                 continue;
@@ -430,6 +447,17 @@ public class GlobeMod implements ModInitializer {
                 player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, duration, 1, ambient, showParticles, showIcon));
             }
         }
+    }
+
+    /**
+     * Persists the latitude band a player currently occupies, so the loading screen and the
+     * world-selection list can show it the next time this save is opened. Called on a throttled
+     * tick cadence while playing and once more, authoritatively, on disconnect.
+     */
+    private static void recordLastKnownBand(ServerLevel overworld, WorldBorder border, ServerPlayer player) {
+        double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, player.getZ());
+        com.example.globe.util.LatitudeBands.Band band = com.example.globe.util.LatitudeBands.fromAbsoluteLatitudeDeg(absLatDeg);
+        LatitudeWorldState.get(overworld).setLastKnownBandId(band.id());
     }
 
     private static boolean isGlobeOverworld(ServerLevel world) {

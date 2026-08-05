@@ -39,12 +39,15 @@ public final class LatitudeWorldState extends SavedData {
                     Codec.STRING.optionalFieldOf("vanilla_representation_profile")
                             .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.vanillaRepresentationProfile)),
                     Codec.STRING.optionalFieldOf("cave_representation_profile")
-                            .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.caveRepresentationProfile))
+                            .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.caveRepresentationProfile)),
+                    Codec.STRING.optionalFieldOf("last_known_band")
+                            .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.lastKnownBandId))
             ).apply(instance, (spawnPickerDismissed, worldgenPolicy, globeRadius, providerTicketProfile,
-                                vanillaRepresentationProfile, caveRepresentationProfile) ->
+                                vanillaRepresentationProfile, caveRepresentationProfile, lastKnownBandId) ->
                     new LatitudeWorldState(spawnPickerDismissed, normalizeWorldgenPolicy(worldgenPolicy),
                             globeRadius, providerTicketProfile.orElse(null),
-                            vanillaRepresentationProfile.orElse(null), caveRepresentationProfile.orElse(null)))),
+                            vanillaRepresentationProfile.orElse(null), caveRepresentationProfile.orElse(null),
+                            lastKnownBandId.orElse(null)))),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
     );
 
@@ -54,20 +57,23 @@ public final class LatitudeWorldState extends SavedData {
     private String providerTicketProfile;
     private String vanillaRepresentationProfile;
     private String caveRepresentationProfile;
+    private String lastKnownBandId;
 
     public LatitudeWorldState() {
-        this(false, Optional.empty(), 0, null, null, null);
+        this(false, Optional.empty(), 0, null, null, null, null);
     }
 
     private LatitudeWorldState(boolean spawnPickerDismissed, Optional<WorldgenPolicyVersion> worldgenPolicy,
                                int globeRadius, String providerTicketProfile,
-                               String vanillaRepresentationProfile, String caveRepresentationProfile) {
+                               String vanillaRepresentationProfile, String caveRepresentationProfile,
+                               String lastKnownBandId) {
         this.spawnPickerDismissed = spawnPickerDismissed;
         this.worldgenPolicy = normalizeWorldgenPolicy(worldgenPolicy).orElse(null);
         this.globeRadius = Math.max(0, globeRadius);
         this.providerTicketProfile = providerTicketProfile;
         this.vanillaRepresentationProfile = vanillaRepresentationProfile;
         this.caveRepresentationProfile = caveRepresentationProfile;
+        this.lastKnownBandId = lastKnownBandId;
     }
 
     private static Optional<WorldgenPolicyVersion> normalizeWorldgenPolicy(Optional<WorldgenPolicyVersion> worldgenPolicy) {
@@ -188,6 +194,19 @@ public final class LatitudeWorldState extends SavedData {
         String encoded = profile == null ? null : profile.encode();
         if (!java.util.Objects.equals(caveRepresentationProfile, encoded)) {
             caveRepresentationProfile = encoded;
+            setDirty();
+        }
+    }
+
+    /** Canonical id (e.g. "temperate") of the band a player was last known to occupy, if any. */
+    public Optional<String> getLastKnownBandId() {
+        return Optional.ofNullable(lastKnownBandId);
+    }
+
+    /** Updated periodically while a player is in the overworld, and once more on disconnect. */
+    public void setLastKnownBandId(String bandId) {
+        if (!java.util.Objects.equals(lastKnownBandId, bandId)) {
+            lastKnownBandId = bandId;
             setDirty();
         }
     }

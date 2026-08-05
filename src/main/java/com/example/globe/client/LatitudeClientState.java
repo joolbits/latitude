@@ -14,6 +14,12 @@ public final class LatitudeClientState {
     private static volatile boolean clientReadyObserved = false;
     /** Last elapsed value captured during a lifecycle clear, for post-clear logging. */
     private static volatile long lastLifecycleClearElapsedMs = -1L;
+    /**
+     * Display label for the loading screen's optional "Loading &lt;Zone&gt;" line, or null to show
+     * nothing. Reset to null whenever a new loading sequence begins (see
+     * {@link #activateLatitudeLoading()}) so a prior world's label can never leak into the next.
+     */
+    private static volatile String loadingZoneLabel;
     public static long elapsedSinceExpeditionMs() {
         return expeditionStartMs > 0L ? System.currentTimeMillis() - expeditionStartMs : -1L;
     }
@@ -33,10 +39,20 @@ public final class LatitudeClientState {
         latitudeWorldLoading = true;
         latitudeLoadingProgress = 0f;
         clientReadyObserved = false;
+        loadingZoneLabel = null;
     }
 
     public static boolean isLatitudeWorldLoading() {
         return latitudeWorldLoading;
+    }
+
+    /** Sets the loading screen's zone label. Pass null to show no zone line for this load. */
+    public static void setLoadingZoneLabel(String label) {
+        loadingZoneLabel = label;
+    }
+
+    public static String loadingZoneLabel() {
+        return loadingZoneLabel;
     }
 
     public static synchronized boolean markClientReadyObserved() {
@@ -58,6 +74,7 @@ public final class LatitudeClientState {
         lastLifecycleClearElapsedMs = sinceExpedition;
         expeditionStartMs = 0L;
         latitudeLoadingProgress = 0f;
+        loadingZoneLabel = null;
         return sinceExpedition;
     }
 
