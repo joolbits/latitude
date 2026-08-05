@@ -48,11 +48,12 @@ how climate is decided.
   different worlds repeat the same choices. Latitude now picks a coherent provider namespace first,
   then an exact biome within it, using the live world seed — so provider choice no longer depends on
   how many biomes a provider happens to contribute.
-- Measured across two seeds at ~392,000 exact biome samples per map: with both packs installed, land
-  share came out roughly 22% Biomes O' Plenty / 26–30% Terralith / ~50% vanilla, with 49 distinct
-  custom biome IDs present per seed. Terralith's orchid swamp, amethyst canyon, amethyst rainforest
-  and tropical jungle, and BoP's marsh, wetland and tropics all appear in their intended latitude
-  families. Temperate seasonal/maple forest dropped from a reported ~45% near-monoculture to 20–30%.
+- In sampled worlds with both packs installed, land share came out roughly a fifth Biomes O' Plenty,
+  a quarter to a third Terralith, and about half vanilla, with dozens of distinct custom biomes
+  present. Terralith's orchid swamp, amethyst canyon, amethyst rainforest and tropical jungle, and
+  BoP's marsh, wetland and tropics all appear in their intended latitude families, and temperate
+  forest went from a near-monoculture to a genuine mix. Exact shares vary by seed, world size and
+  which packs you have installed.
 - A dedicated **temperate wetland family** was added; BoP marsh/wetland and Terralith orchid swamp are
   admitted only under the flat-wetland terrain law, while warm mangroves keep the coastal/brackish rule.
 - Promenade's Glacarian Taiga sits in the subpolar band and its Blush/Cotton Sakura Groves in the
