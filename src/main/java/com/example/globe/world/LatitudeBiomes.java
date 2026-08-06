@@ -3520,11 +3520,17 @@ public final class LatitudeBiomes {
                 || isBiomeId(chosen, "minecraft:old_growth_pine_taiga"))) {
             chosen = base;
         }
-        boolean forceTemperateUpland = landBandIndex == BAND_TEMPERATE
-                && TerrainBiomeCohesionPolicy.shouldUseTemperateUplandFamily(
-                        terrainEvidenceAvailable,
-                        terrainGateHeight,
-                        terrainGateDelta,
+        PreviewTerrain gateProbe = onDemandGateTerrain(
+                skipPreview, hasPreviewTerrainInputs, landBandIndex, chosen,
+                generator, noiseConfig, heightView, blockX, blockZ);
+        int gateHeight = gateProbe != null ? gateProbe.centerHeight : terrainGateHeight;
+        int gateDelta = gateProbe != null ? gateProbe.robustDelta : terrainGateDelta;
+        boolean gateEvidence = gateProbe != null || terrainEvidenceAvailable;
+        boolean forceTemperateUpland = isLandGateBand(landBandIndex)
+                && TerrainBiomeCohesionPolicy.shouldUseWarmUplandFamily(
+                        gateEvidence,
+                        gateHeight,
+                        gateDelta,
                         seaLevel);
         if (forceTemperateUpland) {
             chosen = pickFromTagNoiseOrBase(
@@ -4273,11 +4279,17 @@ public final class LatitudeBiomes {
                 || isBiomeId(chosen, "minecraft:old_growth_pine_taiga"))) {
             chosen = base;
         }
-        boolean forceTemperateUpland = landBandIndex == BAND_TEMPERATE
-                && TerrainBiomeCohesionPolicy.shouldUseTemperateUplandFamily(
-                        terrainEvidenceAvailable,
-                        terrainGateHeight,
-                        terrainGateDelta,
+        PreviewTerrain gateProbe = onDemandGateTerrain(
+                skipPreview, hasPreviewTerrainInputs, landBandIndex, chosen,
+                generator, noiseConfig, heightView, blockX, blockZ);
+        int gateHeight = gateProbe != null ? gateProbe.centerHeight : terrainGateHeight;
+        int gateDelta = gateProbe != null ? gateProbe.robustDelta : terrainGateDelta;
+        boolean gateEvidence = gateProbe != null || terrainEvidenceAvailable;
+        boolean forceTemperateUpland = isLandGateBand(landBandIndex)
+                && TerrainBiomeCohesionPolicy.shouldUseWarmUplandFamily(
+                        gateEvidence,
+                        gateHeight,
+                        gateDelta,
                         seaLevel);
         if (forceTemperateUpland) {
             chosen = pickFromTagNoiseOrBase(
@@ -7725,6 +7737,38 @@ public final class LatitudeBiomes {
 
     private static boolean isMountainCodedColdPick(Holder<Biome> candidate) {
         return isFlatPolarShelfBannedMountainPick(candidate);
+    }
+
+    /**
+     * Real terrain relief for a column the fast path skipped, computed only when it can actually
+     * change the answer. Worldgen runs with {@code latitude.skipPreviewHeightForWorldgen} on, which
+     * substitutes a synthetic {@code robustDelta} of 0 for every non-mountain column and therefore
+     * makes the land-cohesion gates inert — flat biomes end up draped over measured ridges. Probing
+     * every column is the cost that flag exists to avoid, so probe only when a flat-family candidate
+     * has landed in a gated band, which is the sole case where the gate can reject anything.
+     */
+    private static PreviewTerrain onDemandGateTerrain(
+            boolean skipPreview,
+            boolean hasPreviewTerrainInputs,
+            int landBandIndex,
+            Holder<Biome> candidate,
+            NoiseBasedChunkGenerator generator,
+            RandomState noiseConfig,
+            LevelHeightAccessor heightView,
+            int blockX,
+            int blockZ) {
+        if (!skipPreview || !hasPreviewTerrainInputs || !isLandGateBand(landBandIndex)) {
+            return null;
+        }
+        if (!isPlainsFamily(candidate) && !isTemperateForestFamily(candidate)) {
+            return null;
+        }
+        return previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+    }
+
+    /** Bands whose land-cohesion gate can reroute a flat candidate onto an upland family. */
+    private static boolean isLandGateBand(int landBandIndex) {
+        return landBandIndex == BAND_SUBTROPICAL || landBandIndex == BAND_TEMPERATE;
     }
 
     private static boolean isPlainsFamily(Holder<Biome> candidate) {
