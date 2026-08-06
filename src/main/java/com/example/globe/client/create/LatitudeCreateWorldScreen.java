@@ -121,6 +121,14 @@ public class LatitudeCreateWorldScreen extends Screen {
     };
 
     // ── Size descriptions (indexed by GlobeWorldSize.ordinal()) ──
+    private static final String[] SIZE_DESCRIPTIONS = {
+            "A pocket world. Every horizon feels close.",
+            "Compact but complete. Good for focused journeys.",
+            "Room to roam. Familiar landmarks within reach.",
+            "The standard world. A full planet awaits.",
+            "Vast distances. Bring supplies.",
+            "A world that could take a lifetime to cross."
+    };
 
     private static final Component SMALL_WORLD_WARNING = Component.literal(
             "Smaller worlds compress the journey and may include slightly fewer total biome variants."
@@ -793,14 +801,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         return wrapLineCount(text, width) * uiFontHeight();
     }
 
-    /**
-     * Bottom of the size label. The per-size blurb used to sit here and push the Atlas below the
-     * fold, so a player on a high GUI scale had to scroll to see the size they had just chosen
-     * change. Only the name and diameter remain, so the label ends right after them and the Atlas
-     * moves up into the space.
-     */
     private int computeSizeLabelBottom(int y, int availW) {
-        return y + scaledUi(22);
+        return y + scaledUi(22) + wrapLineCount(SIZE_DESCRIPTIONS[selectedSize.ordinal()], Math.max(40, availW)) * uiFontHeight();
     }
 
     private int getSmallWorldWarningHeight(int width) {
@@ -1680,9 +1682,11 @@ public class LatitudeCreateWorldScreen extends Screen {
         int idx = selectedSize.ordinal();
         String shortName = SIZE_SHORT_NAMES[idx];
         String diameter = formatDiameter(selectedSize.borderRadiusBlocks * 2) + " blocks";
+        String desc = SIZE_DESCRIPTIONS[idx];
 
         drawCenteredBoundedText(context, shortName, new UiRect(x, y, availW, uiFontHeight()), WARM_WHITE, true, true);
         drawCenteredBoundedText(context, diameter, new UiRect(x, y + scaledUi(11), availW, uiFontHeight()), MUTED, false, true);
+        drawWrappedTextBlock(context, desc, new UiRect(x, y + scaledUi(22), availW, Math.max(uiFontHeight(), computeSizeLabelBottom(y, availW) - (y + scaledUi(22)))), MUTED, false, 3, true, true);
     }
 
     private boolean shouldShowSmallWorldWarning() {
