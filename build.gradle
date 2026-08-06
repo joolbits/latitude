@@ -1,5 +1,9 @@
 plugins {
-    id 'net.fabricmc.fabric-loom' version '1.17.13'
+    // Loom 1.17.x is a 26.x-era Loom: it assumes a deobfuscated Minecraft and rejects
+    // officialMojangMappings() with "Cannot use Mojang mappings in a non-obfuscated
+    // environment". 1.21.11 is obfuscated, so this target needs the older line. 1.14.10 is
+    // the pairing proven by the 1.4-era 1.21.11 port.
+    id 'fabric-loom' version '1.14.10'
     id 'maven-publish'
 }
 
@@ -168,6 +172,11 @@ repositories {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    // 26.2 shipped deobfuscated, so no mappings declaration was needed there. 1.21.11 is
+    // obfuscated and publishes ProGuard mappings, so the official Mojang names must be
+    // requested explicitly. Hour-1 spike: 171/178 imports resolve, 7 REDs. See
+    // docs/binder/latitude-1-5-port-1p21p11-mojmap-spike-20260806.md
+    mappings loom.officialMojangMappings()
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
     // CRITICAL FIX: Fabric API only needed at RUNTIME (not compile-time)
@@ -199,7 +208,9 @@ configurations {
 }
 
 dependencies {
-    latitudeSodiumFogVerifier "maven.modrinth:AANobbMI:2Yom1N68"
+    // Version-coupled pin: the 26.2 file (2Yom1N68 = mc26.2-0.9.1-fabric) does not exist for
+    // this target. Ny3XyYle = mc1.21.11-0.8.13-fabric, the newest stable Sodium for 1.21.11.
+    latitudeSodiumFogVerifier "maven.modrinth:AANobbMI:Ny3XyYle"
 }
 
 processResources {
@@ -254,14 +265,14 @@ tasks.register('generateLatitudeTestMetadata') {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 25
+    it.options.release = 21
 }
 
 java {
     withSourcesJar()
 
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 tasks.withType(Jar).configureEach {
@@ -452,7 +463,7 @@ tasks.register('compileLatitudeCreateScreenClipPolicyTest', JavaCompile) {
     }
     classpath = sourceSets.main.output
     destinationDirectory.set(latitudeCreateScreenClipPolicyTestClasses)
-    options.release = 25
+    options.release = 21
     dependsOn classes
 }
 
@@ -478,7 +489,7 @@ tasks.register('compileLatitudePolarPresentationPolicyTest', JavaCompile) {
     }
     classpath = sourceSets.main.output
     destinationDirectory.set(latitudePolarPresentationPolicyTestClasses)
-    options.release = 25
+    options.release = 21
     dependsOn classes
 }
 
@@ -526,7 +537,7 @@ tasks.register('compileLatitudeLocationDetailPolicyTest', JavaCompile) {
     }
     classpath = sourceSets.main.output
     destinationDirectory.set(latitudeLocationDetailPolicyTestClasses)
-    options.release = 25
+    options.release = 21
     dependsOn classes
 }
 
@@ -552,7 +563,7 @@ tasks.register('compileLatitudeVillageLatitudePolicyTest', JavaCompile) {
     }
     classpath = sourceSets.main.runtimeClasspath
     destinationDirectory.set(latitudeVillageLatitudePolicyTestClasses)
-    options.release = 25
+    options.release = 21
     dependsOn classes
 }
 
@@ -578,7 +589,7 @@ tasks.register('compileLatitudePolarFoliagePolicyTest', JavaCompile) {
     }
     classpath = sourceSets.main.output
     destinationDirectory.set(latitudePolarFoliagePolicyTestClasses)
-    options.release = 25
+    options.release = 21
     dependsOn classes
 }
 
@@ -604,7 +615,7 @@ tasks.register('compileLatitudeWorldgenAuthorityPolicyTest', JavaCompile) {
     }
     classpath = sourceSets.main.runtimeClasspath
     destinationDirectory.set(latitudeWorldgenAuthorityPolicyTestClasses)
-    options.release = 25
+    options.release = 21
     dependsOn classes
 }
 
@@ -630,7 +641,7 @@ tasks.register('compileLatitudeDevToolPolicyTest', JavaCompile) {
     }
     classpath = sourceSets.main.output
     destinationDirectory.set(latitudeDevToolPolicyTestClasses)
-    options.release = 25
+    options.release = 21
     dependsOn classes
 }
 
@@ -656,7 +667,7 @@ tasks.register('compileLatitudeSpawnSafetyPolicyTest', JavaCompile) {
     }
     classpath = sourceSets.main.runtimeClasspath
     destinationDirectory.set(latitudeSpawnSafetyPolicyTestClasses)
-    options.release = 25
+    options.release = 21
     dependsOn classes
 }
 
@@ -682,7 +693,7 @@ tasks.register('compileLatitudeShippingToolsPolicyTest', JavaCompile) {
     }
     classpath = sourceSets.main.runtimeClasspath
     destinationDirectory.set(latitudeShippingToolsPolicyTestClasses)
-    options.release = 25
+    options.release = 21
     dependsOn classes
 }
 
