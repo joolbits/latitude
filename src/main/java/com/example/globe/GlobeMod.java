@@ -261,6 +261,23 @@ public class GlobeMod implements ModInitializer {
         GlobePending.pendingGlobeRadius = 0;
 
         if (!isGlobeOverworld(world)) {
+            // pendingRadius > 0 means the Latitude create screen just launched this world as a
+            // Latitude world — and yet the loaded overworld is not recognisable as one. This is the
+            // silent-degradation case: some worldgen mod rebuilt the noise-settings registry during
+            // vanilla's datapack reload inside createLevelFromExistingSettings, so the settings
+            // holder no longer serialises as a globe: registry reference and the world saved as
+            // vanilla terrain data (CliffTree 3.2.1 on 26.1.x does this). Every pre-launch check
+            // passes — the breakage only becomes observable here. Fail loudly instead of handing
+            // the player a vanilla world behind a Latitude loading screen.
+            if (pendingRadius > 0) {
+                throw new IllegalStateException(
+                        "Latitude created this world, but the loaded overworld generator is not a "
+                        + "Latitude globe generator. Another world generation mod rebuilt the "
+                        + "noise-settings registry during world creation, so the world would save as "
+                        + "vanilla terrain and Latitude would stay disabled in it. Remove or disable "
+                        + "the conflicting world generation mod (known: CliffTree) and create the "
+                        + "world again. This world save is not a Latitude world and can be deleted.");
+            }
             activeLatitudeOverworldGenerator = null;
             LatitudeBiomes.clearWorldgenContext();
             return;
