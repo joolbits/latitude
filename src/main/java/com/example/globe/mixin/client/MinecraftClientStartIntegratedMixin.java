@@ -5,10 +5,12 @@ import com.example.globe.client.create.RecreatedWorldMetadata;
 import com.example.globe.util.LatitudeBands;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.WorldStem;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
@@ -87,13 +89,21 @@ public abstract class MinecraftClientStartIntegratedMixin {
 
     @Unique
     private static boolean globe$isLatitudeWorld(WorldStem worldStem) {
-        if (worldStem == null || worldStem.worldDataAndGenSettings() == null
-                || worldStem.worldDataAndGenSettings().genSettings() == null
-                || worldStem.worldDataAndGenSettings().genSettings().dimensions() == null) {
+        // 26.2 reaches the overworld generator via WorldStem.worldDataAndGenSettings().
+        // 1.21.11's WorldStem has no gen-settings accessor at all: dimensions live in the
+        // LEVEL_STEM registry, so the generator is read through the stem's registry access.
+        if (worldStem == null || worldStem.registries() == null) {
             return false;
         }
 
-        ChunkGenerator generator = worldStem.worldDataAndGenSettings().genSettings().dimensions().overworld();
+        LevelStem overworldStem = worldStem.registries().compositeAccess()
+                .lookupOrThrow(Registries.LEVEL_STEM)
+                .getValue(LevelStem.OVERWORLD);
+        if (overworldStem == null) {
+            return false;
+        }
+
+        ChunkGenerator generator = overworldStem.generator();
         if (!(generator instanceof NoiseBasedChunkGenerator noise)) {
             return false;
         }

@@ -4,7 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
@@ -453,15 +453,15 @@ public class LatitudeHudStudioScreen extends Screen {
         CompassHudConfig.saveCurrent();
         LatitudeConfig.saveCurrent();
         if (this.minecraft != null) {
-            this.minecraft.gui.setScreen(this.parent);
+            this.minecraft.setScreen(this.parent);
         }
     }
 
     @Override
-    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         this.lastMouseX = mouseX;
         this.lastMouseY = mouseY;
-        this.extractTransparentBackground(ctx);
+        this.renderTransparentBackground(ctx);
         ctx.fill(0, 0, this.width, this.height, 0x66000000);
 
         int sidebarX = 6;
@@ -510,19 +510,19 @@ public class LatitudeHudStudioScreen extends Screen {
 
         applySidebarScroll();
         drawSidebarScrollbar(ctx);
-        super.extractRenderState(ctx, mouseX, mouseY, delta);
+        super.render(ctx, mouseX, mouseY, delta);
         drawActiveTabUnderline(ctx);
 
         if (sidebarVisible) {
             int helperY = this.height - 66;
-            ctx.text(this.font, "Press L to hide panel", 8, helperY, 0xAA8C8078);
+            ctx.drawString(this.font, "Press L to hide panel", 8, helperY, 0xAA8C8078);
         } else {
             int hiddenHelperY = this.height - this.font.lineHeight - 6;
-            ctx.text(this.font, "Press L to show panel", 8, hiddenHelperY, 0x888C8078);
+            ctx.drawString(this.font, "Press L to show panel", 8, hiddenHelperY, 0x888C8078);
         }
     }
 
-    private void drawActiveTabUnderline(GuiGraphicsExtractor ctx) {
+    private void drawActiveTabUnderline(GuiGraphics ctx) {
         if (!sidebarVisible) {
             return;
         }
@@ -812,7 +812,7 @@ public class LatitudeHudStudioScreen extends Screen {
         return true;
     }
 
-    private void drawSidebarScrollbar(GuiGraphicsExtractor ctx) {
+    private void drawSidebarScrollbar(GuiGraphics ctx) {
         if (!sidebarVisible) return;
         int viewportH = sidebarViewportBottom - sidebarViewportTop;
         int maxScroll = sidebarContentHeight - viewportH;

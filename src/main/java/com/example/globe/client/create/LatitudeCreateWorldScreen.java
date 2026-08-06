@@ -8,7 +8,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.ChatFormatting;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -16,7 +16,7 @@ import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.GenericMessageScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.worldselection.DataPackReloadCookie;
-import net.minecraft.client.gui.screens.worldselection.WorldCreationGameRulesScreen;
+import net.minecraft.client.gui.screens.worldselection.EditGameRulesScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContextMapper;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
@@ -300,7 +300,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 initialState.getName(),
                 initialState.getSeed() != null && !initialState.getSeed().isBlank(),
                 initialState.getSettings());
-        client.gui.setScreen(new LatitudeCreateWorldScreen(
+        client.setScreen(new LatitudeCreateWorldScreen(
                 onClose, parent, initialState, recreated, recreatedPresetId));
     }
 
@@ -474,22 +474,22 @@ public class LatitudeCreateWorldScreen extends Screen {
                     if (throwable != null) {
                         LOGGER.error("Failed to load datapacks for Latitude create-world screen", throwable);
                         onClose.run();
-                        if (client.gui.screen() == null || client.gui.screen() instanceof GenericMessageScreen) {
-                            client.gui.setScreen(parent);
+                        if (client.screen == null || client.screen instanceof GenericMessageScreen) {
+                            client.setScreen(parent);
                         }
                         return;
                     }
 
                     // Open the bespoke screen with the loaded holder.
-                    client.gui.setScreen(new LatitudeCreateWorldScreen(onClose, parent, loadedHolder));
+                    client.setScreen(new LatitudeCreateWorldScreen(onClose, parent, loadedHolder));
                 });
             });
         } catch (Exception e) {
             LOGGER.error("Failed to load datapacks for Latitude create-world screen", e);
             // 5A error path: return to caller screen, never show bespoke screen
             onClose.run();
-            if (client.gui.screen() == null || client.gui.screen() instanceof GenericMessageScreen) {
-                client.gui.setScreen(parent);
+            if (client.screen == null || client.screen instanceof GenericMessageScreen) {
+                client.setScreen(parent);
             }
         }
     }
@@ -1270,25 +1270,25 @@ public class LatitudeCreateWorldScreen extends Screen {
         settingsScrollWidgets.add(widget);
     }
 
-    private void renderSettingsScrollWidgets(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+    private void renderSettingsScrollWidgets(GuiGraphics context, int mouseX, int mouseY, float delta) {
         for (AbstractWidget widget : settingsScrollWidgets) {
             if (widget != null && widget.visible) {
-                widget.extractRenderState(context, mouseX, mouseY, delta);
+                widget.render(context, mouseX, mouseY, delta);
             }
         }
     }
 
     private void openGameRules() {
         if (this.minecraft == null) return;
-        this.minecraft.gui.setScreen(new WorldCreationGameRulesScreen(this.gameRules, optional -> {
+        this.minecraft.setScreen(new EditGameRulesScreen(this.gameRules, optional -> {
             optional.ifPresent(rules -> this.gameRules = rules);
-            this.minecraft.gui.setScreen(this);
+            this.minecraft.setScreen(this);
         }));
     }
 
     private void openHudStudio() {
         if (this.minecraft == null) return;
-        this.minecraft.gui.setScreen(new LatitudeHudStudioScreen(this));
+        this.minecraft.setScreen(new LatitudeHudStudioScreen(this));
     }
 
     // ── Begin Expedition ──
@@ -1348,8 +1348,8 @@ public class LatitudeCreateWorldScreen extends Screen {
     @Override
     public void onClose() {
         this.onClose.run();
-        if (this.minecraft != null && (this.minecraft.gui.screen() == this || this.minecraft.gui.screen() == null)) {
-            this.minecraft.gui.setScreen(this.parent);
+        if (this.minecraft != null && (this.minecraft.screen == this || this.minecraft.screen == null)) {
+            this.minecraft.setScreen(this.parent);
         }
     }
 
@@ -1461,7 +1461,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     // ══════════════════════════════════════════════════════════════
 
     @Override
-    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
         // One authoritative layout pass per rendered frame keeps rectangles, culling, focus, and narration
         // synchronized after scroll, resize, tab changes, world-size changes, or sub-screen return.
         updateLeftLayout();
@@ -1632,10 +1632,10 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
 
         renderCreateVersionLabel(context);
-        super.extractRenderState(context, mouseX, mouseY, delta);
+        super.render(context, mouseX, mouseY, delta);
     }
 
-    private void renderSizeLabel(GuiGraphicsExtractor context, int x, int y, int availW) {
+    private void renderSizeLabel(GuiGraphics context, int x, int y, int availW) {
         int idx = selectedSize.ordinal();
         String shortName = SIZE_SHORT_NAMES[idx];
         String diameter = formatDiameter(selectedSize.borderRadiusBlocks * 2) + " blocks";
@@ -1653,7 +1653,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         };
     }
 
-    private void renderPlanispherePreview(GuiGraphicsExtractor context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
+    private void renderPlanispherePreview(GuiGraphics context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
         long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
         // Regular is the visual reference size. Smaller worlds sit within its quiet underlay; larger worlds
         // grow outward from it and retain a darkened Regular map as an honest scale comparison. Size changes
@@ -1730,7 +1730,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         return Math.round(atlasTransitionFromDiameter + (targetDiameter - atlasTransitionFromDiameter) * eased);
     }
 
-    private void renderSpawnZoneDisabled(GuiGraphicsExtractor context) {
+    private void renderSpawnZoneDisabled(GuiGraphics context) {
         long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
         int overlayTop = rightDividerY + 2;
         int overlayBottom = rightViewportBottom;
@@ -1753,7 +1753,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
     }
 
-    private void renderPlanisphereDisabled(GuiGraphicsExtractor context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
+    private void renderPlanisphereDisabled(GuiGraphics context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
         long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
         int areaW = Math.max(0, areaRight - areaLeft);
         int areaH = Math.max(0, areaBottom - areaTop);
@@ -1889,7 +1889,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         return Math.max(5, Math.round(this.font.lineHeight * scale));
     }
 
-    private void drawSettingsRowLabel(GuiGraphicsExtractor context, String label, int x, int width, int rowY, int color) {
+    private void drawSettingsRowLabel(GuiGraphics context, String label, int x, int width, int rowY, int color) {
         int labelY = rowY - scaledUi(10);
         if (labelY + uiFontHeight() <= settingsClipTop() || labelY >= settingsViewportBottom) {
             return;
@@ -1897,7 +1897,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         drawBoundedText(context, label, new UiRect(x, labelY, Math.max(20, width - SCROLLBAR_GUTTER), uiFontHeight()), color, false, true);
     }
 
-    private void drawSettingsStepperValue(GuiGraphicsExtractor context, String text, int color, int rowY, int cellX, int cellWidth) {
+    private void drawSettingsStepperValue(GuiGraphics context, String text, int color, int rowY, int cellX, int cellWidth) {
         if (rowY + uiFontHeight() <= settingsClipTop() || rowY >= settingsViewportBottom) {
             return;
         }
@@ -1912,18 +1912,18 @@ public class LatitudeCreateWorldScreen extends Screen {
         drawBoundedText(context, fitted, new UiRect(safeLeft + Math.max(0, (safeWidth - textW) / 2), drawY, safeWidth, uiFontHeight()), color, true, true);
     }
 
-    private void drawUiText(GuiGraphicsExtractor context, String text, int x, int y, int color, boolean shadow) {
-        context.text(this.font, text, x, y, color, shadow);
+    private void drawUiText(GuiGraphics context, String text, int x, int y, int color, boolean shadow) {
+        context.drawString(this.font, text, x, y, color, shadow);
     }
 
-    private void drawRainbowItalicUiText(GuiGraphicsExtractor context, String text, int x, int y) {
+    private void drawRainbowItalicUiText(GuiGraphics context, String text, int x, int y) {
         int drawX = x;
         int visibleIndex = 0;
         for (int i = 0; i < text.length(); i++) {
             char letter = text.charAt(i);
             Component glyph = Component.literal(String.valueOf(letter)).withStyle(ChatFormatting.ITALIC);
             int color = RANDOM_TEXT_COLORS[visibleIndex % RANDOM_TEXT_COLORS.length];
-            context.text(this.font, glyph, drawX, y, color, true);
+            context.drawString(this.font, glyph, drawX, y, color, true);
             drawX += this.font.width(glyph);
             if (letter != ' ') {
                 visibleIndex++;
@@ -1931,7 +1931,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
     }
 
-    private void drawCenteredUiText(GuiGraphicsExtractor context, String text, int cx, int y, int color, boolean shadow) {
+    private void drawCenteredUiText(GuiGraphics context, String text, int cx, int y, int color, boolean shadow) {
         drawUiText(context, text, cx - uiTextWidth(text) / 2, y, color, shadow);
     }
 
@@ -1963,7 +1963,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         return Math.max(min, Math.min(max, value));
     }
 
-    private boolean drawBoundedText(GuiGraphicsExtractor context, String text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
+    private boolean drawBoundedText(GuiGraphics context, String text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
         if (!fitsHeight(rect.h)) {
             return false;
         }
@@ -1977,7 +1977,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         return true;
     }
 
-    private boolean drawBoundedStyledText(GuiGraphicsExtractor context, Component text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
+    private boolean drawBoundedStyledText(GuiGraphics context, Component text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
         if (!fitsHeight(rect.h)) {
             return false;
         }
@@ -1987,11 +1987,11 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         int drawX = clampToRect(rect.x, uiTextWidth(fitted), rect.x, rect.right());
         int drawY = clampToRect(rect.y, uiFontHeight(), rect.y, rect.bottom());
-        context.text(this.font, Component.literal(fitted).setStyle(text.getStyle().withItalic(true)), drawX, drawY, color, shadow);
+        context.drawString(this.font, Component.literal(fitted).setStyle(text.getStyle().withItalic(true)), drawX, drawY, color, shadow);
         return true;
     }
 
-    private int drawWrappedStyledTextBlock(GuiGraphicsExtractor context, Component text, UiRect rect, int color, boolean shadow, int maxLines, boolean center, boolean optional) {
+    private int drawWrappedStyledTextBlock(GuiGraphics context, Component text, UiRect rect, int color, boolean shadow, int maxLines, boolean center, boolean optional) {
         if (rect.w <= 0 || rect.h < uiFontHeight()) {
             return 0;
         }
@@ -2015,7 +2015,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 String fitted = ellipsizeToWidth(lineText.getString(), rect.w);
                 if (!fitted.isEmpty()) {
                     int drawX = rect.x + Math.max(0, (rect.w - uiTextWidth(fitted)) / 2);
-                    context.text(this.font, Component.literal(fitted).setStyle(lineText.getStyle().withItalic(true)), drawX, y, color, shadow);
+                    context.drawString(this.font, Component.literal(fitted).setStyle(lineText.getStyle().withItalic(true)), drawX, y, color, shadow);
                 }
             } else {
                 drawBoundedStyledText(context, lineText, new UiRect(rect.x, y, rect.w, uiFontHeight()), color, shadow, true);
@@ -2025,7 +2025,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         return drawCount * uiFontHeight();
     }
 
-    private boolean drawCenteredBoundedText(GuiGraphicsExtractor context, String text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
+    private boolean drawCenteredBoundedText(GuiGraphics context, String text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
         if (!fitsHeight(rect.h)) {
             return false;
         }
@@ -2039,7 +2039,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         return true;
     }
 
-    private int drawWrappedTextBlock(GuiGraphicsExtractor context, String text, UiRect rect, int color, boolean shadow, int maxLines, boolean center, boolean optional) {
+    private int drawWrappedTextBlock(GuiGraphics context, String text, UiRect rect, int color, boolean shadow, int maxLines, boolean center, boolean optional) {
         if (rect.w <= 0 || rect.h < uiFontHeight()) {
             return 0;
         }
@@ -2091,16 +2091,16 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
     }
 
-    private void drawScaledText(GuiGraphicsExtractor context, String text, int x, int y, float scale, int color, boolean shadow) {
+    private void drawScaledText(GuiGraphics context, String text, int x, int y, float scale, int color, boolean shadow) {
         var matrices = context.pose();
         matrices.pushMatrix();
         matrices.translate((float) x, (float) y);
         matrices.scale(scale, scale);
-        context.text(this.font, text, 0, 0, color, shadow);
+        context.drawString(this.font, text, 0, 0, color, shadow);
         matrices.popMatrix();
     }
 
-    private void drawSmallWorldWarning(GuiGraphicsExtractor context, UiRect rect) {
+    private void drawSmallWorldWarning(GuiGraphics context, UiRect rect) {
         float scale = smallWorldWarningScale();
         int lineHeight = smallWorldWarningLineHeight();
         List<net.minecraft.network.chat.FormattedText> lines = wrapUiLines(
@@ -2115,12 +2115,12 @@ public class LatitudeCreateWorldScreen extends Screen {
             matrices.pushMatrix();
             matrices.translate((float) x, (float) y);
             matrices.scale(scale, scale);
-            context.text(this.font, Component.literal(line).setStyle(SMALL_WORLD_WARNING.getStyle()), 0, 0, 0xFFF0A030, false);
+            context.drawString(this.font, Component.literal(line).setStyle(SMALL_WORLD_WARNING.getStyle()), 0, 0, 0xFFF0A030, false);
             matrices.popMatrix();
         }
     }
 
-    private void renderCreateVersionLabel(GuiGraphicsExtractor context) {
+    private void renderCreateVersionLabel(GuiGraphics context) {
         if (CREATE_VERSION_LABEL.isEmpty()) {
             return;
         }
@@ -2147,7 +2147,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final int GRID_COLOR = 0x14504840;
     private static final int GRID_STEP = 16;  // large-ish squares
 
-    private void drawPanel(GuiGraphicsExtractor context, int x, int y, int w, int h) {
+    private void drawPanel(GuiGraphics context, int x, int y, int w, int h) {
         // Border
         context.fill(x, y, x + w, y + 1, PANEL_BORDER);
         context.fill(x, y + h - 1, x + w, y + h, PANEL_BORDER);
@@ -2159,7 +2159,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         drawGridDecoration(context, x + 1, y + 1, w - 2, h - 2);
     }
 
-    private static void drawGridDecoration(GuiGraphicsExtractor context, int x, int y, int w, int h) {
+    private static void drawGridDecoration(GuiGraphics context, int x, int y, int w, int h) {
         if (h < 20 || w < 20) return;
         // Horizontal lines
         for (int gy = GRID_STEP; gy < h; gy += GRID_STEP) {
@@ -2171,12 +2171,12 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
     }
 
-    private void drawCenteredString(GuiGraphicsExtractor context, String text, int cx, int y, int color, boolean shadow) {
+    private void drawCenteredString(GuiGraphics context, String text, int cx, int y, int color, boolean shadow) {
         int textW = this.font.width(text);
-        context.text(this.font, text, cx - textW / 2, y, color, shadow);
+        context.drawString(this.font, text, cx - textW / 2, y, color, shadow);
     }
 
-    private void drawViewportClippedPanel(GuiGraphicsExtractor context, int x, int y, int w, int h) {
+    private void drawViewportClippedPanel(GuiGraphics context, int x, int y, int w, int h) {
         int clipLeft = Math.max(x, paneStripViewportLeft);
         int clipRight = Math.min(x + w, paneStripViewportRight);
         if (clipRight <= clipLeft) {
@@ -2187,7 +2187,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         context.disableScissor();
     }
 
-    private void drawInlineHeading(GuiGraphicsExtractor context, int paneX, int paneW, String label, int labelColor) {
+    private void drawInlineHeading(GuiGraphics context, int paneX, int paneW, String label, int labelColor) {
         int headingY = panelTop + compactUi(6);
         int availableW = paneW - scaledUi(12);
         if (availableW <= 0) return;
@@ -2207,7 +2207,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 labelColor, true, true);
     }
 
-    private void drawPaneScrollbar(GuiGraphicsExtractor context, int paneX, int paneW, int viewportTop, int viewportBottom,
+    private void drawPaneScrollbar(GuiGraphics context, int paneX, int paneW, int viewportTop, int viewportBottom,
                                    int contentHeight, int scrollAmount) {
         int viewportHeight = Math.max(0, viewportBottom - viewportTop);
         int maxScroll = Math.max(0, contentHeight - viewportHeight);
@@ -2231,7 +2231,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
     }
 
-    private void drawTabStrip(GuiGraphicsExtractor context, int mouseX, int mouseY) {
+    private void drawTabStrip(GuiGraphics context, int mouseX, int mouseY) {
         int tabCount = TAB_LABELS.length;
         int totalW = paneStripViewportWidth;
         int tabW = (totalW - TAB_GAP * (tabCount - 1)) / tabCount;
@@ -2282,7 +2282,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         return false;
     }
 
-    private void drawHorizontalScrollbar(GuiGraphicsExtractor context) {
+    private void drawHorizontalScrollbar(GuiGraphics context) {
         int maxScroll = getPaneStripMaxScroll();
         if (maxScroll <= 0 || paneStripScrollbarH <= 0) {
             return;
@@ -2379,7 +2379,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
 
         @Override
-        protected void extractWidgetRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float deltaTicks) {
+        protected void renderWidget(GuiGraphics context, int mouseX, int mouseY, float deltaTicks) {
             boolean selected = this.band == null ? randomZone : (!randomZone && selectedZone == this.band);
             int x = this.getX();
             int y = this.getY();

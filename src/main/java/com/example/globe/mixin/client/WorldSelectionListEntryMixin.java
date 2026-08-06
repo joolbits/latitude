@@ -5,7 +5,7 @@ import com.example.globe.client.create.RecreatedWorldPresetCarrier;
 import com.example.globe.util.LatitudeBands;
 import java.io.IOException;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
@@ -67,11 +67,11 @@ public abstract class WorldSelectionListEntryMixin {
      * row's allotted width, so "the far edge" kept resolving to a point right next to the visible
      * text instead of the row's true right margin). Editing the text directly sidesteps that
      * class of bug entirely: there is only ever one draw call, so nothing can land on top of it.
-     * Injected at HEAD, before vanilla's own extractContent body renders this widget, so the
+     * Injected at HEAD, before vanilla's own renderContent body renders this widget, so the
      * combined text is correct from the very first frame.</p>
      */
-    @Inject(method = "extractContent", at = @At("HEAD"))
-    private void globe$appendLastKnownZoneToTimestamp(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+    @Inject(method = "renderContent", at = @At("HEAD"))
+    private void globe$appendLastKnownZoneToTimestamp(GuiGraphics graphics, int mouseX, int mouseY,
                                                         boolean hovered, float partialTick, CallbackInfo ci) {
         if (this.globe$lastKnownBandLoaded) {
             return;

@@ -37,7 +37,8 @@
     "client.InGameHudMixin",
     "client.LatitudeLoadingClientTickMixin",
     "client.LevelLoadingScreenLatitudeOverlayMixin",
-    "client.FogRendererEwMixin"
+    "client.FogRendererEwMixin",
+    "client.AtmosphericFogEnvironmentMixin"
   ],
   "injectors": {
     "defaultRequire": 1

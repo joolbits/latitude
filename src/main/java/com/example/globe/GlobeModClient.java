@@ -22,7 +22,6 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.color.block.BlockTintSources;
 import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
@@ -123,8 +122,10 @@ public class GlobeModClient implements ClientModInitializer {
             return;
         }
 
+        // 26.2 registers a List<BlockTintSource>; 1.21.11 has no BlockTintSources at all and
+        // takes a single BlockColor functional interface instead. Same constant tint either way.
         client.getBlockColors().register(
-                List.of(BlockTintSources.constant(PROMENADE_PALM_LEAVES_OPAQUE_TINT)),
+                (state, level, pos, tintIndex) -> PROMENADE_PALM_LEAVES_OPAQUE_TINT,
                 blocks.toArray(Block[]::new)
         );
         GlobeMod.LOGGER.info("[Latitude] Promenade palm tint compat applied to {} block(s)", blocks.size());
@@ -138,13 +139,13 @@ public class GlobeModClient implements ClientModInitializer {
         }
 
         while (ClientKeybinds.OPEN_SETTINGS.consumeClick()) {
-            if (client.gui.screen() instanceof LatitudeHudStudioScreen) {
+            if (client.screen instanceof LatitudeHudStudioScreen) {
                 continue;
             }
-            if (client.gui.screen() == null) {
-                client.gui.setScreen(new LatitudeHudStudioScreen(null));
+            if (client.screen == null) {
+                client.setScreen(new LatitudeHudStudioScreen(null));
             } else {
-                client.gui.setScreen(new LatitudeHudStudioScreen(client.gui.screen()));
+                client.setScreen(new LatitudeHudStudioScreen(client.screen));
             }
         }
     }

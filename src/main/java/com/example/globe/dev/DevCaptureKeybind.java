@@ -10,7 +10,7 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
@@ -55,14 +55,14 @@ public final class DevCaptureKeybind {
             return;
         }
 
-        captureKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+        captureKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.globe.dev_capture_overlay",
                 InputConstants.Type.KEYSYM,
                 InputConstants.KEY_NUMPAD0,
                 ClientKeybinds.CATEGORY
         ));
 
-        explainKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+        explainKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.globe.dev_explain_here",
                 InputConstants.Type.KEYSYM,
                 InputConstants.KEY_NUMPAD3,
@@ -125,7 +125,7 @@ public final class DevCaptureKeybind {
                 requestOwned = true;
             }
             snapshot = freezeSnapshot(client);
-            RenderTarget framebuffer = client.gameRenderer.mainRenderTarget();
+            RenderTarget framebuffer = client.getMainRenderTarget();
             CaptureSnapshot frozenSnapshot = snapshot;
             Screenshot.takeScreenshot(
                     framebuffer,
@@ -339,7 +339,7 @@ public final class DevCaptureKeybind {
         String seed = "unknown";
         var integratedServer = client.getSingleplayerServer();
         if (integratedServer != null) {
-            seed = Long.toString(integratedServer.getWorldGenSettings().options().seed());
+            seed = Long.toString(integratedServer.getWorldData().worldGenOptions().seed());
         }
 
         return new CaptureSnapshot(
@@ -455,7 +455,7 @@ public final class DevCaptureKeybind {
 
     private static void sendStatus(Minecraft client, String message) {
         if (client.player != null) {
-            client.player.sendSystemMessage(Component.literal(message));
+            client.player.displayClientMessage(Component.literal(message), false);
         }
     }
 

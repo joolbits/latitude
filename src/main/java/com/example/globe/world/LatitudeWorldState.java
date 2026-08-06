@@ -25,7 +25,12 @@ public final class LatitudeWorldState extends SavedData {
     );
 
     private static final SavedDataType<LatitudeWorldState> STATE_TYPE = new SavedDataType<>(
-            Identifier.fromNamespaceAndPath("globe", "latitude_world_state"),
+            // 26.2's SavedDataType takes an Identifier; 1.21.11's takes a plain String, and that
+            // string IS the .dat filename under the world's data/ folder -- a persistence
+            // contract, not a label. Deliberately matches the 1.4-era 1.21.11 port's filename so
+            // a 1.4 world upgrading on this target keeps its globe radius and zone state instead
+            // of silently regenerating as vanilla (the 18f2629f bug class).
+            "globe_latitude_world_state",
             LatitudeWorldState::new,
             RecordCodecBuilder.<LatitudeWorldState>create(instance -> instance.group(
                     Codec.BOOL.optionalFieldOf("spawn_picker_dismissed", false)

@@ -1866,7 +1866,7 @@ public final class LatitudeBiomes {
 
     private static int previewHeight(NoiseBasedChunkGenerator generator, RandomState noiseConfig, LevelHeightAccessor heightView,
                                      int blockX, int blockZ) {
-        long chunkKey = net.minecraft.world.level.ChunkPos.pack(blockX >> 4, blockZ >> 4);
+        long chunkKey = net.minecraft.world.level.ChunkPos.asLong(blockX >> 4, blockZ >> 4);
         PreviewHeightCache owner = PREVIEW_HEIGHT_CACHE.get();
         if (!owner.matches(generator, noiseConfig, heightView, chunkKey)) {
             owner.reset(generator, noiseConfig, heightView, chunkKey);

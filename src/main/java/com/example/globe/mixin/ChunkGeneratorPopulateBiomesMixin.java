@@ -225,7 +225,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     )
     private void globe$wrapBiomeSupplier(ChunkAccess chunk, BiomeResolver originalSupplier, Climate.Sampler sampler) {
         var pos = chunk.getPos();
-        globe$logPopBio("ENTER", "chunk=" + pos.x() + "," + pos.z() + " settings=" + globe$matchedSettingsLabel());
+        globe$logPopBio("ENTER", "chunk=" + pos.x + "," + pos.z + " settings=" + globe$matchedSettingsLabel());
         // Gate: only apply to your globe overworld settings.
         if (!this.globe$isAnyGlobeSettings()) {
             globe$logPopBio("FALLBACK", "settings=" + globe$matchedSettingsLabel() + " action=vanilla populateBiomes");
@@ -264,7 +264,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 : originalSupplier;
 
         BiomeResolver wrapped = (x, y, z, ignoredSampler) -> {
-            globe$logPopBio("LATITUDE_RESOLVER", "chunk=" + pos.x() + "," + pos.z() + " noise=" + x + "," + y + "," + z);
+            globe$logPopBio("LATITUDE_RESOLVER", "chunk=" + pos.x + "," + pos.z + " noise=" + x + "," + y + "," + z);
             // x/z are "noise biome coords" (4-block). Convert to block coords for your latitude math.
             int blockX = (x << 2) + 2;
             int blockZ = (z << 2) + 2;
@@ -336,7 +336,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             return picked;
         };
 
-        globe$logPopBio("ENTER", "installing Latitude resolver chunk=" + pos.x() + "," + pos.z() + " radius=" + borderRadiusBlocks);
+        globe$logPopBio("ENTER", "installing Latitude resolver chunk=" + pos.x + "," + pos.z + " radius=" + borderRadiusBlocks);
         globe$populateBiomes(chunk, wrapped, sampler);
     }
 
@@ -438,8 +438,8 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     private static void globe$populateBiomes(ChunkAccess chunk, BiomeResolver supplier, Climate.Sampler sampler) {
         int minQuartY = chunk.getMinY() >> 2;
         int heightQuarts = chunk.getHeight() >> 2;
-        int startQuartX = chunk.getPos().x() << 2;
-        int startQuartZ = chunk.getPos().z() << 2;
+        int startQuartX = chunk.getPos().x << 2;
+        int startQuartZ = chunk.getPos().z << 2;
         for (int localX = 0; localX < 4; localX++) {
             int quartX = startQuartX + localX;
             for (int localZ = 0; localZ < 4; localZ++) {

@@ -5,7 +5,7 @@ import com.example.globe.client.LatitudeClientState;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.LevelLoadingScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -158,8 +158,8 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         super(title);
     }
 
-    @Inject(method = "extractRenderState", at = @At("TAIL"))
-    private void globe$renderLatitudeOverlay(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+    @Inject(method = "render", at = @At("TAIL"))
+    private void globe$renderLatitudeOverlay(GuiGraphics context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         if (!LatitudeClientState.isLatitudeWorldLoading()) {
             globe$overlayStartMs = 0L;
             globe$displayProgress = 0f;
@@ -295,28 +295,28 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     // ════════════════════════════════════════════
 
     @Unique
-    private void globe$drawCentered(GuiGraphicsExtractor context, String text, int cx, int y, int color, boolean shadow) {
+    private void globe$drawCentered(GuiGraphics context, String text, int cx, int y, int color, boolean shadow) {
         int w = this.font.width(text);
-        context.text(this.font, text, cx - w / 2, y, color, shadow);
+        context.drawString(this.font, text, cx - w / 2, y, color, shadow);
     }
 
     /** Mirrors LatitudeCreateWorldScreen's drawScaledText, centered on cx instead of a left edge. */
     @Unique
-    private void globe$drawScaledCentered(GuiGraphicsExtractor context, String text, int cx, int y, float scale, int color, boolean shadow) {
+    private void globe$drawScaledCentered(GuiGraphics context, String text, int cx, int y, float scale, int color, boolean shadow) {
         int w = Math.round(this.font.width(text) * scale);
         int x = cx - w / 2;
         var matrices = context.pose();
         matrices.pushMatrix();
         matrices.translate((float) x, (float) y);
         matrices.scale(scale, scale);
-        context.text(this.font, text, 0, 0, color, shadow);
+        context.drawString(this.font, text, 0, 0, color, shadow);
         matrices.popMatrix();
     }
 
     /** Same scaled/centered treatment as globe$drawScaledCentered, but italic — used only for
      * the quiet zone-label line, never for the title. */
     @Unique
-    private void globe$drawMutedItalicCentered(GuiGraphicsExtractor context, String text, int cx, int y, float scale, int color) {
+    private void globe$drawMutedItalicCentered(GuiGraphics context, String text, int cx, int y, float scale, int color) {
         Component styled = Component.literal(text).withStyle(Style.EMPTY.withItalic(true));
         int w = Math.round(this.font.width(styled) * scale);
         int x = cx - w / 2;
@@ -324,12 +324,12 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         matrices.pushMatrix();
         matrices.translate((float) x, (float) y);
         matrices.scale(scale, scale);
-        context.text(this.font, styled, 0, 0, color, false);
+        context.drawString(this.font, styled, 0, 0, color, false);
         matrices.popMatrix();
     }
 
     @Unique
-    private void globe$drawVersionLabel(GuiGraphicsExtractor context, int paneX, int paneY, int paneW, int paneH) {
+    private void globe$drawVersionLabel(GuiGraphics context, int paneX, int paneY, int paneW, int paneH) {
         if (globe$VERSION_LABEL.isEmpty()) {
             return;
         }
@@ -348,7 +348,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         var matrices = context.pose();
         matrices.pushMatrix();
         matrices.scale(globe$VERSION_LABEL_SCALE, globe$VERSION_LABEL_SCALE);
-        context.text(this.font, globe$VERSION_LABEL, Math.round(drawX), Math.round(drawY), MUTED, false);
+        context.drawString(this.font, globe$VERSION_LABEL, Math.round(drawX), Math.round(drawY), MUTED, false);
         matrices.popMatrix();
     }
 
@@ -373,7 +373,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     }
 
     @Unique
-    private void globe$drawCompass(GuiGraphicsExtractor context, int cx, int cy, int radius) {
+    private void globe$drawCompass(GuiGraphics context, int cx, int cy, int radius) {
         // Compass face — dark circle with gold ring
         int r2 = radius * radius;
         for (int dy = -radius; dy <= radius; dy++) {
@@ -405,7 +405,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         // Red 'N' label at north
         String nLabel = "N";
         int nW = this.font.width(nLabel);
-        context.text(this.font, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, 0xFFCC3333, true);
+        context.drawString(this.font, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, 0xFFCC3333, true);
 
         // Wandering needle
         double angle = globe$needleAngle;
@@ -426,7 +426,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     }
 
     @Unique
-    private void globe$drawLine(GuiGraphicsExtractor context, int x0, int y0, int x1, int y1, int color) {
+    private void globe$drawLine(GuiGraphics context, int x0, int y0, int x1, int y1, int color) {
         int dx = Math.abs(x1 - x0);
         int dy = Math.abs(y1 - y0);
         int sx = x0 < x1 ? 1 : -1;
@@ -442,7 +442,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     }
 
     @Unique
-    private void globe$drawPhrase(GuiGraphicsExtractor context, int cx, int y, long elapsedMs) {
+    private void globe$drawPhrase(GuiGraphics context, int cx, int y, long elapsedMs) {
         long cyclePos = elapsedMs % PHRASE_CYCLE_MS;
         int phraseIdx = (globe$phraseSeedIdx + (int) ((elapsedMs / PHRASE_CYCLE_MS) % PHRASES.length)) % PHRASES.length;
         String phrase = PHRASES[phraseIdx];
@@ -464,11 +464,11 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         int color = (a << 24) | (WARM_WHITE & 0x00FFFFFF);
 
         int w = this.font.width(phrase);
-        context.text(this.font, phrase, cx - w / 2, y, color, false);
+        context.drawString(this.font, phrase, cx - w / 2, y, color, false);
     }
 
     @Unique
-    private static void globe$drawGrid(GuiGraphicsExtractor context, int paneX, int paneY, int paneW, int paneH) {
+    private static void globe$drawGrid(GuiGraphics context, int paneX, int paneY, int paneW, int paneH) {
         for (int gy = GRID_STEP; gy < paneH; gy += GRID_STEP) {
             context.fill(paneX, paneY + gy, paneX + paneW, paneY + gy + 1, GRID_COLOR);
         }
@@ -536,7 +536,7 @@ class LatitudeLoadingClientTickMixin {
         }
 
         Minecraft client = (Minecraft) (Object) this;
-        boolean loadingScreenVisible = client.gui.screen() instanceof LevelLoadingScreen;
+        boolean loadingScreenVisible = client.screen instanceof LevelLoadingScreen;
         boolean playerSettled = this.player.tickCount >= PLAYABLE_READY_MIN_PLAYER_TICKS;
         boolean spawnChunksReady = globe$clientSpawnChunkRingReady();
         RenderReadiness renderReadiness = globe$clientRenderReadiness(client);
@@ -592,7 +592,7 @@ class LatitudeLoadingClientTickMixin {
             return RenderReadiness.unavailable();
         }
         boolean renderQueueEmpty = client.levelRenderer.hasRenderedAllSections();
-        int renderedSections = client.levelRenderer.visibleSections().size();
+        int renderedSections = client.levelRenderer.getVisibleSections().size();
         boolean playerSectionVisible = client.levelRenderer.isSectionCompiledAndVisible(this.player.blockPosition());
         net.minecraft.core.BlockPos feetPos = net.minecraft.core.BlockPos.containing(
                 this.player.getX(), this.player.getY() - 1.0, this.player.getZ());

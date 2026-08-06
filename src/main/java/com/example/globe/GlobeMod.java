@@ -14,7 +14,7 @@ import com.example.globe.util.BiomeSamplerTools.SamplerTemplate;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
@@ -134,7 +134,7 @@ public class GlobeMod implements ModInitializer {
 
         // Initialize province authority at world-load time, before spawn-chunk generation fires
         // for brand-new worlds. SERVER_STARTED fires too late (after spawn chunks are pregenerated).
-        ServerLevelEvents.LOAD.register(GlobeMod::initLatitudeBiomesForWorld);
+        ServerWorldEvents.LOAD.register(GlobeMod::initLatitudeBiomesForWorld);
         ServerLifecycleEvents.SERVER_STARTED.register(GlobeMod::applyWorldBorder);
         registerDevOnlyHeadlessRunner();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
@@ -154,7 +154,7 @@ public class GlobeMod implements ModInitializer {
 
             LatitudeWorldState worldState = isGlobe ? LatitudeWorldState.get(overworld) : null;
             boolean isBrandNewWorld = overworld.getGameTime() < 100L;
-            boolean spawnAlreadyChosen = handler.player.entityTags().contains(SPAWN_CHOSEN_TAG);
+            boolean spawnAlreadyChosen = handler.player.getTags().contains(SPAWN_CHOSEN_TAG);
 
             String pendingZone = server.isDedicatedServer() ? null : GlobePending.consume();
 
@@ -266,7 +266,7 @@ public class GlobeMod implements ModInitializer {
             return;
         }
         LatitudeWorldState worldState = LatitudeWorldState.get(world);
-        long seed = server.getWorldGenSettings().options().seed();
+        long seed = server.getWorldData().worldGenOptions().seed();
         if (worldState.getGlobeRadius() <= 0 && pendingRadius > 0 && world.getGameTime() < 100L) {
             worldState.setGlobeRadius(pendingRadius);
             BiomeSelectionProfile profile = BiomeSelectionProfile.capture(
@@ -316,7 +316,7 @@ public class GlobeMod implements ModInitializer {
         LatitudeWorldState worldState = LatitudeWorldState.get(overworld);
 
         int borderRadiusBlocks = borderRadiusForGlobeOverworld(overworld);
-        long seed = overworld.getServer().getWorldGenSettings().options().seed();
+        long seed = overworld.getServer().getWorldData().worldGenOptions().seed();
         warnForProviderProfileDrift(overworld, worldState);
         LatitudeBiomes.activateWorldgenContext(borderRadiusBlocks, seed, worldState.getWorldgenPolicy(),
                 worldState.getProviderTicketProfile().orElse(null),
@@ -535,7 +535,7 @@ public class GlobeMod implements ModInitializer {
             BlockPos spawnPos = spawnChoice.pos();
             if (loadListener != null) {
                 loadListener.start(LevelLoadListener.Stage.PREPARE_GLOBAL_SPAWN, 0);
-                loadListener.updateFocus(world.dimension(), ChunkPos.containing(spawnPos));
+                loadListener.updateFocus(world.dimension(), new ChunkPos(spawnPos));
             }
             levelData.setSpawn(LevelData.RespawnData.of(world.dimension(), spawnPos, 0.0f, 0.0f));
             LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
@@ -582,7 +582,7 @@ public class GlobeMod implements ModInitializer {
     }
 
     private static void applySpawnChoice(ServerPlayer player, String id) {
-        if (player.entityTags().contains(SPAWN_CHOSEN_TAG)) {
+        if (player.getTags().contains(SPAWN_CHOSEN_TAG)) {
             return;
         }
 
@@ -640,7 +640,7 @@ public class GlobeMod implements ModInitializer {
             boolean prepareTeleportNeighbors,
             boolean allowTerrainFallback) {
         String zoneId = id;
-        long seed = world.getServer().getWorldGenSettings().options().seed();
+        long seed = world.getServer().getWorldData().worldGenOptions().seed();
         if (zoneId != null && zoneId.equals("RANDOM")) {
             zoneId = resolveSpawnZoneId(zoneId, seed);
             LOGGER.info("Resolved RANDOM spawn zone: seed={}, chosen={}", seed, zoneId);
@@ -962,7 +962,7 @@ public class GlobeMod implements ModInitializer {
             BundleContents contents = stack.get(DataComponents.BUNDLE_CONTENTS);
             if (contents != null) {
                 for (var inside : contents.items()) {
-                    if (containsCompass(inside.create(), depth + 1)) return true;
+                    if (containsCompass(inside, depth + 1)) return true;
                 }
             }
         }

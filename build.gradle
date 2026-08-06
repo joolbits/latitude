@@ -177,19 +177,25 @@ dependencies {
     // requested explicitly. Hour-1 spike: 171/178 imports resolve, 7 REDs. See
     // docs/binder/latitude-1-5-port-1p21p11-mojmap-spike-20260806.md
     mappings loom.officialMojangMappings()
-    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    // These must be Loom's `mod*` configurations on this target, not plain `implementation`.
+    // fabric-loader's POM declares no dependencies at all, so plain `implementation` fetches
+    // the loader jar and nothing else -- no sponge-mixin, hence "package
+    // org.spongepowered.asm.mixin does not exist" on every mixin file. Loom 1.17.x (26.2)
+    // injected mixin regardless and let plain `implementation` work; Loom 1.14.10 only does
+    // it through its own configurations. This matches the proven 1.4-era 1.21.11 port.
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
     // CRITICAL FIX: Fabric API only needed at RUNTIME (not compile-time)
     // The Mixin approach doesn't import any Fabric API classes
-    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     // MixinExtras for descriptor-based injections
-    implementation "io.github.llamalad7:mixinextras-fabric:0.5.0"
+    modImplementation "io.github.llamalad7:mixinextras-fabric:0.5.0"
     include "io.github.llamalad7:mixinextras-fabric:0.5.0"
     compileOnly "io.github.llamalad7:mixinextras-common:0.5.0"
 // DISABLED (was crashing compile):     annotationProcessor "io.github.llamalad7:mixinextras-common:0.5.0"
-    
-    compileOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
-    runtimeOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
+
+    modCompileOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
+    modLocalRuntime "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
 }
 
 sourceSets {

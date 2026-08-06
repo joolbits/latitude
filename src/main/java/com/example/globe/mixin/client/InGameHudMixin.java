@@ -7,32 +7,32 @@ import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.client.ZoneEnterTitleOverlay;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.Hud;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.Gui;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(Hud.class)
+@Mixin(Gui.class)
 public class InGameHudMixin {
-    @Inject(method = "extractHotbarAndDecorations", at = @At("HEAD"))
-    private void globe$renderEwHazeBeforeHotbar(GuiGraphicsExtractor context, DeltaTracker tickCounter, CallbackInfo ci) {
+    @Inject(method = "renderHotbarAndDecorations", at = @At("HEAD"))
+    private void globe$renderEwHazeBeforeHotbar(GuiGraphics context, DeltaTracker tickCounter, CallbackInfo ci) {
         Minecraft client = Minecraft.getInstance();
         if (client != null
-                && client.gui.screen() != null
-                && !(client.gui.screen() instanceof LatitudeHudStudioScreen)) {
+                && client.screen != null
+                && !(client.screen instanceof LatitudeHudStudioScreen)) {
             return;
         }
         EwSandstormOverlayHud.render(context, tickCounter);
     }
 
-    @Inject(method = "extractRenderState", at = @At("TAIL"))
-    private void globe$renderOverlay(GuiGraphicsExtractor context, DeltaTracker tickCounter, CallbackInfo ci) {
+    @Inject(method = "render", at = @At("TAIL"))
+    private void globe$renderOverlay(GuiGraphics context, DeltaTracker tickCounter, CallbackInfo ci) {
         Minecraft client = Minecraft.getInstance();
         if (client != null
-                && client.gui.screen() != null
-                && !(client.gui.screen() instanceof LatitudeHudStudioScreen)) {
+                && client.screen != null
+                && !(client.screen instanceof LatitudeHudStudioScreen)) {
             return;
         }
         GlobeWarningOverlay.render(context, tickCounter);

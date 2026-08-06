@@ -26,7 +26,6 @@ import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
-import net.minecraft.world.level.storage.LevelDataAndDimensions;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.WorldDimensions;
 import net.minecraft.world.level.levelgen.presets.WorldPreset;
@@ -116,7 +115,7 @@ public final class LatitudeWorldLauncher {
                 if (isLatitude) {
                     LatitudeClientState.clearLatitudeLoadingState();
                 }
-                client.gui.setScreen(screen);
+                client.setScreen(screen);
                 return;
             }
             wc.setWorldType(new WorldCreationUiState.WorldTypeEntry(presetEntry));
@@ -146,7 +145,7 @@ public final class LatitudeWorldLauncher {
                 if (isLatitude) {
                     LatitudeClientState.clearLatitudeLoadingState();
                 }
-                client.gui.setScreen(screen);
+                client.setScreen(screen);
                 return;
             }
             wc.setWorldType(new WorldCreationUiState.WorldTypeEntry(updatedPresetEntry));
@@ -175,23 +174,34 @@ public final class LatitudeWorldLauncher {
             Lifecycle lifecycle2 = combinedDynamicRegistries.compositeAccess().allRegistriesLifecycle();
             Lifecycle lifecycle3 = lifecycle2.add(lifecycle);
 
+            // 26.2 groups difficulty+hardcore into LevelSettings.DifficultySettings and passes
+            // game rules separately to createLevelFromExistingSettings. 1.21.11 has no
+            // DifficultySettings and takes both flat, with GameRules on the ctor -- and it must
+            // not be null here, unlike 26.2's Optional.
             LevelSettings levelInfo = new LevelSettings(
                     wc.getName().trim(),
                     gameMode,
-                    new LevelSettings.DifficultySettings(difficulty, hardcore, false),
+                    hardcore,
+                    difficulty,
                     allowCommands,
+                    gameRules != null ? gameRules : new GameRules(goh.dataConfiguration().enabledFeatures()),
                     goh.dataConfiguration());
 
+            // On 26.2 the WorldOptions ride along in the WorldGenSettings handed to
+            // createLevelFromExistingSettings; on 1.21.11 that parameter is gone and PrimaryLevelData
+            // carries them instead. Built explicitly, as before, so the bonus-chest and
+            // generate-structures choices actually reach the created world -- goh.options() does not
+            // carry them (they live on the UI state), which is what silently dropped the bonus chest.
             PrimaryLevelData levelProperties = new PrimaryLevelData(
                     levelInfo,
+                    new net.minecraft.world.level.levelgen.WorldOptions(
+                            goh.options().seed(), generateStructures, bonusChest),
                     dimensionsConfig.specialWorldProperty(),
                     lifecycle3);
 
             final WorldCreationContext launchHolder = goh;
-            final WorldDimensions launchWorldDimensions = launchDimensions;
             final LayeredRegistryAccess<RegistryLayer> launchCombinedDynamicRegistries = combinedDynamicRegistries;
             final PrimaryLevelData launchLevelProperties = levelProperties;
-            final GameRules launchGameRules = gameRules;
 
             // ── 8. Show "Preparing..." ──
             client.setScreenAndShow(new GenericMessageScreen(Component.translatable("createWorld.preparing")));
@@ -205,7 +215,7 @@ public final class LatitudeWorldLauncher {
                         if (isLatitude) {
                             LatitudeClientState.clearLatitudeLoadingState();
                         }
-                        client.gui.setScreen(screen);
+                        client.setScreen(screen);
                     });
                     return;
                 }
@@ -228,18 +238,13 @@ public final class LatitudeWorldLauncher {
                 client.execute(() -> {
                     try {
                         client.createWorldOpenFlows()
-                                .createLevelFromExistingSettings(session, launchHolder.dataPackResources(), launchCombinedDynamicRegistries,
-                                        new LevelDataAndDimensions.WorldDataAndGenSettings(
-                                                launchLevelProperties,
-                                                // Build WorldOptions explicitly so the bonus-chest + generate-structures
-                                                // choices actually reach the created world. launchHolder.options() does
-                                                // NOT carry them (they live on the UI state), so using it directly drops
-                                                // both flags — that is why the bonus chest stopped generating.
-                                                new net.minecraft.world.level.levelgen.WorldGenSettings(
-                                                        new net.minecraft.world.level.levelgen.WorldOptions(
-                                                                launchHolder.options().seed(), generateStructures, bonusChest),
-                                                        launchWorldDimensions)),
-                                        Optional.ofNullable(launchGameRules));
+                                // 1.21.11 takes the WorldData directly -- no
+                                // LevelDataAndDimensions.WorldDataAndGenSettings wrapper and no trailing
+                                // game-rules argument. The seed/structures/bonus-chest options now live on
+                                // launchLevelProperties, and the dimensions reach the world through
+                                // launchCombinedDynamicRegistries, which already had DIMENSIONS replaced above.
+                                .createLevelFromExistingSettings(session, launchHolder.dataPackResources(),
+                                        launchCombinedDynamicRegistries, launchLevelProperties);
                     } catch (Exception e) {
                         LOGGER.error("Failed to start new world", e);
                         GlobePending.consume();
@@ -253,7 +258,7 @@ public final class LatitudeWorldLauncher {
                         } catch (Exception closeEx) {
                             LOGGER.warn("Failed to close session after launch failure", closeEx);
                         }
-                        client.gui.setScreen(screen);
+                        client.setScreen(screen);
                     }
                 });
             }, Util.backgroundExecutor());
@@ -263,7 +268,7 @@ public final class LatitudeWorldLauncher {
             if (isLatitude) {
                 LatitudeClientState.clearLatitudeLoadingState();
             }
-            client.gui.setScreen(screen);
+            client.setScreen(screen);
         }
     }
 

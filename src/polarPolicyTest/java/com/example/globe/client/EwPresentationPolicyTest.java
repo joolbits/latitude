@@ -315,7 +315,9 @@ public final class EwPresentationPolicyTest {
         String overlay = read("src/main/java/com/example/globe/client/GlobeWarningOverlay.java");
         String zoneTitle = read("src/main/java/com/example/globe/client/ZoneEnterTitleOverlay.java");
         String haze = read("src/main/java/com/example/globe/client/EwSandstormOverlayHud.java");
-        String fog = read("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java");
+        // The fog logic itself no longer lives in the mixin on this target: setupFog uploads its
+        // colour before returning, so the work is split across two injections and shared here.
+        String fog = read("src/main/java/com/example/globe/client/LatitudeFogPresentation.java");
         String client = read("src/main/java/com/example/globe/GlobeModClient.java");
         String mixins = read("src/main/resources/globe.mixins.json");
 
@@ -353,17 +355,23 @@ public final class EwPresentationPolicyTest {
                         && fog.contains("sandHazeColorIntensity")
                         && fog.contains("SAND_HAZE_TARGET_RED"),
                 "depth fog tightens from the live baseline and uses the bounded brown-color policy");
-        String fogHandler = methodSection(fog, "private void latitude$applyFog(");
-        assertEquals(1, countOccurrences(fogHandler, "GlobeClientState.evaluate(client)"),
-                "fog handler evaluates Latitude identity exactly once");
+        String fogHandler = methodSection(fog, "private static Gate gate(");
+        assertEquals(1, countOccurrences(fog, "GlobeClientState.evaluate(client)"),
+                "fog evaluates Latitude identity exactly once, in the shared gate");
         assertTrue(fogHandler.contains("if (!GlobeClientState.isGlobeWorld())")
                         && fogHandler.indexOf("if (!GlobeClientState.isGlobeWorld())")
                         < fogHandler.indexOf("GlobeClientState.evaluate(client)"),
                 "fog requires authoritative Latitude world identity before evaluation");
-        assertTrue(fogHandler.indexOf("if (!eval.active())")
-                        < fogHandler.indexOf("latitude$applyEwFog("),
+        assertTrue(fogHandler.contains("if (!eval.active())"),
+                "the shared gate closes on inactive worlds");
+        String distancePass = methodSection(fog, "public static void applyDistances(");
+        assertTrue(distancePass.indexOf("if (gate == null)")
+                        < distancePass.indexOf("applyEwDistances("),
                 "non-Latitude worlds fail open before east/west fog is applied");
-        String polarFog = methodSection(fog, "private static void latitude$applyPolarFog(");
+        String colorPass = methodSection(fog, "public static void applyColor(");
+        assertTrue(colorPass.indexOf("if (gate == null") < colorPass.indexOf("blendSandHazeColor("),
+                "non-Latitude worlds fail open before east/west fog colour is blended");
+        String polarFog = methodSection(fog, "private static void applyPolarDistances(");
         assertTrue(!polarFog.contains("GlobeClientState.evaluate(client)")
                         && polarFog.contains("GlobeClientState.Eval eval"),
                 "polar fog consumes the same evaluation without a contradictory second gate");
@@ -441,7 +449,13 @@ public final class EwPresentationPolicyTest {
         assertTrue(Files.notExists(Path.of(
                         "src/main/java/com/example/globe/mixin/client/compat/sodium/RenderSectionManagerVisibilityMixin.java")),
                 "dead Sodium isSectionVisible compatibility source is removed");
-        assertTrue(fog.contains("@Mixin(value = FogRenderer.class, priority = 900)"),
+        // Both halves of the split fog design must keep the sub-default priority, or Sodium's
+        // default-priority mixins snapshot the fog state before Latitude has touched it.
+        assertTrue(read("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java")
+                        .contains("@Mixin(value = FogRenderer.class, priority = 900)"),
+                "Latitude blends fog colour before Sodium's default-priority snapshot");
+        assertTrue(read("src/main/java/com/example/globe/mixin/client/AtmosphericFogEnvironmentMixin.java")
+                        .contains("@Mixin(value = AtmosphericFogEnvironment.class, priority = 900)"),
                 "Latitude mutates FogData before Sodium's default-priority snapshot");
     }
 

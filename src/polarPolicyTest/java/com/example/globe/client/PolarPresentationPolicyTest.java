@@ -253,49 +253,70 @@ public final class PolarPresentationPolicyTest {
                         && ewPolicy.contains("FOG_NEAR_END_BLOCKS = 12.0f"),
                 "east/west fog converges on the approved near-whiteout distances");
 
-        String mixin = read("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java");
-        assertEquals(1, countOccurrences(mixin, "@Inject(method = \"setupFog\""),
-                "exactly one 26.2 fog hook targets the mapped setupFog method");
-        assertTrue(mixin.contains("computeEwFogEnd") && mixin.contains("computePoleFogEnd"),
+        // This target splits the 26.2 single-hook design in two. 26.2's FogRenderer.setupFog
+        // returned the FogData, so one injection could reach both the distances and the colour.
+        // Here setupFog returns the colour Vector4f and has ALREADY uploaded it to the fog UBO by
+        // the time it returns, so the colour has to be blended earlier, in computeFogColor, while
+        // the distances come off the FogData that AtmosphericFogEnvironment.setupFog populates.
+        String colorMixin = read("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java");
+        String distanceMixin =
+                read("src/main/java/com/example/globe/mixin/client/AtmosphericFogEnvironmentMixin.java");
+        String fog = read("src/main/java/com/example/globe/client/LatitudeFogPresentation.java");
+
+        assertEquals(1, countOccurrences(colorMixin, "@Inject(method = \"computeFogColor\""),
+                "exactly one fog hook blends colour, and it targets computeFogColor");
+        assertEquals(0, countOccurrences(colorMixin, "@Inject(method = \"setupFog\""),
+                "colour must not hook setupFog: it uploads the colour to the UBO before returning, "
+                        + "so blending its return value compiles but never reaches the screen");
+        assertEquals(1, countOccurrences(distanceMixin, "@Inject(method = \"setupFog\""),
+                "exactly one fog hook tightens distances, and it targets the environment's setupFog");
+
+        assertTrue(fog.contains("computeEwFogEnd") && fog.contains("computePoleFogEnd"),
                 "legacy east/west path and isolated polar path both remain present");
-        assertTrue(mixin.contains("latitude$polarEnd") && mixin.contains("latitude$blendPolarFogColor"),
-                "polar hook tightens only its own distance and blends the mapped fog color field");
+        assertTrue(fog.contains("polarEnd") && fog.contains("blendPolarFogColor"),
+                "polar path tightens only its own distance and blends the mapped fog colour");
 
-        String injectedHandler = methodSection(mixin, "private void latitude$applyFog(");
-        int ewCall = injectedHandler.indexOf("latitude$applyEwFog(");
-        int polarCall = injectedHandler.indexOf("latitude$applyPolarFog(");
+        String gate = methodSection(fog, "private static Gate gate(");
+        assertTrue(gate.contains("client == null || client.level == null || client.player == null")
+                        && gate.contains("camera.getFluidInCamera() != FogType.NONE"),
+                "one shared gate validates the client and atmospheric fog for both passes");
+
+        String colorPass = methodSection(fog, "public static void applyColor(");
+        int sandCall = colorPass.indexOf("blendSandHazeColor(");
+        int polarColorCall = colorPass.indexOf("blendPolarFogColor(");
+        assertTrue(sandCall >= 0 && polarColorCall > sandCall,
+                "colour pass blends east/west sand haze before polar fog");
+
+        String distancePass = methodSection(fog, "public static void applyDistances(");
+        int ewCall = distancePass.indexOf("applyEwDistances(");
+        int polarCall = distancePass.indexOf("applyPolarDistances(");
         assertTrue(ewCall >= 0 && polarCall > ewCall,
-                "single setupFog handler applies east/west fog before polar fog");
-        assertTrue(injectedHandler.contains("client == null || client.level == null || client.player == null")
-                        && injectedHandler.contains("camera.getFluidInCamera() != FogType.NONE"),
-                "single setupFog handler validates the client and atmospheric fog once");
+                "distance pass applies east/west fog before polar fog");
 
-        String ewSection = methodSection(mixin, "private static void latitude$applyEwFog(")
-                + methodSection(mixin, "private static float latitude$tightenStart(")
-                + methodSection(mixin, "private static float latitude$tightenEnd(");
+        String ewSection = methodSection(fog, "private static void applyEwDistances(")
+                + methodSection(fog, "private static float tightenStart(")
+                + methodSection(fog, "private static float tightenEnd(");
         assertTrue(ewSection.contains("computeEwFogEnd")
                         && ewSection.contains("computeEwFogStart"),
                 "east/west helper consumes the approved start and end tightening policy");
         assertTrue(!ewSection.contains("computePoleFogEnd")
-                        && !ewSection.contains("latitude$polarEnd")
-                        && !ewSection.contains("latitude$blendPolarFogColor"),
+                        && !ewSection.contains("polarEnd(")
+                        && !ewSection.contains("blendPolarFogColor"),
                 "east/west helper cannot activate or alter polar fog");
 
-        String polarSection = methodSection(mixin, "private static void latitude$applyPolarFog(")
-                + methodSection(mixin, "private static void latitude$tightenPolarFogDistances(")
-                + methodSection(mixin, "private static float latitude$polarEnd(")
-                + methodSection(mixin, "private static void latitude$blendPolarFogColor(");
+        String polarSection = methodSection(fog, "private static void applyPolarDistances(")
+                + methodSection(fog, "private static float polarEnd(")
+                + methodSection(fog, "private static void blendPolarFogColor(");
         assertTrue(polarSection.contains("computePoleFogEnd")
-                        && polarSection.contains("latitude$polarEnd")
-                        && polarSection.contains("latitude$blendPolarFogColor"),
+                        && polarSection.contains("polarEnd(")
+                        && polarSection.contains("blendPolarFogColor"),
                 "polar helper retains its distance and color policy");
         assertTrue(!polarSection.contains("computeEwFogEnd")
                         && !polarSection.contains("ewIntensity01"),
                 "polar helper cannot activate or alter east/west fog");
-        assertTrue(injectedHandler.contains("GlobeClientState.evaluate(client)")
-                        && injectedHandler.contains("if (!eval.active())")
-                        && polarSection.contains("GlobeClientState.Eval eval")
-                        && polarSection.contains("if (!eval.surfaceOk())"),
+        assertTrue(gate.contains("GlobeClientState.evaluate(client)")
+                        && gate.contains("if (!eval.active())")
+                        && polarSection.contains("eval.surfaceOk()"),
                 "one shared evaluation gates Latitude fog before the polar surface check");
 
         String overlay = read("src/main/java/com/example/globe/client/GlobeWarningOverlay.java");

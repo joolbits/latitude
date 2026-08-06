@@ -91,7 +91,11 @@ public final class ChunkRegenerator {
                         realWorld.isDebug(),
                         seed,
                         List.of(),
-                        false
+                        false,
+                        // 1.21.11's ctor takes a trailing RandomSequences that 26.2's does not.
+                        // null is vanilla's own pattern for a fresh level: ServerLevel lazily
+                        // creates the sequence state from its data storage when this is absent.
+                        null
                 )) {
                     Map<Long, ChunkAccess> generated = generateToFeatures(tempWorld, targets);
                     RegenStats stats = copyIntoLiveWorld(realWorld, targets, generated, copyBiomes);
@@ -124,8 +128,8 @@ public final class ChunkRegenerator {
         List<CompletableFuture<ChunkResult<ChunkAccess>>> futures = new ArrayList<>(targets.size());
         for (ChunkPos chunkPos : targets) {
             futures.add(tempWorld.getChunkSource().getChunkFuture(
-                    chunkPos.x(),
-                    chunkPos.z(),
+                    chunkPos.x,
+                    chunkPos.z,
                     ChunkStatus.FEATURES,
                     true
             ));
@@ -139,11 +143,11 @@ public final class ChunkRegenerator {
             ChunkPos chunkPos = targets.get(i);
             ChunkResult<ChunkAccess> maybeChunk = futures.get(i).join();
             if (!maybeChunk.isSuccess()) {
-                throw new IllegalStateException("Failed to generate chunk " + chunkPos.x() + "," + chunkPos.z()
+                throw new IllegalStateException("Failed to generate chunk " + chunkPos.x + "," + chunkPos.z
                         + " (" + maybeChunk.getError() + ")");
             }
-            generated.put(chunkPos.pack(), maybeChunk.orElseThrow(() ->
-                    new IllegalStateException("Chunk " + chunkPos.x() + "," + chunkPos.z() + " unavailable")));
+            generated.put(chunkPos.toLong(), maybeChunk.orElseThrow(() ->
+                    new IllegalStateException("Chunk " + chunkPos.x + "," + chunkPos.z + " unavailable")));
         }
         return generated;
     }
@@ -164,13 +168,13 @@ public final class ChunkRegenerator {
         int maxY = minY + realWorld.getHeight();
 
         for (ChunkPos chunkPos : targets) {
-            ChunkAccess sourceChunk = generated.get(chunkPos.pack());
+            ChunkAccess sourceChunk = generated.get(chunkPos.toLong());
             if (sourceChunk == null) {
-                throw new IllegalStateException("Missing generated chunk " + chunkPos.x() + "," + chunkPos.z());
+                throw new IllegalStateException("Missing generated chunk " + chunkPos.x + "," + chunkPos.z);
             }
-            LevelChunk targetChunk = realWorld.getChunkSource().getChunkNow(chunkPos.x(), chunkPos.z());
+            LevelChunk targetChunk = realWorld.getChunkSource().getChunkNow(chunkPos.x, chunkPos.z);
             if (targetChunk == null) {
-                throw new IllegalStateException("Target chunk not loaded " + chunkPos.x() + "," + chunkPos.z());
+                throw new IllegalStateException("Target chunk not loaded " + chunkPos.x + "," + chunkPos.z);
             }
 
             int startX = chunkPos.getMinBlockX();

@@ -10,7 +10,7 @@ public final class StartCompass {
 
     public static boolean hasReceived(ServerPlayer p) {
         if (p == null) return false;
-        return p.entityTags().contains(TAG);
+        return p.getTags().contains(TAG);
     }
 
     public static void markReceived(ServerPlayer p) {

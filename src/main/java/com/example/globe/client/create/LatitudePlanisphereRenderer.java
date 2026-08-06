@@ -3,7 +3,7 @@ package com.example.globe.client.create;
 import com.example.globe.client.GlobeWorldSize;
 import com.example.globe.util.LatitudeBands;
 import java.util.Arrays;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 
 /**
  * Renders a live square latitude map for the bespoke create-world screen.
@@ -54,7 +54,7 @@ public final class LatitudePlanisphereRenderer {
      * @param panelBottom  bottom edge of the panel (for label clipping)
      * @param textRenderer text renderer for degree labels
      */
-    public static void render(GuiGraphicsExtractor ctx, int cx, int cy, int maxRadius,
+    public static void render(GuiGraphics ctx, int cx, int cy, int maxRadius,
                               GlobeWorldSize size, LatitudeBands.Band selectedZone,
                               int panelRight, int panelTop, int panelBottom,
                               net.minecraft.client.gui.Font textRenderer) {
@@ -194,7 +194,7 @@ public final class LatitudePlanisphereRenderer {
     }
 
     // ── Draw a single horizontal latitude line clipped to the disc ──
-    private static void drawLatitudeLine(GuiGraphicsExtractor ctx, int cx, int cy, int radius, int yOff, int color) {
+    private static void drawLatitudeLine(GuiGraphics ctx, int cx, int cy, int radius, int yOff, int color) {
         float frac = 1.0f - (float) (yOff * yOff) / (float) (radius * radius);
         if (frac <= 0) return;
         int halfW = (int) (Math.sqrt(frac) * radius);
@@ -207,18 +207,18 @@ public final class LatitudePlanisphereRenderer {
         return Math.max(LABEL_MIN_SCALE, Math.min(LABEL_MAX_SCALE, scaled * LABEL_BASE_SCALE / LABEL_MIN_SCALE));
     }
 
-    private static void drawScaledText(GuiGraphicsExtractor ctx, net.minecraft.client.gui.Font tr,
+    private static void drawScaledText(GuiGraphics ctx, net.minecraft.client.gui.Font tr,
                                        String text, int x, int y, float scale, int color) {
         var matrices = ctx.pose();
         matrices.pushMatrix();
         matrices.translate((float) x, (float) y);
         matrices.scale(scale, scale);
-        ctx.text(tr, text, 0, 0, color, false);
+        ctx.drawString(tr, text, 0, 0, color, false);
         matrices.popMatrix();
     }
 
     // ── Dashed circle (decorative, for small worlds) ──
-    private static void drawDashedCircle(GuiGraphicsExtractor ctx, int cx, int cy, int radius, int color) {
+    private static void drawDashedCircle(GuiGraphics ctx, int cx, int cy, int radius, int color) {
         int dashLen = 3;
         int gapLen = 3;
         for (int dy = -radius; dy <= radius; dy++) {
@@ -240,7 +240,7 @@ public final class LatitudePlanisphereRenderer {
     }
 
     // ── Fill a circular disc ──
-    private static void fillCircle(GuiGraphicsExtractor ctx, int cx, int cy, int radius, int color) {
+    private static void fillCircle(GuiGraphics ctx, int cx, int cy, int radius, int color) {
         for (int dy = -radius; dy <= radius; dy++) {
             float frac = 1.0f - (float) (dy * dy) / (float) (radius * radius);
             if (frac <= 0) continue;
@@ -251,7 +251,7 @@ public final class LatitudePlanisphereRenderer {
     }
 
     // ── Fill a horizontal band strip within a circular disc ──
-    private static void fillBandStrip(GuiGraphicsExtractor ctx, int cx, int cy, int radius, int yStart, int yEnd, int color) {
+    private static void fillBandStrip(GuiGraphics ctx, int cx, int cy, int radius, int yStart, int yEnd, int color) {
         for (int dy = yStart; dy < yEnd; dy++) {
             float frac = 1.0f - (float) (dy * dy) / (float) (radius * radius);
             if (frac <= 0) continue;
@@ -272,7 +272,7 @@ public final class LatitudePlanisphereRenderer {
      * @param size         both width and height of the bounding square (pixels)
      * @param selectedBand the currently selected latitude band, or {@code null} for Random
      */
-    public static void renderCompact(GuiGraphicsExtractor context, int x, int y, int size, LatitudeBands.Band selectedBand) {
+    public static void renderCompact(GuiGraphics context, int x, int y, int size, LatitudeBands.Band selectedBand) {
         renderSquareMap(context, x, y, size, selectedBand, 0xFF, true);
     }
 
@@ -280,7 +280,7 @@ public final class LatitudePlanisphereRenderer {
      * Draws a Regular-world reference at exactly ten percent opacity for smaller world selections.
      * It deliberately receives no selected band, so this layer can never imply a zone choice.
      */
-    public static void renderRegularWorldUnderlay(GuiGraphicsExtractor context, int x, int y, int size) {
+    public static void renderRegularWorldUnderlay(GuiGraphics context, int x, int y, int size) {
         renderSquareMap(context, x, y, size, null, REGULAR_WORLD_UNDERLAY_ALPHA, false);
     }
 
@@ -288,13 +288,13 @@ public final class LatitudePlanisphereRenderer {
      * Draws a deliberately darkened Regular-world copy over a larger selected Atlas.
      * This marks the familiar 20,000-block footprint without preserving the former full-Ginormous ghost.
      */
-    public static void renderDarkenedRegularReference(GuiGraphicsExtractor context, int x, int y, int size) {
+    public static void renderDarkenedRegularReference(GuiGraphics context, int x, int y, int size) {
         if (size < 8) return;
         context.fill(x, y, x + size, y + size, 0xA0000000);
         renderSquareMap(context, x, y, size, null, 0x78, false);
     }
 
-    private static void renderSquareMap(GuiGraphicsExtractor context, int x, int y, int size,
+    private static void renderSquareMap(GuiGraphics context, int x, int y, int size,
                                         LatitudeBands.Band selectedBand, int alpha, boolean showSelection) {
         if (size < 8) return;
 
@@ -336,7 +336,7 @@ public final class LatitudePlanisphereRenderer {
         context.fill(x + size - 1, y, x + size, y + size, border);
     }
 
-    private static void drawSquareBand(GuiGraphicsExtractor context, int x, int y, int size,
+    private static void drawSquareBand(GuiGraphics context, int x, int y, int size,
                                        LatitudeBands.Band band, int color) {
         int northTop = latitudeY(y, size, band.highDeg());
         int northBottom = latitudeY(y, size, band.lowDeg());
@@ -350,7 +350,7 @@ public final class LatitudePlanisphereRenderer {
         return top + (int) Math.round((90.0 - latitude) * size / 180.0);
     }
 
-    private static void drawHorizontalEdge(GuiGraphicsExtractor context, int x, int size, int y, int color) {
+    private static void drawHorizontalEdge(GuiGraphics context, int x, int size, int y, int color) {
         context.fill(x, y, x + size, y + 1, color);
     }
 

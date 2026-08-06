@@ -7,7 +7,7 @@ import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.util.Mth;
@@ -128,7 +128,7 @@ public final class GlobeWarningOverlay {
         };
     }
 
-    public static void render(GuiGraphicsExtractor ctx, DeltaTracker tickCounter) {
+    public static void render(GuiGraphics ctx, DeltaTracker tickCounter) {
         Minecraft client = Minecraft.getInstance();
 
         if (client == null) {
@@ -261,7 +261,7 @@ public final class GlobeWarningOverlay {
         return (alpha << 24) | (rgb & 0x00FFFFFF);
     }
 
-    private static void drawCenteredEwWarning(GuiGraphicsExtractor ctx, Font tr, Component text, int y, int argbColor) {
+    private static void drawCenteredEwWarning(GuiGraphics ctx, Font tr, Component text, int y, int argbColor) {
         int screenW = Minecraft.getInstance().getWindow().getGuiScaledWidth();
         int w = tr.width(text);
         int x = Math.max(4, (screenW - w) / 2);
@@ -270,12 +270,12 @@ public final class GlobeWarningOverlay {
         Component keylineText = Component.literal(text.getString());
 
         for (int[] offset : EwPresentationPolicy.outlineOffsets()) {
-            ctx.text(tr, keylineText, x + offset[0], y + offset[1], keylineColor, false);
+            ctx.drawString(tr, keylineText, x + offset[0], y + offset[1], keylineColor, false);
         }
-        ctx.text(tr, text, x, y, argbColor, false);
+        ctx.drawString(tr, text, x, y, argbColor, false);
     }
 
-    private static void drawCenteredPolarWarning(GuiGraphicsExtractor ctx, Font tr, Component text, int y, int argbColor) {
+    private static void drawCenteredPolarWarning(GuiGraphics ctx, Font tr, Component text, int y, int argbColor) {
         int screenW = Minecraft.getInstance().getWindow().getGuiScaledWidth();
         int w = tr.width(text);
         int x = Math.max(4, (screenW - w) / 2);
@@ -284,9 +284,9 @@ public final class GlobeWarningOverlay {
         Component keylineText = Component.literal(text.getString());
 
         for (int[] offset : PolarPresentationPolicy.outlineOffsets()) {
-            ctx.text(tr, keylineText, x + offset[0], y + offset[1], keylineColor, false);
+            ctx.drawString(tr, keylineText, x + offset[0], y + offset[1], keylineColor, false);
         }
-        ctx.text(tr, text, x, y, argbColor, false);
+        ctx.drawString(tr, text, x, y, argbColor, false);
     }
 
     private static int polarRank(GlobeClientState.PolarStage stage) {
