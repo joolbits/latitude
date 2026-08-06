@@ -6,15 +6,18 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
 import java.util.List;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeGenerationSettings;
 import net.minecraft.world.level.biome.Biomes;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.levelgen.GenerationStep;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.placement.BiomeFilter;
 import net.minecraft.world.level.levelgen.placement.PlacedFeature;
+import net.minecraft.world.level.levelgen.placement.PlacementContext;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
@@ -30,12 +33,18 @@ public final class FrozenRiverVegetationGuardMixin {
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/world/level/biome/BiomeGenerationSettings;hasFeature(Lnet/minecraft/world/level/levelgen/placement/PlacedFeature;)Z"))
+    // @Local(name = ...) does not survive a port. Local variable names come from the mappings, and
+    // 1.21.11 calls these `holder` and `placementContext`, so the 26.2 names matched nothing and the
+    // mixin failed to apply at boot. Match the Holder by type instead -- it is the only one in scope
+    // at this call -- and take the context as the enclosing method's own parameter, which is stable.
     private boolean globe$blockFrozenRiverVegetationAtBiomeBoundary(
             BiomeGenerationSettings settings,
             PlacedFeature feature,
             Operation<Boolean> original,
-            @Local(name = "biome") Holder<Biome> biome,
-            @Local(name = "context") net.minecraft.world.level.levelgen.placement.PlacementContext context) {
+            PlacementContext context,
+            RandomSource random,
+            BlockPos origin,
+            @Local Holder<Biome> biome) {
         boolean registeredForBiome = original.call(settings, feature);
         if (!registeredForBiome
                 || !LatitudeWorldgenScope.isActive()

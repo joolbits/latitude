@@ -30,8 +30,12 @@ from pathlib import Path
 MIXIN_CONFIG = Path("src/main/resources/globe.mixins.json")
 SOURCE_ROOT = Path("src/main/java")
 
+# Both Mixin's own injectors and MixinExtras'. Omitting the MixinExtras ones is not a small gap:
+# @ModifyReturnValue and @ModifyExpressionValue are used throughout this codebase, and a missing
+# entry here means the verifier passes a mixin that cannot apply.
 INJECTOR_ANNOTATIONS = ("@Inject", "@Redirect", "@ModifyArg", "@ModifyArgs",
-                        "@ModifyVariable", "@ModifyConstant", "@WrapOperation", "@WrapWithCondition")
+                        "@ModifyVariable", "@ModifyConstant", "@WrapOperation", "@WrapWithCondition",
+                        "@ModifyReturnValue", "@ModifyExpressionValue", "@WrapMethod")
 
 # Injectors whose `method` names Latitude owns rather than Minecraft (handler names, not targets).
 IGNORED_METHOD_TARGETS = {"<init>", "<clinit>"}

@@ -192,8 +192,12 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
     private Stream<Holder<PlacedFeature>> globe$omitFrozenRiverVegetationContribution(
             HolderSet<PlacedFeature> features,
             Operation<Stream<Holder<PlacedFeature>>> original,
-            @Local(name = "biome") Holder<Biome> biome,
-            @Local(name = "stepIndex") int stepIndex) {
+            // Same trap as FrozenRiverVegetationGuardMixin: 26.2's local names do not exist here.
+            // 1.21.11 names these `holder` and `k`. The Holder is the only one in scope at this
+            // call so it matches by type; the step index is the third of four ints live at the
+            // HolderSet.stream() call (slot 17, the one indexing the per-step feature list).
+            @Local Holder<Biome> biome,
+            @Local(ordinal = 2) int stepIndex) {
         if (LatitudeWorldgenScope.isActive()
                 && biome.is(Biomes.FROZEN_RIVER)
                 && stepIndex == GenerationStep.Decoration.VEGETAL_DECORATION.ordinal()) {
