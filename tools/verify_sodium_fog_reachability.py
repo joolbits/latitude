@@ -1,5 +1,31 @@
 #!/usr/bin/env python3
-"""Verify Latitude's supported Sodium 0.9.1 fog-culling integration from exact class bytes."""
+"""Verify Latitude's supported Sodium 0.8.13 fog-culling integration from exact class bytes.
+
+Target-specific. The 26.2 edition of this verifier asserted a different chain, because both
+Minecraft and Sodium changed shape between the two lines:
+
+* 26.2 ships Minecraft deobfuscated, so Sodium's jar referenced real names
+  (``net/minecraft/client/renderer/fog/FogData.environmentalStart``). 1.21.11 is obfuscated, so
+  Sodium ships remapped to **intermediary** and the same references read ``class_7285.field_60582``.
+* Sodium 0.9.1 hooked ``setupFog`` at ``RETURN``. Sodium 0.8.13 hooks ``setupFog`` at the
+  ``INVOKE`` of ``updateBuffer`` and captures the local ``FogData`` and ``Vector4f`` there.
+
+That second difference is the load-bearing one for Latitude. Sodium snapshots the fog state at the
+buffer write, so everything Latitude does to the fog must happen *before* ``updateBuffer`` is
+invoked. It is why Latitude's colour pass hooks ``computeFogColor`` rather than the return of
+``setupFog``: blending into ``setupFog``'s return value would land after both the UBO upload and
+Sodium's snapshot, compiling cleanly and changing nothing on screen.
+
+Intermediary names asserted below, resolved against 1.21.11 intermediary-v2:
+    class_758                    net.minecraft.client.renderer.fog.FogRenderer
+    class_7285                   net.minecraft.client.renderer.fog.FogData
+    method_3211  (Camera,int,DeltaTracker,float,ClientLevel)Vector4f      FogRenderer.setupFog
+    method_71110 (ByteBuffer,int,Vector4f,float x6)V                      FogRenderer.updateBuffer
+    field_60582  F   FogData.environmentalStart
+    field_60583  F   FogData.renderDistanceStart
+    field_60584  F   FogData.environmentalEnd
+    field_60585  F   FogData.renderDistanceEnd
+"""
 
 from __future__ import annotations
 
@@ -14,11 +40,22 @@ import zipfile
 from pathlib import Path
 
 
-EXPECTED_SODIUM_SHA256 = "de406c7a0ca5e748dfbe44740278400882a44e3109e2584b243ec02d4003344b"
+EXPECTED_SODIUM_SHA256 = "78d7b657406c2961e0a10d1d5c2703c519deb2030ec670163166f8a0a1152176"
+EXPECTED_SODIUM_VERSION = "0.8.13+mc1.21.11"
 DEAD_MIXIN = "client.compat.sodium.RenderSectionManagerVisibilityMixin"
 DEAD_SOURCE = Path("src/main/java/com/example/globe/mixin/client/compat/sodium/RenderSectionManagerVisibilityMixin.java")
-FOG_SOURCE = Path("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java")
+COLOR_SOURCE = Path("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java")
+DISTANCE_SOURCE = Path("src/main/java/com/example/globe/mixin/client/AtmosphericFogEnvironmentMixin.java")
 MIXIN_CONFIG = Path("src/main/resources/globe.mixins.json")
+
+# Sodium's own snapshot point. Latitude must have finished with the fog before this runs.
+SODIUM_SNAPSHOT_TARGET = (
+    'target="Lnet/minecraft/class_758;'
+    'method_71110(Ljava/nio/ByteBuffer;ILorg/joml/Vector4f;FFFFFF)V"'
+)
+# 0.8.13's traversal entry point; 0.9.1 called this SectionTree.traverse.
+SODIUM_TRAVERSE = "RemovableMultiForest.traverse:"
+SODIUM_SEARCH = "getSearchDistance:(Lnet/caffeinemc/mods/sodium/client/util/FogParameters;)F"
 
 
 class VerificationError(RuntimeError):
@@ -60,32 +97,37 @@ def method_section(bytecode: str, signature: str) -> str:
 
 
 def verify_sodium_chain(fog_mixin: str, renderer: str) -> None:
+    # Sodium still snapshots FogData, and still does it inside setupFog at the buffer write.
     for token in (
         "sodium$storeFogParameters",
-        "net/minecraft/client/renderer/fog/FogData.environmentalStart",
-        "net/minecraft/client/renderer/fog/FogData.environmentalEnd",
-        "net/minecraft/client/renderer/fog/FogData.renderDistanceStart",
-        "net/minecraft/client/renderer/fog/FogData.renderDistanceEnd",
-        'method=["setupFog"]',
-        'value="RETURN"',
+        "value=[class Lnet/minecraft/class_758;]",   # @Mixin(FogRenderer.class)
+        'method=["method_3211"]',                    # setupFog
+        'value="INVOKE"',
+        SODIUM_SNAPSHOT_TARGET,                      # ... at the updateBuffer call
+        "net/minecraft/class_7285",                  # FogData
+        "field_60582",                               # environmentalStart
+        "field_60583",                               # renderDistanceStart
+        "field_60584",                               # environmentalEnd
+        "field_60585",                               # renderDistanceEnd
     ):
         require(token in fog_mixin, f"Sodium FogData snapshot drifted or is missing: {token}")
 
-    search = "getSearchDistance:(Lnet/caffeinemc/mods/sodium/client/util/FogParameters;)F"
-    traverse = "SectionTree.traverse:"
     search_method = method_section(renderer, "private float getSearchDistance(")
-    traversal_method = method_section(renderer, "private void readRenderListFromTree(")
-    require("useFogOcclusion:Z" in search_method, "Sodium fog-occlusion user setting is no longer consulted")
-    require("getEffectiveRenderDistance:(Lnet/caffeinemc/mods/sodium/client/util/FogParameters;)F" in search_method,
+    require("useFogOcclusion:Z" in search_method,
+            "Sodium fog-occlusion user setting is no longer consulted")
+    require("getEffectiveRenderDistance:(Lnet/caffeinemc/mods/sodium/client/util/FogParameters;)F"
+            in search_method,
             "Sodium no longer derives effective distance from FogParameters")
     require("getRenderDistance:()F" in search_method,
             "Sodium no longer preserves uncapped distance when fog occlusion is disabled")
-    require(search in traversal_method, "FogParameters no longer reach RenderSectionManager.getSearchDistance")
-    require(traverse in traversal_method, "RenderSectionManager no longer reaches SectionTree.traverse")
-    require(traversal_method.index(search) < traversal_method.index(traverse),
-            "FogParameters search distance does not precede SectionTree.traverse")
-    require("isSectionVisible(int, int, int)" not in renderer,
-            "obsolete isSectionVisible target unexpectedly exists; compatibility design must be re-audited")
+
+    traversal_method = method_section(renderer, "private boolean createTerrainRenderList(")
+    require(SODIUM_SEARCH in traversal_method,
+            "FogParameters no longer reach RenderSectionManager.getSearchDistance")
+    require(SODIUM_TRAVERSE in traversal_method,
+            "RenderSectionManager no longer reaches the forest traversal")
+    require(traversal_method.index(SODIUM_SEARCH) < traversal_method.index(SODIUM_TRAVERSE),
+            "FogParameters search distance does not precede the forest traversal")
 
 
 def main() -> int:
@@ -97,11 +139,13 @@ def main() -> int:
     jar = args.sodium_jar.resolve()
     root = args.source_root.resolve()
     require(jar.is_file(), f"missing Sodium artifact: {jar}")
-    require(sha256(jar) == EXPECTED_SODIUM_SHA256, "Sodium artifact SHA-256 differs from supported 0.9.1 bytes")
+    require(sha256(jar) == EXPECTED_SODIUM_SHA256,
+            f"Sodium artifact SHA-256 differs from supported {EXPECTED_SODIUM_VERSION} bytes")
 
     with zipfile.ZipFile(jar) as archive:
         metadata = json.loads(archive.read("fabric.mod.json"))
-        require(metadata.get("version") == "0.9.1+mc26.2", "unexpected Sodium version metadata")
+        require(metadata.get("version") == EXPECTED_SODIUM_VERSION,
+                "unexpected Sodium version metadata")
 
     javap_bin = shutil.which("javap")
     require(javap_bin is not None, "javap is unavailable")
@@ -120,7 +164,7 @@ def main() -> int:
 
     # Negative control: the same verifier must reject a drifted traversal target.
     try:
-        verify_sodium_chain(fog_mixin, renderer.replace("SectionTree.traverse:", "SectionTree.driftedTraverse:"))
+        verify_sodium_chain(fog_mixin, renderer.replace(SODIUM_TRAVERSE, "RemovableMultiForest.driftedTraverse:"))
     except VerificationError:
         pass
     else:
@@ -128,15 +172,28 @@ def main() -> int:
 
     mixins = json.loads((root / MIXIN_CONFIG).read_text())
     client_mixins = mixins.get("client", [])
+    # Unlike 26.2, RenderSectionManager.isSectionVisible(int,int,int) still exists on this Sodium
+    # line. Latitude deliberately does not hook it: fog occlusion via FogParameters is the
+    # supported mechanism, and the placement-time visibility mixin stays retired.
     require(DEAD_MIXIN not in client_mixins, "dead Sodium isSectionVisible mixin remains registered")
     require(not (root / DEAD_SOURCE).exists(), "dead Sodium isSectionVisible mixin source remains present")
 
-    fog_source = (root / FOG_SOURCE).read_text()
-    require("@Mixin(value = FogRenderer.class, priority = 900)" in fog_source,
-            "Latitude fog mixin lacks explicit priority 900 before Sodium's default-priority snapshot")
+    # Both halves of Latitude's split fog design must outrank Sodium's default-priority mixin.
+    color_source = (root / COLOR_SOURCE).read_text()
+    distance_source = (root / DISTANCE_SOURCE).read_text()
+    require("@Mixin(value = FogRenderer.class, priority = 900)" in color_source,
+            "Latitude fog colour mixin lacks explicit priority 900 before Sodium's snapshot")
+    require("@Mixin(value = AtmosphericFogEnvironment.class, priority = 900)" in distance_source,
+            "Latitude fog distance mixin lacks explicit priority 900 before Sodium's snapshot")
+    require('@Inject(method = "computeFogColor"' in color_source,
+            "Latitude fog colour must be blended in computeFogColor, before Sodium's snapshot at "
+            "the updateBuffer call; blending setupFog's return value never reaches the screen")
+    require('@Inject(method = "setupFog"' not in color_source,
+            "Latitude fog colour must not hook setupFog on this target")
 
     print(f"SODIUM_FOG_REACHABILITY_PASS jar={jar.name} sha256={EXPECTED_SODIUM_SHA256}")
-    print(" chain=FogData->FogParameters->getSearchDistance->SectionTree.traverse")
+    print(" chain=FogData->FogParameters->getSearchDistance->RemovableMultiForest.traverse")
+    print(" snapshot=setupFog@INVOKE(updateBuffer) latitudeWritesBefore=colour+distances")
     print(" userSetting=useFogOcclusion-preserved negativeControl=drift-detected")
     return 0
 

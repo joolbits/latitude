@@ -513,9 +513,10 @@ tasks.named('check').configure {
 
 tasks.register('latitudeSodiumFogReachabilityTest', Exec) {
     group = 'verification'
-    description = 'Verify the exact Sodium 0.9.1 FogData-to-culling bytecode chain and Latitude mixin order'
+    description = 'Verify the exact Sodium 0.8.13 FogData-to-culling bytecode chain and Latitude mixin order'
     inputs.file('tools/verify_sodium_fog_reachability.py')
     inputs.file('src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java')
+    inputs.file('src/main/java/com/example/globe/mixin/client/AtmosphericFogEnvironmentMixin.java')
     inputs.file('src/main/resources/globe.mixins.json')
     inputs.files(configurations.latitudeSodiumFogVerifier)
 
