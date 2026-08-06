@@ -64,9 +64,26 @@ public abstract class ExtremePolarVillageStartGuardMixin {
             Predicate<Holder<Biome>> validBiome,
             Operation<StructureStart> original) {
         int blockZ = chunkPos.getMiddleBlockZ();
+        BiomeSource effectiveBiomeSource = biomeSource;
         if (LatitudeWorldgenScope.isActive()
                 && chunkGenerator instanceof NoiseBasedChunkGenerator noise
                 && GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
+            // Hand vanilla the biome the player will actually stand in.
+            //
+            // ChunkGenerator.tryGenerateStructure reads the raw `biomeSource` FIELD, while
+            // ServerLevel builds its StructureCheck from getBiomeSource() — which our
+            // ChunkGeneratorBiomeSourceMixin overrides to the Latitude wrapper. So vanilla's
+            // "does a structure exist here" prediction (what /locate answers from) judged the
+            // repainted biome while actual generation judged the raw one. That disagreement is
+            // exactly the reported defect in both directions: /locate promising a desert pyramid
+            // that never generated, and pyramids generating on raw desert that Latitude then
+            // repainted to snow. Substituting the wrapper here makes siting judge the final
+            // biome, so prediction and generation agree and structures land in the biome a
+            // player sees.
+            BiomeSource authoritative = chunkGenerator.getBiomeSource();
+            if (authoritative instanceof com.example.globe.world.LatitudeBiomeSource) {
+                effectiveBiomeSource = authoritative;
+            }
             try {
                 Registry<Structure> registry =
                         registryAccess.lookupOrThrow(Registries.STRUCTURE);
@@ -128,62 +145,6 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                             structureId.getPath(), finalBiomeId.toString())) {
                         return StructureStart.INVALID_START;
                     }
-                } else if (structureId != null && validBiome != null) {
-                    // General siting authority. Vanilla tests the structure's own biome predicate
-                    // against the raw multi-noise biome, which is not what the player ends up
-                    // standing in: Latitude repaints the column afterwards, so a desert pyramid can
-                    // be sited on vanilla's desert and then find itself in snow. Re-test the very
-                    // same predicate against Latitude's final biome for this column.
-                    //
-                    // Deliberately conservative — a structure guard that over-rejects silently
-                    // empties the world. We only overrule vanilla where it would have said yes and
-                    // Latitude's own biome says no; anything else (unknown biome, predicate that
-                    // already rejects the base, any exception) falls through and generates.
-                    int radius = GlobeMod.borderRadiusForNoiseGenerator(noise);
-                    int blockX = chunkPos.getMiddleBlockX();
-                    LOGGER.info("[LAT][STRUCTGUARD] enter structure={} x={} z={} radius={}",
-                            structureId, blockX, blockZ, radius);
-                    Registry<Biome> biomeRegistry =
-                            registryAccess.lookupOrThrow(Registries.BIOME);
-                    Holder<Biome> baseBiome = biomeSource.getNoiseBiome(
-                            Math.floorDiv(blockX, 4),
-                            Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
-                            Math.floorDiv(blockZ, 4),
-                            randomState.sampler());
-                    boolean baseValid = validBiome.test(baseBiome);
-                    Identifier baseBiomeId = biomeRegistry.getKey(baseBiome.value());
-                    LOGGER.info("[LAT][STRUCTGUARD] structure={} baseBiome={} baseValid={}",
-                            structureId, baseBiomeId, baseValid);
-                    if (baseValid) {
-                        Holder<Biome> pickedBiome;
-                        try {
-                            pickedBiome = LatitudeBiomes.pick(
-                                    biomeRegistry,
-                                    baseBiome,
-                                    blockX,
-                                    blockZ,
-                                    LatitudeBiomes.SURFACE_CLASSIFY_Y,
-                                    radius,
-                                    randomState.sampler(),
-                                    "STRUCTURE_START",
-                                    noise,
-                                    randomState,
-                                    heightAccessor);
-                        } catch (RuntimeException pickFailure) {
-                            LOGGER.warn("[LAT][STRUCTGUARD] LatitudeBiomes.pick threw for structure={} x={} z={}; "
-                                            + "falling open (structure generation NOT blocked)",
-                                    structureId, blockX, blockZ, pickFailure);
-                            pickedBiome = null;
-                        }
-                        Identifier pickedBiomeId = pickedBiome != null ? biomeRegistry.getKey(pickedBiome.value()) : null;
-                        boolean pickedValid = pickedBiome != null && validBiome.test(pickedBiome);
-                        LOGGER.info("[LAT][STRUCTGUARD] structure={} pickedBiome={} pickedValid={} verdict={}",
-                                structureId, pickedBiomeId, pickedValid,
-                                pickedBiome == null ? "FALL-OPEN (null pick)" : (pickedValid ? "ALLOW" : "REJECT"));
-                        if (pickedBiome != null && !pickedValid) {
-                            return StructureStart.INVALID_START;
-                        }
-                    }
                 }
             } catch (RuntimeException ignored) {
                 // Registry unavailable — fail open (allow generation).
@@ -195,7 +156,7 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                 levelKey,
                 registryAccess,
                 chunkGenerator,
-                biomeSource,
+                effectiveBiomeSource,
                 randomState,
                 templateManager,
                 seed,

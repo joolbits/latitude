@@ -848,7 +848,7 @@ public class GlobeMod implements ModInitializer {
      * TEST jar is staged for Maintainer — this is her own tracking counter, not derived from git, the
      * same convention as the "TEST N.jar" staging filenames. Bump this alongside that filename.
      */
-    private static final String ALPHA_TEST_LABEL = "alpha.2";
+    private static final String ALPHA_TEST_LABEL = "alpha.3";
 
     /**
      * Short, human-readable build identity for on-screen display (title screen watermark) — the
