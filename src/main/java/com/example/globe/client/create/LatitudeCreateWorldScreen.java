@@ -498,6 +498,13 @@ public class LatitudeCreateWorldScreen extends Screen {
         return this.width < 480;
     }
 
+    /**
+     * Logical height below which the create screen switches to tighter chrome. A GUI scale of 5 on
+     * a 1440p display lands at roughly 288 units; 4x on 1080p at 270. Ordinary scales sit well
+     * above this and keep the original spacing untouched.
+     */
+    private static final int COMPACT_LAYOUT_HEIGHT = 340;
+
     private static boolean shouldUseTabbedLayout(int viewportWidth, int guiScale) {
         return guiScale >= HIGH_GUI_SCALE || viewportWidth < MIN_COMFORTABLE_THREE_COL_WIDTH;
     }
@@ -510,10 +517,18 @@ public class LatitudeCreateWorldScreen extends Screen {
         // Screen.rebuildWidgets() clears Screen-owned collections, not this private render registry.
         // Clear it on every init so resize/sub-screen return cannot leave a frozen ghost layer.
         settingsScrollWidgets.clear();
-        int headerGap = scaledUi(10);
-        int headerToPanel = scaledUi(42);
-        int bottomMargin = scaledUi(40);
-        int btnBottomOffset = scaledUi(30);
+        // These margins are fixed GUI-space pixels (scaledUi is identity), so they cost a constant
+        // number of units no matter how few units the screen has. At GUI scale 5 on 1440p the
+        // logical screen is only ~288 tall, where header + bottom chrome eats about 28% of it and
+        // the panels are squeezed into what is left — the cramped look Maintainer reported. At 2x the
+        // same chrome is ~11% and unnoticeable, which is why only large GUI scales suffer.
+        // Key off the logical height rather than the scale value so an unusual monitor size lands
+        // on the right side of it too, and leave ordinary scales byte-identical to before.
+        boolean shortScreen = this.height < COMPACT_LAYOUT_HEIGHT;
+        int headerGap = shortScreen ? scaledUi(4) : scaledUi(10);
+        int headerToPanel = shortScreen ? scaledUi(26) : scaledUi(42);
+        int bottomMargin = shortScreen ? scaledUi(26) : scaledUi(40);
+        int btnBottomOffset = shortScreen ? scaledUi(21) : scaledUi(30);
         int fieldGap1 = scaledUi(38);
         int fieldGap2 = scaledUi(40);
         int labelFieldGap = scaledUi(22);
