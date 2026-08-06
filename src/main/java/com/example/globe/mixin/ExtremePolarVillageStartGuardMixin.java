@@ -26,6 +26,8 @@ import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
@@ -39,6 +41,7 @@ import java.util.function.Predicate;
  */
 @Mixin(ChunkGenerator.class)
 public abstract class ExtremePolarVillageStartGuardMixin {
+    private static final Logger LOGGER = LoggerFactory.getLogger("globe");
 
     @WrapOperation(
             method = "tryGenerateStructure",
@@ -138,6 +141,8 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                     // already rejects the base, any exception) falls through and generates.
                     int radius = GlobeMod.borderRadiusForNoiseGenerator(noise);
                     int blockX = chunkPos.getMiddleBlockX();
+                    LOGGER.info("[LAT][STRUCTGUARD] enter structure={} x={} z={} radius={}",
+                            structureId, blockX, blockZ, radius);
                     Registry<Biome> biomeRegistry =
                             registryAccess.lookupOrThrow(Registries.BIOME);
                     Holder<Biome> baseBiome = biomeSource.getNoiseBiome(
@@ -145,20 +150,37 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                             Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
                             Math.floorDiv(blockZ, 4),
                             randomState.sampler());
-                    if (validBiome.test(baseBiome)) {
-                        Holder<Biome> pickedBiome = LatitudeBiomes.pick(
-                                biomeRegistry,
-                                baseBiome,
-                                blockX,
-                                blockZ,
-                                LatitudeBiomes.SURFACE_CLASSIFY_Y,
-                                radius,
-                                randomState.sampler(),
-                                "STRUCTURE_START",
-                                noise,
-                                randomState,
-                                heightAccessor);
-                        if (pickedBiome != null && !validBiome.test(pickedBiome)) {
+                    boolean baseValid = validBiome.test(baseBiome);
+                    Identifier baseBiomeId = biomeRegistry.getKey(baseBiome.value());
+                    LOGGER.info("[LAT][STRUCTGUARD] structure={} baseBiome={} baseValid={}",
+                            structureId, baseBiomeId, baseValid);
+                    if (baseValid) {
+                        Holder<Biome> pickedBiome;
+                        try {
+                            pickedBiome = LatitudeBiomes.pick(
+                                    biomeRegistry,
+                                    baseBiome,
+                                    blockX,
+                                    blockZ,
+                                    LatitudeBiomes.SURFACE_CLASSIFY_Y,
+                                    radius,
+                                    randomState.sampler(),
+                                    "STRUCTURE_START",
+                                    noise,
+                                    randomState,
+                                    heightAccessor);
+                        } catch (RuntimeException pickFailure) {
+                            LOGGER.warn("[LAT][STRUCTGUARD] LatitudeBiomes.pick threw for structure={} x={} z={}; "
+                                            + "falling open (structure generation NOT blocked)",
+                                    structureId, blockX, blockZ, pickFailure);
+                            pickedBiome = null;
+                        }
+                        Identifier pickedBiomeId = pickedBiome != null ? biomeRegistry.getKey(pickedBiome.value()) : null;
+                        boolean pickedValid = pickedBiome != null && validBiome.test(pickedBiome);
+                        LOGGER.info("[LAT][STRUCTGUARD] structure={} pickedBiome={} pickedValid={} verdict={}",
+                                structureId, pickedBiomeId, pickedValid,
+                                pickedBiome == null ? "FALL-OPEN (null pick)" : (pickedValid ? "ALLOW" : "REJECT"));
+                        if (pickedBiome != null && !pickedValid) {
                             return StructureStart.INVALID_START;
                         }
                     }
