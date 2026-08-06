@@ -142,6 +142,43 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                             structureId.getPath(), finalBiomeId.toString())) {
                         return StructureStart.INVALID_START;
                     }
+                } else if (structureId != null && validBiome != null) {
+                    // General siting authority. Vanilla tests the structure's own biome predicate
+                    // against the raw multi-noise biome, which is not what the player ends up
+                    // standing in: Latitude repaints the column afterwards, so a desert pyramid can
+                    // be sited on vanilla's desert and then find itself in snow. Re-test the very
+                    // same predicate against Latitude's final biome for this column.
+                    //
+                    // Deliberately conservative — a structure guard that over-rejects silently
+                    // empties the world. We only overrule vanilla where it would have said yes and
+                    // Latitude's own biome says no; anything else (unknown biome, predicate that
+                    // already rejects the base, any exception) falls through and generates.
+                    int radius = GlobeMod.borderRadiusForNoiseGenerator(noise);
+                    int blockX = chunkPos.getMiddleBlockX();
+                    Registry<Biome> biomeRegistry =
+                            registryAccess.lookupOrThrow(Registries.BIOME);
+                    Holder<Biome> baseBiome = biomeSource.getNoiseBiome(
+                            Math.floorDiv(blockX, 4),
+                            Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
+                            Math.floorDiv(blockZ, 4),
+                            randomState.sampler());
+                    if (validBiome.test(baseBiome)) {
+                        Holder<Biome> pickedBiome = LatitudeBiomes.pick(
+                                biomeRegistry,
+                                baseBiome,
+                                blockX,
+                                blockZ,
+                                LatitudeBiomes.SURFACE_CLASSIFY_Y,
+                                radius,
+                                randomState.sampler(),
+                                "STRUCTURE_START",
+                                noise,
+                                randomState,
+                                heightAccessor);
+                        if (pickedBiome != null && !validBiome.test(pickedBiome)) {
+                            return StructureStart.INVALID_START;
+                        }
+                    }
                 }
             } catch (RuntimeException ignored) {
                 // Registry unavailable — fail open (allow generation).
