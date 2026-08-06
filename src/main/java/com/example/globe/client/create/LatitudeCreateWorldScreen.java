@@ -1411,6 +1411,14 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        // The bottom button row sits below every panel, so nothing panel-scoped may swallow its
+        // clicks. Cancel was dead on the World tab and live on Rules — a difference only a
+        // tab-scoped consumer can produce — so dispatch anything below the panels straight to the
+        // widgets. Stated as an invariant rather than a patch on one suspect: no panel handler has
+        // any business claiming coordinates outside its own panel.
+        if (click.y() >= panelBottom) {
+            return super.mouseClicked(click, doubled);
+        }
         if (click.button() == 0 && handleTabClick(click.x(), click.y())) {
             return true;
         }
