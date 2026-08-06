@@ -260,32 +260,44 @@ public class GlobeMod implements ModInitializer {
         int pendingRadius = GlobePending.pendingGlobeRadius;
         GlobePending.pendingGlobeRadius = 0;
 
+        // The create screen's own launch is the primary authority on whether this is a Latitude
+        // world, exactly as on the shipped 26.1x line: record the pending radius BEFORE consulting
+        // the generator. isGlobeOverworld() then recognises the world through the persisted state.
+        // The generator-holder check must NOT gate this: lithostitched legitimately swaps a patched
+        // Direct settings holder into the live generator to inject dependent mods' worldgen
+        // (CliffTree on 26.1.x), which breaks holder-key recognition while leaving the terrain
+        // exactly ours. The launcher already verified the baked generator was a bound globe:
+        // reference before launch, so the only thing still worth failing on is gross substitution —
+        // a generator that is not even a NoiseBasedChunkGenerator.
+        if (pendingRadius > 0 && world.getGameTime() < 100L
+                && !(world.getChunkSource().getGenerator() instanceof NoiseBasedChunkGenerator)) {
+            throw new IllegalStateException(
+                    "Latitude created this world, but the loaded overworld generator was replaced "
+                    + "by a non-noise generator (" 
+                    + world.getChunkSource().getGenerator().getClass().getName()
+                    + "). Another world generation mod took over the overworld during world "
+                    + "creation; the world would save as vanilla terrain and Latitude would stay "
+                    + "disabled in it. Remove the conflicting world generation mod and create the "
+                    + "world again. This world save is not a Latitude world and can be deleted.");
+        }
+        LatitudeWorldState earlyState = pendingRadius > 0 && world.getGameTime() < 100L
+                ? LatitudeWorldState.get(world)
+                : LatitudeWorldState.getIfPresent(world);
+        if (earlyState != null && earlyState.getGlobeRadius() <= 0
+                && pendingRadius > 0 && world.getGameTime() < 100L) {
+            earlyState.setGlobeRadius(pendingRadius);
+            LOGGER.info("[Latitude] Recorded Globe world radius {} ahead of generator recognition "
+                    + "(create-screen authority)", pendingRadius);
+        }
+
         if (!isGlobeOverworld(world)) {
-            // pendingRadius > 0 means the Latitude create screen just launched this world as a
-            // Latitude world — and yet the loaded overworld is not recognisable as one. This is the
-            // silent-degradation case: some worldgen mod rebuilt the noise-settings registry during
-            // vanilla's datapack reload inside createLevelFromExistingSettings, so the settings
-            // holder no longer serialises as a globe: registry reference and the world saved as
-            // vanilla terrain data (CliffTree 3.2.1 on 26.1.x does this). Every pre-launch check
-            // passes — the breakage only becomes observable here. Fail loudly instead of handing
-            // the player a vanilla world behind a Latitude loading screen.
-            if (pendingRadius > 0) {
-                throw new IllegalStateException(
-                        "Latitude created this world, but the loaded overworld generator is not a "
-                        + "Latitude globe generator. Another world generation mod rebuilt the "
-                        + "noise-settings registry during world creation, so the world would save as "
-                        + "vanilla terrain and Latitude would stay disabled in it. Remove or disable "
-                        + "the conflicting world generation mod (known: CliffTree) and create the "
-                        + "world again. This world save is not a Latitude world and can be deleted.");
-            }
             activeLatitudeOverworldGenerator = null;
             LatitudeBiomes.clearWorldgenContext();
             return;
         }
         LatitudeWorldState worldState = LatitudeWorldState.get(world);
         long seed = server.getWorldData().worldGenOptions().seed();
-        if (worldState.getGlobeRadius() <= 0 && pendingRadius > 0 && world.getGameTime() < 100L) {
-            worldState.setGlobeRadius(pendingRadius);
+        if (worldState.getProviderTicketProfile().isEmpty() && pendingRadius > 0 && world.getGameTime() < 100L) {
             BiomeSelectionProfile profile = BiomeSelectionProfile.capture(
                     world.registryAccess().lookupOrThrow(Registries.BIOME).keySet().stream()
                             .map(Identifier::toString).toList());
