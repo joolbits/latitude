@@ -22,7 +22,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(value = FogRenderer.class, priority = 900)
 public class FogRendererEwMixin {
 
-    @Inject(method = "computeFogColor", at = @At("RETURN"))
+    // GitHub #7 rule: fail soft -- a missed target costs the storm/polar fog tint, never a
+    // crash. The E/W warning overlay and particles remain as the gameplay signal.
+    @Inject(method = "computeFogColor", at = @At("RETURN"), require = 0, expect = 1)
     private void latitude$applyFogColor(
             Camera camera,
             float partialTick,

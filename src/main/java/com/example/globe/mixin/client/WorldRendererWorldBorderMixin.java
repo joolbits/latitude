@@ -11,7 +11,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(WorldBorderRenderer.class)
 public class WorldRendererWorldBorderMixin {
-    @Inject(method = "render", at = @At("HEAD"), cancellable = true)
+    // GitHub #7 rule: fail soft -- a missed target means the vanilla border wall renders
+    // alongside Latitude's presentation, never a crash.
+    @Inject(method = "render", at = @At("HEAD"), cancellable = true, require = 0, expect = 1)
     private void globe$cancelVanillaWorldBorder(WorldBorderRenderState state, Vec3 cameraPos, double viewDistanceBlocks, double farPlaneDistance, CallbackInfo ci) {
         if (!GlobeClientState.DEBUG_EW_SUPPRESS_VANILLA_BORDER) return;
         ci.cancel();

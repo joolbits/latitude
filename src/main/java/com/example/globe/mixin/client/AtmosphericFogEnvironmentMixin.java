@@ -23,7 +23,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(value = AtmosphericFogEnvironment.class, priority = 900)
 public class AtmosphericFogEnvironmentMixin {
 
-    @Inject(method = "setupFog", at = @At("RETURN"))
+    // GitHub #7 rule: fail soft -- a missed target costs the fog distance tightening, never a
+    // crash.
+    @Inject(method = "setupFog", at = @At("RETURN"), require = 0, expect = 1)
     private void latitude$applyFogDistances(
             FogData fogData,
             Camera camera,

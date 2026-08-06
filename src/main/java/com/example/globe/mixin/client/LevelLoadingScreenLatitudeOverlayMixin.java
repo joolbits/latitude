@@ -158,7 +158,10 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         super(title);
     }
 
-    @Inject(method = "render", at = @At("TAIL"))
+    // GitHub #7 rule: a missed loading-overlay target means the vanilla loading screen, never
+    // a crash. The Minecraft-tick clear mixin below stays STRICT: it is the fail-open safety
+    // that releases the loading hold, and must never be softened with the overlay.
+    @Inject(method = "render", at = @At("TAIL"), require = 0, expect = 1)
     private void globe$renderLatitudeOverlay(GuiGraphics context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         if (!LatitudeClientState.isLatitudeWorldLoading()) {
             globe$overlayStartMs = 0L;
@@ -251,7 +254,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         globe$drawVersionLabel(context, paneX, paneY, paneW, paneH);
     }
 
-    @Inject(method = "onClose", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "onClose", at = @At("HEAD"), cancellable = true, require = 0, expect = 1)
     private void globe$clearLoadingFlag(CallbackInfo ci) {
         if (LatitudeClientState.isLatitudeWorldLoading()) {
             Minecraft client = Minecraft.getInstance();

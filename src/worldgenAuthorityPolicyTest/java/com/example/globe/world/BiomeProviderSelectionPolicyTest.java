@@ -809,6 +809,12 @@ final class BiomeProviderSelectionPolicyTest {
                 "Mushroom island density is dimension/generator scoped");
         assertTrue(densityMixin.contains("getInterpolatedState()Lnet/minecraft/world/level/block/state/BlockState;"),
                 "Mushroom island authority reaches the live chunk block-writing path");
+        // The 26.2 getInterpolatedDensity hook must not be harvested back: its only consumer on
+        // 26.2 was the F3 debug readout (verified across the whole jar), the method does not exist
+        // on this target, and height queries are already served by the state hook -- both versions'
+        // iterateNoiseColumn read getInterpolatedState and substitute the default block on null.
+        assertTrue(!densityMixin.contains("method = \"getInterpolatedDensity"),
+                "Mushroom island hook must not target the removed 26.x density accessor");
         for (String owner : List.of("doFill", "getBaseHeight", "getBaseColumn")) {
             assertTrue(authorityMixin.contains(owner), "density authority covers " + owner);
         }

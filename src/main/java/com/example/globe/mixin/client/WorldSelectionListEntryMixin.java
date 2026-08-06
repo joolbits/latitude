@@ -70,7 +70,9 @@ public abstract class WorldSelectionListEntryMixin {
      * Injected at HEAD, before vanilla's own renderContent body renders this widget, so the
      * combined text is correct from the very first frame.</p>
      */
-    @Inject(method = "renderContent", at = @At("HEAD"))
+    // GitHub #7 rule: fail soft -- a missed target costs the zone suffix / preset carry on the
+    // world list, never a crash. expect=1 keeps dev boots loud under -Dmixin.debug.strict=true.
+    @Inject(method = "renderContent", at = @At("HEAD"), require = 0, expect = 1)
     private void globe$appendLastKnownZoneToTimestamp(GuiGraphics graphics, int mouseX, int mouseY,
                                                         boolean hovered, float partialTick, CallbackInfo ci) {
         if (this.globe$lastKnownBandLoaded) {
@@ -103,6 +105,8 @@ public abstract class WorldSelectionListEntryMixin {
     // the preset wherever this entry recreates a world", so match every call site in the class and
     // let the @At target do the selecting. Both sites are bytecode-confirmed present here.
     @Redirect(
+            require = 0,
+            expect = 1,
             method = "*",
             at = @At(
                     value = "INVOKE",

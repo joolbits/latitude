@@ -16,7 +16,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Gui.class)
 public class InGameHudMixin {
-    @Inject(method = "renderHotbarAndDecorations", at = @At("HEAD"))
+    // GitHub #7 rule: presentation mixins fail soft. A missed target means a vanilla HUD,
+    // never a crash. expect=1 keeps dev boots loud under -Dmixin.debug.strict=true.
+    @Inject(method = "renderHotbarAndDecorations", at = @At("HEAD"), require = 0, expect = 1)
     private void globe$renderEwHazeBeforeHotbar(GuiGraphics context, DeltaTracker tickCounter, CallbackInfo ci) {
         Minecraft client = Minecraft.getInstance();
         if (client != null
@@ -27,7 +29,7 @@ public class InGameHudMixin {
         EwSandstormOverlayHud.render(context, tickCounter);
     }
 
-    @Inject(method = "render", at = @At("TAIL"))
+    @Inject(method = "render", at = @At("TAIL"), require = 0, expect = 1)
     private void globe$renderOverlay(GuiGraphics context, DeltaTracker tickCounter, CallbackInfo ci) {
         Minecraft client = Minecraft.getInstance();
         if (client != null
