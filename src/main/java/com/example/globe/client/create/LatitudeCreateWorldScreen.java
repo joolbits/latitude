@@ -1411,6 +1411,32 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        // Zone rows scroll under the panel edge but keep their full rectangle, so vanilla dispatches
+        // against geometry the player cannot see: a click on Cancel went to whichever row overlapped
+        // it, visibly selecting a climate instead of closing the screen. The overlap grows with GUI
+        // scale, where the panel bottom crowds the button row -- which is why it only reproduced
+        // there. A row has no claim on any point outside its own clip, so mute the rows for those
+        // clicks and let the real widget underneath take them.
+        if (!isInsideSpawnClip(click.x(), click.y())) {
+            List<ZoneRowWidget> muted = new ArrayList<>();
+            for (ZoneRowWidget row : zoneRows) {
+                if (row.active) {
+                    row.active = false;
+                    muted.add(row);
+                }
+            }
+            try {
+                return globe$dispatchClick(click, doubled);
+            } finally {
+                for (ZoneRowWidget row : muted) {
+                    row.active = true;
+                }
+            }
+        }
+        return globe$dispatchClick(click, doubled);
+    }
+
+    private boolean globe$dispatchClick(MouseButtonEvent click, boolean doubled) {
         if (click.button() == 0 && handleTabClick(click.x(), click.y())) {
             return true;
         }
