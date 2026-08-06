@@ -54,6 +54,15 @@ public final class WorldgenAuthorityPolicyTest {
                         true, highTerrain, 0, seaLevel),
                 "clearly high temperate terrain is forced into the dedicated upland family");
         assertTrue(
+                TerrainBiomeCohesionPolicy.shouldUseWarmUplandFamily(
+                        true, seaLevel + 8,
+                        TerrainBiomeCohesionPolicy.RUGGED_RELIEF_BLOCKS, seaLevel),
+                "a steep warm-band shoulder is forced into the dedicated upland family too");
+        assertFalse(
+                TerrainBiomeCohesionPolicy.shouldUseWarmUplandFamily(
+                        true, seaLevel + 2, 0, seaLevel),
+                "ordinary flat warm ground still keeps its lowland family");
+        assertTrue(
                 TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland(true, false),
                 "a late lowland rewrite cannot survive the physical upland authority");
         assertFalse(
@@ -98,8 +107,13 @@ public final class WorldgenAuthorityPolicyTest {
                 "both live picker paths gate against the real terrain height rather than the synthetic preview");
         assertEquals(
                 2,
-                occurrences(source, "boolean forceTemperateUpland = landBandIndex == BAND_TEMPERATE"),
-                "both picker paths force high temperate columns through the dedicated mountain tag");
+                occurrences(source, "boolean forceTemperateUpland = isLandGateBand(landBandIndex)"),
+                "both picker paths force high columns in gated bands through the dedicated mountain tag");
+        assertEquals(
+                2,
+                occurrences(source, "PreviewTerrain gateProbe = onDemandGateTerrain("),
+                "both picker paths probe real terrain on demand so the gate is not inert under the"
+                        + " worldgen preview fast path");
         assertEquals(
                 2,
                 occurrences(

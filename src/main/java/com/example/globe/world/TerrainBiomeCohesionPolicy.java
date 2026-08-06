@@ -36,6 +36,26 @@ public final class TerrainBiomeCohesionPolicy {
     }
 
     /**
+     * Warm bands read the same terrain evidence as temperate. A flat-family biome draped over a
+     * measured ridge looks wrong at any latitude, and the subtropical band was previously exempt
+     * only because the gate was written for the temperate rework — not because warm ridges are
+     * meant to be flat.
+     */
+    static boolean shouldUseWarmUplandFamily(
+            boolean terrainEvidenceAvailable,
+            int surfaceY,
+            int robustRelief,
+            int seaLevel) {
+        return shouldApplyLandGate(
+                true,
+                false,
+                terrainEvidenceAvailable,
+                surfaceY,
+                robustRelief,
+                seaLevel);
+    }
+
+    /**
      * High or genuinely rugged temperate terrain must use the dedicated upland pool. The old
      * compatibility reroll could select another lowland-family biome (notably sunflower plains or
      * flower forest), which made a real terrain gate visually inert.
