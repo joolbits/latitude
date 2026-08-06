@@ -15,6 +15,7 @@ import net.minecraft.core.LayeredRegistryAccess;
 import net.minecraft.core.MappedRegistry;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.client.gui.screens.AlertScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.RegistryLayer;
@@ -170,6 +171,37 @@ public final class LatitudeWorldLauncher {
                     goh.worldgenRegistries()
                             .replaceFrom(RegistryLayer.DIMENSIONS, dimensionsConfig.dimensionsRegistryAccess());
 
+            // A Latitude world stays identifiable — here, at load, and on every later load — only while
+            // its noise settings serialise as a registry *reference*. RegistryFileCodec writes that
+            // reference solely when the holder passes canSerializeIn() against the registry doing the
+            // encoding; otherwise it silently inlines the whole settings object, and the saved world
+            // becomes indistinguishable from a vanilla one. A worldgen mod that rebuilds the
+            // noise-settings registry (CliffTree 3.2.1 on the 26.1.x line) leaves Latitude's holder
+            // owned by the old registry, so it fails that check even though it still resolves to the
+            // right key. The result is vanilla biome placement on Latitude terrain, behind a Latitude
+            // loading screen. Refuse to create the world rather than hand back that hybrid.
+            if (isLatitude) {
+                String bakedId = boundGlobeSettingsId(dimensionsConfig);
+                boolean serializable = globeSettingsSerializable(dimensionsConfig, combinedDynamicRegistries);
+                LOGGER.info("[LAT][CWPATH] globe settings binding: forced={} baked={} serializable={}",
+                        noiseSettingsId(launchDimensions.overworld()), bakedId, serializable);
+                if (bakedId == null || !serializable) {
+                    LOGGER.error("[Latitude] Refusing to create world '{}': the Latitude preset's noise "
+                                    + "settings would not persist as a registry reference "
+                                    + "(baked={} serializable={}). Another worldgen mod has rebuilt the "
+                                    + "noise-settings registry, so this world would save as vanilla terrain "
+                                    + "data and Latitude would decline authority over it. Enabled packs={}",
+                            wc.getName().trim(), bakedId, serializable,
+                            goh.dataConfiguration().dataPacks().getEnabled());
+                    LatitudeClientState.clearLatitudeLoadingState();
+                    client.gui.setScreen(new AlertScreen(
+                            () -> client.gui.setScreen(screen),
+                            Component.translatable("globe.create.unbound_settings.title"),
+                            Component.translatable("globe.create.unbound_settings.message")));
+                    return;
+                }
+            }
+
             Lifecycle lifecycle = FeatureFlags.isExperimental(goh.dataConfiguration().enabledFeatures())
                     ? Lifecycle.experimental() : Lifecycle.stable();
             Lifecycle lifecycle2 = combinedDynamicRegistries.compositeAccess().allRegistriesLifecycle();
@@ -288,6 +320,44 @@ public final class LatitudeWorldLauncher {
                 context.datapackDimensions().entrySet().size(),
                 launchDimensions.dimensions().size());
         return launchDimensions;
+    }
+
+    /**
+     * The {@code globe:} noise-settings id the baked overworld will actually persist, or null if the
+     * holder is unbound — an unbound holder serialises its settings inline, losing the identity every
+     * later {@code isGlobeOverworld} check depends on.
+     */
+    private static String boundGlobeSettingsId(WorldDimensions.Complete dimensionsConfig) {
+        LevelStem overworld = dimensionsConfig.dimensions().getValue(LevelStem.OVERWORLD);
+        if (overworld == null || !(overworld.generator() instanceof NoiseBasedChunkGenerator noise)) {
+            return null;
+        }
+        return noise.generatorSettings()
+                .unwrapKey()
+                .map(key -> key.identifier().toString())
+                .filter(id -> id.startsWith("globe:"))
+                .orElse(null);
+    }
+
+    /**
+     * Whether the baked overworld's noise-settings holder will actually encode as a registry
+     * reference, which is what {@link net.minecraft.resources.RegistryFileCodec} decides via
+     * {@code canSerializeIn} against the registry performing the encode. A holder left owned by a
+     * superseded registry still resolves to the correct key but silently inlines on save.
+     */
+    private static boolean globeSettingsSerializable(WorldDimensions.Complete dimensionsConfig,
+                                                     LayeredRegistryAccess<RegistryLayer> registries) {
+        LevelStem overworld = dimensionsConfig.dimensions().getValue(LevelStem.OVERWORLD);
+        if (overworld == null || !(overworld.generator() instanceof NoiseBasedChunkGenerator noise)) {
+            return false;
+        }
+        try {
+            return noise.generatorSettings()
+                    .canSerializeIn(registries.compositeAccess().lookupOrThrow(Registries.NOISE_SETTINGS));
+        } catch (Exception e) {
+            LOGGER.warn("[Latitude] Could not check noise-settings ownership; treating as unserializable", e);
+            return false;
+        }
     }
 
     private static String noiseSettingsId(ChunkGenerator generator) {

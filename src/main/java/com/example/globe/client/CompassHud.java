@@ -91,6 +91,13 @@ public final class CompassHud {
             return;
         }
 
+        // Outside a Latitude world there is no latitude to report, and drawing the compass anyway
+        // reads as "Latitude is working" while it silently is not — the exact signal that made a
+        // failed Latitude world look healthy. The HUD Studio preview keeps rendering (forceVisible).
+        if (!forceVisible && !GlobeClientState.isGlobeWorld()) {
+            return;
+        }
+
         if (!forceVisible && client.gui.screen() != null) {
             return;
         }
