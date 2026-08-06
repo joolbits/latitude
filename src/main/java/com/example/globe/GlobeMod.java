@@ -844,6 +844,13 @@ public class GlobeMod implements ModInitializer {
     }
 
     /**
+     * Live-flight alpha counter for the title-screen watermark, bumped by hand each time a new
+     * TEST jar is staged for Maintainer — this is her own tracking counter, not derived from git, the
+     * same convention as the "TEST N.jar" staging filenames. Bump this alongside that filename.
+     */
+    private static final String ALPHA_TEST_LABEL = "alpha.1";
+
+    /**
      * Short, human-readable build identity for on-screen display (title screen watermark) — the
      * same manifest fields {@link #logBuildMetadata} logs, so what a tester sees on screen and what
      * the jar actually reports never diverge. Absent manifest data (a dev-classpath run, not a
@@ -873,7 +880,8 @@ public class GlobeMod implements ModInitializer {
             }
         }
 
-        StringBuilder label = new StringBuilder("Latitude ").append(version);
+        StringBuilder label = new StringBuilder("Latitude ").append(version)
+                .append(" \u2014 ").append(ALPHA_TEST_LABEL);
         if (commit != null && commit.length() >= 7) {
             label.append(" (").append(commit, 0, 7);
             if ("true".equals(dirty)) {
