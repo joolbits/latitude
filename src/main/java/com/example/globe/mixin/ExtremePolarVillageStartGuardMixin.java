@@ -61,9 +61,26 @@ public abstract class ExtremePolarVillageStartGuardMixin {
             Predicate<Holder<Biome>> validBiome,
             Operation<StructureStart> original) {
         int blockZ = chunkPos.getMiddleBlockZ();
+        BiomeSource effectiveBiomeSource = biomeSource;
         if (LatitudeWorldgenScope.isActive()
                 && chunkGenerator instanceof NoiseBasedChunkGenerator noise
                 && GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
+            // Hand vanilla the biome the player will actually stand in.
+            //
+            // ChunkGenerator.tryGenerateStructure reads the raw `biomeSource` FIELD, while
+            // ServerLevel builds its StructureCheck from getBiomeSource() — which our
+            // ChunkGeneratorBiomeSourceMixin overrides to the Latitude wrapper. So vanilla's
+            // "does a structure exist here" prediction (what /locate answers from) judged the
+            // repainted biome while actual generation judged the raw one. That disagreement is
+            // exactly the reported defect in both directions: /locate promising a desert pyramid
+            // that never generated, and pyramids generating on raw desert that Latitude then
+            // repainted to snow. Substituting the wrapper here makes siting judge the final
+            // biome, so prediction and generation agree and structures land in the biome a
+            // player sees.
+            BiomeSource authoritative = chunkGenerator.getBiomeSource();
+            if (authoritative instanceof com.example.globe.world.LatitudeBiomeSource) {
+                effectiveBiomeSource = authoritative;
+            }
             try {
                 Registry<Structure> registry =
                         registryAccess.lookupOrThrow(Registries.STRUCTURE);
@@ -136,7 +153,7 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                 levelKey,
                 registryAccess,
                 chunkGenerator,
-                biomeSource,
+                effectiveBiomeSource,
                 randomState,
                 templateManager,
                 seed,

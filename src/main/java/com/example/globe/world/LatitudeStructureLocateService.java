@@ -36,11 +36,10 @@ import net.minecraft.world.level.levelgen.structure.placement.StructurePlacement
  * <p>This mirrors vanilla's own nearest-first expanding-ring search over
  * {@link RandomSpreadStructurePlacement} candidates ({@link #search}), but bounds it to the
  * Latitude world border and tests each candidate the same way the placement guard
- * ({@code ExtremePolarVillageStartGuardMixin}) does: the raw biome must satisfy the structure's
- * biome tag (matching what vanilla's own unmodified check requires) AND Latitude's final,
- * repainted biome must also satisfy it (matching what the guard additionally requires). A
- * candidate that passes both is guaranteed to be the same answer real generation would give,
- * without ever touching the chunk generator.
+ * ({@code ExtremePolarVillageStartGuardMixin}) does: Latitude's final, repainted biome must
+ * satisfy the structure's biome tag. That guard now hands vanilla the repainted biome source at
+ * generation time, so this single condition is exactly what real generation applies — a reported
+ * location is guaranteed to be a real one, without ever touching the chunk generator.
  *
  * <p>Deliberately narrow: only claims the command when every placement resolved for the
  * requested structure(s) is {@link RandomSpreadStructurePlacement} (covers pyramids, mineshafts,
@@ -108,10 +107,10 @@ public final class LatitudeStructureLocateService {
         long seed = structureState.getLevelSeed();
 
         long started = System.nanoTime();
-        int[] candidatesTested = {0};
+        Tally tally = new Tally();
         Pair<BlockPos, Holder<Structure>> result = search(
                 candidateSources, origin, worldRadius, border,
-                biomeRegistry, rawSource, generator, randomState, level, seed, candidatesTested);
+                biomeRegistry, rawSource, generator, randomState, level, seed, tally);
         Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
 
         if (result == null) {
@@ -122,8 +121,9 @@ public final class LatitudeStructureLocateService {
                     source, target, origin, result, "commands.locate.structure.success", true, elapsed);
         }
         GlobeMod.LOGGER.info(
-                "[Latitude] structure locate target={} worldRadius={} candidatesTested={} elapsedMs={} found={}",
-                target.asPrintable(), worldRadius, candidatesTested[0], elapsed.toMillis(), result != null);
+                "[Latitude] structure locate target={} worldRadius={} candidatesTested={} rejectedPickedBiome={} pickFailures={} outOfBorder={} ringsScanned={} elapsedMs={} found={}",
+                target.asPrintable(), worldRadius, tally.tested, tally.rejectedPicked,
+                tally.pickFailed, tally.outOfBorder, tally.ringsScanned, elapsed.toMillis(), result != null);
         return true;
     }
 
@@ -138,11 +138,12 @@ public final class LatitudeStructureLocateService {
             RandomState randomState,
             ServerLevel level,
             long seed,
-            int[] candidatesTested) {
+            Tally tally) {
         int originChunkX = origin.getX() >> 4;
         int originChunkZ = origin.getZ() >> 4;
 
         for (int ring = 0; ring <= VANILLA_MAX_RINGS; ring++) {
+            tally.ringsScanned = ring + 1;
             Pair<BlockPos, Holder<Structure>> ringBest = null;
             double ringBestDistSqr = Double.MAX_VALUE;
             boolean ringExceedsBorder = true;
@@ -166,15 +167,16 @@ public final class LatitudeStructureLocateService {
                         ChunkPos candidateChunk = candidate.placement.getPotentialStructureChunk(
                                 seed, originChunkX + spacing * dx, originChunkZ + spacing * dz);
                         if (!border.isWithinBounds(candidateChunk)) {
+                            tally.outOfBorder++;
                             continue;
                         }
                         ringExceedsBorder = false;
-                        candidatesTested[0]++;
+                        tally.tested++;
 
                         BlockPos locatePos = candidate.placement.getLocatePos(candidateChunk);
                         Holder<Biome> picked = evaluateCandidate(
-                                candidate.structure(), locatePos, biomeRegistry, rawSource,
-                                generator, randomState, level, worldRadius);
+                                candidate.structure(), candidateChunk, locatePos, biomeRegistry, rawSource,
+                                generator, randomState, level, worldRadius, tally);
                         if (picked == null) {
                             continue;
                         }
@@ -208,23 +210,25 @@ public final class LatitudeStructureLocateService {
      */
     private static Holder<Biome> evaluateCandidate(
             Structure structure,
+            ChunkPos candidateChunk,
             BlockPos locatePos,
             Registry<Biome> biomeRegistry,
             BiomeSource rawSource,
             NoiseBasedChunkGenerator generator,
             RandomState randomState,
             ServerLevel level,
-            int worldRadius) {
-        int blockX = locatePos.getX();
-        int blockZ = locatePos.getZ();
+            int worldRadius,
+            Tally tally) {
+        // Sample at the chunk's middle block, exactly as the placement guard
+        // (ExtremePolarVillageStartGuardMixin) does — getLocatePos returns the chunk's min corner,
+        // which can straddle a different biome cell than the one real generation judges.
+        int blockX = candidateChunk.getMiddleBlockX();
+        int blockZ = candidateChunk.getMiddleBlockZ();
         Holder<Biome> baseBiome = rawSource.getNoiseBiome(
                 Math.floorDiv(blockX, 4),
                 Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
                 Math.floorDiv(blockZ, 4),
                 randomState.sampler());
-        if (!structure.biomes().contains(baseBiome)) {
-            return null;
-        }
         Holder<Biome> pickedBiome;
         try {
             pickedBiome = LatitudeBiomes.pick(
@@ -240,12 +244,27 @@ public final class LatitudeStructureLocateService {
                     randomState,
                     level);
         } catch (RuntimeException pickFailure) {
+            tally.pickFailed++;
             return null;
         }
-        if (pickedBiome == null || !structure.biomes().contains(pickedBiome)) {
+        if (pickedBiome == null) {
+            tally.pickFailed++;
+            return null;
+        }
+        if (!structure.biomes().contains(pickedBiome)) {
+            tally.rejectedPicked++;
             return null;
         }
         return pickedBiome;
+    }
+
+    /** Per-search diagnostic counters, logged once per command so a "not found" is explainable. */
+    private static final class Tally {
+        private int tested;
+        private int rejectedPicked;
+        private int pickFailed;
+        private int outOfBorder;
+        private int ringsScanned;
     }
 
     private record Candidate(Holder<Structure> holder, RandomSpreadStructurePlacement placement) {
