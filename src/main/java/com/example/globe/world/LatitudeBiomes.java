@@ -7766,9 +7766,18 @@ public final class LatitudeBiomes {
         return previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
     }
 
-    /** Bands whose land-cohesion gate can reroute a flat candidate onto an upland family. */
+    /**
+     * Bands whose land-cohesion gate can reroute a flat candidate onto an upland family.
+     *
+     * <p>Temperate only, deliberately. Extending this to subtropical routes warm highlands into
+     * {@code LAT_TEMPERATE_MOUNTAIN} — a temperate pool — which is both thematically wrong and
+     * measurably harmful: it consumed the high columns {@code minecraft:eroded_badlands} needs and
+     * left the fresh-world coverage plan reporting it unplaceable ({@code topologyEligible=0}).
+     * Subtropical gating needs its own warm upland pool first; the policy side
+     * ({@code shouldUseWarmUplandFamily}) is already band-agnostic and ready for it.
+     */
     private static boolean isLandGateBand(int landBandIndex) {
-        return landBandIndex == BAND_SUBTROPICAL || landBandIndex == BAND_TEMPERATE;
+        return landBandIndex == BAND_TEMPERATE;
     }
 
     private static boolean isPlainsFamily(Holder<Biome> candidate) {
