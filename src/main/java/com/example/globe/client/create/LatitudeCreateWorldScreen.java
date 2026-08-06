@@ -60,6 +60,8 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final int GOLD = 0xFFD4A74A;
     private static final int WARM_WHITE = 0xFFEDE0D0;
     private static final int MUTED = 0xFF8C8078;
+    /** The build stamp should be legible against the panorama without competing with the UI. */
+    private static final int VERSION_LABEL = 0xFFB9AEA2;
     private static final int PANEL_BORDER = 0xFF5C4A3A;
     private static final int PANEL_BG = 0xFF3A302A;
     private static final int SCROLLBAR_GUTTER = 6;
@@ -119,14 +121,6 @@ public class LatitudeCreateWorldScreen extends Screen {
     };
 
     // ── Size descriptions (indexed by GlobeWorldSize.ordinal()) ──
-    private static final String[] SIZE_DESCRIPTIONS = {
-            "A pocket world. Every horizon feels close.",
-            "Compact but complete. Good for focused journeys.",
-            "Room to roam. Familiar landmarks within reach.",
-            "The standard world. A full planet awaits.",
-            "Vast distances. Bring supplies.",
-            "A world that could take a lifetime to cross."
-    };
 
     private static final Component SMALL_WORLD_WARNING = Component.literal(
             "Smaller worlds compress the journey and may include slightly fewer total biome variants."
@@ -250,7 +244,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     // ── Tabbed fallback mode (activates when 3-col doesn't fit) ──
     private boolean tabbedMode;
     private int activeTab; // 0=World + Spawn Zone, 1=Rules
-    private static final String[] TAB_LABELS = {"World", "Rules"};
+    private static final String[] TAB_LABELS = {"World", "Settings"};
     private static final int TAB_H = 20;
     private static final int TAB_GAP = 4;
     private int tabStripY;
@@ -799,8 +793,14 @@ public class LatitudeCreateWorldScreen extends Screen {
         return wrapLineCount(text, width) * uiFontHeight();
     }
 
+    /**
+     * Bottom of the size label. The per-size blurb used to sit here and push the Atlas below the
+     * fold, so a player on a high GUI scale had to scroll to see the size they had just chosen
+     * change. Only the name and diameter remain, so the label ends right after them and the Atlas
+     * moves up into the space.
+     */
     private int computeSizeLabelBottom(int y, int availW) {
-        return y + scaledUi(22) + wrapLineCount(SIZE_DESCRIPTIONS[selectedSize.ordinal()], Math.max(40, availW)) * uiFontHeight();
+        return y + scaledUi(22);
     }
 
     private int getSmallWorldWarningHeight(int width) {
@@ -1522,7 +1522,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         } else if (drawCenteredBoundedText(context, "LATITUDE", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), GOLD, true, false)) {
             headerLineY += uiFontHeight() + scaledUi(6);
         }
-        if (drawCenteredBoundedText(context, "New World", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), WARM_WHITE, true, false)) {
+        if (drawCenteredBoundedText(context, "New World", new UiRect(headerRect.x, headerLineY - scaledUi(2), headerRect.w, uiFontHeight()), WARM_WHITE, true, false)) {
             headerLineY += uiFontHeight() + scaledUi(4);
         }
         drawWrappedTextBlock(context, "Prepare your journey across the globe", new UiRect(headerRect.x, headerLineY, headerRect.w, Math.max(0, headerRect.bottom() - headerLineY)), MUTED, false, 2, true, true);
@@ -1680,11 +1680,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int idx = selectedSize.ordinal();
         String shortName = SIZE_SHORT_NAMES[idx];
         String diameter = formatDiameter(selectedSize.borderRadiusBlocks * 2) + " blocks";
-        String desc = SIZE_DESCRIPTIONS[idx];
 
         drawCenteredBoundedText(context, shortName, new UiRect(x, y, availW, uiFontHeight()), WARM_WHITE, true, true);
         drawCenteredBoundedText(context, diameter, new UiRect(x, y + scaledUi(11), availW, uiFontHeight()), MUTED, false, true);
-        drawWrappedTextBlock(context, desc, new UiRect(x, y + scaledUi(22), availW, Math.max(uiFontHeight(), computeSizeLabelBottom(y, availW) - (y + scaledUi(22)))), MUTED, false, 3, true, true);
     }
 
     private boolean shouldShowSmallWorldWarning() {
@@ -2169,7 +2167,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         int height = Math.round(uiFontHeight() * CREATE_VERSION_LABEL_SCALE);
         int x = context.guiWidth() - width - scaledUi(5);
         int y = context.guiHeight() - height - scaledUi(5);
-        drawScaledText(context, CREATE_VERSION_LABEL, x, y, CREATE_VERSION_LABEL_SCALE, MUTED, false);
+        drawScaledText(context, CREATE_VERSION_LABEL, x, y, CREATE_VERSION_LABEL_SCALE, VERSION_LABEL, false);
     }
 
     private static boolean isOnSelectedEdge(double deg, LatitudeBands.Band band) {
