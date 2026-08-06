@@ -534,6 +534,29 @@ tasks.named('check').configure {
     dependsOn tasks.named('latitudeSodiumFogReachabilityTest')
 }
 
+// A green build does not prove a mixin applies: Mixin resolves targets at class-load time, so a
+// renamed or moved target is invisible to javac. This resolves every @Mixin target and every
+// injector's method / @At descriptor against the remapped Minecraft jar before anything boots.
+tasks.register('latitudeMixinTargetVerify', Exec) {
+    group = 'verification'
+    description = 'Resolve every registered mixin target against the remapped Minecraft jar'
+    inputs.file('tools/verify_mixin_targets.py')
+    inputs.file('src/main/resources/globe.mixins.json')
+    inputs.dir('src/main/java/com/example/globe/mixin')
+
+    doFirst {
+        commandLine(
+                'python3',
+                file('tools/verify_mixin_targets.py'),
+                '--classpath', configurations.compileClasspath.asPath,
+                '--source-root', rootDir)
+    }
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudeMixinTargetVerify')
+}
+
 def latitudeLocationDetailPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeLocationDetailPolicyTest')
 
 tasks.register('compileLatitudeLocationDetailPolicyTest', JavaCompile) {

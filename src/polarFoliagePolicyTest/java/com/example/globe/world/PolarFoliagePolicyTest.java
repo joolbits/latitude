@@ -103,11 +103,21 @@ public final class PolarFoliagePolicyTest {
 
         String simpleGuard = normalize(read(
                 "src/main/java/com/example/globe/mixin/ExtremePolarSimpleFoliageGuardMixin.java"));
+        // 26.2 filtered by returning null from BlockStateProvider.getOptionalState. That method and
+        // its nullable contract do not exist here -- 1.21.11 has only getState(RandomSource,
+        // BlockPos), whose result feeds straight into canSurvive, so null would NPE instead of
+        // skipping. The guard wraps canSurvive instead, which place() is bytecode-verified to treat
+        // as "return false, place nothing".
         assertTrue(
                 simpleGuard.contains("@Mixin(SimpleBlockFeature.class)")
-                        && simpleGuard.contains("@ModifyExpressionValue(")
-                        && simpleGuard.contains("BlockStateProvider;getOptionalState"),
-                "simple foliage is filtered after one provider sample without consuming RNG twice");
+                        && simpleGuard.contains("@WrapOperation(")
+                        && simpleGuard.contains("BlockState;canSurvive"),
+                "simple foliage is filtered at canSurvive, after the single provider sample");
+        // The RNG guarantee is now directly assertable: the guard never touches the provider, so
+        // getState runs exactly once, from vanilla, and worldgen stays deterministic.
+        assertTrue(
+                !simpleGuard.contains("toPlace()") && !simpleGuard.contains(".getState("),
+                "simple foliage guard never re-samples the state provider, so RNG advances once");
         assertTrue(
                 !simpleGuard.contains("@Redirect(")
                         && occurrences(simpleGuard, "getOptionalState") == 1,

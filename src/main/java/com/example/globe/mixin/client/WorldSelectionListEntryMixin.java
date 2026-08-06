@@ -97,8 +97,13 @@ public abstract class WorldSelectionListEntryMixin {
         this.idAndLastPlayedText.setMessage(combined);
     }
 
+    // 26.2 named the two call sites "recreateWorld" and its lambda. On this target the second one
+    // is a private method that Mojang's mappings do not name, so it remaps to the intermediary
+    // `method_20165` -- a selector that would rot on the next version. The intent is simply "carry
+    // the preset wherever this entry recreates a world", so match every call site in the class and
+    // let the @At target do the selecting. Both sites are bytecode-confirmed present here.
     @Redirect(
-            method = {"recreateWorld", "lambda$recreateWorld$0"},
+            method = "*",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/gui/screens/worldselection/CreateWorldScreen;createFromExisting(Lnet/minecraft/client/Minecraft;Ljava/lang/Runnable;Lnet/minecraft/world/level/LevelSettings;Lnet/minecraft/client/gui/screens/worldselection/WorldCreationContext;Ljava/nio/file/Path;)Lnet/minecraft/client/gui/screens/worldselection/CreateWorldScreen;"))
