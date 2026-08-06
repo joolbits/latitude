@@ -35,6 +35,7 @@
     "client.WorldRendererWorldBorderMixin",
     "client.MinecraftClientStartIntegratedMixin",
     "client.InGameHudMixin",
+    "client.TitleScreenBuildLabelMixin",
     "client.LatitudeLoadingClientTickMixin",
     "client.LevelLoadingScreenLatitudeOverlayMixin",
     "client.FogRendererEwMixin",
