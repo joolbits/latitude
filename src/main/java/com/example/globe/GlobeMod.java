@@ -50,7 +50,10 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.RandomizableContainer;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.loot.BuiltInLootTables;
 import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.level.storage.ServerLevelData;
 import net.fabricmc.loader.api.FabricLoader;
@@ -595,19 +598,92 @@ public class GlobeMod implements ModInitializer {
      */
     private static void placeLatitudeBonusChest(ServerLevel world, BlockPos spawnPos) {
         try {
-            // Ensure the spawn chunk is loaded so feature placement actually writes (vanilla's
+            // Ensure the spawn chunk is loaded so placement actually writes (vanilla's
             // getSpawnHeight loads it; our spawn path may not have).
             world.getChunk(spawnPos);
-            world.registryAccess()
-                    .lookupOrThrow(net.minecraft.core.registries.Registries.CONFIGURED_FEATURE)
-                    .get(net.minecraft.data.worldgen.features.MiscOverworldFeatures.BONUS_CHEST)
-                    .ifPresent(ref -> ref.value().place(
-                            world, world.getChunkSource().getGenerator(), world.getRandom(), spawnPos));
-            LOGGER.info("[Latitude] Placed bonus chest at globe spawn x={} y={} z={}",
-                    spawnPos.getX(), spawnPos.getY(), spawnPos.getZ());
+
+            // Vanilla's BONUS_CHEST feature is deliberately NOT used here. It shuffles every column
+            // in the origin's chunk and places at the first MOTION_BLOCKING_NO_LEAVES position that
+            // is air — which over water is the block *above the surface*, so in a wet spawn chunk the
+            // chest ends up floating on the water and every torch fails canSurvive. Our spawn column
+            // is already validated dry, sturdy land, so anchor the chest to it instead of re-rolling.
+            BlockPos chestPos = findBonusChestSite(world, spawnPos);
+            if (chestPos == null) {
+                LOGGER.warn("[Latitude] No dry bonus-chest site near globe spawn x={} z={}; skipping chest",
+                        spawnPos.getX(), spawnPos.getZ());
+                return;
+            }
+
+            world.setBlock(chestPos, Blocks.CHEST.defaultBlockState(), 2);
+            RandomizableContainer.setBlockEntityLootTable(
+                    world, world.getRandom(), chestPos, BuiltInLootTables.SPAWN_BONUS_CHEST);
+
+            BlockState torch = Blocks.TORCH.defaultBlockState();
+            int torches = 0;
+            for (Direction direction : Direction.Plane.HORIZONTAL) {
+                BlockPos torchPos = chestPos.relative(direction);
+                if (torch.canSurvive(world, torchPos) && world.getBlockState(torchPos).isAir()) {
+                    world.setBlock(torchPos, torch, 2);
+                    torches++;
+                }
+            }
+            LOGGER.info("[Latitude] Placed bonus chest at globe spawn x={} y={} z={} torches={}",
+                    chestPos.getX(), chestPos.getY(), chestPos.getZ(), torches);
         } catch (Throwable t) {
             LOGGER.warn("[Latitude] Failed to place bonus chest at globe spawn (continuing without)", t);
         }
+    }
+
+    /**
+     * Nearest dry, solid-supported column to the spawn that can host the chest without burying the
+     * player's own spawn block. Prefers a site where the torches can actually stand, so the chest
+     * reads as a deliberate supply drop rather than something washed up.
+     */
+    private static BlockPos findBonusChestSite(ServerLevel world, BlockPos spawnPos) {
+        BlockPos fallback = null;
+        for (int radius = 1; radius <= 6; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
+                        continue;
+                    }
+                    BlockPos candidate = world.getHeightmapPos(
+                            Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                            new BlockPos(spawnPos.getX() + dx, world.getMinY(), spawnPos.getZ() + dz));
+                    if (!isDryChestSite(world, candidate)) {
+                        continue;
+                    }
+                    if (countSurvivableTorchSides(world, candidate) >= 2) {
+                        return candidate;
+                    }
+                    if (fallback == null) {
+                        fallback = candidate;
+                    }
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private static boolean isDryChestSite(ServerLevel world, BlockPos pos) {
+        if (!world.getBlockState(pos).isAir() || !world.getFluidState(pos).isEmpty()) {
+            return false;
+        }
+        BlockPos support = pos.below();
+        return world.getFluidState(support).isEmpty()
+                && world.getBlockState(support).isFaceSturdy(world, support, Direction.UP);
+    }
+
+    private static int countSurvivableTorchSides(ServerLevel world, BlockPos chestPos) {
+        BlockState torch = Blocks.TORCH.defaultBlockState();
+        int count = 0;
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            BlockPos torchPos = chestPos.relative(direction);
+            if (torch.canSurvive(world, torchPos) && world.getBlockState(torchPos).isAir()) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private static void applySpawnChoice(ServerPlayer player, String id) {
