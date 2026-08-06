@@ -84,6 +84,14 @@ finite weighted pool, so the more you add, the thinner each one's share. 1.5 sub
 which biomes appear and stops whole packs being crowded out, but it does not make coverage complete.
 Per-pack representation weighting is on the roadmap.
 
+#### Help us catch biome anomalies
+
+If you notice something that looks wrong for its surroundings — a flat biome like plains generating on
+unusually steep or rocky terrain, an expected feature like a mushroom island not appearing where the
+biome says it should, a biome that seems out of place for its latitude, or anything else that looks
+like a placement bug rather than natural variety — please report it with your seed, coordinates, and
+which packs you have installed. That kind of report is exactly what has caught real regressions before.
+
 ---
 
 ## GitHub release body
