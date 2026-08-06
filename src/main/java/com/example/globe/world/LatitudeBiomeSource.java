@@ -37,7 +37,6 @@ public final class LatitudeBiomeSource extends BiomeSource {
     private static final Identifier LUSH_CAVES_ID = Identifier.fromNamespaceAndPath("minecraft", "lush_caves");
     private static final Identifier DRIPSTONE_CAVES_ID = Identifier.fromNamespaceAndPath("minecraft", "dripstone_caves");
     private static final Identifier DEEP_DARK_ID = Identifier.fromNamespaceAndPath("minecraft", "deep_dark");
-    private static final Identifier SULFUR_CAVES_ID = Identifier.fromNamespaceAndPath("minecraft", "sulfur_caves");
 
     private final BiomeSource original;
     private final Collection<Holder<Biome>> biomes;
@@ -497,8 +496,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
         }
         return id.equals(LUSH_CAVES_ID)
                 || id.equals(DRIPSTONE_CAVES_ID)
-                || id.equals(DEEP_DARK_ID)
-                || id.equals(SULFUR_CAVES_ID);
+                || id.equals(DEEP_DARK_ID);
     }
 
     private static boolean isDeepDark(Holder<Biome> entry) {

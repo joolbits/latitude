@@ -3049,8 +3049,7 @@ public final class LatitudeBiomes {
     private static final Set<String> SURFACE_CAVE_DENYLIST = Set.of(
             "minecraft:dripstone_caves",
             "minecraft:lush_caves",
-            "minecraft:deep_dark",
-            "minecraft:sulfur_caves"
+            "minecraft:deep_dark"
     );
 
     private static final Set<String> WARM_BIOME_BLOCKLIST = Set.of(
