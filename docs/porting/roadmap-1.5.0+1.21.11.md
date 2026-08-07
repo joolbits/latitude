@@ -25,15 +25,13 @@ weight of the four.
 | Slice C — runtime hooks + fog redesign | **DONE** `859c9fa2`/`66a54c72`/`9e9314d9`/`b639f142` — fog split in two, 5 mixin defects, persistence rail proven |
 | Slice D — harvest thread 1's fixes | **PARTIAL** `8c26f0d5` — took only the 4 named in the handoff; 5 more found later, see Slice G |
 | Slice E — gates + fence adjacency test | **DONE** — atlas parity bit-identical to 26.2; fence ships pinned; guard verifier retired |
-| Slice F — live lane | **IN PROGRESS** — 4 live defects fixed; 5 un-harvested fixes found; 2 questions open |
+| Slice F — live lane | **IN PROGRESS** — `TEST 10` GREEN; 8 live defects fixed total (4 pre-Slice-G + remap crash + `/locate` Y=0 + Settings-tab label + `/locate` async/village-accuracy); 2 worldgen questions still open |
 | Slice G — harvest the remaining 5 thread-1 fixes | **DONE** `8640c14c`/`1eb1ecf0`/`2ca3a76a`/`1f4a68e9`/`0e831d38` — harvest complete; all 9 of thread 1's post-tag fixes are in |
 | Release | pending, **needs the maintainer's authorization** |
 
-> **current implementation state:** [`<external-notes>/latitude-1-5-port-1p21p11-slice-g-closure-20260807.md`](../external record/latitude-1-5-port-1p21p11-slice-g-closure-20260807.md)
-> carries current state — `TEST 6` staged, the harvest closed, and the four things still outstanding
-> before release. The earlier
-> [`…slice-f-live-findings…`](../external record/latitude-1-5-port-1p21p11-slice-f-live-findings-20260807.md)
-> remains the record of the four live defects and both open worldgen questions.
+> **current implementation state:** [`<external-notes>/latitude-1-5-port-1p21p11-locate-async-village-fix-20260807.md`](../external record/latitude-1-5-port-1p21p11-locate-async-village-fix-20260807.md)
+> carries current state — `TEST 10` staged and confirmed GREEN by Maintainer. What's left before release is
+> listed in full under **Slice F remainder**, below.
 
 ## Decisions of record (Maintainer, 2026-08-06)
 
@@ -115,13 +113,35 @@ From `port/1.5.0-26.1.2`, absent from `v1.5.0+26.2`:
 
 ### Slice F — live lane and release *(no push, tag, or upload without explicit authorization)*
 
-- Fresh Modrinth profile `Lat 1.5 - 1.21.11 - TEST`. **Modrinth App only, never the Mojang launcher.**
-  Dev client for routine testing; staged `TEST N.jar` with built-vs-staged SHA parity for acceptance.
-- Provider jars (BoP/Terralith for 1.21.11) must be downloaded — not on this machine.
-- One adversarial sweep on the staged jar before the maintainer's live acceptance.
-- Regressions that must not return: E/W warning text lagging the storm visual; spawn on a sea-level
-  rock; worldgen gate not dimension-aware.
-- Then `1.5.0+1.21.11` beta, per-version changelog, tag `v1.5.0+1.21.11`, GitHub #7/#8 replies.
+**Done:** fresh Modrinth profile `Lat 1.5 - 1.21.11 - TEST` (11 mods incl. the real provider stack);
+dev client + staged `TEST N.jar` (now at `TEST 10`, confirmed GREEN) with built-vs-staged SHA parity
+every time; 8 live defects found and fixed — see the resume-point doc above for the full list and
+[`…test-jar-remap-crash…`](../external record/latitude-1-5-port-1p21p11-test-jar-remap-crash-20260807.md) for
+the one that mattered most (every TEST jar through `TEST 6` was silently unable to launch in
+production Fabric Loader at all).
+
+**Still open, in rough priority order:**
+
+1. **the maintainer's two worldgen questions from her first flythrough, both still needing *measurement* not
+   code-reading** — see
+   [`…slice-f-live-findings…`](../external record/latitude-1-5-port-1p21p11-slice-f-live-findings-20260807.md):
+   arid-edge fragment-size distribution, and real surface-Y under `savanna_plateau`
+   (`preserveSavannaPlateauAtSanitize` still has no height test at all).
+2. **Live confirmation that `dde70c88`'s land-cohesion gate actually did something** — the atlas is
+   structurally blind to it; the honest check is Maintainer re-flying the Sunflower-Plains-on-a-ridge
+   location from her first screenshot.
+3. **Live confirmation that a `/locate structure` village result actually has a village on the
+   ground** — the headless rig that verified today's fix could only prove the mechanism, not physical
+   placement.
+4. Fog A/B against 26.2, at an E/W storm longitude and a polar latitude.
+5. Old-line regressions that must not return: E/W warning text lagging the storm visual; spawn on a
+   sea-level rock; worldgen gate not dimension-aware. Not yet explicitly re-checked on this thread.
+6. **Fence adjacency test** (deferred from Slice E on the maintainer's instruction — "skip it, pin the fence"):
+   boot the same jar on 1.21.9/1.21.10 profiles, mixin-apply audit + worldgen smoke. Currently shipping
+   pinned `>=1.21.11 <1.21.12`; this only matters if Maintainer wants the wider fence.
+7. One adversarial sweep on the staged jar before calling live acceptance complete.
+8. Then, **on the maintainer's explicit authorization**: `1.5.0+1.21.11` beta, per-version changelog, tag
+   `v1.5.0+1.21.11`, GitHub #7/#8 replies.
 
 ## external record discipline
 
