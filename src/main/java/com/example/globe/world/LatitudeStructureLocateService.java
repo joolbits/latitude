@@ -117,8 +117,13 @@ public final class LatitudeStructureLocateService {
             source.sendFailure(Component.translatableEscape(
                     "commands.locate.structure.not_found", target.asPrintable()));
         } else {
+            // showY=false, matching vanilla's own locateStructure call exactly. getLocatePos()
+            // hardcodes Y=0 (a chunk-grid hint, not a validated surface height) -- vanilla masks
+            // that with "~" in the clickable suggestion so /tp keeps the player's current Y;
+            // showY=true (the bug here) prints and teleports to the literal 0, straight into
+            // whatever is physically at bedrock-to-low-Y, e.g. deep dark.
             LocateCommand.showLocateResult(
-                    source, target, origin, result, "commands.locate.structure.success", true, elapsed);
+                    source, target, origin, result, "commands.locate.structure.success", false, elapsed);
         }
         GlobeMod.LOGGER.info(
                 "[Latitude] structure locate target={} worldRadius={} candidatesTested={} rejectedPickedBiome={} pickFailures={} outOfBorder={} ringsScanned={} elapsedMs={} found={}",
