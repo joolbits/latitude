@@ -1,6 +1,7 @@
 package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
+import com.example.globe.world.BiomeDescriptorLedger;
 import com.example.globe.world.LatitudeWorldgenScope;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -349,6 +350,21 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
                     out.putIfAbsent(id, holder);
                 }
             }
+        }
+        // The lat_* tags are only ONE of Latitude's two custom-biome admission paths. The other is
+        // the provider-ticket ledger (BiomeDescriptorLedger): a ledger route makes a biome paintable
+        // with no tag membership at all — biomesoplenty:overgrown_greens (TEMPERATE_LOWLAND, no tag)
+        // was the maintainer's live find, painted bare because its features never made it into this index and
+        // retainAll dropped it from the per-chunk biome set. Whatever Latitude can paint must be in
+        // the decoration index, so union the ledger here. minecraft: entries are skipped for the
+        // same reason as above (always in the raw source's own possibleBiomes); absent optional mods
+        // simply fail the registry lookup and are skipped.
+        for (BiomeDescriptorLedger.Descriptor descriptor : BiomeDescriptorLedger.descriptors()) {
+            Identifier id = Identifier.tryParse(descriptor.biomeId());
+            if (id == null || "minecraft".equals(id.getNamespace()) || out.containsKey(id)) {
+                continue;
+            }
+            biomeRegistry.get(id).ifPresent(holder -> out.putIfAbsent(id, holder));
         }
         return new ArrayList<>(out.values());
     }
