@@ -24,8 +24,13 @@ bug lives in doesn't exist in that tag at all — not a bug there, just absent).
 | `/locate structure` blocks the server thread | `2becc0a0` | **Yes** | **N/A** | Same file, same reasoning — 26.1.2's search runs synchronously. |
 | Create-world screen's second tab read "Rules" | `b14f2b3b` | **No** | **Yes** | Already fixed in 26.1.2 by thread 1's own `a6146016` ("Settings tab, tighter header, Atlas in immediate view") — that commit's *other* changes (header tightening, Atlas visibility) were deliberately left un-harvested on this thread per the maintainer's call in Slice F, but the label itself already matched what she wanted, so `b14f2b3b` reached the same end state narrowly. `v1.5.0+26.2` (pre-dating `a6146016`) still says `{"World", "Rules"}`. |
 | TEST-jar staged from unmapped (`jar`, not `remapJar`) classes | `ed65dfa6` | **N/A** | **N/A** | 26.1.2 and 26.2 both ship *unobfuscated* — `jar` and `remapJar` produce identical output there, so this bug cannot manifest regardless of the packaging task. 1.21.11-specific by construction, not a backport candidate. |
+| Compass HUD shifts when the location-detail label's length changes | `1f14fbb0` | **Yes** | **Yes** | Same `boxW` (includes the location-detail segment) fed into `anchoredX`/`anchoredY`, verbatim, at all 6 call sites in both tags. |
 
 ## Still to check
 
 Nothing outstanding as of this writing — every fix landed on this thread so far has been checked
 against both tags. Add a row here immediately when a new fix lands, before moving on.
+
+## Open, not yet a landed fix
+
+- **BiomesOPlenty decoration gap** — see [`…biomesoplenty-decoration-gap-20260807.md`](../binder/latitude-1-5-port-1p21p11-biomesoplenty-decoration-gap-20260807.md). Root cause understood, fix not yet written or scoped with Maintainer. Once a fix lands, check it against both tags like everything else here.
