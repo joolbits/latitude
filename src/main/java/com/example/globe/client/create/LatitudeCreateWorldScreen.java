@@ -172,8 +172,8 @@ public class LatitudeCreateWorldScreen extends Screen {
     private Button sizePrevBtn;
     private Button sizeNextBtn;
     private final List<ZoneRowWidget> zoneRows = new ArrayList<>();
-    // Rules controls participate in input, focus, and narration through Screen.children(), but have one
-    // manual render path inside the Rules scissor so partially visible controls clip instead of popping.
+    // Settings controls participate in input, focus, and narration through Screen.children(), but have one
+    // manual render path inside the Settings scissor so partially visible controls clip instead of popping.
     private final List<AbstractWidget> settingsScrollWidgets = new ArrayList<>();
 
     // ── Settings rail toggle buttons (need message updates) ──
@@ -249,8 +249,8 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     // ── Tabbed fallback mode (activates when 3-col doesn't fit) ──
     private boolean tabbedMode;
-    private int activeTab; // 0=World + Spawn Zone, 1=Rules
-    private static final String[] TAB_LABELS = {"World", "Rules"};
+    private int activeTab; // 0=World + Spawn Zone, 1=Settings
+    private static final String[] TAB_LABELS = {"World", "Settings"};
     private static final int TAB_H = 20;
     private static final int TAB_GAP = 4;
     private int tabStripY;
@@ -1037,7 +1037,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             settingsColumnW = Math.max(1, (settBtnW - columnGap) / 2);
             settingsRightColumnX = settBtnX + settingsColumnW + columnGap;
         }
-        // Wide mode reserves the fixed Rules heading. Tabbed mode already has a tab label, so there is
+        // Wide mode reserves the fixed Settings heading. Tabbed mode already has a tab label, so there is
         // no internal heading or blank opaque shelf.
         settingsViewportTop = threeCol ? panelTop + scaledUi(36) : panelTop + scaledUi(8);
         settingsViewportBottom = panelBottom - scaledUi(8);
@@ -1620,7 +1620,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             int railClipLeft = Math.max(railX + 1, paneStripViewportLeft);
             int railClipRight = Math.min(railX + railW - 1, paneStripViewportRight);
             if (threeCol) {
-                drawInlineHeading(context, railX, railW, "Rules", GOLD);
+                drawInlineHeading(context, railX, railW, "Settings", GOLD);
             }
             if (railClipRight > railClipLeft) {
             context.enableScissor(railClipLeft, settingsClipTop(), railClipRight, settingsViewportBottom);
@@ -1651,7 +1651,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             context.disableScissor();
             }
             drawPaneScrollbar(context, railX, railW, settingsViewportTop, settingsViewportBottom, settingsContentHeight, settingsScroll);
-        } // end Rules tab
+        } // end Settings tab
 
         if (!tabbedMode) {
             drawHorizontalScrollbar(context);
