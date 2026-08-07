@@ -102,6 +102,25 @@ public class ProtoChunkSnowBlockGuardMixin {
         if (!(isSnowBlock || isSnowLayer || isPowder)) return;
         if (pos.getY() >= LatitudeBiomes.ALPINE_ROCK_Y) return;
 
+        // This guard exists to kill "snow at cave mouths in jungle" — not to de-snow genuinely cold
+        // columns. The latitude band alone cannot tell those apart: TEMPERATE is a warm band here,
+        // but vanilla legitimately snows a temperature-0.2 biome (windswept forest/hills) above
+        // roughly y=120, because height drops temperature past the snow threshold. Stripping on the
+        // band alone therefore erased every snow layer between ~y=120 and ALPINE_ROCK_Y at temperate
+        // latitudes, leaving the desaturated olive-grey grass those biomes are *supposed* to have —
+        // but with no snow on top to explain it, which is exactly what reads as broken.
+        //
+        // Ask the biome the same question vanilla asks. A column cold enough to snow keeps its snow;
+        // a warm column (the jungle cave mouth this guard was written for) still loses it. This also
+        // re-aligns the two snow write paths: SnowAndFreezeFeature applies vanilla's own
+        // cold-enough test and is unguarded since the 26.2 pivot, so band-only stripping made the
+        // two disagree and produced the patchy result rather than a clean one.
+        Holder<Biome> snowBiome = ((ProtoChunk) (Object) this).getNoiseBiome(
+                pos.getX() >> 2, pos.getY() >> 2, pos.getZ() >> 2);
+        if (snowBiome != null && snowBiome.value().coldEnoughToSnow(pos, LatitudeBiomes.getActiveSeaLevel())) {
+            return;
+        }
+
         BlockState replacement;
         if (isSnowBlock) {
             // Cosmetic: dirt on hillsides (above sea level), stone underground
