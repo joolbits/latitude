@@ -6,10 +6,11 @@ Per the campaign's Phase-9 closeout. Written here rather than in the protected `
 checkout, which port threads must never modify — **paste this into the next kickoff's diffs-learned
 section; thread 2 cannot.**
 
-> **Status: thread 2 is not finished.** The port compiles, gates green, boots, and generates worlds,
-> but five thread-1 fixes remain un-harvested and two of the maintainer's worldgen questions are open. Live
-> state and the resume plan live in
-> [`docs/binder/latitude-1-5-port-1p21p11-slice-f-live-findings-20260807.md`](../binder/latitude-1-5-port-1p21p11-slice-f-live-findings-20260807.md).
+> **Status: thread 2 is not finished.** The port compiles, gates green, boots, generates worlds, and
+> the harvest of thread 1's nine post-tag fixes is **complete**. Outstanding: the maintainer's live acceptance
+> on `TEST 6`, her two open worldgen questions (both need measurement), the fog A/B, and release.
+> Current state lives in
+> [`docs/binder/latitude-1-5-port-1p21p11-slice-g-closure-20260807.md`](../binder/latitude-1-5-port-1p21p11-slice-g-closure-20260807.md).
 
 ---
 
@@ -101,13 +102,29 @@ remapped Minecraft classpath, following inheritance. **Take it.** It caught real
 ## 6. Sweep the predecessor's whole history, not its handoff
 
 Thread 1's handoff named **four** bugs. Its branch carried **nine** functional fixes after the shared
-tag. Thread 2 harvested four in Slice D and only found the rest after Maintainer hit two of them live.
+tag. Thread 2 harvested four in Slice D and only found the rest after Maintainer hit two of them live —
+then had to spend a whole extra slice harvesting them. Sweep the full history **before** the live
+lane, not after.
 
 Method: `git log v1.5.0+26.2..port/1.5.0-<prev>` and list every commit touching `src/`. Object stores
 are shared across the port worktrees, so commits are reachable by SHA with no fetch.
 
-Watch for **wrong turns that were later reverted** — thread 1's `249cd1d7` was superseded by
-`179e6200`, so cherry-picking only the latter produced the correct final state. Read the commit
+**Harvest in chronological order, and read each diff before you pick it.** A later commit can revert
+or rewrite part of an earlier one, and the subject line can bury that in a second clause. Two cases
+in one slice:
+
+- `249cd1d7` was a wrong turn superseded by `179e6200` — cherry-picking only the latter gives the
+  correct final state.
+- `89e9f07b` (*"Guard structure siting against Latitude's biome; **scope the land gate to
+  temperate**"*) reverts part of `dde70c88`. Harvesting `dde70c88` alone ships a measured regression:
+  widening the land-cohesion gate to subtropical routes warm highlands into the temperate
+  `LAT_TEMPERATE_MOUNTAIN` pool and leaves `minecraft:eroded_badlands` unplaceable at
+  `topologyEligible=0`.
+- `533dd0e3` and `68716f22` are **one fix in two halves**, 24 minutes apart, both rewriting the same
+  block of `GlobeMod.initLatitudeBiomesForWorld`. Taking only the first ships a fail-loud guard that
+  crashes on **every** CliffTree world — worse than the bug. Take both, in order.
+
+A per-commit sweep table that compresses each commit to one phrase will hide all three. Read the
 bodies; they say so.
 
 ## 7. Bugs that are 1.5-wide, not port artifacts — check them on every target
@@ -126,10 +143,21 @@ Both were **diagnosed by thread 1 and never fixed**, and reproduce on the releas
    so vanilla's `mouseClicked` sends a Cancel click to whichever row overlaps it — Cancel selects a
    climate. Fixed by `179e6200`.
 
-**Still open and likely 1.5-wide** (thread 2 did not reach these): the land-cohesion terrain gate is
-**inert** because `latitude.skipPreviewHeightForWorldgen` defaults `true`, feeding a synthetic
-`robustDelta` of 0 (`dde70c88`); and `savanna_plateau` can be preserved by a pure noise field with no
-height test (`preserveSavannaPlateauAtSanitize`). Both need *measurement*, not code reading.
+3. **Silent degradation to vanilla under a worldgen-mod conflict** (`533dd0e3` + `68716f22`). Worth
+   understanding before you meet it: the failure is **undetectable before launch**, because vanilla's
+   `createLevelFromExistingSettings` reloads datapacks and rebuilds the registries *internally*, after
+   the last point Latitude can observe. `RegistryFileCodec` then fails `canSerializeIn` and silently
+   inlines the settings (639 bytes → 84 791). The recognition fix is architectural and applies to
+   every target: **record the create screen's pending radius before consulting the generator**, so
+   recognition flows from the create screen's own testimony via `latitude_world_state.dat`. Holder-key
+   recognition must never be load-bearing — lithostitched legitimately mutates that holder in place.
+
+**Still open and likely 1.5-wide:** `savanna_plateau` can be preserved by a pure noise field with no
+height test (`preserveSavannaPlateauAtSanitize`). Needs *measurement*, not code reading. The
+land-cohesion gate being inert under `latitude.skipPreviewHeightForWorldgen` is fixed by `dde70c88`
+(harvest it **with** `89e9f07b`), but note the atlas sampler is structurally blind to that fix —
+`hasPreviewTerrainInputs` is false under `callerContext=ATLAS_SAMPLER`, so a zero-diff census proves
+nothing in either direction. It has to be checked live.
 
 ## 8. Worldgen parity is measurable, and it is the strongest claim you can make
 

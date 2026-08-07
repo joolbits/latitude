@@ -26,12 +26,14 @@ weight of the four.
 | Slice D — harvest thread 1's fixes | **PARTIAL** `8c26f0d5` — took only the 4 named in the handoff; 5 more found later, see Slice G |
 | Slice E — gates + fence adjacency test | **DONE** — atlas parity bit-identical to 26.2; fence ships pinned; guard verifier retired |
 | Slice F — live lane | **IN PROGRESS** — 4 live defects fixed; 5 un-harvested fixes found; 2 questions open |
-| Slice G — harvest the remaining 5 thread-1 fixes | **NEXT**, `dde70c88` first |
+| Slice G — harvest the remaining 5 thread-1 fixes | **DONE** `8640c14c`/`1eb1ecf0`/`2ca3a76a`/`1f4a68e9`/`0e831d38` — harvest complete; all 9 of thread 1's post-tag fixes are in |
 | Release | pending, **needs the maintainer's authorization** |
 
-> **current implementation state:** [`<external-notes>/latitude-1-5-port-1p21p11-slice-f-live-findings-20260807.md`](../external record/latitude-1-5-port-1p21p11-slice-f-live-findings-20260807.md)
-> carries full state — staged jar, the five-fix harvest order with conflict risk, both open questions,
-> and the lane laws. Start there.
+> **current implementation state:** [`<external-notes>/latitude-1-5-port-1p21p11-slice-g-closure-20260807.md`](../external record/latitude-1-5-port-1p21p11-slice-g-closure-20260807.md)
+> carries current state — `TEST 6` staged, the harvest closed, and the four things still outstanding
+> before release. The earlier
+> [`…slice-f-live-findings…`](../external record/latitude-1-5-port-1p21p11-slice-f-live-findings-20260807.md)
+> remains the record of the four live defects and both open worldgen questions.
 
 ## Decisions of record (Maintainer, 2026-08-06)
 
