@@ -98,6 +98,26 @@ remapped Minecraft classpath, following inheritance. **Take it.** It caught real
   descriptor ledger still carrying `sulfur_caves`, so the suite was green while the game crashed.
 - **`gradle runClient`/`runServer` can print `BUILD SUCCESSFUL` while the game crashed on startup.**
   Grep the log. Never trust the exit code.
+- **Production provider jars CAN be loaded by the headless dev-classpath server** — the blocker is
+  runtime mod remapping, not the loader. A bare `KnotServer` launch off the Loom argfile dies on the
+  first mod with an intermediary access widener ("Namespace (intermediary) does not match current
+  runtime namespace (named)"). The unlock: run `./gradlew generateRemapClasspath configureLaunch`
+  once, then add `-Dfabric.remapClasspathFile=<project>/.gradle/loom-cache/remapClasspath.txt` and
+  `-Dfabric.defaultModDistributionNamespace=intermediary` to the java invocation — exactly the
+  properties Loom's own run tasks set via `launch.cfg`. This is what made live provider-stack
+  verification (real BoP jars, real TerraBlender regions) possible on this thread; without it every
+  "headless" claim is silently vanilla-only. Check each provider jar's own `fabric.mod.json` for its
+  loader floor first (Terralith wants `>=0.18`; BoP/GlitchCore/TerraBlender accept `*`).
+- **Two admission paths, one protection — audit both.** Latitude admits custom biomes via the
+  `lat_*` tags AND via `BiomeDescriptorLedger` routes. Any mechanism that enumerates "the custom
+  biomes" from just one path (the decoration-index guard did, from tags only) silently strands the
+  other path's biomes. On this thread that was 39 ledger-only biomes generating with zero
+  decoration. When porting, grep every consumer of `LATITUDE_CUSTOM_POLICY_TAGS`-style lists and ask
+  what the ledger adds.
+- **Dedicated-server worlds never capture the provider-ticket profile** (`pendingRadius > 0` is
+  create-screen-only), so ledger-routed biomes don't place there at all — which also means the
+  headless atlas can NEVER see ledger-path placement. Do not read a ledger biome's absence from an
+  atlas as evidence about client-created worlds.
 - **The same failure, one layer up: a custom Gradle task that packages a "TEST" or staging jar must
   build from `remapJar`'s output, never from the plain `jar` task's.** Loom's `jar` task leaves
   classes in *named* (Mojang) mappings; only `remapJar` remaps them to *intermediary*, which is what
