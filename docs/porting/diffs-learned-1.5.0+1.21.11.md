@@ -98,6 +98,19 @@ remapped Minecraft classpath, following inheritance. **Take it.** It caught real
   descriptor ledger still carrying `sulfur_caves`, so the suite was green while the game crashed.
 - **`gradle runClient`/`runServer` can print `BUILD SUCCESSFUL` while the game crashed on startup.**
   Grep the log. Never trust the exit code.
+- **The same failure, one layer up: a custom Gradle task that packages a "TEST" or staging jar must
+  build from `remapJar`'s output, never from the plain `jar` task's.** Loom's `jar` task leaves
+  classes in *named* (Mojang) mappings; only `remapJar` remaps them to *intermediary*, which is what
+  a real production Fabric Loader (Modrinth App, CurseForge, any non-dev launch) actually loads. This
+  is invisible to compilation, to `latitudeMixinTargetVerify`, and to the dev client and headless
+  server smoke tests — **all of those run on Loom's own dev classpath, which is itself named-mapped**,
+  so unmapped mod code matches it natively and nothing ever needs remapping there. It only manifests
+  under a genuine production launch, as a `Mixin transformation ... failed` /
+  `ClassMetadataNotFoundException` crash naming a real Minecraft class by its *named* form. If a
+  target inherits TEST-jar tooling built for an unobfuscated source line (26.x, where `jar` and
+  `remapJar` output are identical because there's nothing to remap), check explicitly whether that
+  tooling assumed away a remap step the new, obfuscated target now requires. Full account:
+  [`docs/binder/latitude-1-5-port-1p21p11-test-jar-remap-crash-20260807.md`](../binder/latitude-1-5-port-1p21p11-test-jar-remap-crash-20260807.md).
 
 ## 6. Sweep the predecessor's whole history, not its handoff
 
