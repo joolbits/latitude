@@ -2298,14 +2298,6 @@ public final class LatitudeBiomes {
         return "minecraft:savanna";
     }
 
-    private static boolean preserveSavannaPlateauAtSanitize(Holder<Biome> entry, int blockX, int blockZ) {
-        if (!isBiomeId(entry, "minecraft:savanna_plateau")) {
-            return false;
-        }
-        double localUpland = ValueNoise2D.sampleBlocks(WORLD_SEED ^ UPLAND_POOL_SALT, blockX, blockZ, UPLAND_SCALE_BLOCKS);
-        return localUpland >= 0.58;
-    }
-
     private static void incrementSavannaIncomingCounter(String biomeId) {
         if ("minecraft:savanna".equals(biomeId)) {
             SAVANNA_GATE_IN_SAVANNA.incrementAndGet();
@@ -11304,12 +11296,14 @@ public final class LatitudeBiomes {
         out = demotePolewardArid(biomes, out, blockX, blockZ);
         if (isSavannaFamily(out)) {
             try {
+                // Trust savannaTierByY unconditionally -- a prior "preserve plateau" override here
+                // re-upgraded a low-Y result back to savanna_plateau whenever a pure 2D noise field
+                // crossed a threshold, with no reference to blockY at all. Live-captured: plateau at
+                // surfaceY=65 (sea level+2), a 35-block violation of SAVANNA_PLATEAU_MIN_Y, uplandT=0.
+                // There is no threshold that both lets the override fire and requires real elevation:
+                // this branch is only reached when Y already says "not elevated."
                 if (!isBiomeId(out, "minecraft:windswept_savanna")) {
-                    String targetId = savannaTierByY(blockY);
-                    if ("minecraft:savanna".equals(targetId) && preserveSavannaPlateauAtSanitize(out, blockX, blockZ)) {
-                        targetId = "minecraft:savanna_plateau";
-                    }
-                    out = biome(biomes, targetId);
+                    out = biome(biomes, savannaTierByY(blockY));
                 }
             } catch (Throwable ignored) {
                 // keep current biome
@@ -11460,12 +11454,10 @@ public final class LatitudeBiomes {
         // Poleward partner: keep badlands/desert out of the TEMPERATE band (the band-blend leak past 35deg).
         out = demotePolewardArid(biomes, out, blockX, blockZ);
         if (isSavannaFamily(out)) {
+            // Trust savannaTierByY unconditionally -- see the identical pass above for why the
+            // former noise-only "preserve plateau" override could never be made height-aware.
             if (!isBiomeId(out, "minecraft:windswept_savanna")) {
-                String targetId = savannaTierByY(blockY);
-                if ("minecraft:savanna".equals(targetId) && preserveSavannaPlateauAtSanitize(out, blockX, blockZ)) {
-                    targetId = "minecraft:savanna_plateau";
-                }
-                Holder<Biome> tier = entryById(biomes, targetId);
+                Holder<Biome> tier = entryById(biomes, savannaTierByY(blockY));
                 if (tier != null) {
                     out = tier;
                 }
