@@ -350,12 +350,18 @@ tasks.named(sourceSets.latitudeTest.compileJavaTaskName, JavaCompile).configure 
 
 tasks.register('latitudeTestJar', Jar) {
     group = 'latitude test artifact'
-    description = 'Build the isolated official-namespace dev-enabled TEST jar; requires -PlatitudeTestSequence=N'
+    description = 'Build the isolated named-mapping dev-enabled TEST jar (intermediate; not ' +
+            'production-ready — see remapLatitudeTestJar); requires -PlatitudeTestSequence=N'
 
     int sequence = latitudeTestSequenceOrZero()
     String testVersion = latitudeTestVersionValue(sequence)
+    // Named-mapping intermediate only — Fabric Loader in production expects intermediary-mapped
+    // classes (confirmed by comparing this task's own output against remapJar's: the same handler
+    // in the same mixin resolves to net.minecraft.server.level.ServerLevel here and to
+    // net.minecraft.class_3218 after remapping). Nothing should stage this file directly; only
+    // remapLatitudeTestJar's output, below, is production-ready.
     archiveFileName.set("latitude-${testVersion}.jar")
-    destinationDirectory.set(layout.buildDirectory.dir('latitude-test-libs'))
+    destinationDirectory.set(layout.buildDirectory.dir('latitude-test-libs-unmapped'))
     inputs.property('latitudeTestSequence', latitudeTestSequenceInput)
     inputs.property('latitudeTestVersion', latitudeTestVersionInput)
     duplicatesStrategy = DuplicatesStrategy.FAIL
@@ -391,8 +397,8 @@ tasks.register('latitudeTestJar', Jar) {
                 'Build-Dirty': publicAttributes.getValue('Build-Dirty'),
                 'Latitude-Artifact-Role': 'TEST',
                 'Latitude-Test-Sequence': Integer.toString(validatedSequence),
-                'Latitude-Artifact-Version': validatedVersion,
-                'Fabric-Mapping-Namespace': 'official'
+                'Latitude-Artifact-Version': validatedVersion
+                // No Fabric-Mapping-Namespace: this jar is still named-mapping (see remapLatitudeTestJar).
         )
     }
 
@@ -425,10 +431,24 @@ tasks.register('latitudeTestJar', Jar) {
                 'Build-Dirty': latitudeGitDirty,
                 'Latitude-Artifact-Role': 'TEST',
                 'Latitude-Test-Sequence': Integer.toString(sequence),
-                'Latitude-Artifact-Version': testVersion,
-                'Fabric-Mapping-Namespace': 'official'
+                'Latitude-Artifact-Version': testVersion
+                // No Fabric-Mapping-Namespace here — this jar is still named-mapping. remapJar's
+                // own convention is to inject that attribute (and the Fabric-Loom-*/Fabric-Mixin-*
+                // attributes production Mixin needs) during remapping; remapLatitudeTestJar below
+                // does the same via the same Loom task type, not by hand-copying.
         )
     }
+}
+
+tasks.register('remapLatitudeTestJar', net.fabricmc.loom.task.RemapJarTask) {
+    group = 'latitude test artifact'
+    description = 'Remap the TEST artifact to intermediary — the form Fabric Loader actually loads ' +
+            'in production (Modrinth App, CurseForge, any non-dev launch). latitudeTestJar alone is ' +
+            'named-mapping and will crash there; this is the task to stage.'
+    // Provider-derived input wires the task dependency implicitly — no explicit dependsOn needed.
+    input.set(tasks.named('latitudeTestJar', Jar).flatMap { it.archiveFile })
+    archiveFileName.set(tasks.named('latitudeTestJar', Jar).flatMap { it.archiveFileName })
+    destinationDirectory.set(layout.buildDirectory.dir('latitude-test-libs'))
 }
 
 publishing {

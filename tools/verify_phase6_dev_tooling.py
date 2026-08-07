@@ -513,6 +513,20 @@ def verify_sources(failures: list[str]) -> None:
         "TEST artifact wired into another task",
         failures,
     )
+    require(
+        build,
+        "tasks.register('remapLatitudeTestJar', net.fabricmc.loom.task.RemapJarTask)",
+        "TEST artifact is remapped to intermediary before staging",
+        failures,
+    )
+    forbid(
+        build,
+        "'Fabric-Mapping-Namespace': 'official'",
+        "TEST artifact must not hand-declare a named-mapping manifest — "
+        "production Fabric Loader expects intermediary classes, which only "
+        "remapLatitudeTestJar (not latitudeTestJar alone) produces",
+        failures,
+    )
 
     for needle, label in (
         ("DevToolPolicy.packagedTestIdentityValid(", "fail-closed packaged identity"),
@@ -1122,6 +1136,7 @@ def verify_negative_task_graph(path: Path, failures: list[str]) -> None:
         ":compileLatitudeTestJava",
         ":latitudeTestClasses",
         ":latitudeTestJar",
+        ":remapLatitudeTestJar",
     ):
         if forbidden in text:
             failures.append(f"normal/public task graph contains TEST task: {forbidden}")
