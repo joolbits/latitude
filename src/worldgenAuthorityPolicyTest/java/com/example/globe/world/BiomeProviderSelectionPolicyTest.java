@@ -475,7 +475,7 @@ final class BiomeProviderSelectionPolicyTest {
                         && state.contains("PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE")
                         && state.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE"),
                 "legacy/V1/V2/V3 policies remain explicit alongside fresh-only V4");
-        assertTrue(mod.contains("CaveBiomeRepresentationProfile.capture(pendingRadius, profile)")
+        assertTrue(mod.contains("CaveBiomeRepresentationProfile.capture(captureRadius, profile)")
                         && mod.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE"),
                 "only a newly created world captures the V4 cave profile before spawn generation");
     }
@@ -646,9 +646,11 @@ final class BiomeProviderSelectionPolicyTest {
         assertTrue(state.contains("vanilla_representation_profile")
                         && state.contains("PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE"),
                 "V3 profile and policy are persisted without changing legacy/V1/V2 identities");
-        assertTrue(mod.contains("VanillaBiomeRepresentationProfile.capture(pendingRadius, seed, profile)")
-                        && mod.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE"),
-                "only the trusted fresh-world path captures the V4 surface/cave birth profiles");
+        assertTrue(mod.contains("VanillaBiomeRepresentationProfile.capture(captureRadius, seed, profile)")
+                        && mod.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE")
+                        && mod.contains("boolean creationWindow = world.getGameTime() < 100L;"),
+                "only the birth-locked fresh-world path (create screen OR fresh dedicated world, "
+                        + "inside the creation window) captures the V4 surface/cave profiles");
         assertThrows(() -> VanillaBiomeRepresentationProfile.decode(
                         VanillaBiomeRepresentationProfile.FORMAT
                                 + "\nSIZE|ITTY_BITTY\nLAND|TEMPERATE_LOWLAND|REPRESENTATION_FAMILY|terralith:caldera"),
