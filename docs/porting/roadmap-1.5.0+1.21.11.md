@@ -20,12 +20,18 @@ weight of the four.
 | --- | --- |
 | Preflight (campaign step 1) | **PASS** — clean, `git diff v1.5.0+26.2` empty, HEAD `2a1074ae` |
 | Hour-1 mappings spike (step 2) | **PASS** — mojmap viable, 171/178 imports resolve, 7 REDs |
-| Slice A — toolchain metadata | pending |
-| Slice B — compile ladder | pending |
-| Slice C — runtime hooks + fog redesign | pending |
-| Slice D — harvest thread 1's fixes | pending |
-| Slice E — gates + fence adjacency test | pending |
-| Slice F — live lane + release | pending, **needs the maintainer's authorization** |
+| Slice A — toolchain metadata | **DONE** `44d3924c` — Loom 1.14.10 (1.17.x rejects mojmap), modImplementation required |
+| Slice B — compile ladder | **DONE** `e0dde52e` — 7 predicted REDs exactly + 3 Fabric-API REDs the scan could not see |
+| Slice C — runtime hooks + fog redesign | **DONE** `859c9fa2`/`66a54c72`/`9e9314d9`/`b639f142` — fog split in two, 5 mixin defects, persistence rail proven |
+| Slice D — harvest thread 1's fixes | **PARTIAL** `8c26f0d5` — took only the 4 named in the handoff; 5 more found later, see Slice G |
+| Slice E — gates + fence adjacency test | **DONE** — atlas parity bit-identical to 26.2; fence ships pinned; guard verifier retired |
+| Slice F — live lane | **IN PROGRESS** — 4 live defects fixed; 5 un-harvested fixes found; 2 questions open |
+| Slice G — harvest the remaining 5 thread-1 fixes | **NEXT**, `dde70c88` first |
+| Release | pending, **needs the maintainer's authorization** |
+
+> **current implementation state:** [`<external-notes>/latitude-1-5-port-1p21p11-slice-f-live-findings-20260807.md`](../external record/latitude-1-5-port-1p21p11-slice-f-live-findings-20260807.md)
+> carries full state — staged jar, the five-fix harvest order with conflict risk, both open questions,
+> and the lane laws. Start there.
 
 ## Decisions of record (Maintainer, 2026-08-06)
 
