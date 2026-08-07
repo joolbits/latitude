@@ -155,7 +155,6 @@ Harvest-complete note; archive `port/1.4.0-beta-1.21.11`; write
 
 ## Open items owned by Maintainer
 
-- Modrinth / CurseForge upload of `1.5.0+26.1.2` (no publish tooling in-repo).
 - Pasting thread 1's diffs-learned into the protected `kickoff-1.5-1.21.11.md`.
 - `tools/verify_structure_climate_guard.py` retirement (Slice E).
 - The 1.4-era `port/1.4.0-beta-1.21.11` worktree is still dirty (10 modified + 3 untracked, incl.
