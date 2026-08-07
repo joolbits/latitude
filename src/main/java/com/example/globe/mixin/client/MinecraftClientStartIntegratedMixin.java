@@ -11,7 +11,6 @@ import net.minecraft.server.WorldStem;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.dimension.LevelStem;
-import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.storage.LevelResource;
@@ -24,7 +23,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Optional;
 
 @Mixin(Minecraft.class)
 public abstract class MinecraftClientStartIntegratedMixin {
@@ -42,11 +40,17 @@ public abstract class MinecraftClientStartIntegratedMixin {
     @Unique private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_MASSIVE_KEY =
             globe$noiseSettingsKey("overworld_massive");
 
+    // 26.2's doWorldLoad(LevelStorageAccess, PackRepository, WorldStem, Optional<GameRules>,
+    // boolean) carries an Optional<GameRules> parameter that 1.21.11's does not: this target's
+    // signature is (LevelStorageAccess, PackRepository, WorldStem, boolean). Mixin does not
+    // validate an @Inject handler's own parameter list against the target's real descriptor until
+    // runtime bytecode weaving, so a stale handler signature compiles cleanly and only fails when
+    // this class is actually loaded -- which is CLIENT-ONLY and neither the static verifier nor a
+    // dedicated-server boot proof ever exercises it.
     @Inject(method = "doWorldLoad", at = @At("HEAD"))
     private void globe$beginExistingLatitudeWorldLoading(LevelStorageSource.LevelStorageAccess session,
                                                          PackRepository packRepository,
                                                          WorldStem worldStem,
-                                                         Optional<GameRules> gameRules,
                                                          boolean safeMode,
                                                          CallbackInfo ci) {
         boolean detectedLatitudeWorld = globe$isLatitudeWorld(worldStem);

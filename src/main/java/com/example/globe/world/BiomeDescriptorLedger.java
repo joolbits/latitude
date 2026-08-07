@@ -185,7 +185,11 @@ public final class BiomeDescriptorLedger {
             d("minecraft:ice_spikes", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
             d("minecraft:lush_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
             d("minecraft:dripstone_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
-            d("minecraft:sulfur_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            // minecraft:sulfur_caves is deliberately absent: it is a 26.x biome that does not exist
+            // on Minecraft 1.21.11. Keeping it here was not inert -- the policy suite builds its
+            // synthetic registry from this ledger, so a 26.2-shaped ledger made the cave-coverage
+            // test pass against a biome the real game does not have, which is exactly why the suite
+            // stayed green while world creation hard-crashed. Do not re-add when harvesting 26.2.
             d("minecraft:deep_dark", r(BiomeRoute.CAVE_DEEP), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE)
     );
 

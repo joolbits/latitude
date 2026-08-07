@@ -400,11 +400,19 @@ final class BiomeProviderSelectionPolicyTest {
     }
 
     private static void caveCoverageIsClosedAndWorldSizeSafe() throws Exception {
+        // Three, not 26.2's four: minecraft:sulfur_caves does not exist on Minecraft 1.21.11.
+        // Requiring it made CaveBiomeRepresentationProfile.validate() throw and hard-crashed world
+        // creation, while this suite stayed green because its synthetic registry was built from a
+        // ledger that still carried the 26.2 entry. Both are corrected; this pins the trap.
         List<String> required = List.of(
                 "minecraft:deep_dark", "minecraft:dripstone_caves",
-                "minecraft:lush_caves", "minecraft:sulfur_caves");
+                "minecraft:lush_caves");
         assertEquals(Set.copyOf(required), CaveBiomeRepresentationProfile.mandatoryIds().keySet(),
-                "the four native cave identities are mandatory, exact, and closed");
+                "the native cave identities available on this target are mandatory, exact, and closed");
+        assertTrue(!CaveBiomeRepresentationProfile.mandatoryIds().containsKey("minecraft:sulfur_caves"),
+                "a biome absent from this Minecraft version can never be a mandatory identity");
+        assertTrue(BiomeDescriptorLedger.descriptor("minecraft:sulfur_caves") == null,
+                "the descriptor ledger must not model biomes this target's registry does not have");
 
         BiomeSelectionProfile combined = BiomeSelectionProfile.capture(
                 registryFor(Set.of("biomesoplenty", "terralith")));

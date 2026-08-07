@@ -18,11 +18,24 @@ import java.util.TreeMap;
 public final class CaveBiomeRepresentationProfile {
     public static final String FORMAT = "cave_representation_v1";
 
+    /**
+     * Cave identities this target guarantees representation for.
+     *
+     * <p>26.2 also lists {@code minecraft:sulfur_caves} here. That biome does not exist on
+     * Minecraft 1.21.11 — the registry carries only {@code dripstone_caves} and {@code lush_caves}
+     * alongside {@code deep_dark} — so requiring it made {@link #validate()} throw
+     * "mandatory cave identity unavailable" and **hard-crashed world creation** on this version.
+     * Biome identities are plain strings here, so neither the compiler nor a mixin-target check can
+     * see this; it only surfaces when a world is actually created.
+     *
+     * <p>Do not re-add it when harvesting from the 26.2 line. Threads 3 and 4 (1.21.1, 1.20.1)
+     * inherit the same constraint — check any presence-requiring biome list against the target's
+     * own registry before shipping. `CaveRepresentationPolicyTest` pins this.
+     */
     private static final Map<String, BiomeRoute> MANDATORY = Map.of(
             "minecraft:deep_dark", BiomeRoute.CAVE_DEEP,
             "minecraft:dripstone_caves", BiomeRoute.CAVE_SHALLOW,
-            "minecraft:lush_caves", BiomeRoute.CAVE_SHALLOW,
-            "minecraft:sulfur_caves", BiomeRoute.CAVE_SHALLOW);
+            "minecraft:lush_caves", BiomeRoute.CAVE_SHALLOW);
     private static final List<BiomeRoute> CAVE_ROUTES = List.of(
             BiomeRoute.CAVE_SHALLOW, BiomeRoute.CAVE_DEEP);
 
