@@ -414,6 +414,8 @@ public final class LatitudeBiomes {
     /** V4 anchors only replace cells that the donor source already identified as underground caves. */
     private static volatile CaveBiomeCoveragePlan ACTIVE_CAVE_COVERAGE_PLAN = null;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
+    /** Sea level of the active generator; needed to ask a biome whether a column is cold enough to snow. */
+    public static volatile int ACTIVE_SEA_LEVEL = 63;
     private static volatile boolean ACTIVE_WORLDGEN_AUTHORITY = false;
     private static OceanDistanceField OCEAN_DISTANCE_FIELD = null;
     private static final AtomicInteger DEBUG_COUNT = new AtomicInteger();
@@ -749,6 +751,7 @@ public final class LatitudeBiomes {
                 ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
                         ? caveRepresentationProfile : null;
         ACTIVE_RADIUS_BLOCKS = Math.max(0, radiusBlocks);
+        ACTIVE_SEA_LEVEL = seaLevel;
         WORLD_SEED = seed;
         OCEAN_DISTANCE_FIELD = new OceanDistanceField(seed);
         clearTagSelectionCaches();
@@ -1205,6 +1208,10 @@ public final class LatitudeBiomes {
 
     public static int getActiveRadiusBlocks() {
         return ACTIVE_RADIUS_BLOCKS;
+    }
+
+    public static int getActiveSeaLevel() {
+        return ACTIVE_SEA_LEVEL;
     }
 
     // --- Tree line / alpine surface ---
