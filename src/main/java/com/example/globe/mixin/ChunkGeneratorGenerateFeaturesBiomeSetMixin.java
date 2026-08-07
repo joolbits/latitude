@@ -55,37 +55,11 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
                     Integer.getInteger("latitude.debugBopRetainAll.logLimit", 20));
     private static final String LATITUDE_CUSTOM_RETAINALL_CLASSIFICATION =
             "LATITUDE_TAGGED_CUSTOM_FEATURES_RETAINALL_GUARD";
-    private static final String[] LATITUDE_CUSTOM_POLICY_TAGS = {
-            "lat_tropics_primary",
-            "lat_tropics_secondary",
-            "lat_tropics_accent",
-            "lat_arid_primary",
-            "lat_arid_secondary",
-            "lat_arid_accent",
-            "lat_trans_arid_tropics_1_primary",
-            "lat_trans_arid_tropics_1_secondary",
-            "lat_trans_arid_tropics_1_accent",
-            "lat_trans_arid_tropics_2_primary",
-            "lat_trans_arid_tropics_2_secondary",
-            "lat_trans_arid_tropics_2_accent",
-            "lat_subtropical_humid_primary",
-            "lat_subtropical_humid_secondary",
-            "lat_subtropical_humid_accent",
-            "lat_temperate_primary",
-            "lat_temperate_secondary",
-            "lat_temperate_accent",
-            "lat_temperate_mountain",
-            "lat_subpolar_primary",
-            "lat_subpolar_secondary",
-            "lat_subpolar_accent",
-            "lat_polar_primary",
-            "lat_polar_secondary",
-            "lat_polar_accent",
-            "lat_ocean_tropical",
-            "lat_ocean_temperate",
-            "lat_ocean_subpolar",
-            "lat_ocean_polar"
-    };
+    // Shared with LatitudeDecorationRetrofit, which also depends on this list's HISTORICAL value
+    // (retrofit eligibility = ledger-routed but absent from these tags). Lives there because mixin
+    // classes must never be referenced from ordinary code.
+    private static final String[] LATITUDE_CUSTOM_POLICY_TAGS =
+            com.example.globe.world.LatitudeDecorationRetrofit.DECORATION_POLICY_TAG_PATHS;
 
     @Unique
     private static final AtomicInteger LATITUDE_DEBUG_CUSTOM_RETAINALL_LOGS =
@@ -135,6 +109,10 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
         if (!LatitudeWorldgenScope.isActive()) {
             return;
         }
+        // Every chunk decorated from here on was decorated under the ledger-complete feature
+        // index; the persistent marker is what tells the opt-in retrofit engine this chunk can
+        // never need repair.
+        com.example.globe.world.LatitudeDecorationRetrofit.markDecoratedUnderFixedIndex(chunk);
         if (this.globe$customBiomeFeaturesIndexed) {
             return;
         }

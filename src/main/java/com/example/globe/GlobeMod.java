@@ -127,6 +127,7 @@ public class GlobeMod implements ModInitializer {
         logBuildMetadata("server");
 
         GlobeNet.registerPayloads();
+        com.example.globe.world.LatitudeDecorationRetrofit.init();
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             // Shipping operator commands: unconditional and directly linked. Unlike the dev tree,
             // com.example.globe.tools is packaged into release artifacts, so a missing class is a
@@ -248,6 +249,51 @@ public class GlobeMod implements ModInitializer {
         }
     }
 
+    private static void captureProviderTicketProfile(ServerLevel world, LatitudeWorldState worldState,
+                                                      long seed, int captureRadius, String origin) {
+        BiomeSelectionProfile profile = BiomeSelectionProfile.capture(
+                world.registryAccess().lookupOrThrow(Registries.BIOME).keySet().stream()
+                        .map(Identifier::toString).toList());
+        worldState.setProviderTicketProfile(profile);
+        worldState.setVanillaRepresentationProfile(
+                VanillaBiomeRepresentationProfile.capture(captureRadius, seed, profile));
+        worldState.setCaveRepresentationProfile(
+                CaveBiomeRepresentationProfile.capture(captureRadius, profile));
+        worldState.setWorldgenPolicy(
+                LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE);
+        LOGGER.info("[Latitude] Recorded Globe world: border radius {} ({})", captureRadius, origin);
+    }
+
+    /**
+     * Explicit, operator-driven profile adoption for a world that never captured one — the
+     * {@code /latitude retrofit} path. Unlike the fresh-world capture this runs OUTSIDE the
+     * creation window, which is exactly the point: the operator has been warned that newly
+     * generated chunks will differ from existing ones. Re-activates the worldgen context in place
+     * so the adopted roster applies without a restart.
+     */
+    public static void adoptProviderTicketProfile(MinecraftServer server, ServerLevel world, String origin) {
+        LatitudeWorldState worldState = LatitudeWorldState.get(world);
+        long seed = server.getWorldData().worldGenOptions().seed();
+        int captureRadius = borderRadiusForGlobeOverworld(world);
+        captureProviderTicketProfile(world, worldState, seed, captureRadius, origin);
+        if (worldState.getGlobeRadius() <= 0) {
+            worldState.setGlobeRadius(captureRadius);
+        }
+        ChunkGenerator generator = world.getChunkSource().getGenerator();
+        activeLatitudeOverworldGenerator = generator instanceof NoiseBasedChunkGenerator noise
+                ? noise
+                : null;
+        int radius = borderRadiusForGlobeOverworld(world);
+        LatitudeBiomes.activateWorldgenContext(radius, seed, worldState.getWorldgenPolicy(),
+                worldState.getProviderTicketProfile().orElse(null),
+                worldState.getVanillaRepresentationProfile().orElse(null),
+                worldState.getCaveRepresentationProfile().orElse(null),
+                world.getChunkSource().randomState().sampler(),
+                donorBiomeSource(generator),
+                generator.getSeaLevel());
+        LOGGER.info("[Latitude] Worldgen context re-activated after profile adoption (seed={} radius={})", seed, radius);
+    }
+
     /**
      * Fires at world-load time — before Minecraft pre-generates spawn chunks for new worlds.
      * Seeds {@link LatitudeBiomes} with the world seed and radius so that province authority
@@ -322,16 +368,8 @@ public class GlobeMod implements ModInitializer {
         if (worldState.getProviderTicketProfile().isEmpty() && creationWindow
                 && (clientCreated || !dedicatedCaptureDisabled)) {
             int captureRadius = clientCreated ? pendingRadius : borderRadiusForGlobeOverworld(world);
-            BiomeSelectionProfile profile = BiomeSelectionProfile.capture(
-                    world.registryAccess().lookupOrThrow(Registries.BIOME).keySet().stream()
-                            .map(Identifier::toString).toList());
-            worldState.setProviderTicketProfile(profile);
-            worldState.setVanillaRepresentationProfile(
-                    VanillaBiomeRepresentationProfile.capture(captureRadius, seed, profile));
-            worldState.setCaveRepresentationProfile(
-                    CaveBiomeRepresentationProfile.capture(captureRadius, profile));
-            worldState.setWorldgenPolicy(
-                    LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE);
+            captureProviderTicketProfile(world, worldState, seed, captureRadius,
+                    clientCreated ? "from create-world selection" : "fresh dedicated/vanilla-created world");
             if (!clientCreated && worldState.getGlobeRadius() <= 0) {
                 // Same state-based recognition resilience 68716f22 gave client-created worlds:
                 // captureRadius is borderRadiusForGlobeOverworld's own settings-derived answer
@@ -340,8 +378,6 @@ public class GlobeMod implements ModInitializer {
                 // in-place mutation by provider mods.
                 worldState.setGlobeRadius(captureRadius);
             }
-            LOGGER.info("[Latitude] Recorded Globe world: border radius {} ({})", captureRadius,
-                    clientCreated ? "from create-world selection" : "fresh dedicated/vanilla-created world");
         }
         ChunkGenerator generator = world.getChunkSource().getGenerator();
         activeLatitudeOverworldGenerator = generator instanceof NoiseBasedChunkGenerator noise

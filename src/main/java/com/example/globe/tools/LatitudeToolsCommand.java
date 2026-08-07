@@ -59,6 +59,37 @@ public final class LatitudeToolsCommand {
     private LatitudeToolsCommand() {
     }
 
+    // ── /latitude retrofit — opt-in repair for pre-fix bare provider biomes ──
+    // The engine and all of its mutable state live in LatitudeDecorationRetrofit; this class is
+    // policy-bound to hold nothing but static-final constants (see ShippingToolsPolicyTest S6).
+
+    private static int retrofitStatus(CommandContext<CommandSourceStack> ctx) {
+        return retrofitReply(ctx, com.example.globe.world.LatitudeDecorationRetrofit.status(
+                ctx.getSource().getServer().overworld()));
+    }
+
+    private static int retrofitEnable(CommandContext<CommandSourceStack> ctx) {
+        return retrofitReply(ctx, com.example.globe.world.LatitudeDecorationRetrofit.requestEnable(
+                ctx.getSource().getServer().overworld()));
+    }
+
+    private static int retrofitConfirm(CommandContext<CommandSourceStack> ctx) {
+        return retrofitReply(ctx, com.example.globe.world.LatitudeDecorationRetrofit.confirmEnable(
+                ctx.getSource().getServer(), ctx.getSource().getServer().overworld()));
+    }
+
+    private static int retrofitDisable(CommandContext<CommandSourceStack> ctx) {
+        return retrofitReply(ctx, com.example.globe.world.LatitudeDecorationRetrofit.disable(
+                ctx.getSource().getServer().overworld()));
+    }
+
+    private static int retrofitReply(CommandContext<CommandSourceStack> ctx, List<String> lines) {
+        for (String line : lines) {
+            ctx.getSource().sendSuccess(() -> Component.literal("[Latitude] " + line), false);
+        }
+        return 1;
+    }
+
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
                 Commands.literal("latitude")
@@ -74,6 +105,11 @@ public final class LatitudeToolsCommand {
                                         .then(Commands.argument("x", DoubleArgumentType.doubleArg())
                                                 .executes(ctx -> tpLat(ctx, true)))))
                         .then(Commands.literal("here").executes(LatitudeToolsCommand::here))
+                        .then(Commands.literal("retrofit")
+                                .executes(LatitudeToolsCommand::retrofitStatus)
+                                .then(Commands.literal("enable").executes(LatitudeToolsCommand::retrofitEnable))
+                                .then(Commands.literal("confirm").executes(LatitudeToolsCommand::retrofitConfirm))
+                                .then(Commands.literal("disable").executes(LatitudeToolsCommand::retrofitDisable)))
                         .then(Commands.literal("explainHere").executes(LatitudeToolsCommand::explainHere))
                         .then(Commands.literal("tpBand")
                                 .then(Commands.argument("band", StringArgumentType.word())

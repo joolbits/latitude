@@ -25,7 +25,7 @@ import net.minecraft.commands.CommandSourceStack;
  */
 public final class ShippingToolsPolicyTest {
     private static final Set<String> PERMITTED_SUBCOMMANDS = Set.of(
-            "help", "here", "explainHere", "probe", "tpLat", "tpBand", "flyspeed");
+            "help", "here", "explainHere", "probe", "tpLat", "tpBand", "flyspeed", "retrofit");
 
     private static final Set<String> PERMITTED_ARGUMENTS = Set.of(
             "level", "signedDegrees", "x", "band", "edge", "radiusBlocks", "samples");
@@ -77,7 +77,9 @@ public final class ShippingToolsPolicyTest {
 
         // S3: executable-node count. Seeded from the permitted subtree; if this changes, a
         // subcommand was added or removed and the policy record must be updated deliberately.
-        expectEquals(10, countExecutables(root), "shipping tree exposes exactly 10 executable nodes");
+        // 14 = the historical 10 plus the four /latitude retrofit nodes (status root, enable,
+        // confirm, disable) added deliberately with the ledger-decoration retrofit.
+        expectEquals(14, countExecutables(root), "shipping tree exposes exactly 14 executable nodes");
 
         // S4: argument names are exactly those the permitted commands declare.
         Set<String> arguments = new LinkedHashSet<>();

@@ -46,13 +46,16 @@ public final class LatitudeWorldState extends SavedData {
                     Codec.STRING.optionalFieldOf("cave_representation_profile")
                             .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.caveRepresentationProfile)),
                     Codec.STRING.optionalFieldOf("last_known_band")
-                            .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.lastKnownBandId))
+                            .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.lastKnownBandId)),
+                    Codec.BOOL.optionalFieldOf("retrofit_enabled", false)
+                            .forGetter(LatitudeWorldState::isRetrofitEnabled)
             ).apply(instance, (spawnPickerDismissed, worldgenPolicy, globeRadius, providerTicketProfile,
-                                vanillaRepresentationProfile, caveRepresentationProfile, lastKnownBandId) ->
+                                vanillaRepresentationProfile, caveRepresentationProfile, lastKnownBandId,
+                                retrofitEnabled) ->
                     new LatitudeWorldState(spawnPickerDismissed, normalizeWorldgenPolicy(worldgenPolicy),
                             globeRadius, providerTicketProfile.orElse(null),
                             vanillaRepresentationProfile.orElse(null), caveRepresentationProfile.orElse(null),
-                            lastKnownBandId.orElse(null)))),
+                            lastKnownBandId.orElse(null), retrofitEnabled))),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
     );
 
@@ -63,15 +66,16 @@ public final class LatitudeWorldState extends SavedData {
     private String vanillaRepresentationProfile;
     private String caveRepresentationProfile;
     private String lastKnownBandId;
+    private boolean retrofitEnabled;
 
     public LatitudeWorldState() {
-        this(false, Optional.empty(), 0, null, null, null, null);
+        this(false, Optional.empty(), 0, null, null, null, null, false);
     }
 
     private LatitudeWorldState(boolean spawnPickerDismissed, Optional<WorldgenPolicyVersion> worldgenPolicy,
                                int globeRadius, String providerTicketProfile,
                                String vanillaRepresentationProfile, String caveRepresentationProfile,
-                               String lastKnownBandId) {
+                               String lastKnownBandId, boolean retrofitEnabled) {
         this.spawnPickerDismissed = spawnPickerDismissed;
         this.worldgenPolicy = normalizeWorldgenPolicy(worldgenPolicy).orElse(null);
         this.globeRadius = Math.max(0, globeRadius);
@@ -79,6 +83,19 @@ public final class LatitudeWorldState extends SavedData {
         this.vanillaRepresentationProfile = vanillaRepresentationProfile;
         this.caveRepresentationProfile = caveRepresentationProfile;
         this.lastKnownBandId = lastKnownBandId;
+        this.retrofitEnabled = retrofitEnabled;
+    }
+
+    /** Whether the opt-in decoration retrofit is armed for this world. */
+    public boolean isRetrofitEnabled() {
+        return retrofitEnabled;
+    }
+
+    public void setRetrofitEnabled(boolean retrofitEnabled) {
+        if (this.retrofitEnabled != retrofitEnabled) {
+            this.retrofitEnabled = retrofitEnabled;
+            setDirty();
+        }
     }
 
     private static Optional<WorldgenPolicyVersion> normalizeWorldgenPolicy(Optional<WorldgenPolicyVersion> worldgenPolicy) {

@@ -59,6 +59,12 @@ PERMITTED_TOOLS_LITERALS = {
     "tpLat",
     "tpBand",
     "flyspeed",
+    # /latitude retrofit — deliberate policy-record update with the ledger-decoration retrofit:
+    # opt-in, two-step-confirmed repair of pre-fix bare provider biomes.
+    "retrofit",
+    "enable",
+    "confirm",
+    "disable",
 }
 
 PERMITTED_TOOLS_ARGUMENTS = {
@@ -161,10 +167,11 @@ def verify_tools_sources(failures: list[str]) -> None:
         if needle in command:
             failures.append(f"shipping tools must not statically import command builders: {needle!r}")
 
-    # T10 executable count.
-    if command.count(".executes(") != 10:
+    # T10 executable count: the historical 10 plus the four /latitude retrofit nodes
+    # (status root, enable, confirm, disable).
+    if command.count(".executes(") != 14:
         failures.append(
-            f"shipping tools must expose exactly 10 executable nodes: found {command.count('.executes(')}")
+            f"shipping tools must expose exactly 14 executable nodes: found {command.count('.executes(')}")
 
     # T11 SHIPPED LATITUDE LAW - the shipped commands must obey the same coordinate laws as dev.
     require(command, "DoubleArgumentType.doubleArg(-90.0, 90.0)", "shipping latitude domain", failures)
