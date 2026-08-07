@@ -300,18 +300,48 @@ public class GlobeMod implements ModInitializer {
         }
         LatitudeWorldState worldState = LatitudeWorldState.get(world);
         long seed = server.getWorldGenSettings().options().seed();
-        if (worldState.getProviderTicketProfile().isEmpty() && pendingRadius > 0 && world.getGameTime() < 100L) {
+        // Provider-ticket profile capture. pendingRadius > 0 was the only trigger here, which made
+        // the capture a create-screen-only event: a dedicated server (or a vanilla create flow that
+        // selects the globe preset without Latitude's screen) never has a pending radius, so its
+        // worlds ran profile-less forever — MODERN_1_3 policy instead of V4, and every
+        // ledger-routed provider biome silently absent (proven: a 390k-sample atlas placed all 26
+        // tagged BoP biomes and zero of the 14 ledger-only ones). The capture now fires for ANY
+        // fresh globe overworld inside the creation window, using the create screen's radius when
+        // it exists and the settings-derived radius otherwise.
+        //
+        // The creation window (gameTime < 100) is what keeps existing worlds untouched: a world
+        // created before this fix has lived past the window, stays profile-less, and keeps its
+        // frozen legacy placement — capturing later would make new chunks disagree with old ones.
+        //
+        // -Dlatitude.providerProfileCapture.disable=true suppresses only the NEW non-create-screen
+        // path. It exists for cross-version atlas parity: a pre-fix reference build can never
+        // capture headlessly, so a like-for-like diff against one needs this build to abstain too.
+        boolean creationWindow = world.getGameTime() < 100L;
+        boolean clientCreated = pendingRadius > 0;
+        boolean dedicatedCaptureDisabled = Boolean.getBoolean("latitude.providerProfileCapture.disable");
+        if (worldState.getProviderTicketProfile().isEmpty() && creationWindow
+                && (clientCreated || !dedicatedCaptureDisabled)) {
+            int captureRadius = clientCreated ? pendingRadius : borderRadiusForGlobeOverworld(world);
             BiomeSelectionProfile profile = BiomeSelectionProfile.capture(
                     world.registryAccess().lookupOrThrow(Registries.BIOME).keySet().stream()
                             .map(Identifier::toString).toList());
             worldState.setProviderTicketProfile(profile);
             worldState.setVanillaRepresentationProfile(
-                    VanillaBiomeRepresentationProfile.capture(pendingRadius, seed, profile));
+                    VanillaBiomeRepresentationProfile.capture(captureRadius, seed, profile));
             worldState.setCaveRepresentationProfile(
-                    CaveBiomeRepresentationProfile.capture(pendingRadius, profile));
+                    CaveBiomeRepresentationProfile.capture(captureRadius, profile));
             worldState.setWorldgenPolicy(
                     LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE);
-            LOGGER.info("[Latitude] Recorded Globe world: border radius {} (from create-world selection)", pendingRadius);
+            if (!clientCreated && worldState.getGlobeRadius() <= 0) {
+                // Same state-based recognition resilience 68716f22 gave client-created worlds:
+                // captureRadius is borderRadiusForGlobeOverworld's own settings-derived answer
+                // (state was empty), so persisting it is a fixpoint — and after this first load,
+                // recognition no longer depends on the generator's settings holder surviving
+                // in-place mutation by provider mods.
+                worldState.setGlobeRadius(captureRadius);
+            }
+            LOGGER.info("[Latitude] Recorded Globe world: border radius {} ({})", captureRadius,
+                    clientCreated ? "from create-world selection" : "fresh dedicated/vanilla-created world");
         }
         ChunkGenerator generator = world.getChunkSource().getGenerator();
         activeLatitudeOverworldGenerator = generator instanceof NoiseBasedChunkGenerator noise
