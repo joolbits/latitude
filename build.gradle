@@ -1070,3 +1070,19 @@ tasks.named('runBandAudit').configure {
         }
     }
 }
+
+// ── Policy-suite registry gate (campaign 2026-08-07) ─────────────────────────────────────────
+// The policy suites chain by hand-wired JavaExec roots + hand-edited aggregator calls; a new
+// test class that nobody wires compiles green and never runs. This gate enumerates every class
+// under src/*PolicyTest and fails `check` naming any that nothing executes.
+tasks.register('verifyPolicySuiteRegistry') {
+    group = 'verification'
+    doLast {
+        def proc = new ProcessBuilder('python3', 'tools/verify_policy_suite_registry.py')
+                .directory(projectDir).redirectErrorStream(true).start()
+        def out = proc.inputStream.text
+        logger.lifecycle(out.trim())
+        if (proc.waitFor() != 0) throw new GradleException('verifyPolicySuiteRegistry failed — see output above.')
+    }
+}
+tasks.named('check').configure { dependsOn('verifyPolicySuiteRegistry') }
