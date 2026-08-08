@@ -33,6 +33,9 @@ import net.minecraft.world.level.block.Block;
 
 public class GlobeModClient implements ClientModInitializer {
 
+    /** Hoisted once at class load: a per-tick Boolean.getBoolean is a synchronized Properties lookup. */
+    private static final boolean DEBUG_POLAR_SNOW = Boolean.getBoolean("latitude.debugPolarSnow");
+
     /**
      * Slice B (audit P1-2 / Lane 8): the Sodium E-W section-culling compat mixin
      * ({@code RenderSectionManagerVisibilityMixin}) targets Sodium's internal
@@ -286,7 +289,7 @@ public class GlobeModClient implements ClientModInitializer {
             // at ALL tier expect 90 deg -> 60 base + the second pass); the counts were always correct -- the miss was
             // VISIBILITY (tiny flakes lost in the white fog), now carried by real vanilla snowfall (item 4).
             // Logs both the raw latitude budget and the tier-scaled budget (the REAL per-tick spawn count).
-            if (Boolean.getBoolean("latitude.debugPolarSnow") && (client.level.getGameTime() % 40L) == 0L) {
+            if (DEBUG_POLAR_SNOW && (client.level.getGameTime() % 40L) == 0L) {
                 int scaledSnow = com.example.globe.core.ParticleDensity.scale(snowTier, snowCount);
                 GlobeMod.LOGGER.info("[LAT][POLAR_SNOW] absLatDeg={} count={} tier={} scaled={}",
                         absLatDeg, snowCount, snowTier, scaledSnow);
