@@ -30,6 +30,7 @@ bug lives in doesn't exist in that tag at all — not a bug there, just absent).
 | *(remedy feature)* `/latitude retrofit` — opt-in retro-decoration + profile adoption for legacy worlds | `a3cb4baa` | **carry** | **carry** | Not a bug row: the player-facing remedy for the two rows above. When the ledger-decoration and profile-capture fixes are backported, this feature should travel with them — released-version players are exactly the legacy-world population it exists for. |
 | Dedicated-server worlds never capture the provider-ticket profile | `23901e5a` | **Yes** | **Yes** | Capture gated on `pendingRadius > 0` in both tags (26.2 at its pre-`68716f22` shape, 26.1.2 post) — ledger-routed biomes never place on server-created worlds. Fix = capture for any fresh globe overworld in the creation window + radius fixpoint persistence + parity escape hatch. Verified end-to-end incl. region-file ground truth. |
 | Ledger-admitted custom biomes generate bare (no decoration) | `353feb26` | **Yes** | **Yes** | `ChunkGeneratorGenerateFeaturesBiomeSetMixin`'s policy list is built from the `lat_*` tags only, in both tags verbatim (zero `BiomeDescriptorLedger` references in the mixin), while both ledgers carry untagged entries — 39 biomes exposed (16 BoP + 23 Terralith incl. all Terralith caves). Fix = union the ledger into the policy list; verified live on a real BoP stack (policyCustomBiomes 26→42, index 1904/1904, retainAll re-add firing). |
+| `/locate biome` cannot find any custom biome (immediate not-found) | `ccbff07f` | **Yes** | **Yes** | `LatitudeBiomeSource.forLocate`'s candidate gate consults `original.possibleBiomes()`, which (same architecture as the row above) structurally excludes every custom biome since TerraBlender never injects into `globe:` noise settings — `findClosestBiome3d` declares "not found" before any search runs. Fix = union the same tag+ledger computation (extracted to `LatitudeDecorationRetrofit.allPaintableCustomBiomes`) into the locate-time candidate pool only; real generation, which resolves via the full registry directly, is untouched. |
 
 ## Still to check
 
@@ -38,19 +39,16 @@ against both tags. Add a row here immediately when a new fix lands, before movin
 
 ## Observed on this thread, NOT yet fixed anywhere (all versions affected)
 
-Both found while verifying the ledger-decoration fix — see
+Found while verifying the ledger-decoration fix — see
 [`…ledger-decoration-fix-20260807.md`](../binder/latitude-1-5-port-1p21p11-ledger-decoration-fix-20260807.md)
 for the evidence. Architecture-level, present in this port and (by the same architecture) in both
-released tags; neither is fixed on any version yet.
+released tags; not fixed on any version yet.
 
-- **`/locate biome` cannot see Latitude's repaint.** A biome physically present ~2.5k blocks from
-  the search origin (well inside vanilla's 6400 radius) returns not-found — the command's query path
-  runs outside the worldgen scope where the repaint applies. Same family as the `/locate structure`
-  fixes above.
-- **Unscoped biome queries return picks inconsistent with real generation** (stronger form of the
-  `/locate biome` entry above, measured while verifying the profile-capture fix): `getBiome` over
-  unloaded columns — which is nearly everything on a quiet 1.20.5+ server, spawn chunks no longer
-  stay loaded — fed `execute if biome` probes that reported 18 distinct biomes over an area whose
-  stored region-file truth holds exactly 2. Region-file parsing is the trustworthy instrument.
-  (The dedicated-server profile-capture gap formerly listed here was FIXED on this thread —
-  `23901e5a`, see the table above.)
+- **Unscoped biome queries return picks inconsistent with real generation** (a related but distinct
+  command from `/locate biome`, fixed above): `getBiome` over unloaded columns — which is nearly
+  everything on a quiet 1.20.5+ server, spawn chunks no longer stay loaded — fed `execute if biome`
+  probes that reported 18 distinct biomes over an area whose stored region-file truth holds exactly
+  2. Region-file parsing is the trustworthy instrument.
+  (The `/locate biome` immediate-not-found issue formerly listed here, and the dedicated-server
+  profile-capture gap before it, were both FIXED on this thread — `ccbff07f` and `23901e5a`, see
+  the table above.)
