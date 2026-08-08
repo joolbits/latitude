@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
-# Latitude guardrails (S-6 discretion + notes ledger). Enforced at commit time.
+# Latitude guardrails (S-6 discretion + S-7 forbidden paths). Enforced at commit time.
 # Install once per checkout:  git config core.hooksPath tools/hooks
-# Bypass in a genuine emergency:  git commit --no-verify   (logged in your reflog; use sparingly)
-#
-# Ported from the Slabbed hook 2026-08-07; Latitude carries only the discretion gate.
+# These gates exist because of the 2026-08-07 incident (tracked decompiled MC sources + public
+# diary forced a full history rewrite). Do not weaken them; do not commit with --no-verify.
 set -euo pipefail
 MSG_FILE="$1"
 MSG="$(cat "$MSG_FILE")"
 STAGED="$(git diff --cached --name-only)"
-fail() { echo ""; echo "  ✗ LAW GUARDRAIL: $1"; echo ""; exit 1; }
+fail() { echo ""; echo "  ✗ GUARDRAIL: $1"; echo ""; exit 1; }
 
+# ── S-7: forbidden paths — proprietary sources, diaries, runtime state ───────────────────────
+BAD_PATHS="$(echo "$STAGED" | grep -E '^_mcsrc|^docs/binder/|^run-headless/|^tmp/|\.7z$|\.zip$|^Gallery ' || true)"
+if [ -n "$BAD_PATHS" ]; then
+  fail "S-7: staged paths are forbidden in this public repo (decompiled sources / diary docs /
+       runtime state / archives). Diaries belong in the maintainer notes directory, extracted
+       sources belong outside the repo entirely:
+$(echo "$BAD_PATHS" | sed 's/^/         /' | head -12)"
+fi
 
-
-# ── S-6: discretion gate — the public repo carries no personal or machine-local data ─────────
-# Maintainer ruling 2026-08-07: no personal names, no local absolute paths, no development-diary
-# identifiers in any ADDED line of any tracked file. Process notes live OUTSIDE the repo.
-# Pattern assembled from pieces so this hook's own diff can never match itself.
+# ── S-6: discretion — no personal or machine-local data in added lines ───────────────────────
 DISCRETION_PAT="Ju""lia|jool""mac|/Use""rs/"
 DISCRETION_HITS="$(git diff --cached --unified=0 \
   | grep -E '^\+' | grep -vE '^\+\+\+' \
@@ -23,7 +26,7 @@ DISCRETION_HITS="$(git diff --cached --unified=0 \
 if [ -n "$DISCRETION_HITS" ]; then
   fail "S-6: added lines contain personal or machine-local data (a personal name, a local
        username, or an absolute home-directory path). The public repo stays impersonal — move
-       narrative to the local notes ledger and reference rulings as 'maintainer ruling, <date>'.
+       narrative to the local notes ledger and cite rulings as 'maintainer ruling, <date>'.
        Offending lines:
 $(echo "$DISCRETION_HITS" | sed 's/^/         /' | head -12)"
 fi

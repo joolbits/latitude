@@ -69,3 +69,7 @@ compile-info.log
 codex_task_*.txt
 .codex/
 run-headless/
+
+# ── NEVER TRACK additions (2026-08-07, see CLAUDE.md ⛔) ──
+_mcsrc*/
+docs/binder/
