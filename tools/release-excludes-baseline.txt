@@ -1,0 +1,12 @@
+com/example/globe/client/ClipboardImageWriter$
+com/example/globe/client/ClipboardImageWriter.class
+com/example/globe/debug
+com/example/globe/debug/
+com/example/globe/dev
+com/example/globe/dev/
+**/*.bat
+**/*.dll
+**/*.dylib
+**/*.exe
+**/*.sh
+**/*.so

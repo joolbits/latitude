@@ -246,6 +246,13 @@ def releaseArtifactExcludeSpec = { details ->
         return true
     }
 
+    // Restored 2026-08-07: this clause was dropped in the 26.2 pivot while the package still
+    // shipped (caught by the campaign audit). The package is empty today; the clause stays so a
+    // future debug class is excluded by default instead of shipping by accident.
+    if (path == 'com/example/globe/debug' || path.startsWith('com/example/globe/debug/')) {
+        return true
+    }
+
     if (path == 'com/example/globe/client/ClipboardImageWriter.class'
             || path.startsWith('com/example/globe/client/ClipboardImageWriter$')) {
         return true
@@ -306,6 +313,44 @@ tasks.register('climateAtlas', JavaExec) {
 }
 
 // Invariant scan: ensure first-load messaging stays wired
+
+// ── Release-artifact gate + JUnit count gate (campaign 2026-08-07) ───────────────────────────
+// verifyReleaseArtifact: jar contents + exclusion-spec drift vs a committed baseline — a
+// dropped guard clause fails the build (the debug/** clause was silently dropped once).
+// verifyJUnitCount: parsed test-results total must equal tools/expected-junit-count.txt, so a
+// wiring change that silently stops running tests cannot read as green.
+tasks.register('verifyReleaseArtifact') {
+    group = 'verification'
+    dependsOn tasks.named('jar')  // Mojang-mapped line: jar IS the shipped artifact (no remap tasks)
+    doLast {
+        def proc = new ProcessBuilder('python3', 'tools/verify_release_artifact.py')
+                .directory(projectDir).redirectErrorStream(true).start()
+        def out = proc.inputStream.text
+        logger.lifecycle(out.trim())
+        if (proc.waitFor() != 0) throw new GradleException('verifyReleaseArtifact failed — see output above.')
+    }
+}
+
+tasks.register('verifyJUnitCount') {
+    group = 'verification'
+    doLast {
+        def expectedFile = file('tools/expected-junit-count.txt')
+        if (!expectedFile.exists()) throw new GradleException('tools/expected-junit-count.txt missing')
+        int expected = expectedFile.text.trim().toInteger()
+        int total = 0
+        fileTree(dir: 'build/test-results/test', include: '*.xml').each { f ->
+            def m = (f.text =~ /<testsuite[^>]*\btests="(\d+)"/)
+            if (m.find()) total += m.group(1).toInteger()
+        }
+        if (total != expected) {
+            throw new GradleException("verifyJUnitCount: FALSE GREEN — ${total} tests ran but ${expected} expected. If tests were added/removed deliberately, update tools/expected-junit-count.txt in this commit.")
+        }
+        logger.lifecycle("verifyJUnitCount: OK — ${total}/${expected}.")
+    }
+}
+tasks.named('test').configure { finalizedBy('verifyJUnitCount') }
+tasks.named('check').configure { dependsOn('verifyReleaseArtifact') }
+
 tasks.register('latitudeInvariantScan', JavaExec) {
     group = 'verification'
     description = 'Validate first-load message mixins and strings are present'

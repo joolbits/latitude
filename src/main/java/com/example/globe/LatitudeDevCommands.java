@@ -14,7 +14,6 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import java.util.EnumSet;
-import java.util.Locale;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -66,10 +65,11 @@ public final class LatitudeDevCommands {
     }
 
     private static boolean isPrereleaseBuild() {
+        // Predicate extracted to core.VersionChannel (unit-pinned per version string) — the
+        // version string decides whether dev commands exist on players' servers.
         return FabricLoader.getInstance().getModContainer("globe")
-                .map(c -> c.getMetadata().getVersion().getFriendlyString().toLowerCase(Locale.ROOT))
-                .map(v -> v.contains("beta") || v.contains("alpha") || v.contains("-rc")
-                        || v.contains("-pre") || v.contains("snapshot"))
+                .map(c -> c.getMetadata().getVersion().getFriendlyString())
+                .map(com.example.globe.core.VersionChannel::isPrerelease)
                 .orElse(false);
     }
 
