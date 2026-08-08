@@ -9,9 +9,7 @@ import com.llamalad7.mixinextras.sugar.Local;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -23,7 +21,6 @@ import net.minecraft.core.HolderSet;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
-import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.biome.Biome;
@@ -55,12 +52,6 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
                     Integer.getInteger("latitude.debugBopRetainAll.logLimit", 20));
     private static final String LATITUDE_CUSTOM_RETAINALL_CLASSIFICATION =
             "LATITUDE_TAGGED_CUSTOM_FEATURES_RETAINALL_GUARD";
-    // Shared with LatitudeDecorationRetrofit, which also depends on this list's HISTORICAL value
-    // (retrofit eligibility = ledger-routed but absent from these tags). Lives there because mixin
-    // classes must never be referenced from ordinary code.
-    private static final String[] LATITUDE_CUSTOM_POLICY_TAGS =
-            com.example.globe.world.LatitudeDecorationRetrofit.DECORATION_POLICY_TAG_PATHS;
-
     @Unique
     private static final AtomicInteger LATITUDE_DEBUG_CUSTOM_RETAINALL_LOGS =
             new AtomicInteger();
@@ -319,32 +310,9 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
 
     @Unique
     private static List<Holder<Biome>> latitude$taggedCustomPolicyBiomes(Registry<Biome> biomeRegistry) {
-        Map<Identifier, Holder<Biome>> out = new LinkedHashMap<>();
-        for (String tagPath : LATITUDE_CUSTOM_POLICY_TAGS) {
-            TagKey<Biome> tag = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", tagPath));
-            for (Holder<Biome> holder : biomeRegistry.getTagOrEmpty(tag)) {
-                Identifier id = latitude$biomeId(holder);
-                if (id != null && !"minecraft".equals(id.getNamespace())) {
-                    out.putIfAbsent(id, holder);
-                }
-            }
-        }
-        // The lat_* tags are only ONE of Latitude's two custom-biome admission paths. The other is
-        // the provider-ticket ledger (BiomeDescriptorLedger): a ledger route makes a biome paintable
-        // with no tag membership at all — biomesoplenty:overgrown_greens (TEMPERATE_LOWLAND, no tag)
-        // was the maintainer's live find, painted bare because its features never made it into this index and
-        // retainAll dropped it from the per-chunk biome set. Whatever Latitude can paint must be in
-        // the decoration index, so union the ledger here. minecraft: entries are skipped for the
-        // same reason as above (always in the raw source's own possibleBiomes); absent optional mods
-        // simply fail the registry lookup and are skipped.
-        for (BiomeDescriptorLedger.Descriptor descriptor : BiomeDescriptorLedger.descriptors()) {
-            Identifier id = Identifier.tryParse(descriptor.biomeId());
-            if (id == null || "minecraft".equals(id.getNamespace()) || out.containsKey(id)) {
-                continue;
-            }
-            biomeRegistry.get(id).ifPresent(holder -> out.putIfAbsent(id, holder));
-        }
-        return new ArrayList<>(out.values());
+        // Shared with LatitudeBiomeSource's /locate biome candidate pool — both need "everything
+        // Latitude could have placed here." See LatitudeDecorationRetrofit.allPaintableCustomBiomes.
+        return com.example.globe.world.LatitudeDecorationRetrofit.allPaintableCustomBiomes(biomeRegistry);
     }
 
     @Unique

@@ -370,6 +370,40 @@ public final class LatitudeDecorationRetrofit {
 
     // ── Eligibility ──
 
+    /**
+     * Every custom biome Latitude can paint: the {@link #DECORATION_POLICY_TAG_PATHS} union
+     * {@link BiomeDescriptorLedger}, registry-resolved. This is the full producible set — unlike
+     * {@link #eligibleBiomeIds}, which deliberately excludes tagged biomes to scope retrofit
+     * replay. Shared with {@code ChunkGeneratorGenerateFeaturesBiomeSetMixin} (the decoration-index
+     * protection) and {@code LatitudeBiomeSource} (the {@code /locate biome} candidate pool):
+     * both need "everything Latitude could have placed here," not a generation-order-scoped
+     * subset. {@code minecraft:} entries are skipped — they are always in the raw source's own
+     * {@code possibleBiomes()} already; absent optional mods simply fail the registry lookup and
+     * are skipped.
+     */
+    public static List<Holder<Biome>> allPaintableCustomBiomes(Registry<Biome> biomeRegistry) {
+        Map<Identifier, Holder<Biome>> out = new LinkedHashMap<>();
+        for (String tagPath : DECORATION_POLICY_TAG_PATHS) {
+            TagKey<Biome> tag = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", tagPath));
+            for (Holder<Biome> holder : biomeRegistry.getTagOrEmpty(tag)) {
+                holder.unwrapKey().ifPresent(key -> {
+                    Identifier id = key.identifier();
+                    if (!"minecraft".equals(id.getNamespace())) {
+                        out.putIfAbsent(id, holder);
+                    }
+                });
+            }
+        }
+        for (BiomeDescriptorLedger.Descriptor descriptor : BiomeDescriptorLedger.descriptors()) {
+            Identifier id = Identifier.tryParse(descriptor.biomeId());
+            if (id == null || "minecraft".equals(id.getNamespace()) || out.containsKey(id)) {
+                continue;
+            }
+            biomeRegistry.get(id).ifPresent(holder -> out.putIfAbsent(id, holder));
+        }
+        return List.copyOf(out.values());
+    }
+
     private static List<Identifier> eligibleBiomeIds(ServerLevel world) {
         List<Identifier> cached = eligibleCache;
         if (cached != null) {
