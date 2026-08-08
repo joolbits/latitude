@@ -32,9 +32,6 @@ See:
 - `docs/design-spec.md` for the existing design spec.
 - `docs/release/checklist.md` for release gates.
 
-## Guardrails / Workflows
-- Savepoint Autopilot: `.windsurf/workflows/latitude-savepoint-autopilot.md`
-
 ## Dependencies
 
 - Fabric Loader (current local source line: Minecraft 26.1.2; planned 2.0 canonical pivot: Minecraft 26.2)

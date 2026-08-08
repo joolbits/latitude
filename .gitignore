@@ -14,11 +14,6 @@ gradle-8.8/
 gradle-8.8-bin.zip
 bin/
 
-# Windsurf: keep skills tracked, ignore other state
-.windsurf/*
-!.windsurf/skills/
-!.windsurf/skills/**
-
 # IDE
 .idea/
 .vscode/
