@@ -53,3 +53,17 @@ run-headless-base/
 # Claude Code local state (per-user, not shared)
 .claude/settings.local.json
 .claude/*.lock
+
+# ── NEVER TRACK (2026-08-07 incident — see CLAUDE.md ⛔ section) ──
+_mcsrc_extract/
+_mcsrc_yarn/
+_mcsrc*/
+docs/binder/
+run-headless/
+tmp/
+*.7z
+*.zip
+compile-info.log
+codex_task_*.txt
+.codex/
+Gallery for Modrinth/
