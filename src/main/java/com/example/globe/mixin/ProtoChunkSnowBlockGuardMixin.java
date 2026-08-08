@@ -120,6 +120,15 @@ public class ProtoChunkSnowBlockGuardMixin {
         if (snowBiome != null && snowBiome.value().coldEnoughToSnow(pos, LatitudeBiomes.getActiveSeaLevel())) {
             return;
         }
+        // Latitude's lowered windswept snow line: SnowAndFreezeWindsweptSnowLineMixin places snow
+        // on windswept columns from seaLevel+27 even though vanilla's temperature gate says rain.
+        // The guard must honor the same policy or it strips exactly what that mixin places,
+        // recreating the snowy-grass-without-carpet incoherence.
+        if (snowBiome != null && com.example.globe.world.WindsweptSnowLinePolicy.appliesTo(
+                snowBiome.unwrapKey().map(key -> key.identifier().toString()).orElse(null),
+                pos.getY(), LatitudeBiomes.getActiveSeaLevel())) {
+            return;
+        }
 
         BlockState replacement;
         if (isSnowBlock) {
