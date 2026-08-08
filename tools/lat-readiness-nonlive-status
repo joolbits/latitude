@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-EXPECTED_ROOT="<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2"
+EXPECTED_ROOT="<checkout>"
 EXPECTED_BRANCH="feat/custom-biome-expansion-26.1.2"
 CANDIDATE_COMMIT="c9da0f93029f7f16c50a7bc89eb766c576a85b48"
 CANDIDATE_TAG="save/biome-tuning-followup-26.1.2"
@@ -218,12 +218,12 @@ warn "Public version name, filename, upload, publication, branch push, tag push,
 
 say ""
 say "Manual gates this read-only helper intentionally does not close:"
-say "- Maintainer-owned public version name, final filename, final public release text"
+say "- the maintainer-owned public version name, final filename, final public release text"
 say "- Branch/tag push, upload, publication, cleanup, and porting"
 say ""
 
 if [ "$errors" -eq 0 ]; then
-  say "READINESS STATUS: PASS-PARTIAL (${warnings} warning(s)); c9/profile truth and live proof are green, with only Maintainer-owned release actions left open."
+  say "READINESS STATUS: PASS-PARTIAL (${warnings} warning(s)); c9/profile truth and live proof are green, with only the maintainer-owned release actions left open."
   exit 0
 fi
 

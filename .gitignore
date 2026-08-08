@@ -68,3 +68,4 @@ tmp/
 compile-info.log
 codex_task_*.txt
 .codex/
+run-headless/

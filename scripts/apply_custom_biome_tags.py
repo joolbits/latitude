@@ -324,7 +324,7 @@ MODSETS = {
         ],
     },
     # ======================================================================
-    # STAGE 4 (2026-06-06): CliffTree (Modrinth slug `clifftree`), Maintainer-
+    # STAGE 4 (2026-06-06): CliffTree (Modrinth slug `clifftree`), the maintainer-
     # requested. A vanilla-styled worldgen DATAPACK that ADDS new biomes
     # (`clifftree:*`); supports the FULL range, so admitted on EVERY line
     # incl. 26.1.2. IDs + temperature/downfall read straight from the

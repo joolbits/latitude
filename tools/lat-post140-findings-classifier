@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-ROOT="${LATITUDE_ROOT:-<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2}"
+ROOT="${LATITUDE_ROOT:-<checkout>}"
 PROFILE="${LATITUDE_PROFILE:-$HOME/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2}"
 JAR_NAME="latitude-1.4.1-beta.2+26.1.2.jar"
 EXPECTED_SHA="e09ea00313307ae84f8e32a0470db523874fe11d8314d133ddadfe9d85bf2458"

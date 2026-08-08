@@ -48,7 +48,7 @@ export const meta = {
 }
 
 const a = args || {}
-const repoRoot = a.repoRoot || '<home>/CascadeProjects/Latitude-2.0-26.2-pivot'
+const repoRoot = a.repoRoot || '<checkout>'
 const scopeLabel = a.scopeLabel || 'unspecified scope'
 const scopeBrief = a.scopeBrief || ''
 const lenses = Array.isArray(a.lenses) ? a.lenses : []

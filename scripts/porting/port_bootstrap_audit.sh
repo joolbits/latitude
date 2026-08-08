@@ -4,7 +4,7 @@ set -euo pipefail
 # Read-only bootstrap audit for Latitude ports.
 # The only file this script writes is the compact audit report in docs/porting.
 
-expected_root="<home>/CascadeProjects/Latitude (Globe)"
+expected_root="<checkout>"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 
 if [[ "$repo_root" != "$expected_root" ]]; then

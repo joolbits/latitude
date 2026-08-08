@@ -29,7 +29,7 @@ Usage:  python3 overrep_rank.py <atlas-step-dir>
 """
 import sys, os, csv, glob
 
-# Acceptance thresholds (proposed for Maintainer sign-off; see overrep-ranking.md (c)).
+# Acceptance thresholds (proposed for the maintainer sign-off; see overrep-ranking.md (c)).
 OVERALL_SUSPECT = 12.0   # land biome over this % of all land is a suspect head
 WITHIN_BAND_SUSPECT = 40.0  # ...or over this % of a single band's land
 TROPICAL_HUMID_FLOOR = 60.0  # tropical humid family should hold >= this % of tropical land
