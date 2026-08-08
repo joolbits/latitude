@@ -39,7 +39,7 @@
 > So one named local introduced at the top of `pick()` (shadowing the parameter) propagates transparently
 > to every ~70 downstream helper call by value.
 
-All paths under `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2/`.
+All paths under `<checkout>`.
 
 ---
 
@@ -503,7 +503,7 @@ shadow, and that the **deliberate exceptions** (terrain probes + ODF + climate s
 `rawBlockX`.
 
 ```bash
-ROOT=<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2
+ROOT=<checkout>
 F=$ROOT/src/main/java/com/example/globe/world/LatitudeBiomes.java
 
 # 1. Count blockX refs in each pick body (recon baseline: Registry 93, Collection 95).
@@ -557,7 +557,7 @@ density `ValueNoise2D` (2739), snowy ramp (2971), `enforceLandBandPool` (2934), 
 
 **4.1 Compile.**
 ```bash
-cd <home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2
+cd <checkout>
 JAVA_HOME=$(/usr/libexec/java_home -v 25) ./gradlew compileJava --console=plain
 ```
 
@@ -659,7 +659,7 @@ modRuntimeOnly "maven.modrinth:tectonic:SlA5rCvn"
 `modRuntimeOnly` config wired. The project's *actual practice* is the loose-jar method below.)
 
 **Loose-jar method (matches existing setup, recommended):** download into
-`<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2/run/mods/`:
+`<checkout>`:
 ```
 https://cdn.modrinth.com/data/PSZVP497/versions/PQifwC6D/ks-biomes-26.1.jar
 https://cdn.modrinth.com/data/IZgBWgkV/versions/qVMI4XMC/improved-more-biomes-1.7.jar

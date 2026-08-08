@@ -2,7 +2,7 @@
 
 ---
 
-> Draft status, 2026-06-18: this is candidate release copy, not publication-ready text. Do not upload or paste it publicly until the current `1.4.1-beta.2+26.1.2` candidate checklist is green, Maintainer chooses the public version name, and Maintainer explicitly authorizes publication. Current readiness truth lives in `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2/docs/release/checklist.md`.
+> Draft status, 2026-06-18: this is candidate release copy, not publication-ready text. Do not upload or paste it publicly until the current `1.4.1-beta.2+26.1.2` candidate checklist is green, the maintainer chooses the public version name, and the maintainer explicitly authorizes publication. Current readiness truth lives in `<checkout>`.
 
 ---
 

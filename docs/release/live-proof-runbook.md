@@ -2,7 +2,7 @@
 
 `status: final live cruise green; release authorization pending` · `updated: 2026-06-21` · `current-candidate-sha256: 1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477`
 
-This runbook records the safe route and result for the final release cruise. It is not authorization for future Minecraft control by itself; live work still needs current Maintainer authorization and must follow exact Java-window discipline. The current staged profile/runtime candidate `1f50c595...` was rebuilt from savepoint `c9da0f93` and includes the desert locate fix, accepted stony-peaks tuning, and restored Y168/28 treeline. The 2026-06-21 live attempt proves launch/load/desert/soak/savequit, and a narrow follow-up proves current-world stony locate/HUD/server predicate.
+This runbook records the safe route and result for the final release cruise. It is not authorization for future Minecraft control by itself; live work still needs current the maintainer authorization and must follow exact Java-window discipline. The current staged profile/runtime candidate `1f50c595...` was rebuilt from savepoint `c9da0f93` and includes the desert locate fix, accepted stony-peaks tuning, and restored Y168/28 treeline. The 2026-06-21 live attempt proves launch/load/desert/soak/savequit, and a narrow follow-up proves current-world stony locate/HUD/server predicate.
 
 ## Hard Boundaries
 
@@ -16,13 +16,13 @@ This runbook records the safe route and result for the final release cruise. It 
 
 | Field | Required value |
 | --- | --- |
-| Canonical root | `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2` |
+| Canonical root | `<checkout>` |
 | Branch / candidate savepoint | `feat/custom-biome-expansion-26.1.2` / `c9da0f93029f7f16c50a7bc89eb766c576a85b48` |
-| Staged runtime candidate jar | `<home>/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2/mods/latitude-1.4.1-beta.2+26.1.2.jar` |
+| Staged runtime candidate jar | `<local-profile>+26.1.2/mods/latitude-1.4.1-beta.2+26.1.2.jar` |
 | Latest local build jar | `build/libs/latitude-1.4.1-beta.2+26.1.2.jar`, SHA-256 `1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477`, staged |
 | Current candidate/profile jar SHA-256 | `1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477` |
 | Current test profile settings | `renderDistance=16`, `simulationDistance=8` |
-| Profile | `<home>/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2` |
+| Profile | `<local-profile>+26.1.2` |
 | Non-live gate | active profile jar SHA/manifest must match `c9da0f93` / `1f50c595...` immediately before live proof |
 
 ## Evidence Folder
@@ -75,11 +75,11 @@ Current partial proof:
 - Fresh SMALL `New Expedition` on `e09ea003...`: exact Java-window proof, `size=SMALL`, bespoke overlay first render, `first safe playable tick`, rendered terrain screenshot, and clean save/quit.
 - Headless Itty Atlas on `e09ea003...`: seed `220220260619002`, radius `3750`, step `64`, 74 biomes across Minecraft, BoP, Terralith, and Promenade. This is non-live diversity evidence only, because Atlas sampling skips the live `previewHeight()` path.
 - Live continuation on `e09ea003...`: exact Java-owned `Minecraft* 26.1.2` title-window proof existed, but the macOS session locked before safe gameplay proof could continue.
-- Maintainer manual retest on `e09ea003...`: loading screen and chunk loading are green in the staged Modrinth profile.
+- the maintainer manual retest on `e09ea003...`: loading screen and chunk loading are green in the staged Modrinth profile.
 - Current savepoint rebuild/stage evidence: `tmp/closeout-1.4-20260621/rebuild-c9da0f93-175345` and `tmp/closeout-1.4-20260621/profile-stage-c9da0f93-175416`.
-- Historical launch blocker: Modrinth App had no visible macOS window and logged `theseus::state` initialization errors; this was superseded after Maintainer reopened Modrinth and the c9 candidate launched successfully.
+- Historical launch blocker: Modrinth App had no visible macOS window and logged `theseus::state` initialization errors; this was superseded after the maintainer reopened Modrinth and the c9 candidate launched successfully.
 - Current live result: exact Java-owned Minecraft window, c9 build line, existing `New World` load with `isGlobe=true`, 20,000-block border, command control, desert locate/HUD, short clean non-teleport soak, clean save/quit, and stony locate/HUD/server predicate are green.
-- Remaining red/open/partial: no known live blocker; public version identity, branch/tag push, upload, publication, cleanup, and porting remain Maintainer-owned manual gates.
+- Remaining red/open/partial: no known live blocker; public version identity, branch/tag push, upload, publication, cleanup, and porting remain the maintainer-owned manual gates.
 
 Record at minimum:
 
@@ -147,7 +147,7 @@ Important: the current e09 world was named `Codex E09 Itty Smoke`, but the lifec
 
 ## Gate 2: Scenic, Palm, And Decoration Check
 
-Purpose: prove that the prior scenic GREEN did not regress on the current SHA and capture the specific palm/fronds/decoration visual checks Maintainer asked to close.
+Purpose: prove that the prior scenic GREEN did not regress on the current SHA and capture the specific palm/fronds/decoration visual checks the maintainer asked to close.
 
 Required proof:
 
@@ -211,7 +211,7 @@ Completed updates after all live gates passed:
 
 - `docs/release/current-readiness-audit.md`
 - `docs/release/checklist.md`
-- `<home>/CascadeProjects/Latitude (Globe)/docs/release/checklist.md`
+- `<checkout>`
 - `docs/binder/evidence-registry.md`
 
-Savepoint/tag/push/upload/release rows remain manual and blocked until Maintainer separately authorizes that lane; the stony locate/HUD caveat is resolved by `tmp/closeout-1.4-20260621/stony-followup-c9-195009`.
+Savepoint/tag/push/upload/release rows remain manual and blocked until the maintainer separately authorizes that lane; the stony locate/HUD caveat is resolved by `tmp/closeout-1.4-20260621/stony-followup-c9-195009`.

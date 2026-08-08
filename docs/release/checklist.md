@@ -3,7 +3,7 @@
 ## Standing policy (all versions)
 
 Artifact content is governed by
-[<home>/CascadeProjects/Latitude-1.5-26.2/docs/release/artifact-content-policy.md](<home>/CascadeProjects/Latitude-1.5-26.2/docs/release/artifact-content-policy.md),
+[<checkout>](<checkout>,
 established 2026-08-04 by owner directive: public release artifacts ship operator-usable Latitude
 commands and never ship recording, sentinel, or auto-harness work. That policy's enforcement points and
 per-release verification apply to any candidate cut from this pivot.
@@ -26,7 +26,7 @@ Live proof route and final run record: `docs/release/live-proof-runbook.md`.
 
 | Surface | Current truth |
 | --- | --- |
-| Canonical source root | `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2` |
+| Canonical source root | `<checkout>` |
 | Branch / candidate savepoint | `feat/custom-biome-expansion-26.1.2` / `c9da0f93029f7f16c50a7bc89eb766c576a85b48` |
 | Candidate tag | `save/biome-tuning-followup-26.1.2` points at `c9da0f93029f7f16c50a7bc89eb766c576a85b48` |
 | Working tree | release-doc/tool sync committed after the c9 candidate; generated proof/evidence folders remain local |
@@ -35,13 +35,13 @@ Live proof route and final run record: `docs/release/live-proof-runbook.md`.
 | Latest local build SHA-256 | `1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477` (staged into the test profile on 2026-06-21) |
 | Latest local sources SHA-256 | `b5d1c358098730fb565a611e89de04757a811e087bc2e11dbf146287f2a18efc` |
 | Latest local build manifest provenance | `Git-Commit=c9da0f93029f7f16c50a7bc89eb766c576a85b48`, `Git-Branch=feat/custom-biome-expansion-26.1.2`, `Build-Dirty=true`, `Build-Time=2026-06-21T21:53:47Z` |
-| Modrinth profile | `<home>/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2` |
+| Modrinth profile | `<local-profile>+26.1.2` |
 | Active profile jar after savepoint rebuild | `latitude-1.4.1-beta.2+26.1.2.jar`, SHA-256 `1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477` |
 | Active profile jar manifest provenance | `Git-Commit=c9da0f93029f7f16c50a7bc89eb766c576a85b48`, `Git-Branch=feat/custom-biome-expansion-26.1.2`, `Build-Dirty=true`, `Build-Time=2026-06-21T21:53:47Z` |
 | Preserved prior profile jar | `latitude-1.4.1-beta.2+26.1.2.jar.pre-e09-stage-20260620-220852.bak`, SHA-256 `d51eace9e517db5e53c8754e581e44b49ef68a6778b0f367ee60c8eefa5df073` |
 | Preserved biome-tuning profile jar | `latitude-1.4.1-beta.2+26.1.2.jar.pre-c9da0f93-20260621-175417`, SHA-256 `af1579b2e7f885ace1567e7400fd94cf0e958e160201edaccca020b2b1c6231c` |
 | Current test profile video settings | `renderDistance=16`, `simulationDistance=8`; previous `32/12` options preserved as `options.txt.pre-e09-stage-20260620-220852.bak` |
-| Public version name | undecided; likely `1.4.1+26.1.2` unless Maintainer chooses beta wording |
+| Public version name | undecided; likely `1.4.1+26.1.2` unless the maintainer chooses beta wording |
 
 ### Current candidate gates
 
@@ -55,11 +55,11 @@ Live proof route and final run record: `docs/release/live-proof-runbook.md`.
 - [x] PASS: Tree-line/alpine runtime and sweep proofs show forest below tree line, fade band, meadow shelf, alpine rock, then latitude-graded snow caps (`tmp/readiness-1.4-candidate-20260618-184901/treeline-alpine-runtime-proof-after-helper-fix.txt`, `tmp/readiness-1.4-candidate-20260618-184901/treeline-alpine-sweep-proof.txt`).
 - [x] PASS: Mod-present headless atlas smoke with BoP, Terralith, and Promenade loaded produced 74 distinct biomes with expected cold/subpolar/tropical/sakura/pale-garden signals (`tmp/readiness-1.4-candidate-20260618-184901/mod-present-atlas.log`, `tmp/readiness-1.4-candidate-20260618-184901/mod-present-atlas-summary.txt`, `run-headless/tmp/readiness-1.4-candidate-20260618-184901/mod-present-atlas/.../world_biome_inventory.json`).
 - [x] PASS: Rebuild and stage savepoint candidate SHA `1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477` into `Lat 1.4+26.1.2` by filesystem copy, preserve the prior biome-tuning profile jar `af1579b2...` as a timestamped backup, and prove the active profile jar/manifest matches savepoint commit `c9da0f93...` (`tmp/closeout-1.4-20260621/rebuild-c9da0f93-175345`; `tmp/closeout-1.4-20260621/profile-stage-c9da0f93-175416`).
-- [~] SUPERSEDED: Final live cruise was temporarily blocked by a windowless Modrinth process; Maintainer reopened Modrinth and the c9 candidate later launched. Historical evidence remains in `tmp/closeout-1.4-20260621/final-live-launch-blocker-181416`.
+- [~] SUPERSEDED: Final live cruise was temporarily blocked by a windowless Modrinth process; the maintainer reopened Modrinth and the c9 candidate later launched. Historical evidence remains in `tmp/closeout-1.4-20260621/final-live-launch-blocker-181416`.
 - [x] PASS: Final live cruise on staged SHA `1f50c595...` produced green launch/load/desert/soak/savequit evidence; the subsequent narrow stony follow-up produced green current-world stony locate/HUD/server-predicate evidence. Evidence: `tmp/closeout-1.4-20260621/final-live-c9-192419`; `tmp/closeout-1.4-20260621/stony-followup-c9-195009`.
 - [x] PASS: Non-live live-control helper safety preflight: `tools/mc-window` now accepts only Java-owned game windows whose title starts with `Minecraft` and rejects launcher/Modrinth-shaped windows; `tools/mc-focus` and `tools/mc-chat` also refuse launcher windows; `tools/mc-shot` and `tools/mc-wait-shot` now fail fast when the macOS session is locked, instead of misclassifying exact-window capture failures as Minecraft-only control bugs. Shell syntax and the no-UI helper checks pass (`tmp/readiness-1.4-candidate-20260618-184901/live-control-helper-safety-20260618.log`, `tmp/atlas-worldsize-parity-20260619-081729/live/locked-session-test-repo.txt`). This is a control-path safety repair, not live command/control proof.
 - [x] PASS-PARTIAL: Read-only readiness status helper now verifies staged profile/runtime SHA `1f50c595...`, savepoint `c9da0f93`, release docs, final c9 live evidence, and the green stony follow-up; it intentionally leaves manual publication/push gates open (`tools/lat-readiness-nonlive-status`).
-- [x] PASS: Requirement-level readiness audit maps every P0/P1/P2 objective item to current evidence and records partial status while keeping public release/savepoint actions Maintainer-owned (`docs/release/current-readiness-audit.md`).
+- [x] PASS: Requirement-level readiness audit maps every P0/P1/P2 objective item to current evidence and records partial status while keeping public release/savepoint actions the maintainer-owned (`docs/release/current-readiness-audit.md`).
 - [x] PASS: Live proof runbook records the authorized final route for fresh/existing load sanity, scenic/palm/decoration checks, non-teleport soak, and save/quit gates, including a hard prohibition on the vanilla Minecraft Launcher as a control surface (`docs/release/live-proof-runbook.md`).
 - [x] HISTORICAL: Fresh `New Expedition` / first-load smoke was green on prior staged SHA `e09ea003...` for SMALL (`tmp/post-140-hardening-continuation-20260620-220852/live-e09-fresh-small-clean-log-lines.txt`, `live-e09-new-expedition-current.png`, `live-e09-new-expedition-after-210s-static.png`). This supports the closeout route but does not replace the pending c9/`1f50c595...` load sanity check.
 - [x] HISTORICAL: Headless Itty Atlas diversity/no-collapse proof on prior staged SHA `e09ea003...` found 74 discovered biomes across Minecraft, BoP, Terralith, and Promenade (`tmp/post-140-hardening-continuation-20260620-220852/live-continue-20260621/headless-itty-step64-inventory-summary.txt`, `docs/binder/e09-itty-headless-atlas-live-lock-20260621.md`). The c9 closeout does not need another deep atlas investigation unless the final live cruise exposes a new symptom.
@@ -69,7 +69,7 @@ Live proof route and final run record: `docs/release/live-proof-runbook.md`.
 - [x] PASS-PARTIAL: Existing load sanity is green on candidate SHA `1f50c595...`: `New World` loaded with `isGlobe=true`, border/radius setup, first safe playable tick, and clean overlay close. Fresh new-world creation was not rerun.
 - [x] PASS: Clean 20-second non-teleport movement soak on current candidate SHA `1f50c595...` produced zero new WARN/ERROR/crash lines.
 - [x] PASS: Save/quit shutdown at the end of the final live cruise on candidate SHA `1f50c595...` logged singleplayer server stop, chunk saves, and all dimensions saved.
-- [x] PASS: Local public copy/version drift fenced: `README`, `CHANGELOG`, root/canonical release checklists, beta release notes, and Modrinth description draft no longer present stale `1.21.11`/`1.3.0`/Sodium fog facts as current candidate truth. Public filename/version and final Modrinth/GitHub release text remain Maintainer-owned (`README.md`, `CHANGELOG.md`, `release/README-beta.txt`, `docs/release/modrinth-description-1.4.md`, `<home>/CascadeProjects/Latitude (Globe)/docs/release/checklist.md`).
+- [x] PASS: Local public copy/version drift fenced: `README`, `CHANGELOG`, root/canonical release checklists, beta release notes, and Modrinth description draft no longer present stale `1.21.11`/`1.3.0`/Sodium fog facts as current candidate truth. Public filename/version and final Modrinth/GitHub release text remain the maintainer-owned (`README.md`, `CHANGELOG.md`, `release/README-beta.txt`, `docs/release/modrinth-description-1.4.md`, `<checkout>`).
 - [ ] MANUAL PEETSA: savepoint/tag/push/release/upload authorization.
 
 ## Historical release records
@@ -91,7 +91,7 @@ The sections below are retained for prior public release history and do not defi
 
 This section records the earlier public `1.4.0+26.1.2` line. It is superseded for current readiness by the `1.4.1-beta.2+26.1.2` candidate section above.
 
-- [~] DISCARDED (2026-06-06, Maintainer): "First-load message appears on NEW world only" — stale/obsolete item. The bespoke loading overlay intentionally shows on both new and existing Latitude saves. World-entry render-gate (overlay holds until render-ready) + latitude early-spawn landed & live-verified — tag `save/world-entry-render-gate-early-spawn`.
+- [~] DISCARDED (2026-06-06, the maintainer): "First-load message appears on NEW world only" — stale/obsolete item. The bespoke loading overlay intentionally shows on both new and existing Latitude saves. World-entry render-gate (overlay holds until render-ready) + latitude early-spawn landed & live-verified — tag `save/world-entry-render-gate-early-spawn`.
 - [x] PASS: ./gradlew -PenableInvariantScan latitudeInvariantScan (2026-06-06 — after first-load-message discard `eec31d79` removed the stale DownloadingTerrain invariant lock; re-verified 2026-06-06 post-audit, ran not skipped, exit 0)
 - [x] PASS: Clean build (`./gradlew clean build`) → BUILD SUCCESSFUL, `latitude-1.4.0+26.1.2.jar` (1.49 MB) + sources jar (2026-06-06 readiness audit).
 - [x] PASS: Jar purity — no `com/example/globe/dev/`, `atlas/`, `ProcessBuilder`, or `HeadlessRunner` classes ship; `globe.mixins.json` + `fabric.mod.json` present; debug mixins limited to the two expected (`PlacedFeatureBopDebugMixin` inert/flag-gated, `ChunkRegionWarmSnowTrapMixin` required prod dep). Version `1.4.0+26.1.2`; depends loader ≥0.17.3 / mc ≥26.1.2 / java ≥25 / fabric-api.
@@ -100,5 +100,5 @@ This section records the earlier public `1.4.0+26.1.2` line. It is superseded fo
 - [x] PASS: Release tag `v1.4.0+26.1.2` created + pushed (annotated, → commit `2deab50e`) 2026-06-06.
 - [x] PASS: Pre-release tree hygiene (`2deab50e`) — governance/porting docs+tooling tracked; `Manual atlas/` + `.claude` local state ignored; server.properties churn restored.
 - [x] PASS: GitHub release published — [v1.4.0+26.1.2](https://github.com/joolbits/latitude/releases/tag/v1.4.0%2B26.1.2) (not draft/prerelease), assets `latitude-1.4.0+26.1.2.jar` (1,460,266 B, **SHA-256 `8a01f69c99513ed0011924945a3df0a8c5f28515203ac8adc93e82079824e015`**) + sources jar; notes from CHANGELOG 1.4.
-- [ ] PUBLISH (manual, Maintainer): Modrinth upload of the same `latitude-1.4.0+26.1.2.jar` (SHA above) + version listing; close any tracking issue.
-- [ ] PASS (manual, Maintainer): real-GPU client launch — confirm no fog/EW/HUD render diffs (see note above; not automatable).
+- [ ] PUBLISH (manual, the maintainer): Modrinth upload of the same `latitude-1.4.0+26.1.2.jar` (SHA above) + version listing; close any tracking issue.
+- [ ] PASS (manual, the maintainer): real-GPU client launch — confirm no fog/EW/HUD render diffs (see note above; not automatable).

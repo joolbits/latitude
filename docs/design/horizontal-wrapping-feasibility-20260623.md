@@ -101,7 +101,7 @@ This is the single best path because it (a) actually delivers "travel east → c
 
 ## 6. Phased plan for the recommended option (Option 1)
 
-Real symbols are from `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2`.
+Real symbols are from `<checkout>`.
 
 **Phase 0 — Spike & gate (0.5 wk).** Add a world-shape `wrapX` flag carrying `W` (reuse the Mercator world-shape flag plumbing). Prove Classic byte-identical with flag off (map-proof headless atlas). **Go/no-go:** flag-off diff is zero.
 

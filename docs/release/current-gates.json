@@ -5,25 +5,25 @@
   "releaseAuthorized": false,
   "minecraftVersion": "26.1.2",
   "modVersion": "1.4.1-beta.2+26.1.2",
-  "canonicalRoot": "<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2",
+  "canonicalRoot": "<checkout>",
   "canonicalBranch": "feat/custom-biome-expansion-26.1.2",
   "candidateSourceCommit": "c9da0f93029f7f16c50a7bc89eb766c576a85b48",
   "candidateTag": "save/biome-tuning-followup-26.1.2",
-  "candidateJar": "<home>/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2/mods/latitude-1.4.1-beta.2+26.1.2.jar",
+  "candidateJar": "<local-profile>+26.1.2/mods/latitude-1.4.1-beta.2+26.1.2.jar",
   "candidateSha256": "1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477",
   "latestLocalBuildJar": "build/libs/latitude-1.4.1-beta.2+26.1.2.jar",
   "latestLocalBuildSha256": "1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477",
   "latestLocalBuildStaged": true,
-  "profile": "<home>/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2",
-  "profileJar": "<home>/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2/mods/latitude-1.4.1-beta.2+26.1.2.jar",
+  "profile": "<local-profile>+26.1.2",
+  "profileJar": "<local-profile>+26.1.2/mods/latitude-1.4.1-beta.2+26.1.2.jar",
   "profileJarSha256": "1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477",
   "finalLiveEvidence": "green_live_c9_stony_followup",
-  "activeBlocker": "2026-06-21: c9/profile non-live truth is consistent and the staged profile jar SHA is 1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477. The earlier Modrinth windowless launcher blocker is superseded by a later successful launch. Final live evidence in tmp/closeout-1.4-20260621/final-live-c9-192419 proves exact Java-owned Minecraft window, c9 build line, existing Globe load, isGlobe=true, 20000-block border, command control, desert locate/HUD, short non-teleport soak with zero new warnings, and clean save/quit. The narrow stony follow-up in tmp/closeout-1.4-20260621/stony-followup-c9-195009 resolved the remaining caveat: fresh /locate biome minecraft:stony_peaks returned [1452,170,4201], HUD at that coordinate read minecraft:stony_peaks, and /execute if biome ~ ~ ~ minecraft:stony_peaks run say stony_peaks_here passed. No known live blocker remains. Do not push, publish, upload, clean proof clutter, or port until Maintainer authorizes the release closeout actions.",
+  "activeBlocker": "2026-06-21: c9/profile non-live truth is consistent and the staged profile jar SHA is 1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477. The earlier Modrinth windowless launcher blocker is superseded by a later successful launch. Final live evidence in tmp/closeout-1.4-20260621/final-live-c9-192419 proves exact Java-owned Minecraft window, c9 build line, existing Globe load, isGlobe=true, 20000-block border, command control, desert locate/HUD, short non-teleport soak with zero new warnings, and clean save/quit. The narrow stony follow-up in tmp/closeout-1.4-20260621/stony-followup-c9-195009 resolved the remaining caveat: fresh /locate biome minecraft:stony_peaks returned [1452,170,4201], HUD at that coordinate read minecraft:stony_peaks, and /execute if biome ~ ~ ~ minecraft:stony_peaks run say stony_peaks_here passed. No known live blocker remains. Do not push, publish, upload, clean proof clutter, or port until the maintainer authorizes the release closeout actions.",
   "publicVersionName": {
     "status": "manual",
-    "owner": "Maintainer",
+    "owner": "the maintainer",
     "value": "undecided",
-    "recommended": "1.4.1+26.1.2 unless Maintainer chooses beta wording"
+    "recommended": "1.4.1+26.1.2 unless the maintainer chooses beta wording"
   },
   "gates": [
     {
@@ -59,7 +59,7 @@
     {
       "id": "stony_peaks_treeline",
       "status": "green",
-      "evidence": "tmp/biome-tuning-20260621/live-registry-locate-after-stage-20260621-1703/stony-treeline-proof-summary.md; Maintainer accepted stony-peaks visual; treeline constants TREE_LINE_Y=168 and TREE_LINE_FADE_BAND=28 included in savepoint c9da0f93"
+      "evidence": "tmp/biome-tuning-20260621/live-registry-locate-after-stage-20260621-1703/stony-treeline-proof-summary.md; the maintainer accepted stony-peaks visual; treeline constants TREE_LINE_Y=168 and TREE_LINE_FADE_BAND=28 included in savepoint c9da0f93"
     },
     {
       "id": "fresh_existing_load_sanity_current_sha",
@@ -89,13 +89,13 @@
     {
       "id": "public_release_identity",
       "status": "manual",
-      "owner": "Maintainer",
-      "evidence": "Recommended public identity is 1.4.1+26.1.2 unless Maintainer chooses beta wording"
+      "owner": "the maintainer",
+      "evidence": "Recommended public identity is 1.4.1+26.1.2 unless the maintainer chooses beta wording"
     },
     {
       "id": "savepoint_tag_push_upload_release",
       "status": "manual_after_live_green",
-      "owner": "Maintainer"
+      "owner": "the maintainer"
     }
   ],
   "forbiddenWithoutAuthorization": [

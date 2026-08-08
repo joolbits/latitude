@@ -24,7 +24,7 @@ The Revamped world type addresses this at two levels:
 
 Both are opt-in at world creation. Legacy worlds (all current saves) are never touched.
 
-The concept originated in a Notion planning session (Peetsa/Maintainer, 2026-06-06) and a prior Ultracode
+The concept originated in a Notion planning session (Peetsa/the maintainer, 2026-06-06) and a prior Ultracode
 workflow (wf_f7d51f99-7f6) that produced design and feasibility analysis. That output was not committed;
 this document is the canonical recovery and extension of that work.
 
@@ -339,7 +339,7 @@ constructor is not modified.
 
 ---
 
-## 9. Open Questions for Maintainer/Peetsa
+## 9. Open Questions for the maintainer/Peetsa
 
 > **RESOLVED (Peetsa, 2026-06-23):**
 > - **Q1 `ASPECT`** → **fixed at 2.0** for all world sizes. No slider ("not sure why anyone would care to
@@ -361,7 +361,7 @@ constructor is not modified.
    Confirm that Peetsa will be at the keyboard for the first live tuning session (consistent with
    the amplitude-knob protocol established for the DF wrapper work).
 
-3. **World type name**: the recommendation is **Mercator** (Classic / Mercator). Does Peetsa/Maintainer
+3. **World type name**: the recommendation is **Mercator** (Classic / Mercator). Does Peetsa/the maintainer
    prefer Orbis or Planisphere instead? This determines UI strings, the world-state enum value, and
    the in-game subtitle copy.
 

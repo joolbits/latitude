@@ -42,17 +42,17 @@ Land bands use a weighted selection system (70% Primary / 25% Secondary / 5% Acc
 - A64 savepoint: commit `e19fc1cc`, tag `save/tier-coherence-a64`, branch `feat/1.3.1-cohesive-horizons-26.1.2`.
 - `LatitudeBiomes.weightedRoll` uses `TIER_COHERENCE_BLOCKS = 64` for tier roll coherence. The committed source change was limited to `src/main/java/com/example/globe/world/LatitudeBiomes.java` (+6/-2): add the constant and route only the two weighted roll scale uses through it.
 - At the A64 savepoint, `VARIANT_CELL_SIZE_BLOCKS` remained the fallback identity-pick scale. `pickFrom(...)`, fallback policy, province/sparse logic, tags, resources, atlas tooling, and generated artifacts were not part of A64.
-- Canonical tree proof was compile-only: `env -u JAVA_TOOL_OPTIONS JAVA_HOME=$(/usr/libexec/java_home -v 25) ./gradlew --no-daemon --console plain compileJava` -> `BUILD SUCCESSFUL`. The full Small/Regular/Large matrix was accepted from the clean proof worktree `<home>/CascadeProjects/Latitude-tier-coherence-a64-proof` at seed `2591890304012655616`, not rerun in the canonical tree.
+- Canonical tree proof was compile-only: `env -u JAVA_TOOL_OPTIONS JAVA_HOME=$(/usr/libexec/java_home -v 25) ./gradlew --no-daemon --console plain compileJava` -> `BUILD SUCCESSFUL`. The full Small/Regular/Large matrix was accepted from the clean proof worktree `<checkout>` at seed `2591890304012655616`, not rerun in the canonical tree.
 - Phase 1 second-seed rare-accent watch item is cleared on seed `7382045119866712340`: `windswept_forest` stayed present at regular `5 -> 4` and true large `8 -> 2`; no inventory adds/removes; `snowy_beach 0 -> 0`.
 - R10000 atlas invocation must use `size=regular`; true Large must use `size=large` for R15000. Numeric `size=10000` is not a safe reproducer because non-preset values fall back to the authoritative world radius; this was resolved by invocation, not code.
-- Comparator used: `<home>/.codex/worktrees/afe1/Latitude (Globe)/tmp/wild-lab/compare_atlas_runs.py`.
+- Comparator used: `<home>(Globe)/tmp/wild-lab/compare_atlas_runs.py`.
 - Metrics caveat: A64 benefit stayed positive but weaker on seed 2 than the first-seed ~25-30% expectation. Regular components `18,441 -> 15,840` (`-14.10%`), offenders `14 -> 14`, inventory `50 -> 50`, tiny share `11.116% -> 10.501%`. True Large components `33,261 -> 28,868` (`-13.21%`), offenders `15 -> 15`, inventory `51 -> 51`, tiny share `11.313% -> 10.682%`.
 - Phase 2 status: A64 source was already canonicalized at `e19fc1cc` / `save/tier-coherence-a64`; no source replay was needed.
 - Option B savepoint: commit `b3a25a22`, tag `save/fallback-coherence-optionb`, branch `codex/fallback-coherence-optionb-savepoint`.
 - `FALLBACK_COHERENCE_BLOCKS = 64` is applied only to the explicit fallback-list picker `pickFrom(Registry<Biome>, ...)`, leaving tier rolls, tags, resources, province logic, snowy/subpolar ramp gates, tooling, and generated artifacts untouched.
 - Option B proof on seed `7382045119866712340`: A64 -> Option B regular components `15,840 -> 15,508` (`-2.10%`) and true Large components `28,868 -> 28,094` (`-2.68%`); non-excluded components improved `3,779 -> 3,546` (`-6.17%`) and `7,199 -> 6,752` (`-6.21%`). Offenders stayed flat (`14 -> 14`, `15 -> 15`), inventory stayed stable (`50 -> 50`, `51 -> 51`), `windswept_forest` stayed present (`4 -> 4`, `2 -> 2`), and `snowy_beach` stayed `0 -> 0`.
 - Baseline -> Option B total components are now regular `18,441 -> 15,508` (`-15.90%`) and true Large `33,261 -> 28,094` (`-15.53%`) on seed 2. The improvement remains lower than the first-seed A64 magnitude, but Option B is incremental, low-scope, and positive.
-- Option B proof artifacts: `<home>/CascadeProjects/Latitude-tier-coherence-a64-proof/tmp/a64-optionb/seed-7382045119866712340`.
+- Option B proof artifacts: `<checkout>`.
 - Roadmap closeout: A64 and Option B proof/savepoint gates are closed. Remaining canonical dirty WIP and generated/runtime artifacts are parked, unrelated to this roadmap, and should not be cleaned, reset, stashed, restored, or deleted automatically.
 
 ### 2.4 Latitude 1.4 "Cohesive Horizons" Worldgen Rebalance

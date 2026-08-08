@@ -49,7 +49,7 @@ investigation, not yet resolved. NOTE: the earlier "frozen-river reflection" ite
 is **not** a regression — that feature has been inert since before 26.1.2 (the `getFeatures` name never existed
 in current mappings), so it was correctly left untouched to preserve behavior.
 
-Root: `<home>/CascadeProjects/Latitude-2.0-26.2-pivot`, branch `port/canonical-26.2-pivot`, HEAD `61d51782` (as of 2026-07-03 — see the 2026-07-06 status update above for what landed after).
+Root: `<checkout>`, branch `port/canonical-26.2-pivot`, HEAD `61d51782` (as of 2026-07-03 — see the 2026-07-06 status update above for what landed after).
 
 This matrix records the intended port/pivot truth for Latitude work. Verify upstream metadata before implementation because Minecraft, Fabric API, Loader, and Loom move quickly.
 
@@ -60,7 +60,7 @@ This matrix records the intended port/pivot truth for Latitude work. Verify upst
 | Latitude 2.0 overhaul | 26.2 | planned canonical target | pivot GREEN (compile + headless Atlas + live client pass) | Build metadata + narrow API-drift repair done; deterministic headless proof green; live client pass done across ~20 staged test jars (crash fix + World Creation polish + HUD Studio feature buildout). See pivot status above. |
 | Latitude 2.0 prior feature branch | 26.1.2 | prior-era reference (superseded by the 26.2 pivot, 2026-07-06) | historical local branch | Superseded as the active line; use for behavioral comparison only. |
 | Latitude 1.4 / early 2.0 reference | 26.1.2 | proven reference | local proof history exists | Use for behavioral comparison and regression baselines. |
-| Older backport | 1.21.11 | backport target | structurally partial historically | Do not patch as primary without explicit Maintainer decision. |
+| Older backport | 1.21.11 | backport target | structurally partial historically | Do not patch as primary without explicit the maintainer decision. |
 | Older backport | 1.21.1 | backport target | historical port line | Requires scoped backport plan. |
 | Older backport | 1.20.1 | backport target | hardest old line | Yarn/refmap/Java 17 risks. |
 | Snapshot watch | 26.3 snapshots | watch only | not canonical | Track upstream, do not chase during 2.0 pivot. |

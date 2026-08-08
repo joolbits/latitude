@@ -2,7 +2,7 @@
 
 `status: canonical planning front door`
 `date: 2026-07-02`
-`active root: <home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2`
+`active root: <checkout>`
 `active branch at capture: feat/custom-biome-expansion-26.1.2`
 `planning target: Minecraft 26.2`
 
@@ -338,7 +338,7 @@ Commits/tags/pushes:
 
 - Narrow build/port/test/docs commits.
 - Local save tag after proof.
-- Push only with Maintainer authorization.
+- Push only with the maintainer authorization.
 
 Documentation:
 
@@ -662,11 +662,11 @@ Potential problems:
 - Atlas green but live ugly.
 - Live pretty but exact-ID wrong.
 - Proof clutter mistaken for release truth.
-- Porting or publication started before Maintainer authorizes it.
+- Porting or publication started before the maintainer authorizes it.
 
 Commits/tags/pushes:
 
-- Release-candidate tag/push only with Maintainer authorization.
+- Release-candidate tag/push only with the maintainer authorization.
 
 Documentation:
 
