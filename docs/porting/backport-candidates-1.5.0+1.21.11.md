@@ -8,6 +8,17 @@ Running list of every fix landed on this port thread that turned out to be a gen
 never touches either protected checkout. Updated as new findings land. Backporting itself is the maintainer's
 call; this only tracks what's confirmed and where.
 
+
+## ⚠️ Commit hashes were re-mapped after the 2026-08-07 history rewrite
+
+Every hash in the table below is a **post-rewrite, on-branch** hash. The hashes originally
+recorded here were pre-rewrite and are **no longer on any branch** — they resolve only as
+unreachable objects, and their trees still contain the 13,326 purged files (`_mcsrc*`,
+`<home>/CascadeProjects/Latitude-notes/port-1.5-1.21.11/binder-recovered-20260807/**`). Never branch from, merge, or `rebase --onto` a pre-rewrite hash: cherry-pick
+applies only a diff and is safe, but the other three would reintroduce forbidden content into a
+PUBLIC repository. The pre-rewrite tip is preserved locally as tag
+`archive/pre-rewrite-1p21p11-session-20260807` (local only — do not push).
+
 ## How to read this table
 
 **In 26.1.2 / In 26.2** — whether the *bug* is present in that released tag: **Yes** (confirmed
@@ -16,21 +27,21 @@ bug lives in doesn't exist in that tag at all — not a bug there, just absent).
 
 | Fix (this thread) | Commit | In 26.1.2 | In 26.2 | Note |
 | --- | --- | --- | --- | --- |
-| Windswept forest/hills snow stripping (ProtoChunk guard) | `a626c45c` | **Yes** | **Yes** | `ProtoChunkSnowBlockGuardMixin` gates purely on `globe$isWarmBand` with no `coldEnoughToSnow` check, in both tags verbatim. **INCOMPLETE ALONE — see the trap row below; backport them together.** |
-| Windswept snow stripping, third stripper (warm-snow trap) | `709a79ec` | **Yes** | **Yes** | `ChunkRegionWarmSnowTrapMixin` present in both tags with zero `coldEnoughToSnow` refs — rewrites all warm-band snow writes to AIR/STONE at the `WorldGenRegion.setBlock` layer, mass-producing `grass_block[snowy=true]` orphans in temperate windswept (measured 159 snowy grass : 13 layers). The half `a626c45c` missed. |
-| *(design fix)* Latitude snow line for windswept (`seaLevel+27`) | `709a79ec` | **carry** | **carry** | Not a bug in the released code — a Latitude-design remedy for windswept painting mostly below vanilla's ~`seaLevel+57` snow line and reading bare. `WindsweptSnowLinePolicy` + `SnowAndFreezeWindsweptSnowLineMixin` + exemptions at both guards; carry with the two stripper fixes so windswept reads as windswept. |
-| `savanna_plateau` overriding a low-Y sanitize result | `db5fe2c2` | **Yes** | **Yes** | `preserveSavannaPlateauAtSanitize`, byte-identical in both tags, both call sites. Introducing commit `aefad5b4` predates the 1.5 campaign entirely (2026-03-08) and is an ancestor of both. |
-| Reload shows vanilla before the bespoke loading screen | `8695216b` | **Yes** | **Yes** | Neither tag has an early-activation hook (nothing targets `WorldOpenFlows.openWorld`); both have only the same three late `activateLatitudeLoading()` call sites this thread had before the fix. |
-| `/locate structure` teleports to Y=0 (bedrock/deep dark) | `8cf9ab91` | **Yes** | **N/A** | `LatitudeStructureLocateService` doesn't exist in `v1.5.0+26.2` at all (thread 1 added it post-tag). In `v1.5.0+26.1.2` it calls `showLocateResult(..., true, ...)` — same bug, same fix would apply. |
-| `/locate structure` false-reports villages (guard mismatch) | `2becc0a0` | **Yes** | **N/A** | Same reasoning as above — 26.1.2's `LatitudeStructureLocateService` only ever checks the shared biome-tag condition, never the four village-specific `ExtremePolarVillageStartGuardMixin` conditions. |
-| `/locate structure` blocks the server thread | `2becc0a0` | **Yes** | **N/A** | Same file, same reasoning — 26.1.2's search runs synchronously. |
-| Create-world screen's second tab read "Rules" | `b14f2b3b` | **No** | **Yes** | Already fixed in 26.1.2 by thread 1's own `a6146016` ("Settings tab, tighter header, Atlas in immediate view") — that commit's *other* changes (header tightening, Atlas visibility) were deliberately left un-harvested on this thread per the maintainer's call in Slice F, but the label itself already matched what she wanted, so `b14f2b3b` reached the same end state narrowly. `v1.5.0+26.2` (pre-dating `a6146016`) still says `{"World", "Rules"}`. |
-| TEST-jar staged from unmapped (`jar`, not `remapJar`) classes | `ed65dfa6` | **N/A** | **N/A** | 26.1.2 and 26.2 both ship *unobfuscated* — `jar` and `remapJar` produce identical output there, so this bug cannot manifest regardless of the packaging task. 1.21.11-specific by construction, not a backport candidate. |
-| Compass HUD shifts when the location-detail label's length changes | `1f14fbb0` | **Yes** | **Yes** | Same `boxW` (includes the location-detail segment) fed into `anchoredX`/`anchoredY`, verbatim, at all 6 call sites in both tags. |
-| *(remedy feature)* `/latitude retrofit` — opt-in retro-decoration + profile adoption for legacy worlds | `a3cb4baa` | **carry** | **carry** | Not a bug row: the player-facing remedy for the two rows above. When the ledger-decoration and profile-capture fixes are backported, this feature should travel with them — released-version players are exactly the legacy-world population it exists for. |
-| Dedicated-server worlds never capture the provider-ticket profile | `23901e5a` | **Yes** | **Yes** | Capture gated on `pendingRadius > 0` in both tags (26.2 at its pre-`68716f22` shape, 26.1.2 post) — ledger-routed biomes never place on server-created worlds. Fix = capture for any fresh globe overworld in the creation window + radius fixpoint persistence + parity escape hatch. Verified end-to-end incl. region-file ground truth. |
-| Ledger-admitted custom biomes generate bare (no decoration) | `353feb26` | **Yes** | **Disputed — see note** | `ChunkGeneratorGenerateFeaturesBiomeSetMixin`'s policy list is built from the `lat_*` tags only, in both tags verbatim (zero `BiomeDescriptorLedger` references in the mixin), while both ledgers carry untagged entries. **26.2 column downgraded 2026-08-07**: Maintainer recalls seeing `overgrown_greens` decorate correctly live on 26.2. The Latitude-side wrap code that determines whether TerraBlender's regions reach `possibleBiomes()` (`ChunkGeneratorBiomeSourceMixin`) is byte-identical between this port and `v1.5.0+26.1.2` — so if 26.2 genuinely differs, the cause is TerraBlender's own version-dependent behavior (unpinned, outside Latitude's control), not a Latitude code difference this thread can see by reading source. Static comparison cannot settle this; only a live boot of the actual `v1.5.0+26.2` tag with real BoP+TerraBlender jars can. Not yet done — cost/priority is the maintainer's call. |
-| `/locate biome` cannot find any custom biome (immediate not-found) | `ccbff07f` | **Yes** | **Disputed — see note above** | Same underlying mechanism as the row above (both depend on whether TerraBlender's regions reach `possibleBiomes()` for the `globe:overworld` biome source), so the same doubt applies to 26.2 pending a live check. 26.1.2 stays **Yes**: nothing has contradicted it there. |
+| Windswept forest/hills snow stripping (ProtoChunk guard) | `3b0b3432` | **Yes** | **Yes** | `ProtoChunkSnowBlockGuardMixin` gates purely on `globe$isWarmBand` with no `coldEnoughToSnow` check, in both tags verbatim. **INCOMPLETE ALONE — see the trap row below; backport them together.** |
+| Windswept snow stripping, third stripper (warm-snow trap) | `8fa3d351` | **Yes** | **Yes** | `ChunkRegionWarmSnowTrapMixin` present in both tags with zero `coldEnoughToSnow` refs — rewrites all warm-band snow writes to AIR/STONE at the `WorldGenRegion.setBlock` layer, mass-producing `grass_block[snowy=true]` orphans in temperate windswept (measured 159 snowy grass : 13 layers). The half `3b0b3432` missed. |
+| *(design fix)* Latitude snow line for windswept (`seaLevel+27`) | `8fa3d351` | **carry** | **carry** | Not a bug in the released code — a Latitude-design remedy for windswept painting mostly below vanilla's ~`seaLevel+57` snow line and reading bare. `WindsweptSnowLinePolicy` + `SnowAndFreezeWindsweptSnowLineMixin` + exemptions at both guards; carry with the two stripper fixes so windswept reads as windswept. |
+| `savanna_plateau` overriding a low-Y sanitize result | `b4f31e36` | **Yes** | **Yes** | `preserveSavannaPlateauAtSanitize`, byte-identical in both tags, both call sites. Introducing commit `aefad5b4` predates the 1.5 campaign entirely (2026-03-08) and is an ancestor of both. |
+| Reload shows vanilla before the bespoke loading screen | `e93b9e4f` | **Yes** | **Yes** | Neither tag has an early-activation hook (nothing targets `WorldOpenFlows.openWorld`); both have only the same three late `activateLatitudeLoading()` call sites this thread had before the fix. |
+| `/locate structure` teleports to Y=0 (bedrock/deep dark) | `f19a7f96` | **Yes** | **N/A** | `LatitudeStructureLocateService` doesn't exist in `v1.5.0+26.2` at all (thread 1 added it post-tag). In `v1.5.0+26.1.2` it calls `showLocateResult(..., true, ...)` — same bug, same fix would apply. |
+| `/locate structure` false-reports villages (guard mismatch) | `11548378` | **Yes** | **N/A** | Same reasoning as above — 26.1.2's `LatitudeStructureLocateService` only ever checks the shared biome-tag condition, never the four village-specific `ExtremePolarVillageStartGuardMixin` conditions. |
+| `/locate structure` blocks the server thread | `11548378` | **Yes** | **N/A** | Same file, same reasoning — 26.1.2's search runs synchronously. |
+| Create-world screen's second tab read "Rules" | `e66429c2` | **No** | **Yes** | Already fixed in 26.1.2 by thread 1's own `a6146016` ("Settings tab, tighter header, Atlas in immediate view") — that commit's *other* changes (header tightening, Atlas visibility) were deliberately left un-harvested on this thread per the maintainer's call in Slice F, but the label itself already matched what she wanted, so `e66429c2` reached the same end state narrowly. `v1.5.0+26.2` (pre-dating `a6146016`) still says `{"World", "Rules"}`. |
+| TEST-jar staged from unmapped (`jar`, not `remapJar`) classes | `2a8cc1e1` | **N/A** | **N/A** | 26.1.2 and 26.2 both ship *unobfuscated* — `jar` and `remapJar` produce identical output there, so this bug cannot manifest regardless of the packaging task. 1.21.11-specific by construction, not a backport candidate. |
+| Compass HUD shifts when the location-detail label's length changes | `a00fe7cb` | **Yes** | **Yes** | Same `boxW` (includes the location-detail segment) fed into `anchoredX`/`anchoredY`, verbatim, at all 6 call sites in both tags. |
+| *(remedy feature)* `/latitude retrofit` — opt-in retro-decoration + profile adoption for legacy worlds | `69132f9a` | **carry** | **carry** | Not a bug row: the player-facing remedy for the two rows above. When the ledger-decoration and profile-capture fixes are backported, this feature should travel with them — released-version players are exactly the legacy-world population it exists for. |
+| Dedicated-server worlds never capture the provider-ticket profile | `36e69a9e` | **Yes** | **Yes** | Capture gated on `pendingRadius > 0` in both tags (26.2 at its pre-`68716f22` shape, 26.1.2 post) — ledger-routed biomes never place on server-created worlds. Fix = capture for any fresh globe overworld in the creation window + radius fixpoint persistence + parity escape hatch. Verified end-to-end incl. region-file ground truth. |
+| Ledger-admitted custom biomes generate bare (no decoration) | `58571da4` | **Yes** | **Disputed — see note** | `ChunkGeneratorGenerateFeaturesBiomeSetMixin`'s policy list is built from the `lat_*` tags only, in both tags verbatim (zero `BiomeDescriptorLedger` references in the mixin), while both ledgers carry untagged entries. **26.2 column downgraded 2026-08-07**: Maintainer recalls seeing `overgrown_greens` decorate correctly live on 26.2. The Latitude-side wrap code that determines whether TerraBlender's regions reach `possibleBiomes()` (`ChunkGeneratorBiomeSourceMixin`) is byte-identical between this port and `v1.5.0+26.1.2` — so if 26.2 genuinely differs, the cause is TerraBlender's own version-dependent behavior (unpinned, outside Latitude's control), not a Latitude code difference this thread can see by reading source. Static comparison cannot settle this; only a live boot of the actual `v1.5.0+26.2` tag with real BoP+TerraBlender jars can. Not yet done — cost/priority is the maintainer's call. |
+| `/locate biome` cannot find any custom biome (immediate not-found) | `57895f64` | **Yes** | **Disputed — see note above** | Same underlying mechanism as the row above (both depend on whether TerraBlender's regions reach `possibleBiomes()` for the `globe:overworld` biome source), so the same doubt applies to 26.2 pending a live check. 26.1.2 stays **Yes**: nothing has contradicted it there. |
 
 ## Still to check
 
@@ -40,7 +51,7 @@ against both tags. Add a row here immediately when a new fix lands, before movin
 ## Observed on this thread, NOT yet fixed anywhere (all versions affected)
 
 Found while verifying the ledger-decoration fix — see
-[`…ledger-decoration-fix-20260807.md`](../binder/latitude-1-5-port-1p21p11-ledger-decoration-fix-20260807.md)
+[`…ledger-decoration-fix-20260807.md`](../../../Latitude-notes/port-1.5-1.21.11/binder-recovered-20260807/latitude-1-5-port-1p21p11-ledger-decoration-fix-20260807.md)
 for the evidence. Architecture-level, present in this port and (by the same architecture) in both
 released tags; not fixed on any version yet.
 
@@ -50,5 +61,5 @@ released tags; not fixed on any version yet.
   probes that reported 18 distinct biomes over an area whose stored region-file truth holds exactly
   2. Region-file parsing is the trustworthy instrument.
   (The `/locate biome` immediate-not-found issue formerly listed here, and the dedicated-server
-  profile-capture gap before it, were both FIXED on this thread — `ccbff07f` and `23901e5a`, see
+  profile-capture gap before it, were both FIXED on this thread — `57895f64` and `36e69a9e`, see
   the table above.)

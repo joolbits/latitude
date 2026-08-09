@@ -139,7 +139,7 @@ value looks reasonable.
 ## Part 5 — What thread 2 adds for thread 3
 
 Recorded in full in
-[`docs/binder/latitude-1-5-port-1p21p11-mojmap-spike-20260806.md`](../binder/latitude-1-5-port-1p21p11-mojmap-spike-20260806.md);
+[`<home>/CascadeProjects/Latitude-notes/port-1.5-1.21.11/binder-recovered-20260807/latitude-1-5-port-1p21p11-mojmap-spike-20260806.md`](../../../Latitude-notes/port-1.5-1.21.11/binder-recovered-20260807/latitude-1-5-port-1p21p11-mojmap-spike-20260806.md);
 the headline items:
 
 1. **Run the mappings spike statically.** Stream Mojang's ProGuard mapping file and check every

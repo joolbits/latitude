@@ -10,7 +10,7 @@ section; thread 2 cannot.**
 > the harvest of thread 1's nine post-tag fixes is **complete**. Outstanding: the maintainer's live acceptance
 > on `TEST 6`, her two open worldgen questions (both need measurement), the fog A/B, and release.
 > Current state lives in
-> [`docs/binder/latitude-1-5-port-1p21p11-slice-g-closure-20260807.md`](../binder/latitude-1-5-port-1p21p11-slice-g-closure-20260807.md).
+> [`<home>/CascadeProjects/Latitude-notes/port-1.5-1.21.11/binder-recovered-20260807/latitude-1-5-port-1p21p11-slice-g-closure-20260807.md`](../../../Latitude-notes/port-1.5-1.21.11/binder-recovered-20260807/latitude-1-5-port-1p21p11-slice-g-closure-20260807.md).
 
 ---
 
@@ -130,7 +130,7 @@ remapped Minecraft classpath, following inheritance. **Take it.** It caught real
   target inherits TEST-jar tooling built for an unobfuscated source line (26.x, where `jar` and
   `remapJar` output are identical because there's nothing to remap), check explicitly whether that
   tooling assumed away a remap step the new, obfuscated target now requires. Full account:
-  [`docs/binder/latitude-1-5-port-1p21p11-test-jar-remap-crash-20260807.md`](../binder/latitude-1-5-port-1p21p11-test-jar-remap-crash-20260807.md).
+  [`<home>/CascadeProjects/Latitude-notes/port-1.5-1.21.11/binder-recovered-20260807/latitude-1-5-port-1p21p11-test-jar-remap-crash-20260807.md`](../../../Latitude-notes/port-1.5-1.21.11/binder-recovered-20260807/latitude-1-5-port-1p21p11-test-jar-remap-crash-20260807.md).
 
 ## 6. Sweep the predecessor's whole history, not its handoff
 

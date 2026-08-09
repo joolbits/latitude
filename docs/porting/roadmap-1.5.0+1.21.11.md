@@ -3,7 +3,7 @@
 `date: 2026-08-06` · `owner: Maintainer (she/her)` · `branch: port/1.5.0-1.21.11` · `status: active`
 
 Evidence for every claim below lives in
-[`<external-notes>/latitude-1-5-port-1p21p11-mojmap-spike-20260806.md`](../external record/latitude-1-5-port-1p21p11-mojmap-spike-20260806.md).
+[`<external-notes>/port-1.5-1.21.11/external record-recovered-20260807/latitude-1-5-port-1p21p11-mojmap-spike-20260806.md`](../../../Latitude-notes/port-1.5-1.21.11/external record-recovered-20260807/latitude-1-5-port-1p21p11-mojmap-spike-20260806.md).
 Thread 1's carried lessons live in
 [`diffs-learned-1.5.0+26.1.2.md`](diffs-learned-1.5.0+26.1.2.md).
 The method is `LATITUDE_1_5_BACKPORT_CAMPAIGN.md` in the protected `Latitude-1.5-26.2` checkout.
@@ -29,7 +29,7 @@ weight of the four.
 | Slice G — harvest the remaining 5 thread-1 fixes | **DONE** `8640c14c`/`1eb1ecf0`/`2ca3a76a`/`1f4a68e9`/`0e831d38` — harvest complete; all 9 of thread 1's post-tag fixes are in |
 | Release | pending, **needs the maintainer's authorization** |
 
-> **current implementation state:** [`<external-notes>/latitude-1-5-port-1p21p11-locate-async-village-fix-20260807.md`](../external record/latitude-1-5-port-1p21p11-locate-async-village-fix-20260807.md)
+> **current implementation state:** [`<external-notes>/port-1.5-1.21.11/external record-recovered-20260807/latitude-1-5-port-1p21p11-locate-async-village-fix-20260807.md`](../../../Latitude-notes/port-1.5-1.21.11/external record-recovered-20260807/latitude-1-5-port-1p21p11-locate-async-village-fix-20260807.md)
 > carries current state — `TEST 10` staged and confirmed GREEN by Maintainer. What's left before release is
 > listed in full under **Slice F remainder**, below.
 
@@ -116,7 +116,7 @@ From `port/1.5.0-26.1.2`, absent from `v1.5.0+26.2`:
 **Done:** fresh Modrinth profile `Lat 1.5 - 1.21.11 - TEST` (11 mods incl. the real provider stack);
 dev client + staged `TEST N.jar` (now at `TEST 10`, confirmed GREEN) with built-vs-staged SHA parity
 every time; 8 live defects found and fixed — see the resume-point doc above for the full list and
-[`…test-jar-remap-crash…`](../external record/latitude-1-5-port-1p21p11-test-jar-remap-crash-20260807.md) for
+[`…test-jar-remap-crash…`](../../../Latitude-notes/port-1.5-1.21.11/external record-recovered-20260807/latitude-1-5-port-1p21p11-test-jar-remap-crash-20260807.md) for
 the one that mattered most (every TEST jar through `TEST 6` was silently unable to launch in
 production Fabric Loader at all).
 
@@ -124,7 +124,7 @@ production Fabric Loader at all).
 
 1. **the maintainer's two worldgen questions from her first flythrough, both still needing *measurement* not
    code-reading** — see
-   [`…slice-f-live-findings…`](../external record/latitude-1-5-port-1p21p11-slice-f-live-findings-20260807.md):
+   [`…slice-f-live-findings…`](../../../Latitude-notes/port-1.5-1.21.11/external record-recovered-20260807/latitude-1-5-port-1p21p11-slice-f-live-findings-20260807.md):
    arid-edge fragment-size distribution, and real surface-Y under `savanna_plateau`
    (`preserveSavannaPlateauAtSanitize` still has no height test at all).
 2. **Live confirmation that `dde70c88`'s land-cohesion gate actually did something** — the atlas is
@@ -145,8 +145,8 @@ production Fabric Loader at all).
 
 ## external record discipline
 
-Every slice lands its evidence row in `<external-notes>/evidence-registry.md` and its pointer in
-`<external-notes>/index.md` in the **same pass** as the work.
+Every slice lands its evidence row in `<external-notes>/port-1.5-1.21.11/external record-recovered-20260807/evidence-registry.md` and its pointer in
+`<external-notes>/port-1.5-1.21.11/external record-recovered-20260807/index.md` in the **same pass** as the work.
 
 ## Closeout
 
