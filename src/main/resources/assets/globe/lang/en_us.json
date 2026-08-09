@@ -1,5 +1,5 @@
 {
-  "generator.globe.globe": "\u00a7a\u00a7l\u00a7oLatitude\u00a7r",
+  "generator.globe.globe": "§a§l§oLatitude§r",
   "category.globe": "Latitude",
   "key.category.globe.globe": "Latitude",
   "key.globe.toggle_compass_hud": "Toggle Compass HUD",
@@ -12,5 +12,7 @@
   "option.globe.capture_save_disk": "Capture: Save PNG to Disk",
   "option.globe.capture_save_disk.tooltip": "Save screenshots to run/Latitude/captures.",
   "option.globe.capture_write_csv": "Capture: Write CSV",
-  "option.globe.capture_write_csv.tooltip": "Append capture metadata rows to run/latdev/captures.csv."
+  "option.globe.capture_write_csv.tooltip": "Append capture metadata rows to run/latdev/captures.csv.",
+  "globe.create.unbound_settings.title": "Latitude could not create this world",
+  "globe.create.unbound_settings.message": "Another world generation mod has taken over Minecraft's noise settings, so Latitude's terrain can no longer be identified in the saved world. Creating it would give you vanilla biomes on Latitude terrain, and Latitude features such as the world border and climate zones would stay switched off. Disable the other world generation mod and try again."
 }

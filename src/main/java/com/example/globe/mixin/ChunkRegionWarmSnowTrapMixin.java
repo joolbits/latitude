@@ -58,6 +58,25 @@ public abstract class ChunkRegionWarmSnowTrapMixin {
 
         if (!warm) return state;
 
+        // Align with ProtoChunkSnowBlockGuardMixin (a626c45c): a warm BAND is not a warm COLUMN.
+        // Vanilla legitimately snows temperature-0.2 biomes above ~seaLevel+57, and TEMPERATE
+        // counts as warm here — without this, every snow layer SnowAndFreezeFeature paired with a
+        // snowy grass block was rewritten to AIR at this layer while the snowy blockstate stayed,
+        // mass-producing the orphaned white-topped grass Maintainer reported (measured: temperate
+        // windswept 159 snowy grass : 13 snow layers, subpolar 183 : 222).
+        WorldGenRegion region = (WorldGenRegion) (Object) this;
+        var biome = region.getBiome(pos);
+        if (biome.value().coldEnoughToSnow(pos, region.getSeaLevel())) {
+            return state;
+        }
+        // Latitude's lowered windswept snow line — must match SnowAndFreezeWindsweptSnowLineMixin
+        // and ProtoChunkSnowBlockGuardMixin or this layer strips what they place.
+        if (com.example.globe.world.WindsweptSnowLinePolicy.appliesTo(
+                biome.unwrapKey().map(key -> key.identifier().toString()).orElse(null),
+                pos.getY(), region.getSeaLevel())) {
+            return state;
+        }
+
         if (state.getBlock() == Blocks.SNOW_BLOCK) return STONE;
         return AIR;
     }
