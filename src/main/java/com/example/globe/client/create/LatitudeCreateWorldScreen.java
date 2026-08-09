@@ -242,7 +242,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int activeTab; // 0=World + Spawn Zone, 1=Settings
     private static final String[] TAB_LABELS = {"World", "Settings"};
     private static final int TAB_H = 20;
-    private static final int TAB_GAP = 4;
+    private static final int TAB_GAP = 2;
     private int tabStripY;
     private int tabPanelTop; // content area top (below tab strip)
     private long debugSwitchSampleDeadlineMs;
@@ -548,9 +548,9 @@ public class LatitudeCreateWorldScreen extends Screen {
             // resize) must not restart the intro.
             introStartMs = Util.getMillis();
         }
-        int headerGap = scaledUi(10);
-        int bottomMargin = scaledUi(40);
-        int btnBottomOffset = scaledUi(30);
+        int headerGap = scaledUi(6);
+        int bottomMargin = scaledUi(28);
+        int btnBottomOffset = scaledUi(20);
         int fieldGap1 = scaledUi(38);
         int labelFieldGap = scaledUi(22);
         int fieldH = Math.max(16, scaledUi(16));
@@ -559,9 +559,9 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         int bottomY = this.height - btnBottomOffset;
         int cx = this.width / 2;
-        paneGap = scaledUi(8);
-        paneStripViewportLeft = 12;
-        paneStripViewportRight = Math.max(paneStripViewportLeft + 1, this.width - 12);
+        paneGap = scaledUi(4);
+        paneStripViewportLeft = 8;
+        paneStripViewportRight = Math.max(paneStripViewportLeft + 1, this.width - 8);
         paneStripViewportWidth = Math.max(1, paneStripViewportRight - paneStripViewportLeft);
         paneStripContentWidth = paneStripViewportWidth;
         int guiScale = Minecraft.getInstance().getWindow().getGuiScale();
