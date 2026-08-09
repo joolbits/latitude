@@ -1216,9 +1216,18 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     /** Forces every interactive widget invisible/inactive for the duration of the title intro.
      *  Must run every frame (from render()) -- updateLeftLayout/updateRightLayout/updateSettingsLayout
-     *  already recompute widget visibility every frame and would otherwise undo a one-time hide. */
+     *  already recompute widget visibility every frame and would otherwise undo a one-time hide.
+     *  createWorldBtn/cancelBtn have no such per-frame layout pass of their own (they're screen-level,
+     *  not panel- or tab-scoped), so unlike every other widget hidden here, nothing else ever sets
+     *  them back visible once the intro's one-shot hide has run. Restore them explicitly on every
+     *  frame the intro is NOT active, or the very first intro playthrough permanently strands the
+     *  player with no way to create or cancel the world. */
     private void applyIntroVisibility() {
-        if (!introActive()) return;
+        if (!introActive()) {
+            setTabbedWidgetVisible(createWorldBtn, true);
+            setTabbedWidgetVisible(cancelBtn, true);
+            return;
+        }
         setTabbedWidgetVisible(worldNameField, false);
         setTabbedWidgetVisible(seedField, false);
         setTabbedWidgetVisible(sizePrevBtn, false);
