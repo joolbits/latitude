@@ -53,11 +53,11 @@ line, see [Backport status — 26.1.2](#backport-status--2612-landed-2026-08-09)
 
 ## Backport status — 26.1.2 (landed 2026-08-09)
 
-Branch `backport/1.21.11-fixes-to-26.1.2`, cut from `port/1.5.0-26.1.2` @ `91423e1a`. Fifteen
-commits total, all but two a `cherry-pick -x` (`bc6b1cf7` and the own-defect pick 15 have no
-cherry-pickable upstream). Gates green (`clean check build -PenableInvariantScan=true
+Branch `backport/1.21.11-fixes-to-26.1.2`, cut from `port/1.5.0-26.1.2` @ `91423e1a`. Sixteen
+commits total, all but three a `cherry-pick -x` (`bc6b1cf7`, and the own-line picks 15 and 16,
+have no cherry-pickable upstream). Gates green (`clean check build -PenableInvariantScan=true
 latitudeInvariantScan`, plus `verify_phase6_dev_tooling.py`, re-run in full after picks 11, 12,
-13, and 15); headless worldgen smoke clean on the worldgen-affecting picks. **Not pushed, not
+13, 15, and 16); headless worldgen smoke clean on the worldgen-affecting picks. **Not pushed, not
 tagged, not released** — awaiting the maintainer's live acceptance. Full account in the notes
 ledger: `port-1.5-26.1.2/backport-1p21p11-fixes-to-26p1p2-20260809.md`.
 
@@ -78,6 +78,7 @@ ledger: `port-1.5-26.1.2/backport-1p21p11-fixes-to-26p1p2-20260809.md`.
 | Tighten create-screen outer margins and panel/tab spacing | `7852de65` (26.2 line) | `21979454` | **1 conflict** — see below |
 | Divider line between climate zone entries | `1ff2ecad` (26.2 line) | `f6a9f194` | clean |
 | Create World/Cancel no longer cut off at the screen bottom | — (own defect, this line only) | `8c97bd5c` | see below |
+| Title-screen build watermark removed entirely | `9e0a8170` (this thread, reimplemented) | `5eb99922` | **hand-written, not cherry-picked** — see below |
 
 **`36e69a9e`** — the campaign's only true rename-boundary conflict on this line, in `GlobeMod.java`:
 1.21.11's `server.getWorldData().worldGenOptions().seed()` vs 26.1.2's
@@ -166,6 +167,21 @@ value now sat below the corrected `btnBottomOffset`); normal's `bottomMargin` al
 with room to spare and was left alone. **Lesson for whichever thread resolves this rename family
 next: check a ratio-rescaled value against every OTHER variable it interacts with, not just its
 own old/new baseline.**
+
+**`9e0a8170` — the title-screen watermark removal, hand-written on 26.1.2 rather than
+cherry-picked.** Same disposition as this thread's own commit (the feature goes, not just its
+gate), maintainer request. Not a cherry-pick: `9e0a8170` here unwinds `isTestOrDevBuild()`,
+`TEST_ARTIFACT_MARKER_KEY`, and a `DevToolPolicyTest` regression guard — an entire
+gate-it-first-then-remove-it evolution that never happened on `port/1.5.0-26.1.2` (that line's
+`2a8cc1e1`/`23b1be0d` equivalents are already tracked N/A above). Grep-confirmed before touching
+anything: neither `isTestOrDevBuild` nor `TEST_ARTIFACT_MARKER_KEY` exist anywhere in that tree,
+and `LatitudeDevRuntime.TEST_MARKER_KEY` already owns its own literal there rather than pointing
+at a shared `GlobeMod` constant. 26.1.2's watermark surface was just `buildLabel()` +
+`ALPHA_TEST_LABEL` in `GlobeMod.java`, the mixin, and its registration — deleted directly, with
+`logBuildMetadata` (a different method, same manifest fields, never player-facing) left untouched.
+Verified against the actual built jar (`unzip -l build/libs/latitude-1.5.0+26.1.2.jar | grep -i
+TitleScreenBuildLabel` — zero hits), matching this thread's own verification standard for the same
+fix. Full gate re-run green.
 
 **Not backported to 26.1.2**, and why: `e66429c2` (26.1.2 reached that end state via its own
 `a6146016`); `2a8cc1e1` and `23b1be0d` (26.1.2 ships unobfuscated — not applicable by
