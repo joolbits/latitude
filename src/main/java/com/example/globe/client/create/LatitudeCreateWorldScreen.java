@@ -2648,6 +2648,13 @@ public class LatitudeCreateWorldScreen extends Screen {
                 helperY += uiFontHeight();
             }
 
+            // Divider under every entry but the last -- breaks the list into visually distinct
+            // zones instead of one undifferentiated expanse (maintainer ruling, 2026-08-09).
+            boolean isLastRow = !zoneRows.isEmpty() && zoneRows.get(zoneRows.size() - 1) == this;
+            if (!isLastRow) {
+                context.fill(x + 4, y + h - 1, x + w - 4, y + h, PANEL_BORDER);
+            }
+
             if (clipped) {
                 context.disableScissor();
             }
