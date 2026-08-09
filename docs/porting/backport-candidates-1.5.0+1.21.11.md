@@ -109,7 +109,7 @@ evidence those fixes work.
 ## Backport status — 26.2 (landed 2026-08-09)
 
 Branch `backport/1.21.11-fixes-to-26.2`, cut from `codex/1.5-mini-launch-26.2` @ `cef5ab29` (past
-the `v1.5.0+26.2` release tag). **Fourteen commits**: this thread's fixes PLUS the four pending
+the `v1.5.0+26.2` release tag). **Fifteen commits** (14 planned + 1 added mid-flight): this thread's fixes PLUS the four pending
 26.1.2 live-flight fixes, consolidated into one branch because all four had already been harvested
 here, so the two backlogs overlapped. Gates green — `clean check build -PenableInvariantScan=true
 latitudeInvariantScan`, 27/27 tasks executed, plus `verify_phase6_dev_tooling.py`. **Not pushed,
@@ -140,7 +140,44 @@ Stream B — from this branch, chronological.
 | Decoration index covers ledger-admitted custom biomes | `58571da4` | `62dd261b` | clean |
 | `/locate biome` finds custom biomes | `57895f64` | `b3c4668b` | **re-homed** — see below |
 
+Added mid-flight, from `port/1.5.0-26.1.2`:
+
+| Fix | Source | 26.2 commit | How it applied |
+| --- | --- | --- | --- |
+| Cancel no longer selects a climate | `09d20e10` | `8d0c0293` | **conflict** — see below. **maintainer-approved live 2026-08-09** |
+
 Both snow commits are present, so the pair that must travel together did.
+
+### The create-screen Cancel bug — new 26.2 row, fixed and accepted
+
+Not previously tracked as a backport candidate; it appears in the 26.2 live-flight kickoff only as a
+diagnosed, unfixed item. The maintainer hit it while flying this branch: *"can't activate cancel on
+the world creation screen; selects 'subtropical'."*
+
+**Take `09d20e10`, never `3d836199`.** They are the pair `diffs-learned` §6 flags: `3d836199`
+("Stop panel-scoped handlers swallowing bottom-row clicks") was a wrong turn, superseded four
+minutes later by `09d20e10` ("Stop clipped climate rows stealing clicks from the button row").
+Only the latter is the correct final state, and it is written as a *replacement* of the wrong turn's
+hunk — so on any line that never had `3d836199` it conflicts, and the resolution is to take the
+incoming side whole (the existing `mouseClicked` body becomes `globe$dispatchClick`).
+
+**26.2 shows the wrong-selection symptom without the wrong turn.** On 26.1.2, `3d836199` is what
+converted a dead Cancel into a wrong selection. 26.2 never had it and still selects a climate,
+because 26.2's analogous guard is *panel-bounded*
+(`isInsideSpawnPanel(x,y) && !isInsideSpawnClip(x,y)`) while the button row sits **beneath
+`panelBottom`** — outside every panel, so the guard never fires, the click reaches vanilla dispatch,
+and a zone row still holding its full rectangle over the button row outranks Cancel. Same root
+cause, different route; the fix is correct either way. **Worth checking on the remaining port
+targets rather than assuming the 26.1.2 symptom order.**
+
+One comment clause was adjusted on 26.2: upstream states the bug "only reproduced" at GUI scale
+5x+, which is a 26.1.2 observation and not what happened here.
+
+`latitudeCreateScreenClipPolicyTest` / `ViewportClipPolicyTest` exercises
+`ViewportClipPolicy.acceptsClippedWidgetClick`, which this fix does not touch — **a green suite is
+not evidence this fix works.** Upstream added no test either. Verified by the maintainer's own click:
+reported *"worked"*, and the client log shows the create screen opening and closing four seconds
+later with no exception.
 
 ### ⚠️ Stream A's hashes as circulated were pre-rewrite and on no branch
 
