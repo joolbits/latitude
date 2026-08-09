@@ -51,7 +51,7 @@ line, see [Backport status — 26.1.2](#backport-status--2612-landed-2026-08-09)
 | `/latitude retrofit` converts any non-Latitude world (irreversible) | `cf55480b` | **carry with the feature** | **carry with the feature** | Not present in either released tag, because the retrofit feature itself is not. Must travel *with* `69132f9a` if that is ever backported — never without it. |
 | Title-screen watermark ships on every public release + paired release-gate checker never actually passed | `23b1be0d` | **N/A** | **N/A** | Downstream of `2a8cc1e1` (TEST-jar remap fix), already N/A for both tags since 26.1.2/26.2 ship unobfuscated -- `jar`/`remapJar` are identical there, so the remap-boundary byte-comparison bug this fix closes cannot exist on those lines. The watermark gate itself (`GlobeMod.isTestOrDevBuild()`) is harmless, generic code that COULD be carried if either line ever adds a similar tester-facing marker, but there is nothing there for it to fix today. |
 
-## Backport status — 26.1.2 (landed 2026-08-09, maintainer-approved, PR open)
+## Backport status — 26.1.2 (landed and MERGED 2026-08-09)
 
 Branch `backport/1.21.11-fixes-to-26.1.2`, cut from `port/1.5.0-26.1.2` @ `91423e1a`. Seventeen
 commits total (sixteen fixes/UI work + one version bump), all but four a `cherry-pick -x`
@@ -59,10 +59,13 @@ commits total (sixteen fixes/UI work + one version bump), all but four a `cherry
 upstream). Gates green (`clean check build -PenableInvariantScan=true latitudeInvariantScan`,
 plus `verify_phase6_dev_tooling.py`, re-run in full after picks 11, 12, 13, 15, 16, and the
 version bump); headless worldgen smoke clean on the worldgen-affecting picks. **maintainer-approved
-live 2026-08-09** — version bumped to `1.5.1-beta.1+26.1.2`, branch pushed, **PR open:
-[peetsamods/latitude#15](https://github.com/peetsamods/latitude/pull/15)** against
-`port/1.5.0-26.1.2`. No tag or release cut yet — that wasn't part of what was authorized in this
-step. Full account in the notes ledger:
+live 2026-08-09** — version bumped to `1.5.1-beta.1+26.1.2`, branch pushed,
+**[peetsamods/latitude#15](https://github.com/peetsamods/latitude/pull/15) MERGED into
+`port/1.5.0-26.1.2`** at 2026-08-09T22:58:09Z (merge commit `ce597027`, standard two-parent merge
+matching the sibling 26.2 line's own precedent from the same day). Pre-merge safety checks: base
+branch unmoved since the cut point, no branch protection, no CI to wait on, full-diff S-6/S-7
+guardrail scan on the entire PR (not just per-commit) clean. No tag or release cut — that wasn't
+part of what was authorized in this step. Full account in the notes ledger:
 `port-1.5-26.1.2/backport-1p21p11-fixes-to-26p1p2-20260809.md`.
 
 | Fix | Source | 26.1.2 commit | How it applied |
