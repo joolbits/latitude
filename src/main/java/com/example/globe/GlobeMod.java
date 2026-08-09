@@ -873,55 +873,6 @@ public class GlobeMod implements ModInitializer {
         LOGGER.info("[LAT][BUILD] side={} version={} commit={} branch={} dirty={} time={}", side, version, commit, branch, dirty, time);
     }
 
-    /**
-     * Live-flight alpha counter for the title-screen watermark, bumped by hand each time a new
-     * TEST jar is staged for Maintainer — this is her own tracking counter, not derived from git, the
-     * same convention as the "TEST N.jar" staging filenames. Bump this alongside that filename.
-     */
-    private static final String ALPHA_TEST_LABEL = "alpha.3";
-
-    /**
-     * Short, human-readable build identity for on-screen display (title screen watermark) — the
-     * same manifest fields {@link #logBuildMetadata} logs, so what a tester sees on screen and what
-     * the jar actually reports never diverge. Absent manifest data (a dev-classpath run, not a
-     * packaged jar) degrades to just the mod version rather than showing "?" placeholders.
-     */
-    public static String buildLabel() {
-        Optional<ModContainer> mod = FabricLoader.getInstance().getModContainer(MOD_ID);
-        String version = mod.map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("?");
-        String commit = null;
-        String dirty = null;
-
-        if (mod.isPresent()) {
-            try (InputStream is = mod.get().findPath("META-INF/MANIFEST.MF").map(path -> {
-                try {
-                    return java.nio.file.Files.newInputStream(path);
-                } catch (Exception e) {
-                    return null;
-                }
-            }).orElse(null)) {
-                if (is != null) {
-                    Manifest mf = new Manifest(is);
-                    Attributes attrs = mf.getMainAttributes();
-                    commit = attrs.getValue("Git-Commit");
-                    dirty = attrs.getValue("Build-Dirty");
-                }
-            } catch (Exception ignored) {
-            }
-        }
-
-        StringBuilder label = new StringBuilder("Latitude ").append(version)
-                .append(" \u2014 ").append(ALPHA_TEST_LABEL);
-        if (commit != null && commit.length() >= 7) {
-            label.append(" (").append(commit, 0, 7);
-            if ("true".equals(dirty)) {
-                label.append(", dirty");
-            }
-            label.append(')');
-        }
-        return label.toString();
-    }
-
     private static BlockPos findLandSpawn(ServerLevel world, SamplerTemplate template,
                                           Climate.Sampler sampler,
                                           int borderHalf, int targetZ, long seed,
