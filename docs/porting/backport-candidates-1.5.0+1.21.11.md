@@ -109,7 +109,7 @@ evidence those fixes work.
 ## Backport status — 26.2 (landed 2026-08-09)
 
 Branch `backport/1.21.11-fixes-to-26.2`, cut from `codex/1.5-mini-launch-26.2` @ `cef5ab29` (past
-the `v1.5.0+26.2` release tag). **Fifteen commits** (14 planned + 1 added mid-flight): this thread's fixes PLUS the four pending
+the `v1.5.0+26.2` release tag). **Sixteen commits** (14 planned + 2 added mid-flight): this thread's fixes PLUS the four pending
 26.1.2 live-flight fixes, consolidated into one branch because all four had already been harvested
 here, so the two backlogs overlapped. Gates green — `clean check build -PenableInvariantScan=true
 latitudeInvariantScan`, 27/27 tasks executed, plus `verify_phase6_dev_tooling.py`. **Not pushed,
@@ -145,8 +145,34 @@ Added mid-flight, from `port/1.5.0-26.1.2`:
 | Fix | Source | 26.2 commit | How it applied |
 | --- | --- | --- | --- |
 | Cancel no longer selects a climate | `09d20e10` | `8d0c0293` | **conflict** — see below. **maintainer-approved live 2026-08-09** |
+| World Creation screen negative-space/alignment pass + tabbedMode title intro | `0cee3189` | `285ae887` | **conflict** — see below |
 
 Both snow commits are present, so the pair that must travel together did.
+
+### The world-creation-screen aesthetics pass — pulled forward on request
+
+Landed on this thread (PR #12, merge `94eca269`) *after* the 26.2 backport branch was already in
+flight with its own Cancel fix. Maintainer asked explicitly to pull `94eca269`'s UI work into the
+26.2 branch. The merge carried three commits: `0cee3189` (the actual UI pass, touches only
+`LatitudeCreateWorldScreen.java`) plus two repo-hygiene chores (`b06a2bb4` untrack `.windsurf/`,
+`92b0c012` untrack `.agents/`+`.claude/`). **Only `0cee3189` was taken** — the hygiene chores are
+out of scope for a UI backport and this thread's tree doesn't carry that debt.
+
+`0cee3189`'s own commit message states it was built with the Cancel-bug fix already in place
+("mouseClicked's zone-row/Cancel-button dispatch fix is untouched"), so cherry-picking it after
+`09d20e10` on 26.2 reproduces the same stacking order it was authored against — confirmed clean,
+no interaction between the two.
+
+**Both conflicts were the render-pipeline rename boundary**, same family as everywhere else in this
+backport: `GuiGraphics`→`GuiGraphicsExtractor`, `render`→`extractRenderState`. Verified via `javap`
+against the 26.2 jar rather than assumed — `Screen.extractRenderState(GuiGraphicsExtractor,...)` is
+confirmed as 26.2's actual override point, and `net.minecraft.client.input.KeyEvent` (the new
+`keyPressed` override's parameter) is present on 26.2 unrenamed.
+
+**Worth a note for whichever port thread reaches this next:** a screen's `render`/`GuiGraphics` is
+part of the same 1.21.6+ render-pipeline reversal as the HUD's `Gui`/`Hud` split
+(`diffs-learned-1.5.0+1.21.11.md` §3) — Screens are not exempt from it just because they're not a
+`Gui` subclass.
 
 ### The create-screen Cancel bug — new 26.2 row, fixed and accepted
 
