@@ -25,6 +25,9 @@ PUBLIC repository. The pre-rewrite tip is preserved locally as tag
 present, backport candidate), **No** (already fixed there, nothing to do), **N/A** (the feature the
 bug lives in doesn't exist in that tag at all — not a bug there, just absent).
 
+These columns describe the *bug*, not the backport. For what has actually been **landed** on a
+line, see [Backport status — 26.1.2](#backport-status--2612-landed-2026-08-09) below.
+
 | Fix (this thread) | Commit | In 26.1.2 | In 26.2 | Note |
 | --- | --- | --- | --- | --- |
 | Windswept forest/hills snow stripping (ProtoChunk guard) | `3b0b3432` | **Yes** | **Yes** | `ProtoChunkSnowBlockGuardMixin` gates purely on `globe$isWarmBand` with no `coldEnoughToSnow` check, in both tags verbatim. **INCOMPLETE ALONE — see the trap row below; backport them together.** |
@@ -46,6 +49,61 @@ bug lives in doesn't exist in that tag at all — not a bug there, just absent).
 | Off-disk world-state reader used a stale path (4 features dead in 100% of worlds) | `cf55480b` | **No** | **No** | 1.21.11-specific: caused by the `SavedDataType` Identifier→String change this port had to make. 26.1.2 and 26.2 still take an Identifier, so their nested path is correct there. The *pattern* — a rename that must move two files at once — is the same family as the CliffTree pair and belongs in diffs-learned. |
 | `/latitude retrofit` converts any non-Latitude world (irreversible) | `cf55480b` | **carry with the feature** | **carry with the feature** | Not present in either released tag, because the retrofit feature itself is not. Must travel *with* `69132f9a` if that is ever backported — never without it. |
 | Title-screen watermark ships on every public release + paired release-gate checker never actually passed | `23b1be0d` | **N/A** | **N/A** | Downstream of `2a8cc1e1` (TEST-jar remap fix), already N/A for both tags since 26.1.2/26.2 ship unobfuscated -- `jar`/`remapJar` are identical there, so the remap-boundary byte-comparison bug this fix closes cannot exist on those lines. The watermark gate itself (`GlobeMod.isTestOrDevBuild()`) is harmless, generic code that COULD be carried if either line ever adds a similar tester-facing marker, but there is nothing there for it to fix today. |
+
+## Backport status — 26.1.2 (landed 2026-08-09)
+
+Branch `backport/1.21.11-fixes-to-26.1.2`, cut from `port/1.5.0-26.1.2` @ `91423e1a`. Ten picks,
+each a separate commit carrying its source hash via `cherry-pick -x`. Gates green
+(`clean check build -PenableInvariantScan=true latitudeInvariantScan`, plus
+`verify_phase6_dev_tooling.py`); headless worldgen smoke clean. **Not pushed, not tagged, not
+released** — awaiting the maintainer's live acceptance. Full account in the notes ledger:
+`port-1.5-26.1.2/backport-1p21p11-fixes-to-26p1p2-20260809.md`.
+
+| Fix | Source | 26.1.2 commit | How it applied |
+| --- | --- | --- | --- |
+| ProtoChunk snow guard (cold columns keep vanilla snow) | `3b0b3432` | `74994ecc` | clean |
+| Third snow stripper + `seaLevel+27` windswept snow line | `8fa3d351` | `9cbba932` | clean |
+| `savanna_plateau` no longer overrides a low-Y sanitize | `b4f31e36` | `09975255` | clean |
+| Loading overlay activates before vanilla's reload screen | `e93b9e4f` | `739ce766` | clean |
+| `/locate structure` no longer teleports into bedrock | `f19a7f96` | `68ee7143` | clean |
+| `/locate structure` async + no false village reports | `11548378` | `bbfdc16e` | clean |
+| Compass HUD stops shifting with label length | `a00fe7cb` | `423949bc` | clean |
+| Provider-ticket capture for fresh dedicated worlds | `36e69a9e` | `7a6d7bf5` | **conflict** — see below |
+| Decoration index covers ledger-admitted custom biomes | `58571da4` | `2166ab4d` | clean |
+| `/locate biome` finds custom biomes | `57895f64` | `65cd2e2f` | **re-homed** — see below |
+
+**`36e69a9e`** — the campaign's only true rename-boundary conflict on this line, in `GlobeMod.java`:
+1.21.11's `server.getWorldData().worldGenOptions().seed()` vs 26.1.2's
+`server.getWorldGenSettings().options().seed()`. Resolved by the standing rule — 26.x identifier,
+1.21.11 logic. `BiomeProviderSelectionPolicyTest` is a source-scan test; all three of its literals
+were confirmed present in the resolved source.
+
+**`57895f64`** — upstream extracts the shared tag+ledger union into
+`LatitudeDecorationRetrofit.allPaintableCustomBiomes`, a file created by the BLOCKED `69132f9a`.
+On 26.1.2 the union lands instead in a new neutral `LatitudePaintableCustomBiomes`, which also
+takes ownership of the `lat_*` tag path list formerly private to
+`ChunkGeneratorGenerateFeaturesBiomeSetMixin`. Same single source of truth, no blocked feature.
+
+**Not backported to 26.1.2**, and why: `e66429c2` (26.1.2 reached that end state via its own
+`a6146016`); `2a8cc1e1` and `23b1be0d` (26.1.2 ships unobfuscated — not applicable by
+construction); `69132f9a` + its `cf55480b` gate (retrofit replay defects still unfixed upstream).
+
+**`cf55480b` contributes nothing to 26.1.2 — confirmed, including the claim flagged for
+verification.** The fog hook reposition is 1.21.11-specific as recorded. The
+`RecreatedWorldMetadata` save-path fix was verified rather than trusted: 26.1.2's
+`LatitudeWorldState` `SavedDataType` takes an Identifier (not 1.21.11's String), and real 26.1.2
+saves on disk do write the nested `dimensions/minecraft/overworld/data/globe/…` path the reader
+expects. Reader path is correct on that line; nothing to carry.
+
+**Instrument note for the remaining threads.** A seed-matched atlas A/B against the pre-backport
+base showed `biomes.png` byte-identical, with exactly one zero-sum census move —
+`savanna_plateau` 931→5, `savanna` 25447→26373 — which is `b4f31e36` working (both biomes share
+the atlas colour `#8FBF63`, so the image is blind to it and only the census sees it). The atlas is
+**not** a valid instrument for the other eight fixes: the snow picks act on block writes
+(`ProtoChunk`/`WorldGenRegion.setBlock`) rather than biome selection, the ledger pick acts on the
+decoration feature index, and `36e69a9e` never engages on the atlas server at all
+(`level-type=minecraft:normal`, so `isGlobeOverworld` fails). Do not read atlas stability as
+evidence those fixes work.
 
 ## Still to check
 
