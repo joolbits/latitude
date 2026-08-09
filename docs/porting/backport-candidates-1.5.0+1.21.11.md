@@ -53,12 +53,12 @@ line, see [Backport status — 26.1.2](#backport-status--2612-landed-2026-08-09)
 
 ## Backport status — 26.1.2 (landed 2026-08-09)
 
-Branch `backport/1.21.11-fixes-to-26.1.2`, cut from `port/1.5.0-26.1.2` @ `91423e1a`. Ten picks,
-each a separate commit carrying its source hash via `cherry-pick -x`. Gates green
+Branch `backport/1.21.11-fixes-to-26.1.2`, cut from `port/1.5.0-26.1.2` @ `91423e1a`. Eleven
+picks, each a separate commit carrying its source hash via `cherry-pick -x`. Gates green
 (`clean check build -PenableInvariantScan=true latitudeInvariantScan`, plus
-`verify_phase6_dev_tooling.py`); headless worldgen smoke clean. **Not pushed, not tagged, not
-released** — awaiting the maintainer's live acceptance. Full account in the notes ledger:
-`port-1.5-26.1.2/backport-1p21p11-fixes-to-26p1p2-20260809.md`.
+`verify_phase6_dev_tooling.py`, re-run in full after the 11th pick); headless worldgen smoke
+clean. **Not pushed, not tagged, not released** — awaiting the maintainer's live acceptance. Full
+account in the notes ledger: `port-1.5-26.1.2/backport-1p21p11-fixes-to-26p1p2-20260809.md`.
 
 | Fix | Source | 26.1.2 commit | How it applied |
 | --- | --- | --- | --- |
@@ -72,6 +72,7 @@ released** — awaiting the maintainer's live acceptance. Full account in the no
 | Provider-ticket capture for fresh dedicated worlds | `36e69a9e` | `7a6d7bf5` | **conflict** — see below |
 | Decoration index covers ledger-admitted custom biomes | `58571da4` | `2166ab4d` | clean |
 | `/locate biome` finds custom biomes | `57895f64` | `65cd2e2f` | **re-homed** — see below |
+| World Creation screen negative-space/alignment pass + tabbedMode title intro | `0cee3189` | `1d93675a` | **3 conflicts** — see below |
 
 **`36e69a9e`** — the campaign's only true rename-boundary conflict on this line, in `GlobeMod.java`:
 1.21.11's `server.getWorldData().worldGenOptions().seed()` vs 26.1.2's
@@ -84,6 +85,35 @@ were confirmed present in the resolved source.
 On 26.1.2 the union lands instead in a new neutral `LatitudePaintableCustomBiomes`, which also
 takes ownership of the `lat_*` tag path list formerly private to
 `ChunkGeneratorGenerateFeaturesBiomeSetMixin`. Same single source of truth, no blocked feature.
+
+**`0cee3189`** — landed later, at the maintainer's explicit request, from `94eca269` (the merge of
+PR #12, `claude/world-creation-aesthetics-1.21.11-febb24`, into `port/1.5.0-1.21.11` on origin).
+That merge bundles three commits; only `0cee3189` itself (the UI polish) is in scope — the other
+two are that thread's own repo-hygiene chores (untracking `.agents/`/`.claude/`, removing a stale
+`.windsurf/` dir), unrelated to world creation, left alone. Three conflicts in
+`LatitudeCreateWorldScreen.java`, which has run independently on each line since the fork:
+- A local `shortScreen` compact-layout feature (`74ed12b1`, not from this campaign) and upstream's
+  tabbedMode header collapse both wanted the same `headerToPanel` variable. Combined:
+  `tabbedMode ? scaledUi(6) : (shortScreen ? scaledUi(26) : scaledUi(42))` — tabbedMode always gets
+  the tight value (no permanent header exists there to make room for), three-column mode keeps
+  `shortScreen`'s own value.
+- The other two conflicts were this campaign's own predicted rename boundary
+  (`GuiGraphics`→`GuiGraphicsExtractor`, `render`→`extractRenderState`), materializing for real.
+  Worse: **most of the rename was silently mismerged with no conflict marker at all** —
+  `renderIntroTitle`, `renderSizeLabel`, and `drawTabStrip`'s signatures all landed with the wrong
+  1.21.11-era type, because git's 3-way cherry-pick diffs against `0cee3189`'s own parent on the
+  1.21.11 line, not any shared ancestor with 26.1.2, so an "unchanged" `GuiGraphics` context line
+  inside the pick's hunk boundary just carries through verbatim. Caught only by grepping the whole
+  file for every remaining `(GuiGraphics `, bare `.render(context`, and `.renderWidget(` after the
+  two marked conflicts were resolved — `compileJava` only went green after that sweep, not after
+  the marked conflicts alone. **Lesson for the remaining threads: a clean `cherry-pick --continue`
+  on this rename family proves the marked conflicts are gone, not that the file is correct — sweep
+  for the unmarked ones by hand.**
+
+This pick is client-only Screen code; no headless instrument (atlas, `verify_phase6_dev_tooling`,
+policy suites) touches it. It compiles and gates green but has had zero live eyes on it as of this
+writing — squarely in the maintainer's live-acceptance queue, same as items 1 and 5 in the
+instrument note below.
 
 **Not backported to 26.1.2**, and why: `e66429c2` (26.1.2 reached that end state via its own
 `a6146016`); `2a8cc1e1` and `23b1be0d` (26.1.2 ships unobfuscated — not applicable by
