@@ -26,7 +26,8 @@ present, backport candidate), **No** (already fixed there, nothing to do), **N/A
 bug lives in doesn't exist in that tag at all — not a bug there, just absent).
 
 These columns describe the *bug*, not the backport. For what has actually been **landed** on a
-line, see [Backport status — 26.1.2](#backport-status--2612-landed-2026-08-09) below.
+line, see [Backport status — 26.1.2](#backport-status--2612-landed-2026-08-09) and
+[Backport status — 26.2](#backport-status--262-landed-2026-08-09) below.
 
 | Fix (this thread) | Commit | In 26.1.2 | In 26.2 | Note |
 | --- | --- | --- | --- | --- |
@@ -43,8 +44,8 @@ line, see [Backport status — 26.1.2](#backport-status--2612-landed-2026-08-09)
 | Compass HUD shifts when the location-detail label's length changes | `a00fe7cb` | **Yes** | **Yes** | Same `boxW` (includes the location-detail segment) fed into `anchoredX`/`anchoredY`, verbatim, at all 6 call sites in both tags. |
 | *(remedy feature)* `/latitude retrofit` — opt-in retro-decoration + profile adoption for legacy worlds | `69132f9a` + `cf55480b` | **carry — BLOCKED** | **carry — BLOCKED** | Not a bug row: the player-facing remedy for the two rows above. **DO NOT BACKPORT YET.** The 2026-08-09 sweep found the shipped feature converts ANY non-Latitude overworld into a globe world, irreversibly (`cf55480b` gates that), and separately that the replay is not scoped to the repaired biome, uses a per-biome rather than vanilla's global feature index, and runs with `LatitudeWorldgenScope` inactive so Latitude's own generation guards are inert. The gate is fixed; the replay defects are NOT. Carry only once the replay cluster is closed — otherwise both released lines inherit them. |
 | Dedicated-server worlds never capture the provider-ticket profile | `36e69a9e` | **Yes** | **Yes** | Capture gated on `pendingRadius > 0` in both tags (26.2 at its pre-`68716f22` shape, 26.1.2 post) — ledger-routed biomes never place on server-created worlds. Fix = capture for any fresh globe overworld in the creation window + radius fixpoint persistence + parity escape hatch. Verified end-to-end incl. region-file ground truth. |
-| Ledger-admitted custom biomes generate bare (no decoration) | `58571da4` | **Yes** | **Disputed — see note** | `ChunkGeneratorGenerateFeaturesBiomeSetMixin`'s policy list is built from the `lat_*` tags only, in both tags verbatim (zero `BiomeDescriptorLedger` references in the mixin), while both ledgers carry untagged entries. **26.2 column downgraded 2026-08-07**: Maintainer recalls seeing `overgrown_greens` decorate correctly live on 26.2. The Latitude-side wrap code that determines whether TerraBlender's regions reach `possibleBiomes()` (`ChunkGeneratorBiomeSourceMixin`) is byte-identical between this port and `v1.5.0+26.1.2` — so if 26.2 genuinely differs, the cause is TerraBlender's own version-dependent behavior (unpinned, outside Latitude's control), not a Latitude code difference this thread can see by reading source. Static comparison cannot settle this; only a live boot of the actual `v1.5.0+26.2` tag with real BoP+TerraBlender jars can. Not yet done — cost/priority is the maintainer's call. |
-| `/locate biome` cannot find any custom biome (immediate not-found) | `57895f64` | **Yes** | **Disputed — see note above** | Same underlying mechanism as the row above (both depend on whether TerraBlender's regions reach `possibleBiomes()` for the `globe:overworld` biome source), so the same doubt applies to 26.2 pending a live check. 26.1.2 stays **Yes**: nothing has contradicted it there. |
+| Ledger-admitted custom biomes generate bare (no decoration) | `58571da4` | **Yes** | **Yes** (was Disputed; **resolved live 2026-08-09**) | `ChunkGeneratorGenerateFeaturesBiomeSetMixin`'s policy list is built from the `lat_*` tags only, in both tags verbatim (zero `BiomeDescriptorLedger` references in the mixin), while both ledgers carry untagged entries. **The 2026-08-07 downgrade to Disputed is now withdrawn.** A live headless boot of `backport/1.21.11-fixes-to-26.2` with the real 26.2 provider stack (BoP `26.2.0.0.24`, TerraBlender `26.2.0.0.2`, GlitchCore `26.2.0.0.0`) measured **0 of 42** registered non-vanilla ledger biomes present in `possibleBiomes()` — `biomesoplenty:overgrown_greens` among them (`registered=true inPossibleBiomes=false`). TerraBlender on 26.2 behaves exactly as on 1.21.11 and 26.1.2: it does not inject into `globe:` noise settings, so `retainAll` drops every ledger-only biome and the tags-only guard never re-adds it. Applying `58571da4` on that branch moved `policyCustomBiomes` 24→42 and `featureTotal`/`featureInIndex` 1085→1904, and turned a real spawn chunk's `afterSize=3 preservedCustom=1` into `afterSize=4 preservedCustom=2`. This does not contradict the maintainer's recollection that `overgrown_greens` *appears* on her 26.2 world — it is client-created, so the profile is captured and the biome places; what is disproven is that its decoration was safe. |
+| `/locate biome` cannot find any custom biome (immediate not-found) | `57895f64` | **Yes** | **Yes** (was Disputed; **resolved live 2026-08-09**) | Same underlying mechanism as the row above — both depend on whether TerraBlender's regions reach `possibleBiomes()` for the `globe:overworld` biome source — and the same live measurement settles it: they do not, on 26.2 as everywhere else. 26.1.2 stays **Yes**: nothing has contradicted it there. |
 | Fog distance writes clobbered by vanilla (storm + polar walls never render) | `cf55480b` | **No** | **No** | 1.21.11-specific by construction. 26.x's `FogRenderer.setupFog` RETURNS the `FogData`, so the single 26.2 hook mutates it after vanilla is done; the clobber only exists because 1.21.11 moved the distance writes inline after the `FogEnvironment.setupFog` call. Not a backport candidate — but the *lesson* (verify hook position against disassembled bytecode, not source) belongs in every remaining port's diffs-learned. |
 | Off-disk world-state reader used a stale path (4 features dead in 100% of worlds) | `cf55480b` | **No** | **No** | 1.21.11-specific: caused by the `SavedDataType` Identifier→String change this port had to make. 26.1.2 and 26.2 still take an Identifier, so their nested path is correct there. The *pattern* — a rename that must move two files at once — is the same family as the CliffTree pair and belongs in diffs-learned. |
 | `/latitude retrofit` converts any non-Latitude world (irreversible) | `cf55480b` | **carry with the feature** | **carry with the feature** | Not present in either released tag, because the retrofit feature itself is not. Must travel *with* `69132f9a` if that is ever backported — never without it. |
@@ -104,6 +105,123 @@ the atlas colour `#8FBF63`, so the image is blind to it and only the census sees
 decoration feature index, and `36e69a9e` never engages on the atlas server at all
 (`level-type=minecraft:normal`, so `isGlobeOverworld` fails). Do not read atlas stability as
 evidence those fixes work.
+
+## Backport status — 26.2 (landed 2026-08-09)
+
+Branch `backport/1.21.11-fixes-to-26.2`, cut from `codex/1.5-mini-launch-26.2` @ `cef5ab29` (past
+the `v1.5.0+26.2` release tag). **Fourteen commits**: this thread's fixes PLUS the four pending
+26.1.2 live-flight fixes, consolidated into one branch because all four had already been harvested
+here, so the two backlogs overlapped. Gates green — `clean check build -PenableInvariantScan=true
+latitudeInvariantScan`, 27/27 tasks executed, plus `verify_phase6_dev_tooling.py`. **Not pushed,
+not tagged, not released** — awaiting the maintainer's live acceptance. Full account in the notes
+ledger: `port-1.5-26.2/backport-1p21p11-and-liveflight-fixes-to-26p2-20260809.md`.
+
+Stream A — from `port/1.5.0-26.1.2`, in that branch's chronological order.
+
+| Fix | Source | 26.2 commit | How it applied |
+| --- | --- | --- | --- |
+| Fail loud on a degraded world + CompassHud gate | `dece6676` | `24295cb2` | **conflict** — see below |
+| Create-screen authority over globe recognition | `4cefb253` | `13951047` | clean |
+| Bonus chest anchored to dry land | `803678de` | `bc90ada0` | clean |
+| On-demand terrain probe + subtropical land gate | `4b470287` | `e4d197e5` | clean |
+| Land-cohesion gate scoped back to temperate | `1d0793ce` (partial) | `e4c10368` | **required correction** — see below |
+
+Stream B — from this branch, chronological.
+
+| Fix | Source | 26.2 commit | How it applied |
+| --- | --- | --- | --- |
+| ProtoChunk snow guard (cold columns keep vanilla snow) | `3b0b3432` | `0e7508e7` | clean |
+| Create-world screen's second tab reads "Settings" | `e66429c2` | `1f855738` | clean |
+| Loading overlay activates before vanilla's reload screen | `e93b9e4f` | `977ed591` | clean |
+| `savanna_plateau` no longer overrides a low-Y sanitize | `b4f31e36` | `08f6f476` | clean |
+| Compass HUD stops shifting with label length | `a00fe7cb` | `b1110e80` | clean |
+| Provider-ticket capture for fresh dedicated worlds | `36e69a9e` | `3f437841` | **conflict** — see below |
+| Third snow stripper + `seaLevel+27` windswept snow line | `8fa3d351` | `ea0b2fff` | clean |
+| Decoration index covers ledger-admitted custom biomes | `58571da4` | `62dd261b` | clean |
+| `/locate biome` finds custom biomes | `57895f64` | `b3c4668b` | **re-homed** — see below |
+
+Both snow commits are present, so the pair that must travel together did.
+
+### ⚠️ Stream A's hashes as circulated were pre-rewrite and on no branch
+
+The kickoff for the 26.2 backport listed Stream A as `68716f22` / `4660d45e` / `dde70c88` /
+`533dd0e3` and asserted they were post-rewrite on-branch hashes. They are not — they resolve as
+objects but `git merge-base --is-ancestor` places them on no branch. Mapped by
+`git show <h> | git patch-id --stable` to their on-branch equivalents, every pair **IDENTICAL**:
+`68716f22`→`4cefb253`, `4660d45e`→`803678de`, `dde70c88`→`4b470287`, `533dd0e3`→`dece6676`,
+`89e9f07b`→`1d0793ce`, and (cited in diffs-learned) `a626c45c`→`3b0b3432`.
+
+Nothing was lost, and cherry-picking an unreachable object would have been safe anyway — but
+`diffs-learned-1.5.0+1.21.11.md` still cites the dead hashes throughout, unlike this tracker, which
+was re-mapped. **That doc wants a fixup pass** before another thread reads hashes out of it.
+
+### The required correction the kickoff list omitted
+
+`4b470287` widens `isLandGateBand` to include `BAND_SUBTROPICAL`. On the 26.1.2 line that was
+reverted 27 minutes later by `1d0793ce`, because routing warm highlands into
+`LAT_TEMPERATE_MOUNTAIN` consumed the high columns `minecraft:eroded_badlands` needs and left the
+fresh-world coverage plan reporting it unplaceable at `topologyEligible=0` — the trap
+`diffs-learned` §6 flags. Harvesting the probe alone ships that regression, so `e4c10368` carries
+the `LatitudeBiomes.java` half of `1d0793ce` only.
+
+The **other** half of `1d0793ce` — the general structure-siting guard in
+`ExtremePolarVillageStartGuardMixin` — was deliberately **not** taken: it is a feature rather than
+a correction to anything in this backport, it is an open design item on the 26.2 live-flight
+kickoff, and an over-strict structure guard silently empties the world. Still open on 26.2.
+
+### Conflicts
+
+**`dece6676`** — `CompassHud.java`, rename boundary: 26.1.2 `client.screen` vs 26.2
+`client.gui.screen()`. Took the 26.2 identifier, kept the new `GlobeClientState.isGlobeWorld()`
+gate.
+
+**`36e69a9e`** — `GlobeMod.java`, the same rename-boundary conflict this fix produced on 26.1.2:
+1.21.11's `server.getWorldData().worldGenOptions().seed()` vs 26.2's
+`server.getWorldGenSettings().options().seed()`. Took the 26.2 form, kept the whole new capture
+gating.
+
+**`57895f64` — re-homed, exactly as on 26.1.2.** Upstream extracts the tag∪ledger union onto
+`LatitudeDecorationRetrofit.allPaintableCustomBiomes`, a class created by the **BLOCKED** retrofit
+feature `69132f9a`; taking the pick as-is would drag that feature's class in behind the block. The
+union now lives in a new neutral `com.example.globe.world.LatitudePaintableCustomBiomes`, which
+also owns the `lat_*` tag list formerly private to `ChunkGeneratorGenerateFeaturesBiomeSetMixin`.
+**The 26.1.2 backport thread reached this same resolution independently**, so both lines are
+shaped alike.
+
+### A conflict git did NOT raise
+
+`dece6676`'s `LatitudeWorldLauncher.java` hunk auto-merged **cleanly** with `client.setScreen(...)`,
+which does not exist on 26.2 (`client.gui.setScreen(...)`). Only the compiler caught it. **A
+conflict-free cherry-pick across a rename boundary is not evidence of correctness** — compile every
+pick. Folded into its own commit with `commit --fixup` + `GIT_SEQUENCE_EDITOR=true git rebase
+--autosquash`, so each commit on the branch builds standalone.
+
+Related erratum: the 26.2 kickoff's rename table lists `ResourceKey.identifier()`→`.location()`.
+That is **backwards** — `javap` on the 26.2 jar shows `identifier()` and no `location()`.
+
+### `cf55480b` contributes nothing to 26.2 — verified, not assumed
+
+- *Fog clobber*: 26.2's `FogRenderer.setupFog` **returns** `FogData`
+  (`public FogData setupFog(Camera, int, DeltaTracker, float, ClientLevel)` per `javap`), and
+  Latitude's only fog mixin is `FogRendererEwMixin` at `@Inject(method="setupFog", at=@At("RETURN"))`
+  — after every vanilla write and before `updateBuffer`. The clobber cannot occur.
+- *`RecreatedWorldMetadata` stale path*: 26.2's `SavedDataType` takes an `Identifier`
+  (`globe:latitude_world_state`), so the on-disk path is
+  `dimensions/minecraft/overworld/data/globe/latitude_world_state.dat` — exactly what
+  `RecreatedWorldMetadata` reads and what `WorldgenAuthorityPolicyTest` asserts.
+- *Retrofit gate*: moot, the feature is not on this line.
+
+The one piece worth considering later is the hardening `cf55480b` added alongside the fix — making
+the saved-data id a shared constant the reader derives from, so the pair cannot drift again. Not a
+bug on 26.2; cheap insurance.
+
+### Instrument note
+
+`36e69a9e` was **live-verified on 26.2** during the same boot that settled the Disputed rows:
+`Recorded Globe world: border radius 7500 (fresh dedicated/vanilla-created world)`. That lifts this
+thread's recorded "honest limit" that ledger-routed biomes can never place on a headless world —
+they can now, which is what makes the remaining decoration link headlessly testable at all.
+
 
 ## Still to check
 
