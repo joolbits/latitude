@@ -244,7 +244,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int activeTab; // 0=World + Spawn Zone, 1=Rules
     private static final String[] TAB_LABELS = {"World", "Settings"};
     private static final int TAB_H = 20;
-    private static final int TAB_GAP = 4;
+    private static final int TAB_GAP = 2;
     private int tabStripY;
     private int tabPanelTop; // content area top (below tab strip)
     private long debugSwitchSampleDeadlineMs;
@@ -564,10 +564,20 @@ public class LatitudeCreateWorldScreen extends Screen {
         // same chrome is ~11% and unnoticeable, which is why only large GUI scales suffer.
         // Key off the logical height rather than the scale value so an unusual monitor size lands
         // on the right side of it too, and leave ordinary scales byte-identical to before.
+        //
+        // The "normal" values below were independently tightened by a later maintainer ruling
+        // (2026-08-09, upstream 7852de65: too much negative space around the screen's edges) that
+        // predates this shortScreen feature and never saw it. shortScreen's own values are rescaled
+        // to the new baseline by the SAME ratio the original tuning used (short/normal, e.g.
+        // 4/10=0.4 for headerGap), not new numbers of their own -- this preserves the original
+        // relative compactness curve instead of guessing new absolute pixels, and avoids the
+        // inversion that keeping the old absolute short values would have caused for
+        // btnBottomOffset (old short 21 > new normal 20 -- a short window would end up LOOSER than
+        // a normal one, backwards from the whole point of this feature).
         boolean shortScreen = this.height < COMPACT_LAYOUT_HEIGHT;
-        int headerGap = shortScreen ? scaledUi(4) : scaledUi(10);
-        int bottomMargin = shortScreen ? scaledUi(26) : scaledUi(40);
-        int btnBottomOffset = shortScreen ? scaledUi(21) : scaledUi(30);
+        int headerGap = shortScreen ? scaledUi(2) : scaledUi(6);
+        int bottomMargin = shortScreen ? scaledUi(18) : scaledUi(28);
+        int btnBottomOffset = shortScreen ? scaledUi(14) : scaledUi(20);
         int fieldGap1 = scaledUi(38);
         int labelFieldGap = scaledUi(22);
         int fieldH = Math.max(16, scaledUi(16));
@@ -576,9 +586,9 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         int bottomY = this.height - btnBottomOffset;
         int cx = this.width / 2;
-        paneGap = scaledUi(8);
-        paneStripViewportLeft = 12;
-        paneStripViewportRight = Math.max(paneStripViewportLeft + 1, this.width - 12);
+        paneGap = scaledUi(4);
+        paneStripViewportLeft = 8;
+        paneStripViewportRight = Math.max(paneStripViewportLeft + 1, this.width - 8);
         paneStripViewportWidth = Math.max(1, paneStripViewportRight - paneStripViewportLeft);
         paneStripContentWidth = paneStripViewportWidth;
         int guiScale = Minecraft.getInstance().getWindow().getGuiScale();
