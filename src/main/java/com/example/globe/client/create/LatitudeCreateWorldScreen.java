@@ -120,16 +120,6 @@ public class LatitudeCreateWorldScreen extends Screen {
             "Itty Bitty", "Tiny", "Small", "Regular", "Large", "Ginormous"
     };
 
-    // ── Size descriptions (indexed by GlobeWorldSize.ordinal()) ──
-    private static final String[] SIZE_DESCRIPTIONS = {
-            "A pocket world. Every horizon feels close.",
-            "Compact but complete. Good for focused journeys.",
-            "Room to roam. Familiar landmarks within reach.",
-            "The standard world. A full planet awaits.",
-            "Vast distances. Bring supplies.",
-            "A world that could take a lifetime to cross."
-    };
-
     private static final Component SMALL_WORLD_WARNING = Component.literal(
             "Smaller worlds compress the journey and may include slightly fewer total biome variants."
     ).withStyle(ChatFormatting.ITALIC, ChatFormatting.GOLD);
@@ -259,6 +249,21 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int tabPanelTop; // content area top (below tab strip)
     private long debugSwitchSampleDeadlineMs;
     private int debugSwitchSeq;
+
+    // ── Title intro (tabbedMode only; EXPERIMENTAL per maintainer ruling, 2026-08-08 -- shipped to
+    // be judged live, revert freely) -- plays once per screen-open instead of permanently reserving header space
+    // for the title at high GUI scale, where it never comfortably fit anyway. Skippable by any
+    // click/key so it never blocks the player. Layout is NOT animated -- panelTop already reflects
+    // the collapsed (no-title) header the whole time; only the title overlay's own alpha and the
+    // widgets' visibility change across the intro. See introActive()/introTitleAlpha().
+    private long introStartMs = -1L;
+    private boolean introSkipped;
+    private static final long INTRO_FADE_IN_MS = 450L;
+    private static final long INTRO_HOLD_MS = 750L;
+    private static final long INTRO_FADE_OUT_MS = 400L;
+    private static final long INTRO_TOTAL_MS = INTRO_FADE_IN_MS + INTRO_HOLD_MS + INTRO_FADE_OUT_MS;
+    private Button createWorldBtn;
+    private Button cancelBtn;
 
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
         super(Component.literal("New World"));
@@ -511,6 +516,34 @@ public class LatitudeCreateWorldScreen extends Screen {
         return guiScale >= HIGH_GUI_SCALE || viewportWidth < MIN_COMFORTABLE_THREE_COL_WIDTH;
     }
 
+    private long introElapsedMs() {
+        return introStartMs < 0L ? 0L : Util.getMillis() - introStartMs;
+    }
+
+    /** Only tabbedMode ever plays the intro -- three-column already fits comfortably. */
+    private boolean introActive() {
+        return tabbedMode && !introSkipped && introElapsedMs() < INTRO_TOTAL_MS;
+    }
+
+    private float introTitleAlpha() {
+        long t = introElapsedMs();
+        if (t < INTRO_FADE_IN_MS) {
+            return Math.max(0f, t / (float) INTRO_FADE_IN_MS);
+        }
+        if (t < INTRO_FADE_IN_MS + INTRO_HOLD_MS) {
+            return 1.0f;
+        }
+        long fadeOutT = t - INTRO_FADE_IN_MS - INTRO_HOLD_MS;
+        if (fadeOutT < INTRO_FADE_OUT_MS) {
+            return 1.0f - (fadeOutT / (float) INTRO_FADE_OUT_MS);
+        }
+        return 0f;
+    }
+
+    private void skipIntro() {
+        introSkipped = true;
+    }
+
     @Override
     protected void init() {
         LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.init screen={} holder={}",
@@ -519,6 +552,11 @@ public class LatitudeCreateWorldScreen extends Screen {
         // Screen.rebuildWidgets() clears Screen-owned collections, not this private render registry.
         // Clear it on every init so resize/sub-screen return cannot leave a frozen ghost layer.
         settingsScrollWidgets.clear();
+        if (introStartMs < 0L) {
+            // Set once, on the very first init() -- later resizes/rebuilds (size cycling, window
+            // resize) must not restart the intro.
+            introStartMs = Util.getMillis();
+        }
         // These margins are fixed GUI-space pixels (scaledUi is identity), so they cost a constant
         // number of units no matter how few units the screen has. At GUI scale 5 on 1440p the
         // logical screen is only ~288 tall, where header + bottom chrome eats about 28% of it and
@@ -528,39 +566,47 @@ public class LatitudeCreateWorldScreen extends Screen {
         // on the right side of it too, and leave ordinary scales byte-identical to before.
         boolean shortScreen = this.height < COMPACT_LAYOUT_HEIGHT;
         int headerGap = shortScreen ? scaledUi(4) : scaledUi(10);
-        int headerToPanel = shortScreen ? scaledUi(26) : scaledUi(42);
         int bottomMargin = shortScreen ? scaledUi(26) : scaledUi(40);
         int btnBottomOffset = shortScreen ? scaledUi(21) : scaledUi(30);
         int fieldGap1 = scaledUi(38);
-        int fieldGap2 = scaledUi(40);
         int labelFieldGap = scaledUi(22);
         int fieldH = Math.max(16, scaledUi(16));
         int btnH = Math.max(18, scaledUi(20));
         int stepperBtnW = 20;
 
-        headerY = headerGap;
         int bottomY = this.height - btnBottomOffset;
-        panelTop = headerY + headerToPanel;
-        panelBottom = this.height - bottomMargin;
         int cx = this.width / 2;
         paneGap = scaledUi(8);
         paneStripViewportLeft = 12;
         paneStripViewportRight = Math.max(paneStripViewportLeft + 1, this.width - 12);
         paneStripViewportWidth = Math.max(1, paneStripViewportRight - paneStripViewportLeft);
         paneStripContentWidth = paneStripViewportWidth;
-        paneStripScrollbarX = paneStripViewportLeft;
-        paneStripScrollbarW = paneStripViewportWidth;
-        paneStripScrollbarY = panelBottom + 2;
-        paneStripScrollbarH = Math.max(4, Math.min(Math.max(4, scaledUi(6)), Math.max(4, bottomY - paneStripScrollbarY - 2)));
         int guiScale = Minecraft.getInstance().getWindow().getGuiScale();
         // The hard panel minima only prevent outright overlap; they still produce the crammed three-column
         // layout visible at high GUI scale. High scale therefore always gets one pane per tab, while normal
         // scales keep three columns only when each pane has genuinely comfortable space.
         tabbedMode = shouldUseTabbedLayout(paneStripViewportWidth, guiScale);
         threeCol = !tabbedMode;
+        // Tabbed mode plays a brief title intro instead of permanently reserving header space for it --
+        // the title only ever fit awkwardly at high GUI scale, and reclaiming that room gives the panels
+        // the room they actually need (maintainer ruling, 2026-08-08: the screen was being cut off at
+        // high GUI scale, so fade the title out and let the dual panels fill the space). tabbedMode
+        // never draws the permanent header at all, so it stays tight regardless of shortScreen; the
+        // three-column layout still draws a real header and keeps shortScreen's own tightened value.
+        int headerToPanel = tabbedMode ? scaledUi(6) : (shortScreen ? scaledUi(26) : scaledUi(42));
+
+        headerY = headerGap;
+        panelTop = headerY + headerToPanel;
+        panelBottom = this.height - bottomMargin;
+        paneStripScrollbarX = paneStripViewportLeft;
+        paneStripScrollbarW = paneStripViewportWidth;
+        paneStripScrollbarY = panelBottom + 2;
+        paneStripScrollbarH = Math.max(4, Math.min(Math.max(4, scaledUi(6)), Math.max(4, bottomY - paneStripScrollbarY - 2)));
         if (tabbedMode) {
             tabStripY = panelTop;
-            tabPanelTop = tabStripY + TAB_H + TAB_GAP;
+            // Flush against the panel below -- no vertical gap between the tab strip and the panel it
+            // gates (TAB_GAP is still used as the horizontal gap between adjacent tab buttons).
+            tabPanelTop = tabStripY + TAB_H;
             panelTop = tabPanelTop;
             int combinedWorldWidth = Math.max(2, paneStripContentWidth - paneGap);
             leftW = Math.max(1, Math.round(combinedWorldWidth * 0.58f));
@@ -595,25 +641,26 @@ public class LatitudeCreateWorldScreen extends Screen {
         // 17. Begin Expedition  18. Cancel
         // ═══════════════════════════════════════════════
 
-        // ── 1. World Name ──
+        // ── 1. World Name + 2. Seed (share one row to free up vertical space) ──
         worldFieldY = panelTop + labelFieldGap;
-        this.worldNameField = new EditBox(this.font, inputX, worldFieldY, inputW, fieldH, Component.literal("World Name"));
+        seedFieldY = worldFieldY;
+        int[] nameSeedSplit = nameSeedSplit(inputW);
+        int seedFieldX = inputX + nameSeedSplit[0] + nameSeedSplit[1];
+        this.worldNameField = new EditBox(this.font, inputX, worldFieldY, nameSeedSplit[0], fieldH, Component.literal("World Name"));
         this.worldNameField.setMaxLength(64);
         this.worldNameField.setValue(worldNameInput);
         this.worldNameField.setResponder(text -> worldNameInput = text);
         this.addRenderableWidget(this.worldNameField);
 
-        // ── 2. Seed ──
-        seedFieldY = worldFieldY + fieldGap1;
-        this.seedField = new EditBox(this.font, inputX, seedFieldY, inputW, fieldH, Component.literal("Seed"));
+        this.seedField = new EditBox(this.font, seedFieldX, seedFieldY, nameSeedSplit[2], fieldH, Component.literal("Seed"));
         this.seedField.setMaxLength(64);
-        this.seedField.setHint(Component.literal("Leave blank for random"));
+        this.seedField.setHint(Component.literal("Random if blank"));
         this.seedField.setValue(seedInput == null ? "" : seedInput);
         this.seedField.setResponder(text -> seedInput = text);
         this.addRenderableWidget(this.seedField);
 
         // ── 3. Size ◀ ──
-        sizeFieldY = seedFieldY + fieldGap2;
+        sizeFieldY = worldFieldY + fieldGap1;
         sizePrevBtn = Button.builder(Component.literal("\u25C0"), b -> cycleSize(-1))
                 .bounds(inputX, sizeFieldY, stepperBtnW, btnH)
                 .build();
@@ -626,7 +673,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.addRenderableWidget(sizeNextBtn);
         updateLeftWidgets(inputX, inputW, fieldH, btnH, stepperBtnW);
 
-        inputBottomY = Math.max(sizeFieldY + btnH, computeSizeLabelBottom(sizeFieldY - 1, inputW - 48)) + scaledUi(12);
+        inputBottomY = Math.max(sizeFieldY + btnH, computeSizeLabelBottom(sizeFieldY - 1)) + scaledUi(12);
         updateLeftLayout();
 
         zoneRowHeight = computeZoneRowHeight(rightW - 4);
@@ -708,17 +755,19 @@ public class LatitudeCreateWorldScreen extends Screen {
         int cancelW = Math.max(70, this.font.width("Cancel") + 20);
         int totalBtnW = beginW + btnSpacing + cancelW;
         int btnStartX = cx - totalBtnW / 2;
-        this.addRenderableWidget(Button.builder(Component.literal("Create World"), b -> beginExpedition())
+        this.createWorldBtn = Button.builder(Component.literal("Create World"), b -> beginExpedition())
                 .bounds(btnStartX, bottomY, beginW, btnH)
-                .build());
+                .build();
+        this.addRenderableWidget(this.createWorldBtn);
 
         // ── 18. Cancel ──
-        this.addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> onClose())
+        this.cancelBtn = Button.builder(Component.literal("Cancel"), b -> onClose())
                 .bounds(btnStartX + beginW + btnSpacing, bottomY, cancelW, btnH)
-                .build());
+                .build();
+        this.addRenderableWidget(this.cancelBtn);
 
         // ── Focus: pre-select world name only when the World surface is actually visible. ──
-        if (!tabbedMode || activeTab == 0) {
+        if ((!tabbedMode || activeTab == 0) && !introActive()) {
             this.worldNameField.setFocused(true);
             this.setFocused(this.worldNameField);
             this.worldNameField.moveCursorToEnd(false);
@@ -727,6 +776,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             this.worldNameField.setFocused(false);
             this.setFocused(null);
         }
+        applyIntroVisibility();
     }
 
     // ── Size stepper ──
@@ -781,6 +831,15 @@ public class LatitudeCreateWorldScreen extends Screen {
         return scaledUi(px);
     }
 
+    /** World Name / Seed share one row: {nameWidth, gap, seedWidth}, computed once so init, per-frame
+     *  widget layout, and label drawing never drift apart. */
+    private int[] nameSeedSplit(int rowWidth) {
+        int gap = scaledUi(8);
+        int nameW = Math.max(40, (rowWidth - gap) / 2);
+        int seedW = Math.max(40, rowWidth - gap - nameW);
+        return new int[]{nameW, gap, seedW};
+    }
+
     private int uiFontHeight() {
         return this.font.lineHeight;
     }
@@ -801,8 +860,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         return wrapLineCount(text, width) * uiFontHeight();
     }
 
-    private int computeSizeLabelBottom(int y, int availW) {
-        return y + scaledUi(22) + wrapLineCount(SIZE_DESCRIPTIONS[selectedSize.ordinal()], Math.max(40, availW)) * uiFontHeight();
+    private int computeSizeLabelBottom(int y) {
+        return y + scaledUi(11) + uiFontHeight();
     }
 
     private int getSmallWorldWarningHeight(int width) {
@@ -879,13 +938,15 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void updateLeftWidgets(int inputX, int inputW, int fieldH, int btnH, int stepperBtnW) {
+        int[] nameSeedSplit = nameSeedSplit(inputW);
+        int seedFieldX = inputX + nameSeedSplit[0] + nameSeedSplit[1];
         if (worldNameField != null) {
-            worldNameField.setRectangle(inputW, fieldH, inputX, worldFieldY);
+            worldNameField.setRectangle(nameSeedSplit[0], fieldH, inputX, worldFieldY);
             worldNameField.visible = true;
             worldNameField.active = true;
         }
         if (seedField != null) {
-            seedField.setRectangle(inputW, fieldH, inputX, seedFieldY);
+            seedField.setRectangle(nameSeedSplit[2], fieldH, seedFieldX, seedFieldY);
             seedField.visible = true;
             seedField.active = true;
         }
@@ -910,14 +971,20 @@ public class LatitudeCreateWorldScreen extends Screen {
         int contentTop = panelTop - scaledUi(4);
         int labelFieldGap = scaledUi(22);
         int fieldGap1 = scaledUi(38);
-        int fieldGap2 = scaledUi(40);
         int discGap = scaledUi(6);
         int previewHeight = Math.max(scaledUi(150), Math.min(leftW - scaledUi(20) - SCROLLBAR_GUTTER, Math.max(scaledUi(170), panelBottom - panelTop - scaledUi(80))));
+        // World Name and Seed now share one row, so Size moves up by a full fieldGap1 versus the old
+        // three-row stack.
         int baseWorldY = contentTop + labelFieldGap;
-        int baseSeedY = baseWorldY + fieldGap1;
-        int baseSizeY = baseSeedY + fieldGap2;
-        int baseInputBottom = Math.max(baseSizeY + btnH, computeSizeLabelBottom(baseSizeY - 1, inputW - stepperBtnW * 2 - scaledUi(8))) + scaledUi(12);
-        // The compact-world note occupies the preview's existing breathing room. It never changes the Atlas anchor.
+        int baseSeedY = baseWorldY;
+        int baseSizeY = baseWorldY + fieldGap1;
+        int baseInputBottom = Math.max(baseSizeY + btnH, computeSizeLabelBottom(baseSizeY - 1)) + scaledUi(6);
+        // No reservation for the compact-world disclaimer here -- the Atlas anchor sits at a tight,
+        // constant gap below the size text for every size (maintainer ruling, 2026-08-08: too many
+        // blank line-spaces). For sizes <= Regular the translucent Regular-reference underlay is deliberately
+        // allowed to sit under the warning text (drawn after it, on top, so it stays legible) instead
+        // of reserving its own non-overlapping band; sizes above Regular never show the warning at
+        // all, so there is nothing there to collide with regardless. See the render() draw order.
         int basePreviewTop = baseInputBottom + discGap;
         int basePreviewBottom = basePreviewTop + previewHeight;
         leftViewportTop = panelTop + 4;
@@ -1164,6 +1231,32 @@ public class LatitudeCreateWorldScreen extends Screen {
                 this.setFocused(null);
             }
         }
+    }
+
+    /** Forces every interactive widget invisible/inactive for the duration of the title intro.
+     *  Must run every frame (from render()) -- updateLeftLayout/updateRightLayout/updateSettingsLayout
+     *  already recompute widget visibility every frame and would otherwise undo a one-time hide. */
+    private void applyIntroVisibility() {
+        if (!introActive()) return;
+        setTabbedWidgetVisible(worldNameField, false);
+        setTabbedWidgetVisible(seedField, false);
+        setTabbedWidgetVisible(sizePrevBtn, false);
+        setTabbedWidgetVisible(sizeNextBtn, false);
+        for (ZoneRowWidget row : zoneRows) {
+            setTabbedWidgetVisible(row, false);
+        }
+        setTabbedWidgetVisible(worldTypePrevBtn, false);
+        setTabbedWidgetVisible(worldTypeNextBtn, false);
+        setTabbedWidgetVisible(modePrevBtn, false);
+        setTabbedWidgetVisible(modeNextBtn, false);
+        setTabbedWidgetVisible(commandsBtn, false);
+        setTabbedWidgetVisible(compassBtn, false);
+        setTabbedWidgetVisible(structuresBtn, false);
+        setTabbedWidgetVisible(bonusChestBtn, false);
+        setTabbedWidgetVisible(gameRulesBtn, false);
+        setTabbedWidgetVisible(hudStudioBtn, false);
+        setTabbedWidgetVisible(createWorldBtn, false);
+        setTabbedWidgetVisible(cancelBtn, false);
     }
 
     private int headerBandBottom() {
@@ -1428,6 +1521,10 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        if (introActive()) {
+            skipIntro();
+            return true;
+        }
         // Zone rows scroll under the panel edge but keep their full rectangle, so vanilla dispatches
         // against geometry the player cannot see: a click on Cancel went to whichever row overlapped
         // it, visibly selecting a climate instead of closing the screen. The overlap grows with GUI
@@ -1482,6 +1579,15 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     @Override
+    public boolean keyPressed(net.minecraft.client.input.KeyEvent input) {
+        if (introActive()) {
+            skipIntro();
+            return true;
+        }
+        return super.keyPressed(input);
+    }
+
+    @Override
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (draggingPaneStripScrollbar && click.button() == 0) {
             setPaneStripScrollFromMouse(click.x());
@@ -1510,6 +1616,14 @@ public class LatitudeCreateWorldScreen extends Screen {
         updateLeftLayout();
         updateRightLayout();
         updateSettingsLayout();
+        applyIntroVisibility();
+        boolean introShowing = introActive();
+        // Tabbed mode never draws the permanent header -- the title only ever appears as the brief
+        // intro overlay there (renderIntroTitle below); the collapsed headerToPanel gap leaves no
+        // real room for it, and the old "shrink the rect until it stops fitting" approach silently
+        // fell back to a plain-text branch that ignored the shrunk rect and drew anyway (maintainer
+        // ruling, 2026-08-08: remove the legacy title/subtitle from the top of the screen).
+        if (!tabbedMode) {
         int titlePaneX = threeCol ? rightX : 12;
         int titlePaneW = threeCol ? rightW : Math.max(1, this.width - 24);
         int headerBottom = tabbedMode ? tabStripY - 2 : panelTop;
@@ -1528,7 +1642,12 @@ public class LatitudeCreateWorldScreen extends Screen {
             headerLineY += uiFontHeight() + scaledUi(4);
         }
         drawWrappedTextBlock(context, "Prepare your journey across the globe", new UiRect(headerRect.x, headerLineY, headerRect.w, Math.max(0, headerRect.bottom() - headerLineY)), MUTED, false, 2, true, true);
+        } // end !tabbedMode header
 
+        // Title intro: tabs/panels/buttons are entirely withheld until the intro finishes -- their
+        // widgets are already invisible/inactive via applyIntroVisibility(), but the panel chrome
+        // (borders, static labels, the Atlas) isn't widget-driven and needs its own gate here.
+        if (!introShowing) {
         if (tabbedMode) {
             drawTabStrip(context, mouseX, mouseY);
         }
@@ -1548,14 +1667,18 @@ public class LatitudeCreateWorldScreen extends Screen {
         int labelColor = GOLD;
         int labelOff = scaledUi(10);
         int leftTextWidth = Math.max(24, leftW - 8 - SCROLLBAR_GUTTER);
-        drawBoundedText(context, "World Name", new UiRect(inputX, worldFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
-        drawBoundedText(context, "Seed", new UiRect(inputX, seedFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
+        int[] nameSeedSplit = nameSeedSplit(leftTextWidth);
+        int seedFieldX = inputX + nameSeedSplit[0] + nameSeedSplit[1];
+        drawBoundedText(context, "World Name", new UiRect(inputX, worldFieldY - labelOff, nameSeedSplit[0], uiFontHeight()), labelColor, false, false);
+        drawBoundedText(context, "Seed", new UiRect(seedFieldX, seedFieldY - labelOff, nameSeedSplit[2], uiFontHeight()), labelColor, false, false);
         drawBoundedText(context, "World Size", new UiRect(inputX, sizeFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
         renderSizeLabel(context, inputX + stepperBtnW + scaledUi(4), sizeFieldY - 1, leftTextWidth - stepperBtnW * 2 - scaledUi(8));
-        if (shouldShowSmallWorldWarning()) {
-            int warningHeight = getSmallWorldWarningHeight(leftTextWidth);
-            drawSmallWorldWarning(context, new UiRect(inputX, inputBottomY + scaledUi(3), leftTextWidth, warningHeight));
-        }
+        // Atlas draws BEFORE the warning text, not after -- for sizes <= Regular the translucent
+        // Regular-reference underlay is allowed to sit directly under the warning line instead of
+        // reserving its own non-overlapping band (maintainer ruling, 2026-08-08: underlay it, with the
+        // text drawn on top, rather than spending more blank line-spaces). The underlay is dim enough that the text stays legible
+        // painted on top of it. Sizes above Regular never show the warning at all, so there's
+        // nothing for their (fully opaque) Atlas to compete with regardless.
         boolean latWorld = isLatitudeWorld();
         if (leftPreviewBottomY - leftPreviewTopY >= 30) {
             if (latWorld) {
@@ -1563,6 +1686,10 @@ public class LatitudeCreateWorldScreen extends Screen {
             } else {
                 renderPlanisphereDisabled(context, leftX + 4, leftPreviewTopY, leftX + leftW - 4 - SCROLLBAR_GUTTER, leftPreviewBottomY);
             }
+        }
+        if (shouldShowSmallWorldWarning()) {
+            int warningHeight = getSmallWorldWarningHeight(leftTextWidth);
+            drawSmallWorldWarning(context, new UiRect(inputX, inputBottomY + scaledUi(1), leftTextWidth, warningHeight));
         }
         context.disableScissor();
         }
@@ -1675,18 +1802,43 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
 
         renderCreateVersionLabel(context);
+        } // end !introShowing
+
+        if (tabbedMode) {
+            renderIntroTitle(context);
+        }
         super.extractRenderState(context, mouseX, mouseY, delta);
+    }
+
+    /** Full-screen-centered title overlay for the tabbedMode intro -- independent of the (now
+     *  collapsed) header strip so it can use as much room as it wants for the brief moment it's
+     *  shown. Pure alpha fade, no motion, kept deliberately simple as a first pass. */
+    private void renderIntroTitle(GuiGraphicsExtractor context) {
+        float alpha = introTitleAlpha();
+        if (alpha <= 0f) return;
+        int a = Math.round(alpha * 255f) << 24;
+        int goldA = (GOLD & 0x00FFFFFF) | a;
+        int warmA = (WARM_WHITE & 0x00FFFFFF) | a;
+
+        int titleWidth = Math.round(uiTextWidth(CREATE_TITLE_TEXT) * CREATE_TITLE_SCALE);
+        int titleHeight = Math.round(uiFontHeight() * CREATE_TITLE_SCALE);
+        int subtitleGap = scaledUi(10);
+        int blockHeight = titleHeight + subtitleGap + uiFontHeight();
+        int startY = (this.height - blockHeight) / 2;
+        int cx = this.width / 2;
+
+        drawScaledText(context, CREATE_TITLE_TEXT, cx - titleWidth / 2, startY, CREATE_TITLE_SCALE, goldA, true);
+        int subtitleY = startY + titleHeight + subtitleGap;
+        drawCenteredBoundedText(context, "New World", new UiRect(0, subtitleY, this.width, uiFontHeight()), warmA, true, false);
     }
 
     private void renderSizeLabel(GuiGraphicsExtractor context, int x, int y, int availW) {
         int idx = selectedSize.ordinal();
         String shortName = SIZE_SHORT_NAMES[idx];
         String diameter = formatDiameter(selectedSize.borderRadiusBlocks * 2) + " blocks";
-        String desc = SIZE_DESCRIPTIONS[idx];
 
         drawCenteredBoundedText(context, shortName, new UiRect(x, y, availW, uiFontHeight()), WARM_WHITE, true, true);
         drawCenteredBoundedText(context, diameter, new UiRect(x, y + scaledUi(11), availW, uiFontHeight()), MUTED, false, true);
-        drawWrappedTextBlock(context, desc, new UiRect(x, y + scaledUi(22), availW, Math.max(uiFontHeight(), computeSizeLabelBottom(y, availW) - (y + scaledUi(22)))), MUTED, false, 3, true, true);
     }
 
     private boolean shouldShowSmallWorldWarning() {
@@ -1722,7 +1874,22 @@ public class LatitudeCreateWorldScreen extends Screen {
             atlasSide = Math.round(regularSide + (ginormousSide - regularSide) * beyondRegular);
         }
         int atlasLeft = areaLeft + (areaRight - areaLeft - atlasSide) / 2;
-        int atlasTop = areaTop + inset + (availableHeight - atlasSide) / 2;
+        // Regular's box is the fixed reference position, top-anchored at the area's own top; every
+        // other size grows or shrinks symmetrically around ITS CENTER rather than the whole area's
+        // center, so Regular never moves and sizes above it reclaim space above themselves instead
+        // of only extending further down (maintainer ruling, 2026-08-08: Regular should stay exactly
+        // where it is, with larger worlds growing all around it).
+        int regularTop = areaTop + inset;
+        int regularCenterY = regularTop + regularSide / 2;
+        int atlasTop = regularCenterY - atlasSide / 2;
+        // Sizes above Regular are allowed to grow up through the old warning-slot space (the whole
+        // point of the overlap design), but must never rise far enough to cover the size info text
+        // itself -- clamp the highest point to where the (possibly-hidden) warning text starts
+        // (maintainer ruling, 2026-08-08: nudge it down so the diameter text is never covered).
+        int minAtlasTop = inputBottomY + scaledUi(1);
+        if (atlasTop < minAtlasTop) {
+            atlasTop = minAtlasTop;
+        }
         LatitudeBands.Band previewZone = randomZone ? null : selectedZone;
 
         if (smallerThanRegular) {
@@ -2274,12 +2441,25 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
     }
 
-    private void drawTabStrip(GuiGraphicsExtractor context, int mouseX, int mouseY) {
+    /** Per-tab width, in left-to-right order. The last tab absorbs the integer-division remainder so the
+     *  tab strip's right edge lands exactly on paneStripViewportRight -- the same edge every panel below
+     *  it is anchored to -- instead of leaving a rounding sliver unmatched by any tab. */
+    private int[] tabWidths() {
         int tabCount = TAB_LABELS.length;
-        int totalW = paneStripViewportWidth;
-        int tabW = (totalW - TAB_GAP * (tabCount - 1)) / tabCount;
-        int x = paneStripViewportLeft;
+        int totalW = paneStripViewportWidth - TAB_GAP * (tabCount - 1);
+        int baseW = totalW / tabCount;
+        int[] widths = new int[tabCount];
         for (int i = 0; i < tabCount; i++) {
+            widths[i] = i == tabCount - 1 ? totalW - baseW * (tabCount - 1) : baseW;
+        }
+        return widths;
+    }
+
+    private void drawTabStrip(GuiGraphicsExtractor context, int mouseX, int mouseY) {
+        int[] tabWidths = tabWidths();
+        int x = paneStripViewportLeft;
+        for (int i = 0; i < tabWidths.length; i++) {
+            int tabW = tabWidths[i];
             boolean active = i == activeTab;
             boolean hovered = !active && mouseX >= x && mouseX < x + tabW && mouseY >= tabStripY && mouseY < tabStripY + TAB_H;
             int bg = active ? PANEL_BG : (hovered ? 0xFF3A302A : 0xFF2A2420);
@@ -2311,11 +2491,10 @@ public class LatitudeCreateWorldScreen extends Screen {
     private boolean handleTabClick(double mouseX, double mouseY) {
         if (!tabbedMode) return false;
         if (mouseY < tabStripY || mouseY >= tabStripY + TAB_H) return false;
-        int tabCount = TAB_LABELS.length;
-        int totalW = paneStripViewportWidth;
-        int tabW = (totalW - TAB_GAP * (tabCount - 1)) / tabCount;
+        int[] tabWidths = tabWidths();
         int x = paneStripViewportLeft;
-        for (int i = 0; i < tabCount; i++) {
+        for (int i = 0; i < tabWidths.length; i++) {
+            int tabW = tabWidths[i];
             if (mouseX >= x && mouseX < x + tabW) {
                 switchTab(i);
                 return true;
