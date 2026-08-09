@@ -174,6 +174,25 @@ part of the same 1.21.6+ render-pipeline reversal as the HUD's `Gui`/`Hud` split
 (`diffs-learned-1.5.0+1.21.11.md` §3) — Screens are not exempt from it just because they're not a
 `Gui` subclass.
 
+### ⚠️ `0cee3189` itself ships a bug — found live on 26.2, applies here unchanged
+
+Not a backport-translation defect: the code that has it applied to the 26.2 branch with **zero
+conflict**, byte-identical to this thread's own source. The maintainer hit it within one screen-open
+of the 26.2 branch: on the first `init()`, tabbedMode's title intro plays once, and when it ends the
+Create World / Cancel button row is gone entirely — screenshot-confirmed.
+
+Root cause: `applyIntroVisibility()` force-hides every interactive widget for the intro's duration.
+Every OTHER widget it hides recovers because it has its own per-frame layout pass
+(`updateLeftLayout`/`updateRightLayout`/`updateSettingsLayout`) that unconditionally reasserts its
+own visibility every single frame — that's the mechanism the intro-hide relies on to be temporary.
+`createWorldBtn`/`cancelBtn` are screen-level, not panel- or tab-scoped, so they have no such pass.
+Once the one-shot hide sets them invisible, nothing on this line's code path ever sets them back.
+
+Fixed on 26.2 as `bc6b1cf7`: `applyIntroVisibility()`'s early-return branch (taken every frame the
+intro is inactive) now explicitly restores both buttons, mirroring what the per-frame layout passes
+already do for everything else. **This same defect is live on `port/1.5.0-1.21.11` right now** —
+nothing about the bug or the fix is 26.2-specific. Worth pulling `bc6b1cf7`'s fix back here.
+
 ### The create-screen Cancel bug — new 26.2 row, fixed and accepted
 
 Not previously tracked as a backport candidate; it appears in the 26.2 live-flight kickoff only as a
