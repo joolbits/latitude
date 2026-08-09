@@ -576,13 +576,25 @@ public class LatitudeCreateWorldScreen extends Screen {
         // a normal one, backwards from the whole point of this feature).
         boolean shortScreen = this.height < COMPACT_LAYOUT_HEIGHT;
         int headerGap = shortScreen ? scaledUi(2) : scaledUi(6);
-        int bottomMargin = shortScreen ? scaledUi(18) : scaledUi(28);
-        int btnBottomOffset = shortScreen ? scaledUi(14) : scaledUi(20);
         int fieldGap1 = scaledUi(38);
         int labelFieldGap = scaledUi(22);
         int fieldH = Math.max(16, scaledUi(16));
         int btnH = Math.max(18, scaledUi(20));
         int stepperBtnW = 20;
+        // Maintainer report, live 2026-08-09: Create World/Cancel cut off at the screen's bottom
+        // edge. Root cause: the ratio-rescale above landed shortScreen's btnBottomOffset at 14,
+        // but the button itself is btnH=20 tall -- its bottom edge sat at (height - 14 + 20) =
+        // height + 6, six pixels past the visible screen. The normal case (20 vs 20) was flush
+        // rather than negative, so it wasn't provably broken the same way, but flush leaves zero
+        // margin for error and could read as clipped too -- deriving both from btnH with a small
+        // positive clearance, instead of as disconnected ratio-scaled constants, is what a future
+        // retune of either one can't silently invert again. bottomMargin (the panel's own bottom
+        // edge) only needs adjusting for shortScreen, where the old absolute value (18) now sits
+        // below the corrected btnBottomOffset and would let the panel encroach on the button band;
+        // the normal bottomMargin (28) already clears the corrected btnBottomOffset (22) with room
+        // to spare, so it's left at pick 13's own already-tightened value.
+        int btnBottomOffset = btnH + scaledUi(2);
+        int bottomMargin = shortScreen ? btnBottomOffset + scaledUi(4) : scaledUi(28);
 
         int bottomY = this.height - btnBottomOffset;
         int cx = this.width / 2;
