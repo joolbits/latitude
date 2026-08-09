@@ -67,3 +67,9 @@ compile-info.log
 codex_task_*.txt
 .codex/
 Gallery for Modrinth/
+
+# Local agent-tooling config (Codex/Claude skills etc.) -- kept locally, not part of the public repo.
+# NOTE: AGENTS.md / CLAUDE.md are deliberately NOT listed here -- they are the post-incident
+# guardrail documentation and must stay tracked.
+.agents/
+.claude/
