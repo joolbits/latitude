@@ -58,6 +58,7 @@ import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.level.storage.ServerLevelData;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
+import net.fabricmc.loader.api.metadata.CustomValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -929,10 +930,53 @@ public class GlobeMod implements ModInitializer {
     }
 
     /**
+     * The Fabric metadata custom-value key a staged TEST artifact carries. Shared by
+     * {@code LatitudeDevRuntime} in the dev-only package, which does the FULL identity
+     * validation (role, sequence, version consistency) for the dev command surface. The constant
+     * lives here, not there, because {@link #isTestOrDevBuild()} below is called from SHIPPED
+     * code (the title-screen watermark) that must never depend on {@code com.example.globe.dev}
+     * — that whole package is stripped from the public jar by the release exclude spec, and a
+     * shipped class referencing it would throw {@code NoClassDefFoundError} on every public
+     * boot, not fail soft.
+     */
+    public static final String TEST_ARTIFACT_MARKER_KEY = "latitude:test_artifact";
+
+    /**
+     * True in the Loom dev environment or a legitimately-staged TEST artifact; false on an
+     * ordinary public release build. Deliberately a lighter check than
+     * {@code LatitudeDevRuntime.isToolingEnabled()} (which additionally validates role, sequence,
+     * and version consistency for the operator-facing dev command surface) — this one only
+     * gates tester-facing display text, so "does the marker exist" is enough, and it must work
+     * without the excluded dev package present.
+     */
+    public static boolean isTestOrDevBuild() {
+        FabricLoader loader = FabricLoader.getInstance();
+        if (loader.isDevelopmentEnvironment()) {
+            return true;
+        }
+        return loader.getModContainer(MOD_ID)
+                .map(GlobeMod::hasTestArtifactMarker)
+                .orElse(false);
+    }
+
+    private static boolean hasTestArtifactMarker(ModContainer container) {
+        if (!container.getMetadata().containsCustomValue(TEST_ARTIFACT_MARKER_KEY)) {
+            return false;
+        }
+        CustomValue value = container.getMetadata().getCustomValue(TEST_ARTIFACT_MARKER_KEY);
+        return value != null
+                && value.getType() == CustomValue.CvType.BOOLEAN
+                && value.getAsBoolean();
+    }
+
+    /**
      * Short, human-readable build identity for on-screen display (title screen watermark) — the
      * same manifest fields {@link #logBuildMetadata} logs, so what a tester sees on screen and what
      * the jar actually reports never diverge. Absent manifest data (a dev-classpath run, not a
      * packaged jar) degrades to just the mod version rather than showing "?" placeholders.
+     *
+     * <p>Callers must gate on {@link #isTestOrDevBuild()} first — this method only formats the
+     * label, it does not decide whether the label should be shown.
      */
     public static String buildLabel() {
         Optional<ModContainer> mod = FabricLoader.getInstance().getModContainer(MOD_ID);

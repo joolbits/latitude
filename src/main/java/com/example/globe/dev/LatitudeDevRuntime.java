@@ -15,7 +15,8 @@ import net.fabricmc.loader.api.metadata.CustomValue;
  * One immutable runtime identity and activation policy for excluded development tooling.
  */
 public final class LatitudeDevRuntime {
-    public static final String TEST_MARKER_KEY = "latitude:test_artifact";
+    /** Shared with {@link GlobeMod#TEST_ARTIFACT_MARKER_KEY} — one literal, not two. */
+    public static final String TEST_MARKER_KEY = GlobeMod.TEST_ARTIFACT_MARKER_KEY;
     private static final BuildIdentity IDENTITY = resolve();
 
     private LatitudeDevRuntime() {

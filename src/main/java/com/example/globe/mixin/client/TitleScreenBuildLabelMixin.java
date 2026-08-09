@@ -26,6 +26,11 @@ public abstract class TitleScreenBuildLabelMixin {
     @Inject(method = "render", at = @At("TAIL"), require = 0, expect = 1)
     private void globe$drawBuildLabel(GuiGraphics context, int mouseX, int mouseY, float partialTick,
                                       CallbackInfo ci) {
+        // Tester-facing only: never draw on a public release build. Every player's title screen
+        // otherwise carries a yellow git-commit string.
+        if (!GlobeMod.isTestOrDevBuild()) {
+            return;
+        }
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.font == null) {
             return;

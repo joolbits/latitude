@@ -23,7 +23,57 @@ public final class DevToolPolicyTest {
         movementAndTransitionSamplingAreDeterministic();
         traceClockPreservesSameDimensionContinuity();
         caseSessionIsAppendOnlyOrderedAndExplicitlyClosed();
+        titleScreenWatermarkNeverDrawsOnAPublicBuild();
         System.out.println("DEV_TOOL_POLICY_TEST_PASS assertions=" + assertions);
+    }
+
+    /**
+     * The title-screen build watermark used to draw unconditionally, so a yellow git-commit
+     * string shipped on every player's title screen. The gate lives on {@code GlobeMod}, not on
+     * {@code LatitudeDevRuntime} here in the excluded dev package: the mixin ships in the public
+     * jar, and a shipped class referencing dev/** would throw NoClassDefFoundError on every
+     * public boot the moment the release exclude spec strips that package, not fail soft like a
+     * missed mixin injection point does.
+     */
+    private static void titleScreenWatermarkNeverDrawsOnAPublicBuild() {
+        String mixin = normalize(read(
+                "src/main/java/com/example/globe/mixin/client/TitleScreenBuildLabelMixin.java"));
+        expectTrue(
+                !mixin.contains("com.example.globe.dev"),
+                "the shipped watermark mixin must not import anything from the excluded dev package");
+        int guard = mixin.indexOf("!GlobeMod.isTestOrDevBuild()");
+        int draw = mixin.indexOf("context.drawString(");
+        expectTrue(
+                guard >= 0 && draw > guard,
+                "the watermark checks isTestOrDevBuild() before it draws, not after");
+
+        String mod = normalize(read("src/main/java/com/example/globe/GlobeMod.java"));
+        expectTrue(
+                mod.contains("public static final String TEST_ARTIFACT_MARKER_KEY = \"latitude:test_artifact\""),
+                "the test-artifact marker key is a public constant on shipped GlobeMod, not "
+                        + "duplicated as a private literal");
+        expectTrue(
+                mod.contains("public static boolean isTestOrDevBuild()")
+                        && mod.contains("loader.isDevelopmentEnvironment()"),
+                "isTestOrDevBuild() covers both the Loom dev environment and a staged TEST artifact");
+
+        String runtime = normalize(read("src/main/java/com/example/globe/dev/LatitudeDevRuntime.java"));
+        expectTrue(
+                runtime.contains("TEST_MARKER_KEY = GlobeMod.TEST_ARTIFACT_MARKER_KEY"),
+                "LatitudeDevRuntime shares GlobeMod's marker key rather than a second literal that "
+                        + "can drift from it");
+    }
+
+    private static String read(String relativePath) {
+        try {
+            return Files.readString(Path.of(relativePath));
+        } catch (java.io.IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static String normalize(String value) {
+        return value.replaceAll("\\s+", " ");
     }
 
     private static void packagedTestIdentityAndProbePolicyFailClosed() {

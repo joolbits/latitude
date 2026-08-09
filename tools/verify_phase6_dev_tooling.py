@@ -758,6 +758,16 @@ def verify_public_entries(
     ):
         if key in manifest:
             failures.append(f"public manifest contains TEST identity attribute: {key}")
+    # A production Fabric Loader loads intermediary-mapped classes. Assert the value directly
+    # here (not just "TEST must match public" below) so a public jar that regresses to `jar`
+    # instead of `remapJar` -- named-mapping classes, the ed65dfa6/2a8cc1e1 failure class -- is
+    # caught even if the TEST-jar side of the pairing check is never run.
+    if manifest.get("Fabric-Mapping-Namespace") != "intermediary":
+        failures.append(
+            "public manifest Fabric-Mapping-Namespace is not 'intermediary': "
+            f"actual={manifest.get('Fabric-Mapping-Namespace')!r} "
+            "(classes are named-mapping, not production-loadable)"
+        )
 
     payload = b"".join(
         value
@@ -835,6 +845,10 @@ def verify_public_entries(
     return metadata, manifest
 
 
+def expected_test_extra_names(main_classes: Path, test_classes: Path) -> set[str]:
+    return set(expected_test_extras(main_classes, test_classes))
+
+
 def expected_test_extras(main_classes: Path, test_classes: Path) -> dict[str, bytes]:
     extras: dict[str, bytes] = {}
     if main_classes.is_dir():
@@ -858,6 +872,7 @@ def verify_pair(
     main_classes: Path,
     test_classes: Path,
     failures: list[str],
+    test_jar_unmapped: Path | None = None,
 ) -> None:
     public_entries, _ = load_zip_entries(public_jar, "public", failures)
     test_entries, _ = load_zip_entries(test_jar, "TEST", failures)
@@ -879,22 +894,60 @@ def verify_pair(
     if changed_shared:
         failures.append(f"shared public/TEST entries are not byte-identical: {changed_shared[:5]}")
 
-    expected_extra_payloads = expected_test_extras(main_classes, test_classes)
-    expected_extras = set(expected_extra_payloads)
+    # Two layers, deliberately not one byte comparison spanning the remap boundary.
+    #
+    # Layer 1 -- is `test_jar` (production-loadable, intermediary-mapped, ed65dfa6/2a8cc1e1)
+    # missing or carrying extra dev-only class files vs. what compileJava actually produced?
+    # Path names are a safe proxy here: Loom's remapper rewrites REFERENCES inside our own
+    # class files (calls into net.minecraft.* go from named to intermediary) but never renames
+    # our own classes, so the file-path set of `latitude/globe/dev/**` extras is identical
+    # before and after remapping even though the bytes inside each .class are not.
     actual_extras = set(test_entries) - set(public_entries) - IDENTITY_ENTRIES
-    missing_extras = sorted(expected_extras - actual_extras)
-    unexpected_extras = sorted(actual_extras - expected_extras)
+    expected_names = expected_test_extra_names(main_classes, test_classes)
+    missing_extras = sorted(expected_names - actual_extras)
+    unexpected_extras = sorted(actual_extras - expected_names)
     if missing_extras:
         failures.append(f"TEST jar missing exact compiled extras: {missing_extras[:5]}")
     if unexpected_extras:
         failures.append(f"TEST jar has unexpected extras: {unexpected_extras[:5]}")
-    changed_extras = sorted(
-        name
-        for name in expected_extras & actual_extras
-        if test_entries[name] != expected_extra_payloads[name]
-    )
-    if changed_extras:
-        failures.append(f"TEST extra bytes differ from compiled classes: {changed_extras[:5]}")
+
+    # Layer 2 -- are the shipped extras' BYTES genuinely what latitudeTestJar packaged, with
+    # nothing hand-edited between packaging and remapping? This needs `test_jar_unmapped`
+    # (latitudeTestJar's own named-mapping output, before remapLatitudeTestJar touches it) --
+    # comparing `test_jar`'s remapped bytes directly against disk-compiled named-mapping
+    # classes always mismatches post-remap, which is exactly the bug this layering replaces:
+    # the prior single-layer check could never pass again once ed65dfa6/2a8cc1e1 made `test_jar`
+    # a real remapped artifact, and (being a manual, not-CI-gated step) nobody had actually run
+    # it against a real post-remap jar to notice.
+    if test_jar_unmapped is None:
+        failures.append(
+            "verify_pair called without test_jar_unmapped: cannot prove TEST extra bytes are "
+            "unmodified compiled output post-remap (see Layer 2 comment above); this is a caller "
+            "bug, not a jar defect -- pass --test-jar-unmapped"
+        )
+    else:
+        unmapped_entries, _ = load_zip_entries(test_jar_unmapped, "TEST-unmapped", failures)
+        if unmapped_entries:
+            expected_extra_payloads = expected_test_extras(main_classes, test_classes)
+            missing_unmapped = sorted(expected_names - set(unmapped_entries))
+            if missing_unmapped:
+                failures.append(
+                    f"unmapped TEST jar missing exact compiled extras: {missing_unmapped[:5]}"
+                )
+            changed_from_disk = sorted(
+                name
+                for name in expected_names & set(unmapped_entries)
+                if unmapped_entries[name] != expected_extra_payloads.get(name)
+            )
+            if changed_from_disk:
+                failures.append(
+                    f"unmapped TEST extra bytes differ from compiled classes: {changed_from_disk[:5]}"
+                )
+            remap_dropped = sorted(expected_names & set(unmapped_entries) - actual_extras)
+            if remap_dropped:
+                failures.append(
+                    f"remapLatitudeTestJar dropped extras present in the unmapped jar: {remap_dropped[:5]}"
+                )
 
     metadata = parse_metadata(test_entries.get("fabric.mod.json", b""), "TEST", failures)
     manifest = parse_manifest(test_entries.get("META-INF/MANIFEST.MF", b""), "TEST", failures)
@@ -927,7 +980,6 @@ def verify_pair(
         "Latitude-Artifact-Role": "TEST",
         "Latitude-Test-Sequence": str(sequence),
         "Latitude-Artifact-Version": expected_version,
-        "Fabric-Mapping-Namespace": "official",
     }
     for key, expected in expected_manifest.items():
         if manifest.get(key) != expected:
@@ -935,7 +987,22 @@ def verify_pair(
                 f"TEST manifest identity mismatch {key}: "
                 f"expected={expected!r} actual={manifest.get(key)!r}"
             )
-    for key in ("Git-Commit", "Git-Branch", "Build-Dirty", "Build-Time", "Minecraft-Version"):
+    # Fabric-Mapping-Namespace is deliberately NOT a hardcoded literal here: both the public jar
+    # and the TEST jar go through a real Loom RemapJarTask (remapJar / remapLatitudeTestJar), so
+    # whatever namespace Loom stamps on one it stamps on the other -- they must agree with each
+    # other, not with a value pinned at the time this check was written. A prior version of this
+    # check hardcoded "official", which was correct only while latitudeTestJar staged straight
+    # from the unmapped `jar` task; ed65dfa6/2a8cc1e1 fixed that packaging bug, and this literal
+    # was never updated to match -- so the check could never pass again after the fix it exists
+    # to verify. Comparing against the public jar's own value survives any future Loom rename.
+    for key in (
+        "Git-Commit",
+        "Git-Branch",
+        "Build-Dirty",
+        "Build-Time",
+        "Minecraft-Version",
+        "Fabric-Mapping-Namespace",
+    ):
         if manifest.get(key) != public_manifest.get(key):
             failures.append(f"public/TEST immutable manifest identity differs: {key}")
     if not re.fullmatch(r"[0-9a-f]{40}", manifest.get("Git-Commit", "")):
@@ -997,6 +1064,7 @@ def verify_negative_fixtures(
     main_classes: Path,
     test_classes: Path,
     failures: list[str],
+    test_jar_unmapped: Path | None = None,
 ) -> None:
     with tempfile.TemporaryDirectory(prefix="latitude-test-verifier-") as raw:
         root = Path(raw)
@@ -1015,6 +1083,7 @@ def verify_negative_fixtures(
                 main_classes,
                 test_classes,
                 observed,
+                test_jar_unmapped,
             )
             if not any(needle in failure for failure in observed):
                 failures.append(
@@ -1157,6 +1226,13 @@ def main() -> int:
     parser.add_argument("--jar", type=Path, help="compatibility alias for --public-jar")
     parser.add_argument("--public-jar", type=Path)
     parser.add_argument("--test-jar", type=Path)
+    parser.add_argument(
+        "--test-jar-unmapped",
+        type=Path,
+        help="latitudeTestJar's own named-mapping output, before remapLatitudeTestJar. "
+        "Defaults to the file of the same name under build/latitude-test-libs-unmapped/ "
+        "when --test-jar points under build/latitude-test-libs/.",
+    )
     parser.add_argument("--sequence", type=int)
     parser.add_argument(
         "--main-classes",
@@ -1182,23 +1258,37 @@ def main() -> int:
         if args.sequence is None or args.sequence <= 0:
             failures.append("--test-jar requires a positive --sequence")
         else:
-            verify_pair(
-                public_jar.resolve(),
-                args.test_jar.resolve(),
-                args.sequence,
-                args.main_classes.resolve(),
-                args.test_classes.resolve(),
-                failures,
-            )
-            if args.negative_fixtures and not failures:
-                verify_negative_fixtures(
+            test_jar_unmapped = args.test_jar_unmapped
+            if test_jar_unmapped is None:
+                candidate = ROOT / "build/latitude-test-libs-unmapped" / args.test_jar.name
+                if candidate.is_file():
+                    test_jar_unmapped = candidate
+                else:
+                    failures.append(
+                        "no --test-jar-unmapped given and the default "
+                        f"{candidate.relative_to(ROOT)} does not exist -- run latitudeTestJar "
+                        "before remapLatitudeTestJar, or pass --test-jar-unmapped explicitly"
+                    )
+            if test_jar_unmapped is not None:
+                verify_pair(
                     public_jar.resolve(),
                     args.test_jar.resolve(),
                     args.sequence,
                     args.main_classes.resolve(),
                     args.test_classes.resolve(),
                     failures,
+                    test_jar_unmapped.resolve(),
                 )
+                if args.negative_fixtures and not failures:
+                    verify_negative_fixtures(
+                        public_jar.resolve(),
+                        args.test_jar.resolve(),
+                        args.sequence,
+                        args.main_classes.resolve(),
+                        args.test_classes.resolve(),
+                        failures,
+                        test_jar_unmapped.resolve(),
+                    )
     elif public_jar:
         entries, _ = load_zip_entries(public_jar.resolve(), "public", failures)
         verify_public_entries(entries, public_jar.resolve(), failures)
