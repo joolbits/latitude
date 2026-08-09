@@ -53,13 +53,12 @@ line, see [Backport status — 26.1.2](#backport-status--2612-landed-2026-08-09)
 
 ## Backport status — 26.1.2 (landed 2026-08-09)
 
-Branch `backport/1.21.11-fixes-to-26.1.2`, cut from `port/1.5.0-26.1.2` @ `91423e1a`. Eleven
-picks plus one own-defect fix, each a separate commit, all but the last carrying its source hash
-via `cherry-pick -x`. Gates green (`clean check build -PenableInvariantScan=true
-latitudeInvariantScan`, plus `verify_phase6_dev_tooling.py`, re-run in full after both the 11th
-and 12th commits); headless worldgen smoke clean. **Not pushed, not tagged, not released** —
-awaiting the maintainer's live acceptance. Full account in the notes ledger:
-`port-1.5-26.1.2/backport-1p21p11-fixes-to-26p1p2-20260809.md`.
+Branch `backport/1.21.11-fixes-to-26.1.2`, cut from `port/1.5.0-26.1.2` @ `91423e1a`. Fourteen
+commits total, all but one a `cherry-pick -x`. Gates green (`clean check build
+-PenableInvariantScan=true latitudeInvariantScan`, plus `verify_phase6_dev_tooling.py`, re-run in
+full after picks 11, 12, and 13); headless worldgen smoke clean on the worldgen-affecting picks.
+**Not pushed, not tagged, not released** — awaiting the maintainer's live acceptance. Full account
+in the notes ledger: `port-1.5-26.1.2/backport-1p21p11-fixes-to-26p1p2-20260809.md`.
 
 | Fix | Source | 26.1.2 commit | How it applied |
 | --- | --- | --- | --- |
@@ -75,6 +74,8 @@ awaiting the maintainer's live acceptance. Full account in the notes ledger:
 | `/locate biome` finds custom biomes | `57895f64` | `65cd2e2f` | **re-homed** — see below |
 | World Creation screen negative-space/alignment pass + tabbedMode title intro | `0cee3189` | `1d93675a` | **3 conflicts** — see below |
 | Restore Create World/Cancel buttons after the tabbedMode intro | `bc6b1cf7` (26.2 line) | `f7845dcd` | applied directly, see below |
+| Tighten create-screen outer margins and panel/tab spacing | `7852de65` (26.2 line) | `21979454` | **1 conflict** — see below |
+| Divider line between climate zone entries | `1ff2ecad` (26.2 line) | `f6a9f194` | clean |
 
 **`36e69a9e`** — the campaign's only true rename-boundary conflict on this line, in `GlobeMod.java`:
 1.21.11's `server.getWorldData().worldGenOptions().seed()` vs 26.1.2's
@@ -127,6 +128,24 @@ green afterward. A live session immediately after (~40 rapid `init()` calls in 1
 consistent with active resize/GUI-scale-cycling testing) produced zero exceptions and zero stack
 traces — evidence the fix survives real interaction, not proof the buttons render correctly at any
 given frame; that still needs a look at the screen itself.
+
+**`7852de65` + `1ff2ecad`** — pulled forward together at the maintainer's request, same source
+worktree as `bc6b1cf7`. `7852de65` retunes the create-screen's outer margins
+(`headerGap`/`bottomMargin`/`btnBottomOffset`/`paneGap`/`paneStripViewportLeft`/`Right`/`TAB_GAP`)
+tighter; `1ff2ecad` (which is chronologically right after it on the 26.2 branch, and needed to
+match what the maintainer actually saw) adds a `PANEL_BORDER` divider under every zone-row entry
+but the last. Unlike `bc6b1cf7`, both applied as real `cherry-pick -x`.
+
+`7852de65` conflicts at the same spot pick 11's first conflict did, for the identical reason: 26.2
+has no `shortScreen` compact-layout feature, so its unconditional retune of `headerGap`/
+`bottomMargin`/`btnBottomOffset` collided with `shortScreen`'s conditional values for those same
+three variables. Resolved by **rescaling `shortScreen`'s values by the ratio the original 26.1.2
+tuning used** (`short/normal`, e.g. `4/10 = 0.4` for `headerGap`), landing on `headerGap` 2,
+`bottomMargin` 18, `btnBottomOffset` 14 — rather than inventing new absolute pixels, or (the naive
+wrong move) leaving `shortScreen`'s old absolute values in place, which would have silently
+inverted the ordering: old `btnBottomOffset` short (21) was already looser than 26.2's new normal
+(20), so a short window would have ended up with *more* bottom margin than a normal one — backwards
+from the feature's whole purpose. `1ff2ecad` applied clean, byte-identical to its source.
 
 **Not backported to 26.1.2**, and why: `e66429c2` (26.1.2 reached that end state via its own
 `a6146016`); `2a8cc1e1` and `23b1be0d` (26.1.2 ships unobfuscated — not applicable by
