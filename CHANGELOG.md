@@ -1,5 +1,36 @@
 # Changelog
 
+## Latitude 1.5.1-beta.1 (Minecraft 26.2)
+
+A fix-and-polish pass on top of 1.5.0, carrying forward fixes discovered while porting Latitude to
+other Minecraft versions plus a round of live-tested UI cleanup. **Beta:** shipped for testing
+before the 1.5.1 stable tag.
+
+- **Windswept forest/hills snow reads correctly again.** Cold-enough windswept terrain was losing
+  its snow cover regardless of temperature; it's evaluated against the biome's own temperature now,
+  and windswept peaks get their own, more generous snow line.
+- **Custom-pack biomes decorate properly.** Biomes admitted only through a pack's provider ticket
+  (not through Latitude's own band tags) could generate with no flowers, grass, or other decoration
+  at all. Confirmed live with real BiomesOPlenty/TerraBlender jars and fixed.
+- **`/locate biome` can find custom-pack biomes.** Previously reported "not found" immediately for
+  any biome outside Latitude's own tag set, even when it was generating nearby.
+- **Dedicated/server-created worlds now place custom-pack biomes at all.** That capture previously
+  only happened for worlds created through the in-game screen.
+- **`savanna_plateau` no longer overrides a correct low-elevation biome choice.**
+- **The loading screen no longer flashes vanilla's own screen first** on world entry.
+- **The compass HUD no longer shifts position** when the location label's length changes, and it no
+  longer renders at all outside a Latitude world.
+- **Latitude reliably recognizes its own worlds** even when another worldgen mod (e.g. CliffTree)
+  is also installed, instead of silently falling back to vanilla terrain behind a Latitude loading
+  screen.
+- **The bonus chest no longer spawns floating over water.**
+- **Steep warm terrain no longer gets flattened onto a plains-family biome** — the land-cohesion
+  check that prevents this is now active rather than silently skipped.
+- **World-creation screen:** Cancel no longer occasionally selects a climate zone instead of closing
+  the screen; the layout is tighter (less dead space around the edges and between panels); climate
+  zone entries now have a visual divider between them; and the second tab correctly reads
+  "Settings."
+
 ## Latitude 1.5.0 (Minecraft 26.2)
 
 **This is the first Latitude release published to the mod platforms since 1.3.** The 1.4 line was
