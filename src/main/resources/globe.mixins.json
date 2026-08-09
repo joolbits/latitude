@@ -25,7 +25,8 @@
     "SurfaceDripstoneLawnmowerMixin",
     "ExtremePolarVillageStartGuardMixin",
     "ExtremePolarVegetationGuardMixin",
-    "ExtremePolarSimpleFoliageGuardMixin"
+    "ExtremePolarSimpleFoliageGuardMixin",
+    "SnowAndFreezeWindsweptSnowLineMixin"
   ],
   "client": [
     "client.CreateWorldScreenMixin",
@@ -34,6 +35,7 @@
     "client.WorldCreatorMixin",
     "client.WorldRendererWorldBorderMixin",
     "client.MinecraftClientStartIntegratedMixin",
+    "client.WorldOpenFlowsEarlyLatitudeActivationMixin",
     "client.InGameHudMixin",
     "client.LatitudeLoadingClientTickMixin",
     "client.LevelLoadingScreenLatitudeOverlayMixin",

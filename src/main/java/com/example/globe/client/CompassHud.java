@@ -91,6 +91,13 @@ public final class CompassHud {
             return;
         }
 
+        // Outside a Latitude world there is no latitude to report, and drawing the compass anyway
+        // reads as "Latitude is working" while it silently is not — the exact signal that made a
+        // failed Latitude world look healthy. The HUD Studio preview keeps rendering (forceVisible).
+        if (!forceVisible && !GlobeClientState.isGlobeWorld()) {
+            return;
+        }
+
         if (!forceVisible && client.gui.screen() != null) {
             return;
         }
@@ -308,6 +315,9 @@ public final class CompassHud {
         DigitalMetrics metrics = digitalMetrics(client, cfg, content);
         int boxW = metrics.boxWidth();
         int boxH = metrics.boxHeight();
+        // Same reasoning as the analog path: exclude the location-detail segment's width from the
+        // anchor calculation so the direction readout doesn't shift every time that text changes.
+        int anchorW = boxW - metrics.detailWidth();
 
         int x;
         int y;
@@ -317,7 +327,7 @@ public final class CompassHud {
             x = attached.x();
             y = attached.y();
         } else {
-            x = anchoredX(cfg, screenW, boxW);
+            x = anchoredX(cfg, screenW, anchorW);
             y = anchoredY(cfg, screenH, boxH);
         }
 
@@ -664,6 +674,11 @@ public final class CompassHud {
             boxW += ANALOG_LAT_GAP + scaledTextWidth(client, latText, cfg.locationTextScale);
             boxH = Math.max(boxH, scaledTextHeight(client, cfg.locationTextScale));
         }
+        // The location-detail (biome/zone) segment is excluded from the anchor width: it's the
+        // segment that gets toggled on/off and varies most in length, and it draws growing
+        // rightward from the compass rather than backward from it, so letting it into the anchor
+        // calculation moved the compass itself every time that text changed.
+        int anchorW = boxW;
         if (locationDetailText != null && !locationDetailText.isEmpty()) {
             boxW += analogLocationGap(cfg, latText) + scaledTextWidth(client, locationDetailText, cfg.locationTextScale);
             boxH = Math.max(boxH, scaledTextHeight(client, cfg.locationTextScale));
@@ -671,7 +686,7 @@ public final class CompassHud {
 
         int x;
         int y;
-        x = anchoredX(cfg, screenW, boxW);
+        x = anchoredX(cfg, screenW, anchorW);
         y = anchoredY(cfg, screenH, boxH);
 
         x = clamp(x, 0, Math.max(0, screenW - boxW));
@@ -694,6 +709,8 @@ public final class CompassHud {
             boxW += ANALOG_LAT_GAP + scaledTextWidth(client, latText, cfg.locationTextScale);
             boxH = Math.max(boxH, scaledTextHeight(client, cfg.locationTextScale));
         }
+        // See computeAnalogBasePosition: the location-detail segment stays out of the anchor width.
+        int anchorW = boxW;
         if (locationDetailText != null && !locationDetailText.isEmpty()) {
             boxW += analogLocationGap(cfg, latText) + scaledTextWidth(client, locationDetailText, cfg.locationTextScale);
             boxH = Math.max(boxH, scaledTextHeight(client, cfg.locationTextScale));
@@ -701,7 +718,7 @@ public final class CompassHud {
 
         int x;
         int y;
-        x = anchoredX(cfg, screenW, boxW);
+        x = anchoredX(cfg, screenW, anchorW);
         y = anchoredY(cfg, screenH, boxH);
         x += cfg.offsetX;
         y += cfg.offsetY;
@@ -748,6 +765,7 @@ public final class CompassHud {
         DigitalMetrics metrics = digitalMetrics(client, cfg, content);
         int boxW = metrics.boxWidth();
         int boxH = metrics.boxHeight();
+        int anchorW = boxW - metrics.detailWidth();
 
         int x;
         int y;
@@ -758,7 +776,7 @@ public final class CompassHud {
             x = attached.x();
             y = attached.y();
         } else {
-            x = anchoredX(cfg, screenW, boxW);
+            x = anchoredX(cfg, screenW, anchorW);
             y = anchoredY(cfg, screenH, boxH);
         }
 

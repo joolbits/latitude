@@ -414,6 +414,8 @@ public final class LatitudeBiomes {
     /** V4 anchors only replace cells that the donor source already identified as underground caves. */
     private static volatile CaveBiomeCoveragePlan ACTIVE_CAVE_COVERAGE_PLAN = null;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
+    /** Sea level of the active generator; needed to ask a biome whether a column is cold enough to snow. */
+    public static volatile int ACTIVE_SEA_LEVEL = 63;
     private static volatile boolean ACTIVE_WORLDGEN_AUTHORITY = false;
     private static OceanDistanceField OCEAN_DISTANCE_FIELD = null;
     private static final AtomicInteger DEBUG_COUNT = new AtomicInteger();
@@ -749,6 +751,7 @@ public final class LatitudeBiomes {
                 ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
                         ? caveRepresentationProfile : null;
         ACTIVE_RADIUS_BLOCKS = Math.max(0, radiusBlocks);
+        ACTIVE_SEA_LEVEL = seaLevel;
         WORLD_SEED = seed;
         OCEAN_DISTANCE_FIELD = new OceanDistanceField(seed);
         clearTagSelectionCaches();
@@ -1205,6 +1208,10 @@ public final class LatitudeBiomes {
 
     public static int getActiveRadiusBlocks() {
         return ACTIVE_RADIUS_BLOCKS;
+    }
+
+    public static int getActiveSeaLevel() {
+        return ACTIVE_SEA_LEVEL;
     }
 
     // --- Tree line / alpine surface ---
@@ -2289,14 +2296,6 @@ public final class LatitudeBiomes {
             return "minecraft:savanna_plateau";
         }
         return "minecraft:savanna";
-    }
-
-    private static boolean preserveSavannaPlateauAtSanitize(Holder<Biome> entry, int blockX, int blockZ) {
-        if (!isBiomeId(entry, "minecraft:savanna_plateau")) {
-            return false;
-        }
-        double localUpland = ValueNoise2D.sampleBlocks(WORLD_SEED ^ UPLAND_POOL_SALT, blockX, blockZ, UPLAND_SCALE_BLOCKS);
-        return localUpland >= 0.58;
     }
 
     private static void incrementSavannaIncomingCounter(String biomeId) {
@@ -3521,11 +3520,17 @@ public final class LatitudeBiomes {
                 || isBiomeId(chosen, "minecraft:old_growth_pine_taiga"))) {
             chosen = base;
         }
-        boolean forceTemperateUpland = landBandIndex == BAND_TEMPERATE
-                && TerrainBiomeCohesionPolicy.shouldUseTemperateUplandFamily(
-                        terrainEvidenceAvailable,
-                        terrainGateHeight,
-                        terrainGateDelta,
+        PreviewTerrain gateProbe = onDemandGateTerrain(
+                skipPreview, hasPreviewTerrainInputs, landBandIndex, chosen,
+                generator, noiseConfig, heightView, blockX, blockZ);
+        int gateHeight = gateProbe != null ? gateProbe.centerHeight : terrainGateHeight;
+        int gateDelta = gateProbe != null ? gateProbe.robustDelta : terrainGateDelta;
+        boolean gateEvidence = gateProbe != null || terrainEvidenceAvailable;
+        boolean forceTemperateUpland = isLandGateBand(landBandIndex)
+                && TerrainBiomeCohesionPolicy.shouldUseWarmUplandFamily(
+                        gateEvidence,
+                        gateHeight,
+                        gateDelta,
                         seaLevel);
         if (forceTemperateUpland) {
             chosen = pickFromTagNoiseOrBase(
@@ -4274,11 +4279,17 @@ public final class LatitudeBiomes {
                 || isBiomeId(chosen, "minecraft:old_growth_pine_taiga"))) {
             chosen = base;
         }
-        boolean forceTemperateUpland = landBandIndex == BAND_TEMPERATE
-                && TerrainBiomeCohesionPolicy.shouldUseTemperateUplandFamily(
-                        terrainEvidenceAvailable,
-                        terrainGateHeight,
-                        terrainGateDelta,
+        PreviewTerrain gateProbe = onDemandGateTerrain(
+                skipPreview, hasPreviewTerrainInputs, landBandIndex, chosen,
+                generator, noiseConfig, heightView, blockX, blockZ);
+        int gateHeight = gateProbe != null ? gateProbe.centerHeight : terrainGateHeight;
+        int gateDelta = gateProbe != null ? gateProbe.robustDelta : terrainGateDelta;
+        boolean gateEvidence = gateProbe != null || terrainEvidenceAvailable;
+        boolean forceTemperateUpland = isLandGateBand(landBandIndex)
+                && TerrainBiomeCohesionPolicy.shouldUseWarmUplandFamily(
+                        gateEvidence,
+                        gateHeight,
+                        gateDelta,
                         seaLevel);
         if (forceTemperateUpland) {
             chosen = pickFromTagNoiseOrBase(
@@ -7726,6 +7737,47 @@ public final class LatitudeBiomes {
 
     private static boolean isMountainCodedColdPick(Holder<Biome> candidate) {
         return isFlatPolarShelfBannedMountainPick(candidate);
+    }
+
+    /**
+     * Real terrain relief for a column the fast path skipped, computed only when it can actually
+     * change the answer. Worldgen runs with {@code latitude.skipPreviewHeightForWorldgen} on, which
+     * substitutes a synthetic {@code robustDelta} of 0 for every non-mountain column and therefore
+     * makes the land-cohesion gates inert — flat biomes end up draped over measured ridges. Probing
+     * every column is the cost that flag exists to avoid, so probe only when a flat-family candidate
+     * has landed in a gated band, which is the sole case where the gate can reject anything.
+     */
+    private static PreviewTerrain onDemandGateTerrain(
+            boolean skipPreview,
+            boolean hasPreviewTerrainInputs,
+            int landBandIndex,
+            Holder<Biome> candidate,
+            NoiseBasedChunkGenerator generator,
+            RandomState noiseConfig,
+            LevelHeightAccessor heightView,
+            int blockX,
+            int blockZ) {
+        if (!skipPreview || !hasPreviewTerrainInputs || !isLandGateBand(landBandIndex)) {
+            return null;
+        }
+        if (!isPlainsFamily(candidate) && !isTemperateForestFamily(candidate)) {
+            return null;
+        }
+        return previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+    }
+
+    /**
+     * Bands whose land-cohesion gate can reroute a flat candidate onto an upland family.
+     *
+     * <p>Temperate only, deliberately. Extending this to subtropical routes warm highlands into
+     * {@code LAT_TEMPERATE_MOUNTAIN} — a temperate pool — which is both thematically wrong and
+     * measurably harmful: it consumed the high columns {@code minecraft:eroded_badlands} needs and
+     * left the fresh-world coverage plan reporting it unplaceable ({@code topologyEligible=0}).
+     * Subtropical gating needs its own warm upland pool first; the policy side
+     * ({@code shouldUseWarmUplandFamily}) is already band-agnostic and ready for it.
+     */
+    private static boolean isLandGateBand(int landBandIndex) {
+        return landBandIndex == BAND_TEMPERATE;
     }
 
     private static boolean isPlainsFamily(Holder<Biome> candidate) {
@@ -11244,12 +11296,14 @@ public final class LatitudeBiomes {
         out = demotePolewardArid(biomes, out, blockX, blockZ);
         if (isSavannaFamily(out)) {
             try {
+                // Trust savannaTierByY unconditionally -- a prior "preserve plateau" override here
+                // re-upgraded a low-Y result back to savanna_plateau whenever a pure 2D noise field
+                // crossed a threshold, with no reference to blockY at all. Live-captured: plateau at
+                // surfaceY=65 (sea level+2), a 35-block violation of SAVANNA_PLATEAU_MIN_Y, uplandT=0.
+                // There is no threshold that both lets the override fire and requires real elevation:
+                // this branch is only reached when Y already says "not elevated."
                 if (!isBiomeId(out, "minecraft:windswept_savanna")) {
-                    String targetId = savannaTierByY(blockY);
-                    if ("minecraft:savanna".equals(targetId) && preserveSavannaPlateauAtSanitize(out, blockX, blockZ)) {
-                        targetId = "minecraft:savanna_plateau";
-                    }
-                    out = biome(biomes, targetId);
+                    out = biome(biomes, savannaTierByY(blockY));
                 }
             } catch (Throwable ignored) {
                 // keep current biome
@@ -11400,12 +11454,10 @@ public final class LatitudeBiomes {
         // Poleward partner: keep badlands/desert out of the TEMPERATE band (the band-blend leak past 35deg).
         out = demotePolewardArid(biomes, out, blockX, blockZ);
         if (isSavannaFamily(out)) {
+            // Trust savannaTierByY unconditionally -- see the identical pass above for why the
+            // former noise-only "preserve plateau" override could never be made height-aware.
             if (!isBiomeId(out, "minecraft:windswept_savanna")) {
-                String targetId = savannaTierByY(blockY);
-                if ("minecraft:savanna".equals(targetId) && preserveSavannaPlateauAtSanitize(out, blockX, blockZ)) {
-                    targetId = "minecraft:savanna_plateau";
-                }
-                Holder<Biome> tier = entryById(biomes, targetId);
+                Holder<Biome> tier = entryById(biomes, savannaTierByY(blockY));
                 if (tier != null) {
                     out = tier;
                 }

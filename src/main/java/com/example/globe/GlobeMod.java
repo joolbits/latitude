@@ -50,7 +50,10 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.RandomizableContainer;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.loot.BuiltInLootTables;
 import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.level.storage.ServerLevelData;
 import net.fabricmc.loader.api.FabricLoader;
@@ -260,6 +263,36 @@ public class GlobeMod implements ModInitializer {
         int pendingRadius = GlobePending.pendingGlobeRadius;
         GlobePending.pendingGlobeRadius = 0;
 
+        // The create screen's own launch is the primary authority on whether this is a Latitude
+        // world, exactly as on the shipped 26.1x line: record the pending radius BEFORE consulting
+        // the generator. isGlobeOverworld() then recognises the world through the persisted state.
+        // The generator-holder check must NOT gate this: lithostitched legitimately swaps a patched
+        // Direct settings holder into the live generator to inject dependent mods' worldgen
+        // (CliffTree on 26.1.x), which breaks holder-key recognition while leaving the terrain
+        // exactly ours. The launcher already verified the baked generator was a bound globe:
+        // reference before launch, so the only thing still worth failing on is gross substitution —
+        // a generator that is not even a NoiseBasedChunkGenerator.
+        if (pendingRadius > 0 && world.getGameTime() < 100L
+                && !(world.getChunkSource().getGenerator() instanceof NoiseBasedChunkGenerator)) {
+            throw new IllegalStateException(
+                    "Latitude created this world, but the loaded overworld generator was replaced "
+                    + "by a non-noise generator (" 
+                    + world.getChunkSource().getGenerator().getClass().getName()
+                    + "). Another world generation mod took over the overworld during world "
+                    + "creation; the world would save as vanilla terrain and Latitude would stay "
+                    + "disabled in it. Remove the conflicting world generation mod and create the "
+                    + "world again. This world save is not a Latitude world and can be deleted.");
+        }
+        LatitudeWorldState earlyState = pendingRadius > 0 && world.getGameTime() < 100L
+                ? LatitudeWorldState.get(world)
+                : LatitudeWorldState.getIfPresent(world);
+        if (earlyState != null && earlyState.getGlobeRadius() <= 0
+                && pendingRadius > 0 && world.getGameTime() < 100L) {
+            earlyState.setGlobeRadius(pendingRadius);
+            LOGGER.info("[Latitude] Recorded Globe world radius {} ahead of generator recognition "
+                    + "(create-screen authority)", pendingRadius);
+        }
+
         if (!isGlobeOverworld(world)) {
             activeLatitudeOverworldGenerator = null;
             LatitudeBiomes.clearWorldgenContext();
@@ -267,19 +300,48 @@ public class GlobeMod implements ModInitializer {
         }
         LatitudeWorldState worldState = LatitudeWorldState.get(world);
         long seed = server.getWorldGenSettings().options().seed();
-        if (worldState.getGlobeRadius() <= 0 && pendingRadius > 0 && world.getGameTime() < 100L) {
-            worldState.setGlobeRadius(pendingRadius);
+        // Provider-ticket profile capture. pendingRadius > 0 was the only trigger here, which made
+        // the capture a create-screen-only event: a dedicated server (or a vanilla create flow that
+        // selects the globe preset without Latitude's screen) never has a pending radius, so its
+        // worlds ran profile-less forever — MODERN_1_3 policy instead of V4, and every
+        // ledger-routed provider biome silently absent (proven: a 390k-sample atlas placed all 26
+        // tagged BoP biomes and zero of the 14 ledger-only ones). The capture now fires for ANY
+        // fresh globe overworld inside the creation window, using the create screen's radius when
+        // it exists and the settings-derived radius otherwise.
+        //
+        // The creation window (gameTime < 100) is what keeps existing worlds untouched: a world
+        // created before this fix has lived past the window, stays profile-less, and keeps its
+        // frozen legacy placement — capturing later would make new chunks disagree with old ones.
+        //
+        // -Dlatitude.providerProfileCapture.disable=true suppresses only the NEW non-create-screen
+        // path. It exists for cross-version atlas parity: a pre-fix reference build can never
+        // capture headlessly, so a like-for-like diff against one needs this build to abstain too.
+        boolean creationWindow = world.getGameTime() < 100L;
+        boolean clientCreated = pendingRadius > 0;
+        boolean dedicatedCaptureDisabled = Boolean.getBoolean("latitude.providerProfileCapture.disable");
+        if (worldState.getProviderTicketProfile().isEmpty() && creationWindow
+                && (clientCreated || !dedicatedCaptureDisabled)) {
+            int captureRadius = clientCreated ? pendingRadius : borderRadiusForGlobeOverworld(world);
             BiomeSelectionProfile profile = BiomeSelectionProfile.capture(
                     world.registryAccess().lookupOrThrow(Registries.BIOME).keySet().stream()
                             .map(Identifier::toString).toList());
             worldState.setProviderTicketProfile(profile);
             worldState.setVanillaRepresentationProfile(
-                    VanillaBiomeRepresentationProfile.capture(pendingRadius, seed, profile));
+                    VanillaBiomeRepresentationProfile.capture(captureRadius, seed, profile));
             worldState.setCaveRepresentationProfile(
-                    CaveBiomeRepresentationProfile.capture(pendingRadius, profile));
+                    CaveBiomeRepresentationProfile.capture(captureRadius, profile));
             worldState.setWorldgenPolicy(
                     LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE);
-            LOGGER.info("[Latitude] Recorded Globe world: border radius {} (from create-world selection)", pendingRadius);
+            if (!clientCreated && worldState.getGlobeRadius() <= 0) {
+                // Same state-based recognition resilience 68716f22 gave client-created worlds:
+                // captureRadius is borderRadiusForGlobeOverworld's own settings-derived answer
+                // (state was empty), so persisting it is a fixpoint — and after this first load,
+                // recognition no longer depends on the generator's settings holder surviving
+                // in-place mutation by provider mods.
+                worldState.setGlobeRadius(captureRadius);
+            }
+            LOGGER.info("[Latitude] Recorded Globe world: border radius {} ({})", captureRadius,
+                    clientCreated ? "from create-world selection" : "fresh dedicated/vanilla-created world");
         }
         ChunkGenerator generator = world.getChunkSource().getGenerator();
         activeLatitudeOverworldGenerator = generator instanceof NoiseBasedChunkGenerator noise
@@ -566,19 +628,92 @@ public class GlobeMod implements ModInitializer {
      */
     private static void placeLatitudeBonusChest(ServerLevel world, BlockPos spawnPos) {
         try {
-            // Ensure the spawn chunk is loaded so feature placement actually writes (vanilla's
+            // Ensure the spawn chunk is loaded so placement actually writes (vanilla's
             // getSpawnHeight loads it; our spawn path may not have).
             world.getChunk(spawnPos);
-            world.registryAccess()
-                    .lookupOrThrow(net.minecraft.core.registries.Registries.CONFIGURED_FEATURE)
-                    .get(net.minecraft.data.worldgen.features.MiscOverworldFeatures.BONUS_CHEST)
-                    .ifPresent(ref -> ref.value().place(
-                            world, world.getChunkSource().getGenerator(), world.getRandom(), spawnPos));
-            LOGGER.info("[Latitude] Placed bonus chest at globe spawn x={} y={} z={}",
-                    spawnPos.getX(), spawnPos.getY(), spawnPos.getZ());
+
+            // Vanilla's BONUS_CHEST feature is deliberately NOT used here. It shuffles every column
+            // in the origin's chunk and places at the first MOTION_BLOCKING_NO_LEAVES position that
+            // is air — which over water is the block *above the surface*, so in a wet spawn chunk the
+            // chest ends up floating on the water and every torch fails canSurvive. Our spawn column
+            // is already validated dry, sturdy land, so anchor the chest to it instead of re-rolling.
+            BlockPos chestPos = findBonusChestSite(world, spawnPos);
+            if (chestPos == null) {
+                LOGGER.warn("[Latitude] No dry bonus-chest site near globe spawn x={} z={}; skipping chest",
+                        spawnPos.getX(), spawnPos.getZ());
+                return;
+            }
+
+            world.setBlock(chestPos, Blocks.CHEST.defaultBlockState(), 2);
+            RandomizableContainer.setBlockEntityLootTable(
+                    world, world.getRandom(), chestPos, BuiltInLootTables.SPAWN_BONUS_CHEST);
+
+            BlockState torch = Blocks.TORCH.defaultBlockState();
+            int torches = 0;
+            for (Direction direction : Direction.Plane.HORIZONTAL) {
+                BlockPos torchPos = chestPos.relative(direction);
+                if (torch.canSurvive(world, torchPos) && world.getBlockState(torchPos).isAir()) {
+                    world.setBlock(torchPos, torch, 2);
+                    torches++;
+                }
+            }
+            LOGGER.info("[Latitude] Placed bonus chest at globe spawn x={} y={} z={} torches={}",
+                    chestPos.getX(), chestPos.getY(), chestPos.getZ(), torches);
         } catch (Throwable t) {
             LOGGER.warn("[Latitude] Failed to place bonus chest at globe spawn (continuing without)", t);
         }
+    }
+
+    /**
+     * Nearest dry, solid-supported column to the spawn that can host the chest without burying the
+     * player's own spawn block. Prefers a site where the torches can actually stand, so the chest
+     * reads as a deliberate supply drop rather than something washed up.
+     */
+    private static BlockPos findBonusChestSite(ServerLevel world, BlockPos spawnPos) {
+        BlockPos fallback = null;
+        for (int radius = 1; radius <= 6; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
+                        continue;
+                    }
+                    BlockPos candidate = world.getHeightmapPos(
+                            Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                            new BlockPos(spawnPos.getX() + dx, world.getMinY(), spawnPos.getZ() + dz));
+                    if (!isDryChestSite(world, candidate)) {
+                        continue;
+                    }
+                    if (countSurvivableTorchSides(world, candidate) >= 2) {
+                        return candidate;
+                    }
+                    if (fallback == null) {
+                        fallback = candidate;
+                    }
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private static boolean isDryChestSite(ServerLevel world, BlockPos pos) {
+        if (!world.getBlockState(pos).isAir() || !world.getFluidState(pos).isEmpty()) {
+            return false;
+        }
+        BlockPos support = pos.below();
+        return world.getFluidState(support).isEmpty()
+                && world.getBlockState(support).isFaceSturdy(world, support, Direction.UP);
+    }
+
+    private static int countSurvivableTorchSides(ServerLevel world, BlockPos chestPos) {
+        BlockState torch = Blocks.TORCH.defaultBlockState();
+        int count = 0;
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            BlockPos torchPos = chestPos.relative(direction);
+            if (torch.canSurvive(world, torchPos) && world.getBlockState(torchPos).isAir()) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private static void applySpawnChoice(ServerPlayer player, String id) {

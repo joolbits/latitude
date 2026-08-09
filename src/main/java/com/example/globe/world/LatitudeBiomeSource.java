@@ -107,9 +107,31 @@ public final class LatitudeBiomeSource extends BiomeSource {
         };
     }
 
+    /**
+     * Locate-time candidate pool ({@code biomeRegistry != null}, see {@link #forLocate}) unions in
+     * every custom biome Latitude can paint. TerraBlender does not inject into {@code globe:} noise
+     * settings, so {@code original.possibleBiomes()} structurally excludes ALL custom biomes —
+     * tag-routed and ledger-routed alike (measured live on the 26.2 provider stack: 0 of 42
+     * registered ledger biomes present in {@code possibleBiomes()}). Real generation never
+     * calls this path for biome selection ({@code ChunkGeneratorPopulateBiomesMixin} resolves
+     * against the full registry directly), so leaving it unexpanded when {@code biomeRegistry ==
+     * null} changes nothing about what generates — only {@code /locate biome}'s candidate-membership
+     * gate, which previously declared every custom biome unfindable before any search ran.
+     */
     @Override
     protected Stream<Holder<Biome>> collectPossibleBiomes() {
-        return LatitudeBiomes.expandSourceCandidatePool(original.possibleBiomes()).stream();
+        Collection<Holder<Biome>> base = LatitudeBiomes.expandSourceCandidatePool(original.possibleBiomes());
+        if (biomeRegistry == null) {
+            return base.stream();
+        }
+        java.util.Map<Identifier, Holder<Biome>> union = new java.util.LinkedHashMap<>();
+        for (Holder<Biome> holder : base) {
+            holder.unwrapKey().ifPresent(key -> union.putIfAbsent(key.identifier(), holder));
+        }
+        for (Holder<Biome> holder : LatitudePaintableCustomBiomes.allPaintableCustomBiomes(biomeRegistry)) {
+            holder.unwrapKey().ifPresent(key -> union.putIfAbsent(key.identifier(), holder));
+        }
+        return union.values().stream();
     }
 
     @Override
