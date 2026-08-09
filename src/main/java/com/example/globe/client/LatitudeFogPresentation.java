@@ -15,11 +15,20 @@ import org.joml.Vector4f;
  * the colour {@link Vector4f} instead, and it has <em>already uploaded that colour to the fog UBO</em>
  * by the time it returns — so mutating its return value would compile and silently do nothing.
  *
- * <p>The two passes therefore hook different places, and both must keep the same gate:
+ * <p>The two passes therefore hook different points of the same method, and both must keep the
+ * same gate:
  * <ul>
- *   <li>distances — {@code AtmosphericFogEnvironment.setupFog}, where {@code FogData} is a parameter</li>
+ *   <li>distances — {@code FogRenderer.setupFog}, immediately after vanilla's last
+ *       {@code renderDistanceEnd} write and before the six fields are read into the UBO. Applying
+ *       them any earlier (as an {@code AtmosphericFogEnvironment.setupFog} hook once did) lets
+ *       vanilla clobber {@code renderDistanceStart}/{@code End} three instructions later, which
+ *       silently removes the far fog wall while the near fog still works.</li>
  *   <li>colour — {@code FogRenderer.computeFogColor}, which runs before the buffer upload</li>
  * </ul>
+ *
+ * <p>Every distance write here is a {@code tighten} or {@code Math.min}, so the pass can only
+ * narrow fog. That is what makes it safe to run after vanilla and outside the atmospheric
+ * environment (e.g. under Blindness) without overriding a vanilla effect.
  */
 public final class LatitudeFogPresentation {
 

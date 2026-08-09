@@ -3,6 +3,7 @@ package com.example.globe.client.create;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import com.example.globe.world.LatitudeWorldState;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
@@ -15,8 +16,15 @@ import org.jetbrains.annotations.Nullable;
  * screens that list saves without starting a server.
  */
 public final class RecreatedWorldMetadata {
-    private static final Path LATITUDE_STATE = Path.of(
-            "dimensions", "minecraft", "overworld", "data", "globe", "latitude_world_state.dat");
+    /**
+     * Derived from {@link LatitudeWorldState#STATE_ID}, never re-spelled — the two drifted apart
+     * during the 1.21.11 port and this reader silently found nothing on every world. On 1.21.11
+     * the overworld's SavedData lives at {@code <world>/data/<id>.dat}; 26.2 nested it under
+     * {@code dimensions/minecraft/overworld/data/} and split the Identifier's namespace into a
+     * folder.
+     */
+    private static final Path LATITUDE_STATE =
+            Path.of("data", LatitudeWorldState.STATE_ID + ".dat");
 
     private RecreatedWorldMetadata() {
     }

@@ -449,14 +449,13 @@ public final class EwPresentationPolicyTest {
         assertTrue(Files.notExists(Path.of(
                         "src/main/java/com/example/globe/mixin/client/compat/sodium/RenderSectionManagerVisibilityMixin.java")),
                 "dead Sodium isSectionVisible compatibility source is removed");
-        // Both halves of the split fog design must keep the sub-default priority, or Sodium's
-        // default-priority mixins snapshot the fog state before Latitude has touched it.
+        // Both halves of the fog design now live in one mixin on FogRenderer, which must keep the
+        // sub-default priority, or Sodium's default-priority mixins snapshot the fog state before
+        // Latitude has touched it.
         assertTrue(read("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java")
                         .contains("@Mixin(value = FogRenderer.class, priority = 900)"),
-                "Latitude blends fog colour before Sodium's default-priority snapshot");
-        assertTrue(read("src/main/java/com/example/globe/mixin/client/AtmosphericFogEnvironmentMixin.java")
-                        .contains("@Mixin(value = AtmosphericFogEnvironment.class, priority = 900)"),
-                "Latitude mutates FogData before Sodium's default-priority snapshot");
+                "Latitude blends fog colour and tightens distances before Sodium's "
+                        + "default-priority snapshot");
     }
 
     private static String read(String relativePath) throws IOException {

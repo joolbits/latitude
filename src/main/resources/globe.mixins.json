@@ -40,8 +40,7 @@
     "client.TitleScreenBuildLabelMixin",
     "client.LatitudeLoadingClientTickMixin",
     "client.LevelLoadingScreenLatitudeOverlayMixin",
-    "client.FogRendererEwMixin",
-    "client.AtmosphericFogEnvironmentMixin"
+    "client.FogRendererEwMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -24,13 +24,24 @@ public final class LatitudeWorldState extends SavedData {
             Enum::name
     );
 
+    /**
+     * The SavedData id. 26.2's {@code SavedDataType} takes an Identifier; 1.21.11's takes a plain
+     * String, and that string IS the {@code .dat} filename under the world's {@code data/} folder
+     * — a persistence contract, not a label. Deliberately matches the 1.4-era 1.21.11 port's
+     * filename so a 1.4 world upgrading on this target keeps its globe radius and zone state
+     * instead of silently regenerating as vanilla (the {@code 18f2629f} bug class).
+     *
+     * <p>PUBLIC because any code that reads this state off disk WITHOUT a loaded server (see
+     * {@code RecreatedWorldMetadata}) must derive its path from this exact id. Those two drifted
+     * apart once already: the port changed the id here from an Identifier to this String — moving
+     * the file from {@code dimensions/minecraft/overworld/data/globe/latitude_world_state.dat} to
+     * {@code data/globe_latitude_world_state.dat} — and the off-disk reader kept the old literal,
+     * so it silently found nothing on every world. Derive, never re-spell.
+     */
+    public static final String STATE_ID = "globe_latitude_world_state";
+
     private static final SavedDataType<LatitudeWorldState> STATE_TYPE = new SavedDataType<>(
-            // 26.2's SavedDataType takes an Identifier; 1.21.11's takes a plain String, and that
-            // string IS the .dat filename under the world's data/ folder -- a persistence
-            // contract, not a label. Deliberately matches the 1.4-era 1.21.11 port's filename so
-            // a 1.4 world upgrading on this target keeps its globe radius and zone state instead
-            // of silently regenerating as vanilla (the 18f2629f bug class).
-            "globe_latitude_world_state",
+            STATE_ID,
             LatitudeWorldState::new,
             RecordCodecBuilder.<LatitudeWorldState>create(instance -> instance.group(
                     Codec.BOOL.optionalFieldOf("spawn_picker_dismissed", false)

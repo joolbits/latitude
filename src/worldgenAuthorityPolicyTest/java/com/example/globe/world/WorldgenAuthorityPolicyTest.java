@@ -26,6 +26,8 @@ public final class WorldgenAuthorityPolicyTest {
         recreatedLatitudeWorldKeepsItsWorldTypeAndSize();
         coastalSwampUsesMangroveIdentity();
         wetlandLocateFilterMatchesFinalIdentityLaw();
+        profileAdoptionRefusesWorldsLatitudeDidNotGenerate();
+        offDiskStateReaderDerivesItsPathFromTheSavedDataId();
         LatitudeLocateBudgetPolicyTest.main(new String[0]);
         BiomeProviderSelectionPolicyTest.run();
         registeredHookIntegrationIsClosed();
@@ -175,10 +177,17 @@ public final class WorldgenAuthorityPolicyTest {
                         null),
                 "persisted Latitude identity must override vanilla's generic Normal classification");
 
+        // The fixture MUST be written where Minecraft actually puts the overworld's SavedData on
+        // this target -- <world>/data/<SavedData id>.dat -- and the id must come from the same
+        // constant the production reader uses. The previous fixture hardcoded 26.2's nested
+        // dimensions/minecraft/overworld/data/globe/ path, which happened to match the reader's
+        // own stale literal: both sides were wrong in the same way, so this assertion passed
+        // while the shipped feature found nothing on every real world.
         Path worldRoot = Path.of("build", "tmp", "recreated-world-metadata-test");
-        Path statePath = worldRoot.resolve(Path.of(
-                "dimensions", "minecraft", "overworld", "data", "globe", "latitude_world_state.dat"));
+        Path statePath = worldRoot.resolve(
+                Path.of("data", LatitudeWorldState.STATE_ID + ".dat"));
         Files.createDirectories(statePath.getParent());
+        Files.deleteIfExists(statePath);
         CompoundTag data = new CompoundTag();
         data.putInt("globe_radius", 10000);
         CompoundTag root = new CompoundTag();
@@ -617,6 +626,68 @@ public final class WorldgenAuthorityPolicyTest {
         assertTrue(
                 caveReturn >= 0 && columnCache > caveReturn && pick > columnCache,
                 "every non-cave quart-Y cell reuses one biome pick per column/base while cave cells use their final V4 identity");
+    }
+
+    /**
+     * Profile adoption is irreversible: it persists a globe radius, which makes isGlobeOverworld
+     * true forever after and arms Latitude's biome authority plus a world border. Run on a world
+     * Latitude did not generate, that silently converts someone's vanilla save with no way back.
+     * The /latitude retrofit path reached it with no world-type check at all. The guard has to sit
+     * in the HANDLER, not on the command node -- ShippingToolsPolicyTest S5 requires zero gated
+     * command descendants, so a .requires() would trade this bug for a red suite.
+     */
+    private static void profileAdoptionRefusesWorldsLatitudeDidNotGenerate() throws Exception {
+        String mod = normalize(read("src/main/java/com/example/globe/GlobeMod.java"));
+        int guard = mod.indexOf("if (!isLatitudeOverworld(world))");
+        int adopt = mod.indexOf("public static void adoptProviderTicketProfile(");
+        int firstWrite = mod.indexOf("LatitudeWorldState.get(world)", adopt);
+        assertTrue(adopt >= 0, "adoptProviderTicketProfile still exists");
+        assertTrue(
+                guard > adopt && guard < firstWrite,
+                "adoptProviderTicketProfile refuses non-Latitude worlds BEFORE it touches world state");
+
+        String retrofit = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeDecorationRetrofit.java"));
+        int request = retrofit.indexOf("public static List<String> requestEnable(");
+        int arm = retrofit.indexOf("pendingConfirmDeadlineMs = System.currentTimeMillis()", request);
+        int requestGuard = retrofit.indexOf("GlobeMod.isLatitudeOverworld(world)", request);
+        assertTrue(
+                requestGuard > request && requestGuard < arm,
+                "retrofit refuses a non-Latitude world before arming the confirm window");
+        assertTrue(
+                retrofit.indexOf("GlobeMod.isLatitudeOverworld(world)",
+                        retrofit.indexOf("public static List<String> confirmEnable(")) > 0,
+                "retrofit confirm re-checks the world type rather than trusting the enable step");
+        assertFalse(
+                retrofit.contains("LatitudeWorldState.get(world)")
+                        && retrofit.indexOf("LatitudeWorldState.get(world)")
+                                < retrofit.indexOf("public static List<String> confirmEnable("),
+                "warning-only and disable paths read state without creating a .dat on a vanilla save");
+    }
+
+    /**
+     * The SavedData id IS the on-disk filename. Code that reads that file without a loaded server
+     * must derive its path from the id, never re-spell it: the port changed the id from an
+     * Identifier to a plain String -- moving the file from
+     * dimensions/minecraft/overworld/data/globe/latitude_world_state.dat to
+     * data/globe_latitude_world_state.dat -- and the off-disk reader kept the old literal, so it
+     * found nothing on every world and every feature built on it went silently dead.
+     */
+    private static void offDiskStateReaderDerivesItsPathFromTheSavedDataId() throws Exception {
+        String state = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeWorldState.java"));
+        assertTrue(
+                state.contains("public static final String STATE_ID = \"globe_latitude_world_state\""),
+                "the SavedData id is a shared constant, not an inline literal");
+
+        String reader = normalize(read(
+                "src/main/java/com/example/globe/client/create/RecreatedWorldMetadata.java"));
+        assertTrue(
+                reader.contains("LatitudeWorldState.STATE_ID"),
+                "the off-disk reader derives its filename from the SavedData id");
+        assertFalse(
+                reader.contains("\"dimensions\"") || reader.contains("latitude_world_state.dat"),
+                "no re-spelled path literal can drift from the id again");
     }
 
     private static void frozenRiverVegetationIsScopedWithoutMutatingVanillaBiomes()

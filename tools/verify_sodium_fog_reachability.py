@@ -45,7 +45,12 @@ EXPECTED_SODIUM_VERSION = "0.8.13+mc1.21.11"
 DEAD_MIXIN = "client.compat.sodium.RenderSectionManagerVisibilityMixin"
 DEAD_SOURCE = Path("src/main/java/com/example/globe/mixin/client/compat/sodium/RenderSectionManagerVisibilityMixin.java")
 COLOR_SOURCE = Path("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java")
-DISTANCE_SOURCE = Path("src/main/java/com/example/globe/mixin/client/AtmosphericFogEnvironmentMixin.java")
+# Distances used to live in AtmosphericFogEnvironmentMixin. That hook ran at the
+# FogEnvironment.setupFog call, three instructions before vanilla overwrote
+# renderDistanceStart/End, so the far fog wall never rendered. Both passes now share the
+# FogRenderer mixin; this constant guards against the environment hook coming back.
+RETIRED_DISTANCE_SOURCE = Path(
+    "src/main/java/com/example/globe/mixin/client/AtmosphericFogEnvironmentMixin.java")
 MIXIN_CONFIG = Path("src/main/resources/globe.mixins.json")
 
 # Sodium's own snapshot point. Latitude must have finished with the fog before this runs.
@@ -178,18 +183,25 @@ def main() -> int:
     require(DEAD_MIXIN not in client_mixins, "dead Sodium isSectionVisible mixin remains registered")
     require(not (root / DEAD_SOURCE).exists(), "dead Sodium isSectionVisible mixin source remains present")
 
-    # Both halves of Latitude's split fog design must outrank Sodium's default-priority mixin.
-    color_source = (root / COLOR_SOURCE).read_text()
-    distance_source = (root / DISTANCE_SOURCE).read_text()
-    require("@Mixin(value = FogRenderer.class, priority = 900)" in color_source,
-            "Latitude fog colour mixin lacks explicit priority 900 before Sodium's snapshot")
-    require("@Mixin(value = AtmosphericFogEnvironment.class, priority = 900)" in distance_source,
-            "Latitude fog distance mixin lacks explicit priority 900 before Sodium's snapshot")
-    require('@Inject(method = "computeFogColor"' in color_source,
+    # Both fog passes live in the FogRenderer mixin and must outrank Sodium's default-priority
+    # mixin, which snapshots at setupFog's updateBuffer call.
+    fog_source = (root / COLOR_SOURCE).read_text()
+    require("@Mixin(value = FogRenderer.class, priority = 900)" in fog_source,
+            "Latitude fog mixin lacks explicit priority 900 before Sodium's snapshot")
+    require(not (root / RETIRED_DISTANCE_SOURCE).exists(),
+            "the retired AtmosphericFogEnvironment distance hook is back; it applies before "
+            "vanilla overwrites renderDistanceStart/End, silently removing the far fog wall")
+    require('@Inject(method = "computeFogColor"' in fog_source,
             "Latitude fog colour must be blended in computeFogColor, before Sodium's snapshot at "
             "the updateBuffer call; blending setupFog's return value never reaches the screen")
-    require('@Inject(method = "setupFog"' not in color_source,
-            "Latitude fog colour must not hook setupFog on this target")
+    # The distance pass must sit after vanilla's last renderDistanceEnd write (bci 146) and
+    # before the six fields are read into updateBuffer (bci 186+) -- which is also strictly
+    # before Sodium's snapshot at that same call.
+    require('Lnet/minecraft/client/renderer/fog/FogData;renderDistanceEnd:F' in fog_source
+            and "Opcodes.PUTFIELD" in fog_source
+            and "At.Shift.AFTER" in fog_source,
+            "Latitude fog distances must be applied after vanilla's last renderDistanceEnd write; "
+            "any earlier and vanilla clobbers them")
 
     print(f"SODIUM_FOG_REACHABILITY_PASS jar={jar.name} sha256={EXPECTED_SODIUM_SHA256}")
     print(" chain=FogData->FogParameters->getSearchDistance->RemovableMultiForest.traverse")
