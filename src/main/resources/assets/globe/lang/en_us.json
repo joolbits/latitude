@@ -14,5 +14,6 @@
   "option.globe.capture_write_csv": "Capture: Write CSV",
   "option.globe.capture_write_csv.tooltip": "Append capture metadata rows to run/latdev/captures.csv.",
   "globe.create.unbound_settings.title": "Latitude could not create this world",
-  "globe.create.unbound_settings.message": "Another world generation mod has taken over Minecraft's noise settings, so Latitude's terrain can no longer be identified in the saved world. Creating it would give you vanilla biomes on Latitude terrain, and Latitude features such as the world border and climate zones would stay switched off. Disable the other world generation mod and try again."
+  "globe.create.unbound_settings.message": "Another world generation mod has taken over Minecraft's noise settings, so Latitude's terrain can no longer be identified in the saved world. Creating it would give you vanilla biomes on Latitude terrain, and Latitude features such as the world border and climate zones would stay switched off. Disable the other world generation mod and try again.",
+  "commands.latitude.locate.structure.searching": "Searching for %s…"
 }

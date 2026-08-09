@@ -538,9 +538,11 @@ public final class VillageLatitudePolicyTest {
                 "new policy retains the current blockZ coordinate convention");
 
         assertEquals(
-                2,
+                3,
                 mainSourceOccurrences("isBlockBeyondPolarVillageLimit"),
-                "village predicate appears only at its declaration and the fresh-start guard");
+                "village predicate appears only at its declaration, the fresh-start guard, and "
+                        + "LatitudeStructureLocateService's locate-time mirror of that guard "
+                        + "(added so /locate can't report a village site the guard would still veto)");
 
         String build = normalize(read("build.gradle"));
         assertTrue(
