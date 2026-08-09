@@ -54,11 +54,12 @@ line, see [Backport status — 26.1.2](#backport-status--2612-landed-2026-08-09)
 ## Backport status — 26.1.2 (landed 2026-08-09)
 
 Branch `backport/1.21.11-fixes-to-26.1.2`, cut from `port/1.5.0-26.1.2` @ `91423e1a`. Eleven
-picks, each a separate commit carrying its source hash via `cherry-pick -x`. Gates green
-(`clean check build -PenableInvariantScan=true latitudeInvariantScan`, plus
-`verify_phase6_dev_tooling.py`, re-run in full after the 11th pick); headless worldgen smoke
-clean. **Not pushed, not tagged, not released** — awaiting the maintainer's live acceptance. Full
-account in the notes ledger: `port-1.5-26.1.2/backport-1p21p11-fixes-to-26p1p2-20260809.md`.
+picks plus one own-defect fix, each a separate commit, all but the last carrying its source hash
+via `cherry-pick -x`. Gates green (`clean check build -PenableInvariantScan=true
+latitudeInvariantScan`, plus `verify_phase6_dev_tooling.py`, re-run in full after both the 11th
+and 12th commits); headless worldgen smoke clean. **Not pushed, not tagged, not released** —
+awaiting the maintainer's live acceptance. Full account in the notes ledger:
+`port-1.5-26.1.2/backport-1p21p11-fixes-to-26p1p2-20260809.md`.
 
 | Fix | Source | 26.1.2 commit | How it applied |
 | --- | --- | --- | --- |
@@ -73,6 +74,7 @@ account in the notes ledger: `port-1.5-26.1.2/backport-1p21p11-fixes-to-26p1p2-2
 | Decoration index covers ledger-admitted custom biomes | `58571da4` | `2166ab4d` | clean |
 | `/locate biome` finds custom biomes | `57895f64` | `65cd2e2f` | **re-homed** — see below |
 | World Creation screen negative-space/alignment pass + tabbedMode title intro | `0cee3189` | `1d93675a` | **3 conflicts** — see below |
+| Restore Create World/Cancel buttons after the tabbedMode intro | `bc6b1cf7` (26.2 line) | `f7845dcd` | applied directly, see below |
 
 **`36e69a9e`** — the campaign's only true rename-boundary conflict on this line, in `GlobeMod.java`:
 1.21.11's `server.getWorldData().worldGenOptions().seed()` vs 26.1.2's
@@ -114,6 +116,17 @@ This pick is client-only Screen code; no headless instrument (atlas, `verify_pha
 policy suites) touches it. It compiles and gates green but has had zero live eyes on it as of this
 writing — squarely in the maintainer's live-acceptance queue, same as items 1 and 5 in the
 instrument note below.
+
+**`bc6b1cf7`** — the Create World/Cancel button-loss defect documented in full under "⚠️
+`0cee3189` itself ships a bug" below (found live on 26.2, confirmed a defect in `0cee3189` itself
+rather than a translation error, and still live on this thread's own `port/1.5.0-1.21.11` as of
+that writing). Same byte-identical logic in `1d93675a`'s `applyIntroVisibility()` — confirmed by
+inspection, not assumed, before applying the identical fix directly (not a cherry-pick, since the
+surrounding file diverges too far for the 26.2 commit's diff context to apply). Full gate re-run
+green afterward. A live session immediately after (~40 rapid `init()` calls in 18 seconds,
+consistent with active resize/GUI-scale-cycling testing) produced zero exceptions and zero stack
+traces — evidence the fix survives real interaction, not proof the buttons render correctly at any
+given frame; that still needs a look at the screen itself.
 
 **Not backported to 26.1.2**, and why: `e66429c2` (26.1.2 reached that end state via its own
 `a6146016`); `2a8cc1e1` and `23b1be0d` (26.1.2 ships unobfuscated — not applicable by
@@ -221,7 +234,10 @@ Once the one-shot hide sets them invisible, nothing on this line's code path eve
 Fixed on 26.2 as `bc6b1cf7`: `applyIntroVisibility()`'s early-return branch (taken every frame the
 intro is inactive) now explicitly restores both buttons, mirroring what the per-frame layout passes
 already do for everything else. **This same defect is live on `port/1.5.0-1.21.11` right now** —
-nothing about the bug or the fix is 26.2-specific. Worth pulling `bc6b1cf7`'s fix back here.
+nothing about the bug or the fix is 26.2-specific. Also applied to 26.1.2 as `f7845dcd` (see that
+section above) once the maintainer pointed at `bc6b1cf7` directly. **Still not fixed on this
+thread's own branch** — `port/1.5.0-1.21.11` is where the bug originates and it has not been
+pulled back here yet; both downstream lines now have it, the source doesn't.
 
 ### The create-screen Cancel bug — new 26.2 row, fixed and accepted
 
