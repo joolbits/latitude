@@ -53,12 +53,13 @@ line, see [Backport status — 26.1.2](#backport-status--2612-landed-2026-08-09)
 
 ## Backport status — 26.1.2 (landed 2026-08-09)
 
-Branch `backport/1.21.11-fixes-to-26.1.2`, cut from `port/1.5.0-26.1.2` @ `91423e1a`. Fourteen
-commits total, all but one a `cherry-pick -x`. Gates green (`clean check build
--PenableInvariantScan=true latitudeInvariantScan`, plus `verify_phase6_dev_tooling.py`, re-run in
-full after picks 11, 12, and 13); headless worldgen smoke clean on the worldgen-affecting picks.
-**Not pushed, not tagged, not released** — awaiting the maintainer's live acceptance. Full account
-in the notes ledger: `port-1.5-26.1.2/backport-1p21p11-fixes-to-26p1p2-20260809.md`.
+Branch `backport/1.21.11-fixes-to-26.1.2`, cut from `port/1.5.0-26.1.2` @ `91423e1a`. Fifteen
+commits total, all but two a `cherry-pick -x` (`bc6b1cf7` and the own-defect pick 15 have no
+cherry-pickable upstream). Gates green (`clean check build -PenableInvariantScan=true
+latitudeInvariantScan`, plus `verify_phase6_dev_tooling.py`, re-run in full after picks 11, 12,
+13, and 15); headless worldgen smoke clean on the worldgen-affecting picks. **Not pushed, not
+tagged, not released** — awaiting the maintainer's live acceptance. Full account in the notes
+ledger: `port-1.5-26.1.2/backport-1p21p11-fixes-to-26p1p2-20260809.md`.
 
 | Fix | Source | 26.1.2 commit | How it applied |
 | --- | --- | --- | --- |
@@ -76,6 +77,7 @@ in the notes ledger: `port-1.5-26.1.2/backport-1p21p11-fixes-to-26p1p2-20260809.
 | Restore Create World/Cancel buttons after the tabbedMode intro | `bc6b1cf7` (26.2 line) | `f7845dcd` | applied directly, see below |
 | Tighten create-screen outer margins and panel/tab spacing | `7852de65` (26.2 line) | `21979454` | **1 conflict** — see below |
 | Divider line between climate zone entries | `1ff2ecad` (26.2 line) | `f6a9f194` | clean |
+| Create World/Cancel no longer cut off at the screen bottom | — (own defect, this line only) | `8c97bd5c` | see below |
 
 **`36e69a9e`** — the campaign's only true rename-boundary conflict on this line, in `GlobeMod.java`:
 1.21.11's `server.getWorldData().worldGenOptions().seed()` vs 26.1.2's
@@ -146,6 +148,24 @@ wrong move) leaving `shortScreen`'s old absolute values in place, which would ha
 inverted the ordering: old `btnBottomOffset` short (21) was already looser than 26.2's new normal
 (20), so a short window would have ended up with *more* bottom margin than a normal one — backwards
 from the feature's whole purpose. `1ff2ecad` applied clean, byte-identical to its source.
+
+**`8c97bd5c` — my own bug, from my own pick 13 resolution, found live with a screenshot.** Not a
+backport at all; there's no upstream commit. The ratio-rescale above computed shortScreen's
+`btnBottomOffset` as `21 * 0.7 ≈ 14`, checked only against its own old/new baseline ratio — never
+against `btnH` (the button's own height, 20 at ordinary scales). The button's bottom edge sits at
+`(height - btnBottomOffset) + btnH`; with `btnBottomOffset=14` that's `height + 6`, six pixels past
+the visible screen, on every affected window. (The pre-campaign design already had only ~1px of
+clearance here, so this was fragile before I touched it — my rescale just pushed it negative.) The
+normal-mode value (`btnBottomOffset=20`, exactly `= btnH`) was flush rather than negative, so it
+wasn't provably broken by the same arithmetic, but zero margin for error meant I couldn't rule it
+out as the actual cause of the screenshot either. Fixed both, deriving `btnBottomOffset` as
+`btnH + scaledUi(2)` in both branches instead of as a disconnected ratio-scaled constant, so this
+exact class of bug — a margin computed independently of the thing it needs to clear — can't recur
+on a future retune. `bottomMargin` only needed a matching bump for `shortScreen` (its old absolute
+value now sat below the corrected `btnBottomOffset`); normal's `bottomMargin` already cleared it
+with room to spare and was left alone. **Lesson for whichever thread resolves this rename family
+next: check a ratio-rescaled value against every OTHER variable it interacts with, not just its
+own old/new baseline.**
 
 **Not backported to 26.1.2**, and why: `e66429c2` (26.1.2 reached that end state via its own
 `a6146016`); `2a8cc1e1` and `23b1be0d` (26.1.2 ships unobfuscated — not applicable by
