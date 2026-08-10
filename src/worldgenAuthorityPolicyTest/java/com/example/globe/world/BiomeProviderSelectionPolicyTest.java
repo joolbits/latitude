@@ -37,6 +37,7 @@ final class BiomeProviderSelectionPolicyTest {
         polarExtremeCapCatchesNameAlikeModdedBiomesConsistently();
         cliffTreeLandAndOceanAreActuallyReachable();
         riverAndBeachAdmissionIsTagDrivenAndVanillaSafe();
+        everyLedgerLandRouteSurvivesTheBandPoolGate();
         vanillaCoverageIsCompleteAndWorldSizeSafe();
         surfaceWaterCoverageIsCompleteAndWorldSizeSafe();
         sizeAwareVanillaRepresentationIsClosedAndBirthLocked();
@@ -1105,6 +1106,56 @@ final class BiomeProviderSelectionPolicyTest {
                 "the cold shores are admitted through the rocky beach category");
         assertTrue(temperateBeach.contains("clifftree:granite_shore"),
                 "the temperate shore is admitted through the temperate beach category");
+    }
+
+    /**
+     * The band pool gate must accept everything the ledger admits, or a biome is selected and then
+     * silently rerolled away with no error anywhere.
+     *
+     * <p>This is the defect the maintainer hit live on two separate worlds (2026-08-10): she could
+     * not locate {@code biomesoplenty:muskeg} or {@code clifftree:glacier_cliff}.
+     * {@code enforceLandBandPool} validated the final pick against {@code allowedLandPool}, which
+     * was built from the {@code lat_*} tags and a small hardcoded extras list — never from the
+     * ledger. Selection under the provider-ticket policy is ledger-driven, so the two authorities
+     * disagreed. muskeg and {@code terralith:ice_marsh} appear in NO {@code lat_*} tag at all and
+     * were therefore unplaceable in every world ever generated, before AND after their cold-wetland
+     * re-route; glacier_cliff sat only in {@code lat_polar_secondary} and so was rerolled across
+     * the whole subpolar half of its COLD_UPLAND range.
+     *
+     * <p>Asserted structurally rather than by listing ids, so a future ledger addition cannot
+     * reintroduce the same silent hole by being forgotten in a tag file.
+     */
+    private static void everyLedgerLandRouteSurvivesTheBandPoolGate() throws Exception {
+        String source = read("src/main/java/com/example/globe/world/LatitudeBiomes.java");
+        assertTrue(source.contains("ledgerLandIdsForBand(bandIndex)"),
+                "allowedLandPool must union in the ledger's own band roster — building the gate "
+                        + "from lat_* tags alone lets ledger-admitted biomes be selected and then "
+                        + "immediately rerolled away, with no error raised anywhere");
+        assertEquals(2, occurrences(source, "ledgerLandIdsForBand(bandIndex)"),
+                "BOTH allowedLandPool overloads (registry-source and collection-source) must union "
+                        + "the ledger roster; fixing only one leaves the hole open on that path");
+
+        // landRoutesForBand must stay the exact inverse of landRouteEligible's switch. If a route
+        // is added to the enum and omitted here, its biomes silently stop being placeable.
+        String routesForBand = method(source, "landRoutesForBand(int bandIndex) {");
+        for (BiomeRoute route : BiomeRoute.values()) {
+            if (route == BiomeRoute.CAVE_SHALLOW || route == BiomeRoute.CAVE_DEEP) {
+                assertFalse(routesForBand.contains(route.name()),
+                        "cave routes must never enter a LAND band pool: " + route);
+                continue;
+            }
+            assertTrue(routesForBand.contains(route.name()),
+                    "every non-cave route must map to a band in landRoutesForBand, or biomes owning "
+                            + "it become unplaceable: " + route);
+        }
+
+        // The three measured casualties, named so the specific regression cannot return quietly.
+        for (String id : new String[]{
+                "biomesoplenty:muskeg", "terralith:ice_marsh", "clifftree:glacier_cliff"}) {
+            BiomeDescriptorLedger.Descriptor d = BiomeDescriptorLedger.descriptor(id);
+            assertTrue(d != null && !d.routes().isEmpty(),
+                    "regression anchor must still hold a ledger route: " + id);
+        }
     }
 
     private static String read(String path) throws Exception {

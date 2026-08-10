@@ -6644,6 +6644,60 @@ public final class LatitudeBiomes {
         };
     }
 
+    /**
+     * Routes that can legally place in a band — the exact inverse of {@code landRouteEligible}'s
+     * switch, and the bridge that stops the ledger and the band pool from disagreeing.
+     *
+     * <p>{@link #allowedLandPool} used to be built from the {@code lat_*} tags alone. Selection,
+     * however, is ledger-driven under the provider-ticket policy, so any biome the ledger admitted
+     * but no tag listed was selected and then immediately rerolled away by
+     * {@code enforceLandBandPool} — silently unplaceable, with no error anywhere. Measured
+     * casualties: {@code biomesoplenty:muskeg} and {@code terralith:ice_marsh} (in NO lat_* tag at
+     * all, so never placeable in any world, before or after their 2026-08-10 re-route), and
+     * {@code clifftree:glacier_cliff} (present only in {@code lat_polar_secondary}, so rerolled
+     * across the subpolar half of its COLD_UPLAND range).
+     *
+     * <p>Unioning the ledger's own band roster in preserves exactly what the pool gate is for —
+     * it still rejects a tropical identity that leaked into the polar band — while making
+     * "the ledger admitted it" and "the pool accepts it" the same statement by construction.
+     */
+    private static List<BiomeRoute> landRoutesForBand(int bandIndex) {
+        return switch (bandIndex) {
+            case BAND_TROPICAL -> List.of(BiomeRoute.TROPICAL_HUMID_LOWLAND);
+            case BAND_SUBTROPICAL -> List.of(
+                    BiomeRoute.SUBTROPICAL_HUMID_LOWLAND,
+                    BiomeRoute.WARM_TRANSITION,
+                    BiomeRoute.WARM_UPLAND,
+                    BiomeRoute.ARID_LOWLAND,
+                    BiomeRoute.ARID_UPLAND);
+            case BAND_TEMPERATE -> List.of(
+                    BiomeRoute.TEMPERATE_LOWLAND,
+                    BiomeRoute.TEMPERATE_WETLAND,
+                    BiomeRoute.TEMPERATE_UPLAND);
+            case BAND_SUBPOLAR -> List.of(
+                    BiomeRoute.SUBPOLAR_LOWLAND,
+                    BiomeRoute.SUBPOLAR_WETLAND,
+                    BiomeRoute.COLD_UPLAND);
+            default -> List.of(
+                    BiomeRoute.POLAR_LOWLAND,
+                    BiomeRoute.COLD_UPLAND);
+        };
+    }
+
+    private static List<String> ledgerLandIdsForBand(int bandIndex) {
+        List<BiomeRoute> routes = landRoutesForBand(bandIndex);
+        List<String> ids = new ArrayList<>();
+        for (BiomeDescriptorLedger.Descriptor descriptor : BiomeDescriptorLedger.descriptors()) {
+            for (BiomeRoute route : routes) {
+                if (descriptor.routes().contains(route)) {
+                    ids.add(descriptor.biomeId());
+                    break;
+                }
+            }
+        }
+        return ids;
+    }
+
     private static List<String> allowedExtraBiomeIdsForBand(int bandIndex) {
         return switch (bandIndex) {
             case BAND_TROPICAL -> List.of(
@@ -6689,6 +6743,15 @@ public final class LatitudeBiomes {
                 // Optional biome not present in current registry/datapack set.
             }
         }
+        // Ledger-admitted identities for this band. See landRoutesForBand: without this the pool
+        // gate rerolls away anything the ledger admitted but no lat_* tag happens to list.
+        for (String id : ledgerLandIdsForBand(bandIndex)) {
+            try {
+                addAllowedEntry(allowed, seen, biome(biomes, id));
+            } catch (Throwable ignored) {
+                // Optional biome not present in current registry/datapack set.
+            }
+        }
         allowed.sort(Comparator.comparing(LatitudeBiomes::biomeId));
         List<Holder<Biome>> immutable = List.copyOf(allowed);
         synchronized (ALLOWED_LAND_POOL_REGISTRY_CACHE) {
@@ -6715,6 +6778,13 @@ public final class LatitudeBiomes {
             }
         }
         for (String id : allowedExtraBiomeIdsForBand(bandIndex)) {
+            Holder<Biome> entry = entryById(biomes, id);
+            if (entry != null) {
+                addAllowedEntry(allowed, seen, entry);
+            }
+        }
+        // Ledger-admitted identities for this band — see the registry twin and landRoutesForBand.
+        for (String id : ledgerLandIdsForBand(bandIndex)) {
             Holder<Biome> entry = entryById(biomes, id);
             if (entry != null) {
                 addAllowedEntry(allowed, seen, entry);
