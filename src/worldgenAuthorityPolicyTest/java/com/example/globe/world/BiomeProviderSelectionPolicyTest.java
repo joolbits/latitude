@@ -26,7 +26,7 @@ final class BiomeProviderSelectionPolicyTest {
 
     static void run() throws Exception {
         descriptorAdmissionIsClosedAndCanonical();
-        wetlandDescriptorsHaveOnlyAnOwnedLowlandRoute();
+        wetlandRoutesMatchRealBiomeClimate();
         climateLowlandDescriptorsRemainRouteBounded();
         everySupportedStackGetsEqualRouteTickets();
         selectionIsWorldSeededAndCoherent();
@@ -74,20 +74,59 @@ final class BiomeProviderSelectionPolicyTest {
                 "duplicate saved route rows are rejected");
     }
 
-    private static void wetlandDescriptorsHaveOnlyAnOwnedLowlandRoute() {
-        for (String id : List.of(
-                "biomesoplenty:bog",
-                "biomesoplenty:muskeg",
-                "terralith:ice_marsh")) {
+    /**
+     * Wetland routing is checked against REAL biome climate, not against the ledger's own opinion.
+     *
+     * <p>This test used to assert {@code Set.of(TEMPERATE_WETLAND)} for muskeg and ice_marsh — it
+     * read the ledger's {@code routes()} and compared them to literals typed into the test, so it
+     * passed by construction and pinned a reported defect in place as expected behaviour. The
+     * temperatures below are ground truth lifted from the shipped datapack JSON of the providers
+     * themselves, so the assertion can now FAIL when a route contradicts the climate.
+     *
+     * <p>The rule is vanilla's own snow threshold: {@code Biome.coldEnoughToSnow} is
+     * {@code temperature < 0.15f}. A wetland that snows permanently belongs in the subpolar band;
+     * one that does not belongs in the temperate band. muskeg (0.0) and ice_marsh (0.14, plus a
+     * frozen modifier) are the two that snow; bog at 0.2 does not, and deliberately stays temperate.
+     */
+    private static void wetlandRoutesMatchRealBiomeClimate() {
+        // biome id -> temperature, from the providers' own worldgen/biome JSON.
+        String[][] wetlandClimate = {
+                {"biomesoplenty:muskeg", "0.0"},
+                {"terralith:ice_marsh", "0.14"},
+                {"biomesoplenty:bog", "0.2"},
+                {"biomesoplenty:wetland", "0.6"},
+                {"biomesoplenty:marsh", "0.65"},
+                {"terralith:orchid_swamp", "0.8"},
+                {"minecraft:swamp", "0.8"},
+        };
+        double snowThreshold = 0.15;
+        for (String[] row : wetlandClimate) {
+            String id = row[0];
+            double temperature = Double.parseDouble(row[1]);
             BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
             assertTrue(descriptor != null, "admitted wetland has an explicit descriptor: " + id);
-            assertEquals(Set.of(BiomeRoute.TEMPERATE_WETLAND), descriptor.routes(),
-                    "wetland has no generic dry, highland, or fallback route: " + id);
+
+            BiomeRoute expected = temperature < snowThreshold
+                    ? BiomeRoute.SUBPOLAR_WETLAND
+                    : BiomeRoute.TEMPERATE_WETLAND;
+            assertEquals(Set.of(expected), descriptor.routes(),
+                    "wetland route must match its real climate (temperature " + temperature
+                            + (temperature < snowThreshold ? ", snows permanently" : ", never snows")
+                            + "), and must carry no generic dry, highland or fallback route: " + id);
             assertEquals(BiomeDescriptorLedger.Terrain.WETLAND, descriptor.terrain(),
                     "wetland is never admitted as ordinary land: " + id);
             assertEquals(BiomeDescriptorLedger.Water.WETLAND, descriptor.water(),
                     "wetland requires the wetland water authority: " + id);
         }
+
+        // A cold wetland must now be authorable at all — the old invariant threw for any wetland
+        // that did not own TEMPERATE_WETLAND, which is why the cold pair could not be fixed in place.
+        assertTrue(BiomeDescriptorLedger.descriptor("biomesoplenty:muskeg")
+                        .routes().contains(BiomeRoute.SUBPOLAR_WETLAND),
+                "the cold wetland route must actually be owned, or it is dead config — the old "
+                        + "invariant threw for any wetland that did not own TEMPERATE_WETLAND, "
+                        + "which is why this pair could not be fixed in place");
+
         assertTrue(BiomeDescriptorLedger.descriptor("biomesoplenty:bayou") == null,
                 "warm bayou remains closed until Latitude owns a warm-wetland route");
         assertTrue(BiomeDescriptorLedger.descriptor("biomesoplenty:floodplain") == null,
@@ -862,7 +901,7 @@ final class BiomeProviderSelectionPolicyTest {
                     ARID_LOWLAND, ARID_UPLAND -> latitudeFraction >= 0.27 && latitudeFraction <= 0.39;
             case TEMPERATE_LOWLAND, TEMPERATE_WETLAND, TEMPERATE_UPLAND ->
                     latitudeFraction >= 0.41 && latitudeFraction <= 0.56;
-            case SUBPOLAR_LOWLAND -> latitudeFraction >= 0.59 && latitudeFraction <= 0.73;
+            case SUBPOLAR_LOWLAND, SUBPOLAR_WETLAND -> latitudeFraction >= 0.59 && latitudeFraction <= 0.73;
             case POLAR_LOWLAND -> latitudeFraction >= 0.77 && latitudeFraction <= 0.91;
             case COLD_UPLAND -> latitudeFraction >= 0.61 && latitudeFraction <= 0.89;
             case CAVE_SHALLOW, CAVE_DEEP -> false;

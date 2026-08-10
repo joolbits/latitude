@@ -46,7 +46,9 @@ public final class BiomeDescriptorLedger {
                 throw new IllegalArgumentException("surface descriptor cannot own underground cave routes: " + biomeId);
             }
             if (water != Water.LAND && water != Water.UNDERGROUND && terrain != Terrain.WETLAND) throw new IllegalArgumentException("water descriptor must be wetland terrain: " + biomeId);
-            if (terrain == Terrain.WETLAND && !routes.contains(BiomeRoute.TEMPERATE_WETLAND)) throw new IllegalArgumentException("wetland needs wetland route: " + biomeId);
+            if (terrain == Terrain.WETLAND
+                    && !routes.contains(BiomeRoute.TEMPERATE_WETLAND)
+                    && !routes.contains(BiomeRoute.SUBPOLAR_WETLAND)) throw new IllegalArgumentException("wetland needs an owned wetland route: " + biomeId);
             if (terrain == Terrain.UPLAND
                     && !routes.contains(BiomeRoute.TEMPERATE_UPLAND)
                     && !routes.contains(BiomeRoute.COLD_UPLAND)) throw new IllegalArgumentException("upland needs an owned upland route: " + biomeId);
@@ -78,7 +80,7 @@ public final class BiomeDescriptorLedger {
             // These are cool/temperate inland wetlands.  Warm bayou and floodplain remain
             // excluded until Latitude owns a separate warm-wetland route.
             d("biomesoplenty:bog", r(BiomeRoute.TEMPERATE_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
-            d("biomesoplenty:muskeg", r(BiomeRoute.TEMPERATE_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
+            d("biomesoplenty:muskeg", r(BiomeRoute.SUBPOLAR_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
             d("biomesoplenty:lush_savanna", r(BiomeRoute.WARM_TRANSITION), Terrain.LOWLAND, Water.LAND, Family.SAVANNA),
             d("biomesoplenty:mediterranean_forest", r(BiomeRoute.WARM_TRANSITION), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("biomesoplenty:scrubland", r(BiomeRoute.WARM_TRANSITION), Terrain.LOWLAND, Water.LAND, Family.ARID),
@@ -113,7 +115,7 @@ public final class BiomeDescriptorLedger {
             d("terralith:moonlight_grove", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("terralith:moonlight_valley", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("terralith:orchid_swamp", r(BiomeRoute.TEMPERATE_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
-            d("terralith:ice_marsh", r(BiomeRoute.TEMPERATE_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
+            d("terralith:ice_marsh", r(BiomeRoute.SUBPOLAR_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
             d("terralith:caldera", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("terralith:brushland", r(BiomeRoute.WARM_TRANSITION), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("terralith:hot_shrubland", r(BiomeRoute.WARM_TRANSITION), Terrain.LOWLAND, Water.LAND, Family.ARID),

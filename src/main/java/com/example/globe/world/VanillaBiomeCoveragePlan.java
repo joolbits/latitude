@@ -193,7 +193,7 @@ public final class VanillaBiomeCoveragePlan {
             case SUBTROPICAL_HUMID_LOWLAND, WARM_TRANSITION, WARM_UPLAND,
                     ARID_LOWLAND, ARID_UPLAND -> new double[]{0.28, 0.38};
             case TEMPERATE_LOWLAND, TEMPERATE_WETLAND, TEMPERATE_UPLAND -> new double[]{0.42, 0.55};
-            case SUBPOLAR_LOWLAND -> new double[]{0.60, 0.72};
+            case SUBPOLAR_LOWLAND, SUBPOLAR_WETLAND -> new double[]{0.60, 0.72};
             case POLAR_LOWLAND -> new double[]{0.78, 0.90};
             case COLD_UPLAND -> new double[]{0.62, 0.88};
             case CAVE_SHALLOW, CAVE_DEEP -> throw new IllegalArgumentException("cave routes use CaveBiomeCoveragePlan");

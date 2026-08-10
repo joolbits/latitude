@@ -922,6 +922,8 @@ public final class LatitudeBiomes {
             case ARID_UPLAND -> band == BAND_SUBTROPICAL && mountain
                     && (province == ProvinceAuthority.Province.WARM_DRY
                     || aridHotspotHere(WORLD_SEED, blockX, blockZ));
+            case SUBPOLAR_WETLAND -> band == BAND_SUBPOLAR && !mountain
+                    && evaluateSwamp(blockX, blockZ, sampler).allow();
             case SUBPOLAR_LOWLAND -> band == BAND_SUBPOLAR && !mountain;
             case POLAR_LOWLAND -> band == BAND_POLAR && !mountain;
             case CAVE_SHALLOW, CAVE_DEEP -> false;
