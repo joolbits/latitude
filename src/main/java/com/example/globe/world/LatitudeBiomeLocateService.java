@@ -21,8 +21,11 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.commands.LocateCommand;
+import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
+import net.minecraft.world.BossEvent;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
@@ -110,10 +113,6 @@ public final class LatitudeBiomeLocateService {
                 includesSwamp,
                 includesMangrove);
         ACTIVE_JOBS.put(server, job);
-        source.sendSuccess(
-                () -> Component.literal("Searching for " + target.asPrintable()
-                        + " in the background. You can keep playing."),
-                false);
         GlobeMod.LOGGER.info(
                 "[Latitude] started tick-sliced wetland locate target={} origin={} radius={} step={} worstCaseGridProbes={}",
                 target.asPrintable(),
@@ -153,6 +152,7 @@ public final class LatitudeBiomeLocateService {
         private final Iterator<BlockPos.MutableBlockPos> offsets;
         private final int surfaceY;
         private final long startedNanos;
+        private final ServerBossEvent bossBar;
 
         private int gridProbes;
         private int sourcePreviewProbes;
@@ -193,6 +193,15 @@ public final class LatitudeBiomeLocateService {
                     source.getLevel().getMaxY());
             this.startedNanos = System.nanoTime();
             this.nextProgressNanos = startedNanos + FIRST_PROGRESS_NANOS;
+            this.bossBar = new ServerBossEvent(
+                    Component.literal("Searching for " + target.asPrintable() + "..."),
+                    BossEvent.BossBarColor.BLUE,
+                    BossEvent.BossBarOverlay.PROGRESS);
+            this.bossBar.setProgress(0.0F);
+            ServerPlayer requester = source.getPlayer();
+            if (requester != null) {
+                this.bossBar.addPlayer(requester);
+            }
         }
 
         private boolean runTick() {
@@ -295,10 +304,9 @@ public final class LatitudeBiomeLocateService {
                     (int) ((long) gridProbes * 100L / COMMAND_GRID_PROBES),
                     0,
                     99);
-            source.sendSuccess(
-                    () -> Component.literal("Latitude biome search: " + percent
-                            + "% checked; the world is still responsive."),
-                    false);
+            bossBar.setProgress(percent / 100.0F);
+            bossBar.setName(Component.literal(
+                    "Searching for " + target.asPrintable() + "... " + percent + "%"));
             GlobeMod.LOGGER.info(
                     "[Latitude] tick-sliced wetland locate progress target={} percent={} gridProbes={} sourcePreviewProbes={} sourcePreviewCandidates={} directMangroveCandidates={} eligibleProbes={} exactProbes={} totalExactProbeMicros={} maxExactProbeMicros={}",
                     target.asPrintable(),
@@ -315,6 +323,7 @@ public final class LatitudeBiomeLocateService {
         }
 
         private void finish(Pair<BlockPos, Holder<Biome>> result) {
+            bossBar.removeAllPlayers();
             Duration elapsed = Duration.ofNanos(System.nanoTime() - startedNanos);
             if (result == null) {
                 source.sendFailure(Component.translatableEscape(
@@ -346,6 +355,7 @@ public final class LatitudeBiomeLocateService {
         }
 
         private void fail(Throwable failure) {
+            bossBar.removeAllPlayers();
             source.sendFailure(Component.literal(
                     "Latitude biome search stopped safely: "
                             + failure.getClass().getSimpleName()));
