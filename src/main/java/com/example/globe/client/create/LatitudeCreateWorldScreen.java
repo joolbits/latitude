@@ -257,6 +257,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     // itself lives in CreateWorldIntroTitle, shared with the mixin that paints this same title over
     // vanilla's "Preparing for world creation" screen -- see that class's javadoc.
     private boolean introSkipped;
+    private boolean introClockClaimed;
     private Button createWorldBtn;
     private Button cancelBtn;
 
@@ -521,11 +522,12 @@ public class LatitudeCreateWorldScreen extends Screen {
         // Screen.rebuildWidgets() clears Screen-owned collections, not this private render registry.
         // Clear it on every init so resize/sub-screen return cannot leave a frozen ghost layer.
         settingsScrollWidgets.clear();
-        // beginIfInactive is a no-op once the clock is already running -- either started here on
-        // this screen's own first init(), or earlier by the preparing-screen mixin, in which case
-        // this screen picks up the fade already in progress instead of restarting it. Either way,
-        // later resizes/rebuilds (size cycling, window resize) never restart the intro.
-        CreateWorldIntroClock.beginIfInactive(Util.getMillis());
+        // Screen.init() also runs after widget rebuilds. Claim the shared clock only on this screen
+        // instance's first init so ordinary menu interactions can never replay the intro.
+        if (!introClockClaimed) {
+            introClockClaimed = true;
+            CreateWorldIntroClock.beginIfInactive(Util.getMillis());
+        }
         // Maintainer ruling, live 2026-08-09: too much negative space around the World Creation
         // screen's edges and between its panels/tabs. This port has no shortScreen/compact-layout
         // feature (a separate, not-yet-ported concern), so these values apply unconditionally rather
