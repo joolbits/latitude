@@ -36,6 +36,7 @@ final class BiomeProviderSelectionPolicyTest {
         polarIceSpikeAccentStaysAMinorityInEveryPoolSize();
         polarExtremeCapCatchesNameAlikeModdedBiomesConsistently();
         cliffTreeLandAndOceanAreActuallyReachable();
+        riverAndBeachAdmissionIsTagDrivenAndVanillaSafe();
         vanillaCoverageIsCompleteAndWorldSizeSafe();
         surfaceWaterCoverageIsCompleteAndWorldSizeSafe();
         sizeAwareVanillaRepresentationIsClosedAndBirthLocked();
@@ -944,12 +945,9 @@ final class BiomeProviderSelectionPolicyTest {
         String[][] expected = {
                 {"clifftree:bog", "0.25", "TEMPERATE_WETLAND"},
                 {"clifftree:sparse_forest", "0.7", "TEMPERATE_LOWLAND"},
-                {"clifftree:granite_shore", "0.5", "TEMPERATE_LOWLAND"},
                 {"clifftree:coniferous_badlands", "2.0", "ARID_LOWLAND"},
                 {"clifftree:oasis", "2.0", "ARID_LOWLAND"},
                 {"clifftree:shrubland", "2.0", "ARID_LOWLAND"},
-                {"clifftree:diorite_shore", "0.2", "SUBPOLAR_LOWLAND"},
-                {"clifftree:snowy_diorite_shore", "0.05", "POLAR_LOWLAND"},
                 {"clifftree:glacier_valley", "0.0", "POLAR_LOWLAND"},
                 // glacier_cliff intentionally excluded from this table: it is COLD_UPLAND, not a
                 // POLAR_LOWLAND lookalike, and is checked on its own below because it needs
@@ -957,6 +955,8 @@ final class BiomeProviderSelectionPolicyTest {
                 {"clifftree:snowy_old_growth_taiga", "0.0", "POLAR_LOWLAND"},
                 {"clifftree:tundra", "0.25", "POLAR_LOWLAND"},
         };
+        // The three *_shore biomes are intentionally absent from this land table: they are a
+        // beach authority, asserted in riverAndBeachAdmissionIsTagDrivenAndVanillaSafe().
         for (String[] row : expected) {
             BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(row[0]);
             assertTrue(descriptor != null,
@@ -1032,6 +1032,79 @@ final class BiomeProviderSelectionPolicyTest {
         assertTrue(oceanTag.contains("\"required\": false"),
                 "optional pack biomes must be tagged required:false so a vanilla-only install does "
                         + "not fail datapack load");
+    }
+
+    /**
+     * Rivers and beaches were hard authorities hardcoded to vanilla ids: pickBeachForBand returned
+     * minecraft:beach/snowy_beach/stony_shore literals and the river branch returned
+     * minecraft:river/frozen_river literals, so NO pack's river or beach could be admitted by any
+     * means. This asserts the tag authority exists, that every tag still carries its vanilla
+     * fallback (the vanilla-only install must be unchanged), and that the deliberate 70/30
+     * snowy-vs-rocky category roll was NOT folded into the tag pick.
+     */
+    private static void riverAndBeachAdmissionIsTagDrivenAndVanillaSafe() throws Exception {
+        String source = read("src/main/java/com/example/globe/world/LatitudeBiomes.java");
+
+        // Every new tag must exist, and must contain its vanilla identity so a no-pack world is
+        // unaffected. A tag whose only members are modded would silently empty the authority.
+        String[][] tagVanillaFloor = {
+                {"lat_beach_tropical", "minecraft:beach"},
+                {"lat_beach_temperate", "minecraft:beach"},
+                {"lat_beach_cold_snowy", "minecraft:snowy_beach"},
+                {"lat_beach_cold_rocky", "minecraft:stony_shore"},
+                {"lat_river_warm", "minecraft:river"},
+                {"lat_river_temperate", "minecraft:river"},
+                {"lat_river_frozen", "minecraft:frozen_river"},
+        };
+        for (String[] row : tagVanillaFloor) {
+            String tag = read("src/main/resources/data/globe/tags/worldgen/biome/" + row[0] + ".json");
+            assertTrue(tag.contains(row[1]),
+                    row[0] + " must retain its vanilla identity so a vanilla-only install is "
+                            + "unchanged by this authority: expected " + row[1]);
+            assertTrue(source.contains("\"" + row[0] + "\""),
+                    "tag must actually be wired into LatitudeBiomes, not just shipped as data: " + row[0]);
+        }
+
+        // The 70/30 cold-beach split is a deliberate tuning. Folding both identities into one tag
+        // would let coherent noise pick between them near 50/50, visibly changing every polar
+        // coastline on vanilla-only worlds for a reason unrelated to pack support.
+        // Both overloads (registry-source and collection-source) must keep the roll. Asserting mere
+        // presence was NOT enough: a teeth check that removed it from one overload still passed,
+        // because the other overload's copy satisfied a contains() check.
+        assertEquals(2, occurrences(source, "0xBEEFBEEF"),
+                "the cold-beach category roll must survive in BOTH pickBeachForBand overloads — it "
+                        + "decides snowy vs rocky, and only the identity within that category is "
+                        + "tag-driven; losing it in either path silently rerolls every polar "
+                        + "coastline on vanilla-only worlds");
+        String beachMethod = method(source, "pickBeachForBand(Registry<Biome> biomes,");
+        assertTrue(beachMethod.contains("LAT_BEACH_COLD_SNOWY") && beachMethod.contains("LAT_BEACH_COLD_ROCKY"),
+                "both cold categories resolve through their own tag");
+        assertFalse(beachMethod.contains("biome(biomes, \"minecraft:beach\")"),
+                "the hardcoded vanilla beach literal must be gone from the pick path — it is now "
+                        + "only a fallback argument");
+
+        // The freeze verdict is a latitude ramp and must NOT have become tag- or band-driven.
+        assertTrue(source.contains("shouldFreezeRiver(blockX, blockZ)")
+                        && source.contains("LAT_RIVER_FROZEN"),
+                "shouldFreezeRiver still decides frozen vs liquid; the tag only decides identity");
+
+        // Shores are a beach authority, never ledger land. Latitude's own isBeachLike() matches any
+        // path containing "shore", so routing one as land would place a coastal identity inland.
+        for (String shore : new String[]{
+                "clifftree:granite_shore", "clifftree:diorite_shore", "clifftree:snowy_diorite_shore"}) {
+            assertTrue(BiomeDescriptorLedger.descriptor(shore) == null,
+                    "shore biomes must NOT hold a ledger land route — vanilla stony_shore has none "
+                            + "either, and isBeachLike() treats them as beaches: " + shore);
+        }
+        String coldRocky = read(
+                "src/main/resources/data/globe/tags/worldgen/biome/lat_beach_cold_rocky.json");
+        String temperateBeach = read(
+                "src/main/resources/data/globe/tags/worldgen/biome/lat_beach_temperate.json");
+        assertTrue(coldRocky.contains("clifftree:diorite_shore")
+                        && coldRocky.contains("clifftree:snowy_diorite_shore"),
+                "the cold shores are admitted through the rocky beach category");
+        assertTrue(temperateBeach.contains("clifftree:granite_shore"),
+                "the temperate shore is admitted through the temperate beach category");
     }
 
     private static String read(String path) throws Exception {

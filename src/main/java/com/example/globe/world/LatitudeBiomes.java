@@ -245,13 +245,23 @@ public final class LatitudeBiomes {
         return latitudeBandChosenIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
     }
 
+    /**
+     * Beach identity for a coastal cell. Tag-driven since 2026-08-10; before that this returned
+     * hardcoded vanilla ids, so no pack's beach could ever be admitted.
+     *
+     * <p>The cold band's 70/30 snowy-vs-rocky split is DELIBERATELY preserved as a category roll
+     * rather than folded into the tag pick. Collapsing both identities into one tag would have let
+     * coherent noise choose between them at roughly 50/50, visibly changing every polar coastline
+     * on vanilla-only worlds for no reason connected to pack support. The roll decides the
+     * category; the tag decides which biome represents that category, so vanilla-only output is
+     * unchanged and packs still get in.
+     */
     private static Holder<Biome> pickBeachForBand(Registry<Biome> biomes, Holder<Biome> base, int blockX, int blockZ, int bandIndex) {
-        if (bandIndex <= 2) {
-            try {
-                return biome(biomes, "minecraft:beach");
-            } catch (Throwable ignored) {
-                return base;
-            }
+        if (bandIndex <= 1) {
+            return pickFromTagNoiseOrFallback(biomes, LAT_BEACH_TROPICAL, blockX, blockZ, 30, "minecraft:beach");
+        }
+        if (bandIndex == 2) {
+            return pickFromTagNoiseOrFallback(biomes, LAT_BEACH_TEMPERATE, blockX, blockZ, 31, "minecraft:beach");
         }
 
         int chunkX = blockX >> 4;
@@ -259,12 +269,9 @@ public final class LatitudeBiomes {
         long roll = hash64(chunkX, chunkZ, 0xBEEFBEEF);
         boolean snowy = Long.remainderUnsigned(roll, 100L) < 70L;
 
-        String target = snowy ? "minecraft:snowy_beach" : "minecraft:stony_shore";
-        try {
-            return biome(biomes, target);
-        } catch (Throwable ignored) {
-            return base;
-        }
+        return snowy
+                ? pickFromTagNoiseOrFallback(biomes, LAT_BEACH_COLD_SNOWY, blockX, blockZ, 32, "minecraft:snowy_beach")
+                : pickFromTagNoiseOrFallback(biomes, LAT_BEACH_COLD_ROCKY, blockX, blockZ, 33, "minecraft:stony_shore");
     }
 
     private static boolean shouldSkipSavannaGate(String callerContext) {
@@ -318,10 +325,13 @@ public final class LatitudeBiomes {
         return entryById(biomes, TEMPERATE_UPLAND_BIOMES[idx]);
     }
 
+    /** Collection-source twin of the registry beach picker. See that overload for the 70/30 note. */
     private static Holder<Biome> pickBeachForBand(Collection<Holder<Biome>> biomes, Holder<Biome> base, int blockX, int blockZ, int bandIndex) {
-        if (bandIndex <= 2) {
-            Holder<Biome> entry = entryById(biomes, "minecraft:beach");
-            return entry != null ? entry : base;
+        if (bandIndex <= 1) {
+            return pickFromTagNoiseOrFallback(biomes, base, LAT_BEACH_TROPICAL, blockX, blockZ, 30, "minecraft:beach");
+        }
+        if (bandIndex == 2) {
+            return pickFromTagNoiseOrFallback(biomes, base, LAT_BEACH_TEMPERATE, blockX, blockZ, 31, "minecraft:beach");
         }
 
         int chunkX = blockX >> 4;
@@ -329,9 +339,9 @@ public final class LatitudeBiomes {
         long roll = hash64(chunkX, chunkZ, 0xBEEFBEEF);
         boolean snowy = Long.remainderUnsigned(roll, 100L) < 70L;
 
-        String target = snowy ? "minecraft:snowy_beach" : "minecraft:stony_shore";
-        Holder<Biome> entry = entryById(biomes, target);
-        return entry != null ? entry : base;
+        return snowy
+                ? pickFromTagNoiseOrFallback(biomes, base, LAT_BEACH_COLD_SNOWY, blockX, blockZ, 32, "minecraft:snowy_beach")
+                : pickFromTagNoiseOrFallback(biomes, base, LAT_BEACH_COLD_ROCKY, blockX, blockZ, 33, "minecraft:stony_shore");
     }
 
     private static boolean allowBeachShortcut(NoiseBasedChunkGenerator generator,
@@ -2987,6 +2997,18 @@ public final class LatitudeBiomes {
     private static final TagKey<Biome> LAT_POLAR_ACCENT = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_polar_accent"));
 
     private static final TagKey<Biome> LAT_OCEAN_TROPICAL = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_ocean_tropical"));
+    // Beach and river admission. Before these existed both were hard authorities hardcoded to
+    // vanilla ids -- pickBeachForBand returned minecraft:beach/snowy_beach/stony_shore literals and
+    // the river branch returned minecraft:river/frozen_river literals -- so NO pack's beach or river
+    // could ever be admitted, by data or otherwise. These follow the lat_ocean_* precedent, which is
+    // a live tag authority (unlike the land lat_* tags, which the ledger shadows).
+    private static final TagKey<Biome> LAT_BEACH_TROPICAL = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_beach_tropical"));
+    private static final TagKey<Biome> LAT_BEACH_TEMPERATE = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_beach_temperate"));
+    private static final TagKey<Biome> LAT_BEACH_COLD_SNOWY = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_beach_cold_snowy"));
+    private static final TagKey<Biome> LAT_BEACH_COLD_ROCKY = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_beach_cold_rocky"));
+    private static final TagKey<Biome> LAT_RIVER_WARM = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_river_warm"));
+    private static final TagKey<Biome> LAT_RIVER_TEMPERATE = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_river_temperate"));
+    private static final TagKey<Biome> LAT_RIVER_FROZEN = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_river_frozen"));
     private static final TagKey<Biome> LAT_OCEAN_TEMPERATE = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_ocean_temperate"));
     private static final TagKey<Biome> LAT_OCEAN_SUBPOLAR = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_ocean_subpolar"));
     private static final TagKey<Biome> LAT_OCEAN_POLAR = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_ocean_polar"));
@@ -3366,30 +3388,24 @@ public final class LatitudeBiomes {
                         seaLevel,
                         polarMountainNoiseLike);
         if (base.is(BiomeTags.IS_RIVER) && !raisedMountainRiver) {
-            if (shouldFreezeRiver(blockX, blockZ)) {
-                try {
-                    Holder<Biome> out = biome(biomeRegistry, "minecraft:frozen_river");
-                    out = applyV2SurfaceWaterCoverage(
-                            biomeRegistry, VanillaSurfaceWaterCoveragePlan.Family.RIVER,
-                            base, out, blockX, blockZ, sampler);
-                    debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
-                    return out;
-                } catch (Throwable ignored) {
-                    debugPick(blockX, blockZ, effectiveRadius, t, band, base, base, false, false, null);
-                    return base;
-                }
-            } else {
-                try {
-                    Holder<Biome> out = biome(biomeRegistry, "minecraft:river");
-                    out = applyV2SurfaceWaterCoverage(
-                            biomeRegistry, VanillaSurfaceWaterCoveragePlan.Family.RIVER,
-                            base, out, blockX, blockZ, sampler);
-                    debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
-                    return out;
-                } catch (Throwable ignored) {
-                    debugPick(blockX, blockZ, effectiveRadius, t, band, base, base, false, false, null);
-                    return base;
-                }
+            // Tag-driven since 2026-08-10. shouldFreezeRiver's latitude ramp still decides frozen
+            // vs liquid exactly as before; only the identity chosen for that verdict is now
+            // extensible, so a pack's river can be admitted where previously only the two vanilla
+            // ids could ever appear.
+            try {
+                Holder<Biome> out = shouldFreezeRiver(blockX, blockZ)
+                        ? pickFromTagNoiseOrFallback(biomeRegistry, LAT_RIVER_FROZEN, blockX, blockZ, 36, "minecraft:frozen_river")
+                        : pickFromTagNoiseOrFallback(biomeRegistry,
+                                blendedBandIndex <= BAND_SUBTROPICAL ? LAT_RIVER_WARM : LAT_RIVER_TEMPERATE,
+                                blockX, blockZ, blendedBandIndex <= BAND_SUBTROPICAL ? 34 : 35, "minecraft:river");
+                out = applyV2SurfaceWaterCoverage(
+                        biomeRegistry, VanillaSurfaceWaterCoveragePlan.Family.RIVER,
+                        base, out, blockX, blockZ, sampler);
+                debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
+                return out;
+            } catch (Throwable ignored) {
+                debugPick(blockX, blockZ, effectiveRadius, t, band, base, base, false, false, null);
+                return base;
             }
         }
 
@@ -4152,17 +4168,13 @@ public final class LatitudeBiomes {
                         seaLevel,
                         polarMountainNoiseLike);
         if (base.is(BiomeTags.IS_RIVER) && !raisedMountainRiver) {
-            if (shouldFreezeRiver(blockX, blockZ)) {
-                Holder<Biome> frozen = entryById(biomePool, "minecraft:frozen_river");
-                Holder<Biome> out = frozen != null ? frozen : base;
-                out = applyV2SurfaceWaterCoverage(
-                        biomePool, VanillaSurfaceWaterCoveragePlan.Family.RIVER,
-                        base, out, blockX, blockZ, sampler);
-                debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
-                return out;
-            }
-            Holder<Biome> river = entryById(biomePool, "minecraft:river");
-            Holder<Biome> out = river != null ? river : base;
+            // See the registry twin: the frozen/liquid verdict is unchanged, only the identity is
+            // now tag-extensible.
+            Holder<Biome> out = shouldFreezeRiver(blockX, blockZ)
+                    ? pickFromTagNoiseOrFallback(biomePool, base, LAT_RIVER_FROZEN, blockX, blockZ, 36, "minecraft:frozen_river")
+                    : pickFromTagNoiseOrFallback(biomePool, base,
+                            blendedBandIndex <= BAND_SUBTROPICAL ? LAT_RIVER_WARM : LAT_RIVER_TEMPERATE,
+                            blockX, blockZ, blendedBandIndex <= BAND_SUBTROPICAL ? 34 : 35, "minecraft:river");
             out = applyV2SurfaceWaterCoverage(
                     biomePool, VanillaSurfaceWaterCoveragePlan.Family.RIVER,
                     base, out, blockX, blockZ, sampler);

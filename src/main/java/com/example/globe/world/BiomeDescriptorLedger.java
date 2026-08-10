@@ -148,9 +148,15 @@ public final class BiomeDescriptorLedger {
             // and pickBeachForBand are hard authorities that consult no tag, so no pack's river or
             // beach can be admitted by data alone. That gap is real and is deliberately left for a
             // follow-up slice; it is not specific to CliffTree.
+            // CliffTree's three *_shore biomes are deliberately NOT here. Shores are a hard
+            // authority in Latitude, not ledger land: vanilla minecraft:stony_shore, beach,
+            // snowy_beach, river and frozen_river have no ledger route either, and Latitude's own
+            // isBeachLike() matches any biome whose path contains "shore". Routing them as land
+            // would have put coastal identities inland at random temperate/polar locations. They
+            // are admitted through the lat_beach_* tags instead. (Corrected 2026-08-10: the prior
+            // commit listed all three as LOWLAND land routes.)
             d("clifftree:bog", r(BiomeRoute.TEMPERATE_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
             d("clifftree:sparse_forest", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
-            d("clifftree:granite_shore", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.UPLAND),
             // temperature 2.0 -- maximum heat, identical to vanilla badlands -- despite the
             // "coniferous" name. It is a petrified/fossil-forest-in-badlands aesthetic, not a cold
             // biome, and routing it by name would have put a desert-hot identity in the taiga band.
@@ -158,8 +164,6 @@ public final class BiomeDescriptorLedger {
             d("clifftree:oasis", r(BiomeRoute.ARID_LOWLAND), Terrain.ARID, Water.LAND, Family.ARID),
             d("clifftree:shrubland", r(BiomeRoute.ARID_LOWLAND), Terrain.ARID, Water.LAND, Family.ARID),
             d("clifftree:desert_cliff", r(BiomeRoute.ARID_LOWLAND, BiomeRoute.ARID_UPLAND), Terrain.ARID, Water.LAND, Family.ARID),
-            d("clifftree:diorite_shore", r(BiomeRoute.SUBPOLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.UPLAND),
-            d("clifftree:snowy_diorite_shore", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
             d("clifftree:glacier_valley", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
                         // Corrected 2026-08-10: COLD_UPLAND already exists (band >= BAND_SUBPOLAR && mountain,
             // 50-90 degrees) and is already owned by snowy_slopes/frozen_peaks/jagged_peaks -- no
