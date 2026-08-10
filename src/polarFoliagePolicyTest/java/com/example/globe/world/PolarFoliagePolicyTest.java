@@ -15,6 +15,7 @@ public final class PolarFoliagePolicyTest {
         treeLineIsStrictAndBelowTheFoliageLimit();
         blockLevelGuardClosesTheFeatureClassBypass();
         theWoodyAndFoliageTagsDoNotOverlap();
+        windsweptSnowLineDescendsPolewardAndCannotOrphanSnowyGrass();
         System.out.println("POLAR_FOLIAGE_POLICY_TEST_PASS");
     }
 
@@ -297,6 +298,72 @@ public final class PolarFoliagePolicyTest {
             out.add(m.group(1));
         }
         return out;
+    }
+
+    /**
+     * Two defects, one root: a flat, latitude-blind windswept snow line.
+     *
+     * <p>At a constant sea+27 it carpeted TEMPERATE windswept in snow that does not belong at
+     * 35-50 degrees. Reverting to vanilla's sea+57 everywhere brings back the older defect — and
+     * that one is a RENDERING desync, not a taste question: {@code grass_block} carries
+     * {@code SnowyDirtBlock.SNOWY}, which whitens the block's top edges. Worldgen writes states
+     * directly rather than through neighbour updates, so stripping the snow layer above a
+     * {@code SNOWY=true} grass block leaves white-edged grass with nothing on top. Previously
+     * measured on this line at 159 snowy grass blocks against 13 surviving snow layers.
+     *
+     * <p>So the ramp is only safe BECAUSE the guard now also clears SNOWY on the same condition.
+     * Assert both halves; either alone is a regression.
+     */
+    private static void windsweptSnowLineDescendsPolewardAndCannotOrphanSnowyGrass() throws Exception {
+        // Ramp: vanilla's line equatorward of temperate, fully lowered by subpolar, monotonic between.
+        assertNear(WindsweptSnowLinePolicy.VANILLA_SNOW_LINE_OFFSET_ABOVE_SEA,
+                WindsweptSnowLinePolicy.snowLineOffsetForLatitude(20.0),
+                "below the temperate band the line stays at vanilla's");
+        assertNear(WindsweptSnowLinePolicy.VANILLA_SNOW_LINE_OFFSET_ABOVE_SEA,
+                WindsweptSnowLinePolicy.snowLineOffsetForLatitude(35.0),
+                "at the temperate edge the line is still vanilla's");
+        assertNear(WindsweptSnowLinePolicy.SNOW_LINE_OFFSET_ABOVE_SEA,
+                WindsweptSnowLinePolicy.snowLineOffsetForLatitude(50.0),
+                "by the subpolar edge the line is fully lowered");
+        assertNear(WindsweptSnowLinePolicy.SNOW_LINE_OFFSET_ABOVE_SEA,
+                WindsweptSnowLinePolicy.snowLineOffsetForLatitude(80.0),
+                "it stays lowered poleward, never rising again");
+        int previous = Integer.MAX_VALUE;
+        for (int deg = 30; deg <= 60; deg++) {
+            int offset = WindsweptSnowLinePolicy.snowLineOffsetForLatitude(deg);
+            assertTrue(offset <= previous,
+                    "the snow line must descend monotonically toward the pole, as Earth's does; "
+                            + "a non-monotonic ramp puts a snow band above a bare band at " + deg);
+            previous = offset;
+        }
+
+        // A mid-temperate windswept column must NOT be snowed at the old blanket height.
+        assertFalse(WindsweptSnowLinePolicy.appliesTo(
+                        "minecraft:windswept_forest", 63 + 27, 63, 40.0),
+                "at 40 degrees the old blanket sea+27 line must no longer snow windswept");
+        assertTrue(WindsweptSnowLinePolicy.appliesTo(
+                        "minecraft:windswept_forest", 63 + 27, 63, 55.0),
+                "at 55 degrees the lowered line still applies");
+        assertFalse(WindsweptSnowLinePolicy.appliesTo(
+                        "minecraft:windswept_savanna", 63 + 40, 63, 55.0),
+                "windswept_savanna is a warm biome and never snows, at any latitude");
+
+        // The other half: the guard must clear SNOWY, and must decide it with the SAME predicate
+        // that strips the layer. Two copies of that test is how the orphan was produced before.
+        String guard = read(
+                "src/main/java/com/example/globe/mixin/ProtoChunkSnowBlockGuardMixin.java");
+        // Assert the WRITE, not a mention. A contains("SnowyDirtBlock.SNOWY") check passed even
+        // with the setValue deleted, because the property is also READ twice just above it — the
+        // same weak-assertion trap that let a 0xBEEFBEEF guard pass with one overload gutted.
+        assertTrue(guard.contains("SnowyDirtBlock.SNOWY, Boolean.FALSE"),
+                "the guard must actually SET SnowyDirtBlock.SNOWY to false, not merely read it — "
+                        + "otherwise a stripped snow layer leaves white-edged grass with nothing "
+                        + "on top, which is the reported rendering defect");
+        assertTrue(guard.contains("globe$columnKeepsSnow"),
+                "strip and SNOWY-clear must share one predicate");
+        assertTrue(occurrences(guard, "globe$columnKeepsSnow(pos)") == 2,
+                "both the SNOWY clear and the snow strip must call the shared predicate — if only "
+                        + "one does, they can disagree and the orphaned-grass defect returns");
     }
 
     private static String read(String path) throws Exception {

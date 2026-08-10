@@ -70,6 +70,29 @@ public class ProtoChunkSnowBlockGuardMixin {
                 || band == LatitudeBands.Band.TEMPERATE;
     }
 
+    /**
+     * True when this column legitimately keeps snow: either vanilla's own temperature gate says so,
+     * or Latitude's windswept snow line does. The single source of truth for BOTH the snow-layer
+     * strip and the SNOWY-property clear above — separate copies of this test are exactly how the
+     * orphaned white-topped grass got produced in the first place.
+     */
+    @Unique
+    private boolean globe$columnKeepsSnow(BlockPos pos) {
+        Holder<Biome> biome = ((ProtoChunk) (Object) this).getNoiseBiome(
+                pos.getX() >> 2, pos.getY() >> 2, pos.getZ() >> 2);
+        if (biome == null) {
+            return false;
+        }
+        if (biome.value().coldEnoughToSnow(pos, LatitudeBiomes.getActiveSeaLevel())) {
+            return true;
+        }
+        return com.example.globe.world.WindsweptSnowLinePolicy.appliesTo(
+                biome.unwrapKey().map(key -> key.identifier().toString()).orElse(null),
+                pos.getY(), LatitudeBiomes.getActiveSeaLevel(),
+                com.example.globe.world.WindsweptSnowLinePolicy.absoluteLatitudeDegrees(
+                        pos.getZ(), LatitudeBiomes.getActiveRadiusBlocks(), GlobeMod.BORDER_RADIUS));
+    }
+
     @Inject(method = "setBlockState", at = @At("HEAD"), cancellable = true)
     private void globe$blockSnowInWarmBands(BlockPos pos, BlockState state, int flags, CallbackInfoReturnable<BlockState> cir) {
         if (state == null) return;
@@ -96,6 +119,26 @@ public class ProtoChunkSnowBlockGuardMixin {
 
         if (!globe$isWarmBand(pos.getZ())) return;
 
+        // Orphaned white-topped grass. grass_block carries SnowyDirtBlock.SNOWY, which paints the
+        // block's top edges white; vanilla keeps it in sync via neighbour updates, but worldgen
+        // writes states directly, so stripping the snow layer above leaves SNOWY=true with nothing
+        // on top. That is the "grey grass with snow-covered edges" defect (maintainer, 2026-08-10),
+        // and it is a state desync, not an aesthetic complaint — previously measured on this line
+        // at 159 snowy grass blocks against 13 surviving snow layers in temperate windswept.
+        //
+        // Until now the only defence was never to strip where snow had been placed, which made the
+        // whole snow-line policy load-bearing for a RENDERING invariant. Clearing SNOWY on the same
+        // condition that strips the layer makes the two agree by construction, so a future snow-line
+        // change cannot resurrect the orphan.
+        if (state.is(Blocks.GRASS_BLOCK)
+                && state.hasProperty(net.minecraft.world.level.block.SnowyDirtBlock.SNOWY)
+                && state.getValue(net.minecraft.world.level.block.SnowyDirtBlock.SNOWY)
+                && !globe$columnKeepsSnow(pos)) {
+            cir.setReturnValue(state.setValue(
+                    net.minecraft.world.level.block.SnowyDirtBlock.SNOWY, Boolean.FALSE));
+            return;
+        }
+
         boolean isSnowBlock = state.is(Blocks.SNOW_BLOCK);
         boolean isSnowLayer = state.is(Blocks.SNOW);
         boolean isPowder = state.is(Blocks.POWDER_SNOW);
@@ -115,21 +158,9 @@ public class ProtoChunkSnowBlockGuardMixin {
         // re-aligns the two snow write paths: SnowAndFreezeFeature applies vanilla's own
         // cold-enough test and is unguarded since the 26.2 pivot, so band-only stripping made the
         // two disagree and produced the patchy result rather than a clean one.
-        Holder<Biome> snowBiome = ((ProtoChunk) (Object) this).getNoiseBiome(
-                pos.getX() >> 2, pos.getY() >> 2, pos.getZ() >> 2);
-        if (snowBiome != null && snowBiome.value().coldEnoughToSnow(pos, LatitudeBiomes.getActiveSeaLevel())) {
+        if (globe$columnKeepsSnow(pos)) {
             return;
         }
-        // Latitude's lowered windswept snow line: SnowAndFreezeWindsweptSnowLineMixin places snow
-        // on windswept columns from seaLevel+27 even though vanilla's temperature gate says rain.
-        // The guard must honor the same policy or it strips exactly what that mixin places,
-        // recreating the snowy-grass-without-carpet incoherence.
-        if (snowBiome != null && com.example.globe.world.WindsweptSnowLinePolicy.appliesTo(
-                snowBiome.unwrapKey().map(key -> key.identifier().toString()).orElse(null),
-                pos.getY(), LatitudeBiomes.getActiveSeaLevel())) {
-            return;
-        }
-
         BlockState replacement;
         if (isSnowBlock) {
             // Cosmetic: dirt on hillsides (above sea level), stone underground
