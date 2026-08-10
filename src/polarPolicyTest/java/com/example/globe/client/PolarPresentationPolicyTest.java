@@ -20,6 +20,7 @@ public final class PolarPresentationPolicyTest {
         staticIntegrationProofsHold();
         EwPresentationPolicyTest.runAll();
         LoadingPresentationPolicyTest.runAll();
+        ZoneTitlePolicyTest.runAll();
         System.out.println("POLAR_PRESENTATION_POLICY_TEST_PASS");
     }
 
