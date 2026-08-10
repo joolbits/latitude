@@ -3010,14 +3010,10 @@ public final class LatitudeBiomes {
     private static final int FALLBACK_COHERENCE_BLOCKS = 128;
     // Art VI: salt for the fallback-list pick's coherent ValueNoise2D fields (no floorDiv cell-hash).
     private static final long FALLBACK_PICK_SALT = 0x46414C4C5049434BL; // "FALLPICK"
-    // Polar forest/taiga sanitize: coherent ice_spikes accent over a snowy_taiga/snowy_plains base
-    // (caps the ice_spikes over-representation; keeps it present as a coherent polar accent).
-    private static final long POLAR_SANITIZE_ICE_SALT = 0x6963655F73706B73L; // "ice_spks"
-    private static final int POLAR_ICE_ACCENT_PATCH_BLOCKS = 256;
-    // Keep ice_spikes where its coherent noise >= this. Tuned so ice_spikes lands just under its ~6%
-    // cap (keeping as much as the cap allows minimizes how much of the converted area piles into the
-    // snowy_plains primary). Lower threshold => keep more ice_spikes.
-    private static final double POLAR_ICE_KEEP_THRESHOLD = 0.45;
+    // Polar forest/taiga sanitize: coherent ice_spikes accent over a snowy_taiga/snowy_plains base.
+    // The cap itself (threshold + rationale) now lives in PolarIceSpikeAccentPolicy, extracted
+    // 2026-08-10 so its measured threshold is directly testable rather than re-derived from a
+    // comment; see that class for why 0.45 under-capped and 0.78 replaced it.
     private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 1408;
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
     private static final int BLEND_NOISE_PATCH_CHUNKS = 10;
@@ -7718,8 +7714,10 @@ public final class LatitudeBiomes {
     }
 
     /**
-     * True for biomes that must not appear in the extreme polar cap (≥85°).
-     * These are soft, vegetated, or village-friendly relative to 85°+ polar ecology.
+     * True for biomes that must not appear in the extreme polar cap (>=74.5°, {@code
+     * EXTREME_POLAR_CAP_MIN_DEG} — corrected 2026-08-10; this javadoc previously said 85° against
+     * that 74.5 constant, a 10.5-degree drift caught in the 2026-08-10 biome-picker audit).
+     * These are soft, vegetated, or village-friendly relative to extreme-polar ecology.
      *
      * Authority: used exclusively by clampExtremePolarCapOutput, which fires before
      * the alpine-authority check. Alpine biomes (jagged_peaks, frozen_peaks, snowy_slopes,
@@ -7728,7 +7726,21 @@ public final class LatitudeBiomes {
      *
      * Uses explicit isBiomeId() checks (not path-string matching) to avoid silent
      * false-negatives when registry-key resolution returns Optional.empty().
-     * Path-based catch-all is kept as secondary safety net only.
+     *
+     * <p>Path-based catch-all (2026-08-10: now includes "grove", matching the explicit vanilla
+     * minecraft:grove/cherry_grove ban above) is kept as secondary safety net for name-alike
+     * modded biomes. Measured against the providers installed in the maintainer's test profile:
+     * terralith:siberian_grove and terralith:siberian_taiga carry IDENTICAL ground-truth climate
+     * and content (temperature 0.13, trees + mushrooms + logs) but only the "taiga" one was
+     * caught before this change — the two were treated inconsistently by name alone, not by any
+     * real difference. This does NOT attempt to classify every polar biome by ecology; several
+     * installed biomes (biomesoplenty:tundra, auroral_garden, wintry_origin_valley,
+     * terralith:cold_shrubland, wintry_lowlands) place trees per ground truth too but are NOT
+     * added here, because whether a tundra-family biome should keep its identity at the pole
+     * (unlike a literal forest/taiga/grove) is a roster-composition call for the maintainer, not
+     * a mechanical bug — and {@link PolarFoliagePolicy}'s block-level guard already strips their
+     * actual tree/log/mushroom content above the 72-degree tree line regardless of biome identity,
+     * so the player-visible defect this method exists to prevent no longer depends on it.
      */
     private static boolean isExtremePolarSoftColdLeak(Holder<Biome> candidate) {
         // Explicit primary checks — all biomes that are ecologically invalid at 85°+.
@@ -7748,7 +7760,7 @@ public final class LatitudeBiomes {
         }
         // Path-based catch-all for any unlisted biome whose ID path contains "forest" or "taiga".
         String path = candidate.unwrapKey().map(key -> key.identifier().getPath()).orElse("");
-        return path.contains("forest") || path.contains("taiga");
+        return path.contains("forest") || path.contains("taiga") || path.contains("grove");
     }
 
     private static boolean isMountainCodedColdPick(Holder<Biome> candidate) {
@@ -8908,9 +8920,7 @@ public final class LatitudeBiomes {
     // the world / ~34% of the polar band, over its accent cap, down to a coherent minority accent),
     // converting the rest to the snowy base. Source-agnostic — applies wherever the pick is ice_spikes.
     private static boolean keepPolarIceSpike(int blockX, int blockZ) {
-        double ice = ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_SANITIZE_ICE_SALT, blockX, blockZ,
-                POLAR_ICE_ACCENT_PATCH_BLOCKS);
-        return ice >= POLAR_ICE_KEEP_THRESHOLD;
+        return PolarIceSpikeAccentPolicy.keepPolarIceSpike(WORLD_SEED, blockX, blockZ);
     }
 
     private static Holder<Biome> pickSubpolarForestSanitizeFallback(Registry<Biome> biomes, Holder<Biome> pick) {

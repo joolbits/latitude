@@ -33,6 +33,8 @@ final class BiomeProviderSelectionPolicyTest {
         routeSelectionCannotFallBackToAnUnclassifiedTag();
         providerTicketHotPathCachesAndInvalidates();
         providerProfileCompatibilityIsBirthLocked();
+        polarIceSpikeAccentStaysAMinorityInEveryPoolSize();
+        polarExtremeCapCatchesNameAlikeModdedBiomesConsistently();
         vanillaCoverageIsCompleteAndWorldSizeSafe();
         surfaceWaterCoverageIsCompleteAndWorldSizeSafe();
         sizeAwareVanillaRepresentationIsClosedAndBirthLocked();
@@ -927,6 +929,14 @@ final class BiomeProviderSelectionPolicyTest {
 
     private static String namespace(String id) { return id.substring(0, id.indexOf(':')); }
 
+    private static String read(String path) throws Exception {
+        return Files.readString(Path.of(path));
+    }
+
+    private static String normalize(String value) {
+        return value.replaceAll("\\s+", " ");
+    }
+
     private static int occurrences(String value, String needle) {
         int count = 0;
         for (int at = value.indexOf(needle); at >= 0; at = value.indexOf(needle, at + needle.length())) count++;
@@ -938,6 +948,87 @@ final class BiomeProviderSelectionPolicyTest {
         if (start < 0) throw new AssertionError("missing method: " + signature);
         int next = source.indexOf("\n    private static ", start + signature.length());
         return source.substring(start, next >= 0 ? next : source.length());
+    }
+
+    /**
+     * The 2026-08-10 biome-picker audit measured this cap at its PRE-fix threshold (0.45) and
+     * found it retained ~59% of ice_spikes picks rather than capping them — a vanilla-only world
+     * (the hard "must work with no providers" case) still finished with ice_spikes on ~27% of the
+     * polar band, not the minority accent {@code lat_polar_accent.json} declares. This proves the
+     * RETUNED threshold (0.78) against the real pipeline: BiomeProviderSelectionPolicy's argmax
+     * pick over the actual POLAR_LOWLAND pool, then PolarIceSpikeAccentPolicy's cap on top,
+     * sampled on a coherent, non-adjacent grid so no single accent patch is double-counted.
+     */
+    private static void polarIceSpikeAccentStaysAMinorityInEveryPoolSize() {
+        List<String> vanillaOnly = List.of("minecraft:ice_spikes", "minecraft:snowy_plains");
+        List<String> withProviders = List.of(
+                "minecraft:ice_spikes", "minecraft:snowy_plains",
+                "biomesoplenty:auroral_garden", "biomesoplenty:snowblossom_grove",
+                "biomesoplenty:snowy_coniferous_forest", "biomesoplenty:snowy_fir_clearing",
+                "biomesoplenty:tundra", "biomesoplenty:wintry_origin_valley",
+                "terralith:cold_shrubland", "terralith:siberian_grove", "terralith:siberian_taiga",
+                "terralith:snowy_cherry_grove", "terralith:wintry_forest", "terralith:wintry_lowlands");
+
+        double vanillaOnlyShare = measurePolarIceSpikeShare(vanillaOnly);
+        double withProvidersShare = measurePolarIceSpikeShare(withProviders);
+
+        assertTrue(vanillaOnlyShare < 0.08,
+                "vanilla-only polar band must not read as an ice_spikes monoculture — the hard "
+                        + "'must work with no providers' case is the worst case for this cap "
+                        + "because the pool is smallest; measured ~5.9% on this exact grid when the "
+                        + "policy's threshold was tuned, so 8% leaves headroom without masking a "
+                        + "real regression: observed=" + vanillaOnlyShare);
+        assertTrue(withProvidersShare <= vanillaOnlyShare + 0.02,
+                "installing providers must not INCREASE ice_spikes' share of the polar band — "
+                        + "the cap is source-agnostic, so a wider pool should only dilute it further: "
+                        + "vanillaOnly=" + vanillaOnlyShare + " withProviders=" + withProvidersShare);
+        assertTrue(withProvidersShare > 0.0,
+                "the accent must still be reachable, not fully eliminated, with providers installed");
+    }
+
+    private static double measurePolarIceSpikeShare(List<String> biomeIds) {
+        BiomeProviderSelectionPolicy.Pool pool = BiomeProviderSelectionPolicy.createPool(biomeIds);
+        int total = 0;
+        int iceSpikes = 0;
+        int bandIndex = 4; // BAND_POLAR
+        for (long seed : AUDIT_SEEDS) {
+            for (int x : NONADJACENT_POINTS) {
+                for (int z : NONADJACENT_POINTS) {
+                    int index = BiomeProviderSelectionPolicy.selectIndex(
+                            pool, seed, x, z, bandIndex, "POLAR_LOWLAND", 0L);
+                    total++;
+                    if ("minecraft:ice_spikes".equals(pool.ids().get(index))
+                            && PolarIceSpikeAccentPolicy.keepPolarIceSpike(seed, x, z)) {
+                        iceSpikes++;
+                    }
+                }
+            }
+        }
+        return iceSpikes / (double) total;
+    }
+
+    /**
+     * terralith:siberian_grove and terralith:siberian_taiga carry IDENTICAL ground-truth climate
+     * and content (temperature 0.13, trees + mushrooms + logs — from the 2026-08-10 audit corpus)
+     * but the extreme-polar-cap catch-all only matched "forest"/"taiga" substrings, so the two
+     * were banned inconsistently by name alone. Source-scan rather than a live pick, matching this
+     * suite's existing convention for LatitudeBiomes internals that are not independently public.
+     */
+    private static void polarExtremeCapCatchesNameAlikeModdedBiomesConsistently() throws Exception {
+        String source = normalize(read("src/main/java/com/example/globe/world/LatitudeBiomes.java"));
+        String leakMethod = method(source, "isExtremePolarSoftColdLeak(Holder<Biome> candidate) {");
+        assertTrue(leakMethod.contains("path.contains(\"grove\")"),
+                "the catch-all must include \"grove\", or terralith:siberian_grove and "
+                        + "terralith:siberian_taiga (identical climate/content, different name) are "
+                        + "banned inconsistently at the extreme polar cap");
+        assertTrue(leakMethod.contains("path.contains(\"forest\")")
+                        && leakMethod.contains("path.contains(\"taiga\")"),
+                "the pre-existing forest/taiga catch-all must remain — this is additive, not a "
+                        + "replacement");
+        assertTrue(source.contains("EXTREME_POLAR_CAP_MIN_DEG = 74.5"),
+                "the constant this javadoc describes must still be 74.5, or the corrected javadoc "
+                        + "(fixed 2026-08-10; previously claimed 85 against this same 74.5 constant) "
+                        + "is itself now wrong");
     }
 
     private static void assertWithinFourSigma(Map<String, Integer> counts, String key, int samples, double expected, String message) {
