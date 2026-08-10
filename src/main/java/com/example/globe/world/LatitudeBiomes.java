@@ -3121,10 +3121,23 @@ public final class LatitudeBiomes {
             ThreadLocal.withInitial(PreviewHeightCache::new);
     private static final long UPLAND_ROLL_SALT = 0x1CEB0D03L;
     private static final long UPLAND_POOL_SALT = 0x1CEB0D04L;
+    /**
+     * The pool the land-cohesion gate paints from when a flat-family candidate lands on measured
+     * relief ({@code TerrainBiomeCohesionPolicy}, relief >= 6 or height >= sea+40). This runs AFTER
+     * {@code enforceLandBandPool}, so nothing here is re-checked against any route or band pool —
+     * every entry must independently deserve to appear on a temperate shoulder at ANY altitude,
+     * because the relief trigger has no height floor (maintainer's live find, 2026-08-10: meadow
+     * painted at Y=79 on an 8-block coastal shoulder — the gate working exactly as shipped).
+     *
+     * <p>windswept_hills/windswept_forest were removed 2026-08-10. Their ledger route moved to
+     * COLD_UPLAND that morning (maintainer ruling: the grey windswept tint belongs at 50+ degrees),
+     * but this array was a SECOND, independent placement mechanism that kept painting them into
+     * temperate through the cohesion gate — the route move fixed the lottery and missed this.
+     * grove is deliberately NOT a replacement (temperature -0.2: it snows at low Y, the exact
+     * defect class fixed the same day), and cherry_grove keeps its own contiguity authority.
+     */
     private static final String[] TEMPERATE_UPLAND_BIOMES = {
-            "minecraft:meadow",
-            "minecraft:windswept_hills",
-            "minecraft:windswept_forest"
+            "minecraft:meadow"
     };
     private static final double TEMPERATE_WARM_EDGE_SHOULDER_FRAC = 0.18;
     private static final int TEMPERATE_WARM_EDGE_SHOULDER_MIN_BLOCKS = 96;

@@ -39,6 +39,7 @@ final class BiomeProviderSelectionPolicyTest {
         riverAndBeachAdmissionIsTagDrivenAndVanillaSafe();
         everyLedgerLandRouteSurvivesTheBandPoolGate();
         wetlandsAreAcceptedButNeverSubstitutedIn();
+        cohesionGatePoolAgreesWithTheLedger();
         vanillaCoverageIsCompleteAndWorldSizeSafe();
         surfaceWaterCoverageIsCompleteAndWorldSizeSafe();
         sizeAwareVanillaRepresentationIsClosedAndBirthLocked();
@@ -1214,6 +1215,56 @@ final class BiomeProviderSelectionPolicyTest {
                 "temperate wetland stays swamp-gated");
         assertTrue(eligible.contains("case SUBPOLAR_WETLAND -> band == BAND_SUBPOLAR && !mountain && evaluateSwamp("),
                 "subpolar wetland stays swamp-gated");
+    }
+
+    /**
+     * The land-cohesion gate's paint pool must agree with the ledger about which band its members
+     * belong to.
+     *
+     * <p>Found live (maintainer, 2026-08-10): meadow painted at Y=79 with mountainNoiseLike=false.
+     * Root cause chain, proven from her own /latdev explain values: robustDelta=8 >= the gate's
+     * relief threshold of 6, so TerrainBiomeCohesionPolicy forced the upland family AFTER
+     * enforceLandBandPool, painting from the hardcoded TEMPERATE_UPLAND_BIOMES array. That array
+     * still contained windswept_hills/windswept_forest after their ledger route moved to
+     * COLD_UPLAND — a second, independent placement mechanism the route move missed, quietly
+     * reintroducing windswept into temperate through the cohesion gate.
+     *
+     * <p>The invariant, asserted structurally: every id in the gate array must hold a ledger route
+     * that reaches the temperate band, so the array cannot silently disagree with a future routing
+     * decision the way it disagreed with the windswept one.
+     */
+    private static void cohesionGatePoolAgreesWithTheLedger() throws Exception {
+        String source = read("src/main/java/com/example/globe/world/LatitudeBiomes.java");
+        int start = source.indexOf("private static final String[] TEMPERATE_UPLAND_BIOMES = {");
+        assertTrue(start >= 0, "the cohesion-gate paint pool must exist");
+        int end = source.indexOf("};", start);
+        String arrayBlock = source.substring(start, end);
+
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\"([a-z0-9_.-]+:[a-z0-9_./-]+)\"").matcher(arrayBlock);
+        while (m.find()) {
+            ids.add(m.group(1));
+        }
+        assertTrue(!ids.isEmpty(), "the gate pool must not be empty — an empty pool would make the "
+                + "cohesion gate a no-op and quietly revert the sunflower-plains-on-a-ridge fix");
+
+        java.util.Set<BiomeRoute> temperateRoutes = java.util.Set.of(
+                BiomeRoute.TEMPERATE_LOWLAND, BiomeRoute.TEMPERATE_WETLAND, BiomeRoute.TEMPERATE_UPLAND);
+        for (String id : ids) {
+            BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
+            assertTrue(descriptor != null,
+                    "every cohesion-gate pool member must be ledger-admitted: " + id);
+            boolean reachesTemperate = descriptor.routes().stream().anyMatch(temperateRoutes::contains);
+            assertTrue(reachesTemperate,
+                    "cohesion-gate pool member must hold a temperate-band ledger route — the gate "
+                            + "paints AFTER enforceLandBandPool with no re-check, so an entry routed "
+                            + "elsewhere (windswept -> COLD_UPLAND) is smuggled into temperate "
+                            + "through the back door: " + id);
+        }
+        assertFalse(arrayBlock.contains("windswept"),
+                "windswept must not return to the temperate cohesion-gate pool (maintainer ruling, "
+                        + "2026-08-10: the windswept family belongs at 50+ degrees)");
     }
 
     private static String read(String path) throws Exception {
