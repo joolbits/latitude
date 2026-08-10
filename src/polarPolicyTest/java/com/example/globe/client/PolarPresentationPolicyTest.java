@@ -21,6 +21,7 @@ public final class PolarPresentationPolicyTest {
         EwPresentationPolicyTest.runAll();
         LoadingPresentationPolicyTest.runAll();
         ZoneTitlePolicyTest.runAll();
+        CreateWorldIntroClockPolicyTest.runAll();
         System.out.println("POLAR_PRESENTATION_POLICY_TEST_PASS");
     }
 
