@@ -1,9 +1,8 @@
 package com.example.globe.mixin.client;
 
-import com.example.globe.GlobeMod;
 import com.example.globe.client.LatitudeClientState;
+import com.example.globe.client.LatitudeLoadingPane;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.LevelLoadingScreen;
@@ -11,7 +10,6 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.Style;
 import net.minecraft.util.Mth;
 import net.minecraft.util.Util;
 import org.spongepowered.asm.mixin.Mixin;
@@ -33,105 +31,9 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Shadow
     private float smoothedProgress;
 
-    // ── Theme ──
-    @Unique private static final int PANE_BG = 0xE62C2420;
-    @Unique private static final int PANE_BORDER = 0xFF5C4A3A;
-    @Unique private static final int GOLD = 0xFFD4A74A;
-    @Unique private static final int WARM_WHITE = 0xFFEDE0D0;
-    @Unique private static final int MUTED = 0xFF8C8078;
-    @Unique private static final int GRID_COLOR = 0x14504840;
-    @Unique private static final int GRID_STEP = 16;
-    // Mirrors LatitudeCreateWorldScreen's title treatment: vanilla's nine-pixel UI font plus four
-    // points, with intentional tracking between letters via literal spaces in the string.
-    @Unique private static final float LOADING_TITLE_SCALE = 13.0f / 9.0f;
-    @Unique private static final String LOADING_TITLE_TEXT = "L A T I T U D E";
-    // Deliberately quiet: smaller than body text, muted rather than warm-white, italic — a
-    // background detail, not something competing with the title or the rotating phrase.
-    @Unique private static final float ZONE_LABEL_SCALE = 0.75f;
-    @Unique private static final float globe$VERSION_LABEL_SCALE = 0.67f;
-    @Unique private static final int globe$VERSION_LABEL_GAP = 4;
-    @Unique private static final int globe$VERSION_LABEL_SCREEN_MARGIN = 2;
-    @Unique private static final String globe$VERSION_LABEL = FabricLoader.getInstance()
-            .getModContainer(GlobeMod.MOD_ID)
-            .map(container -> "v" + container.getMetadata().getVersion().getFriendlyString())
-            .orElse("");
-
-    // ── Loading phrases ──
-    @Unique private static final String[] PHRASES = {
-            "Defusing creepers...",
-            "Charting the frontier...",
-            "Following the compass...",
-            "Packing snow boots...",
-            "Crossing climate bands...",
-            "Calibrating the equator...",
-            "Warming the tropics...",
-            "Freezing the poles...",
-            "Planting bamboo groves...",
-            "Surveying the horizon...",
-            "Stacking tectonic plates...",
-            "Cloning sheep...",
-            "Folding mountain ranges...",
-            "Teaching villagers cartography...",
-            "Nudging continents apart...",
-            "Watering bamboo groves...",
-            "Polishing compass glass...",
-            "Freezing polar seas...",
-            "Planting spruce forests...",
-            "Stretching the horizon...",
-            "Carving river valleys...",
-            "Mapping trade winds...",
-            "Herding cows inland...",
-            "Waking up foxes...",
-            "Hiding ancient ruins...",
-            "Dusting off badlands...",
-            "Tuning the jet stream...",
-            "Training parrots...",
-            "Filling oceans carefully...",
-            "Sprinkling wildflowers...",
-            "Convincing bees to pollinate...",
-            "Laying down riverbeds...",
-            "Rotating the planet...",
-            "Aligning magnetic north...",
-            "Plentifying biomes...",
-            "Sorting biomes by latitude...",
-            "Drawing the treeline...",
-            "Settling the alpine line...",
-            "Capping the high peaks with snow...",
-            "Following the contour lines...",
-            "Carving mountain passes...",
-            "Mapping the highlands...",
-            "Balancing warm and cold currents...",
-            "Finding a place for every biome...",
-            "Blending the climate bands...",
-            "Tracing the polar seas...",
-            "Tending the edge of the world..."
-    };
-
-    // The Latitude-feature splashes are the last FEATURED_PHRASE_COUNT entries of PHRASES.
-    // Always start there so even a fast load shows one player-facing Latitude detail.
-    @Unique private static final int FEATURED_PHRASE_COUNT = 14;
-
-    @Unique
-    private static int globe$pickSeedIndex() {
-        int total = PHRASES.length;
-        int featuredStart = Math.max(0, total - FEATURED_PHRASE_COUNT);
-        if (featuredStart < total) {
-            return featuredStart + (int) (Math.random() * (total - featuredStart));
-        }
-        return (int) (Math.random() * total);
-    }
-
-    @Unique private static final long PHRASE_CYCLE_MS = 4800;
+    // Theme, phrases, drawing and animation state all live in LatitudeLoadingPane now — this
+    // screen is one of several the pane is painted on. See that class's javadoc.
     @Unique private static final long FAIL_SAFE_CLEAR_MS = 10 * 60 * 1000L;
-    @Unique private long globe$overlayStartMs = 0L;
-    @Unique private float globe$displayProgress = 0f;
-    @Unique private int globe$phraseSeedIdx = 0;
-
-    // ── Compass needle animation state ──
-    @Unique private double globe$needleAngle = 0.0;
-    @Unique private double globe$needleTarget = Math.PI * 0.5;
-    @Unique private long globe$lastDirectionChangeMs = 0L;
-    @Unique private static final long DIRECTION_CHANGE_INTERVAL_MS = 2200;
     @Unique private static final Logger GLOBE_LOGGER = LoggerFactory.getLogger("LatitudeLoadingOverlay");
 
     static {
@@ -164,94 +66,25 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Inject(method = "render", at = @At("TAIL"), require = 0, expect = 1)
     private void globe$renderLatitudeOverlay(GuiGraphics context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         if (!LatitudeClientState.isLatitudeWorldLoading()) {
-            globe$overlayStartMs = 0L;
-            globe$displayProgress = 0f;
+            LatitudeLoadingPane.reset();
             return;
         }
 
         long now = Util.getMillis();
-        if (globe$overlayStartMs == 0L) {
-            globe$overlayStartMs = now;
-            globe$lastDirectionChangeMs = now;
-            globe$displayProgress = 0f;
-            globe$phraseSeedIdx = globe$pickSeedIndex();
+        if (!LatitudeLoadingPane.hasStarted()) {
+            LatitudeLoadingPane.start(now);
             GLOBE_LOGGER.info("[LAT][LOADUI] bespoke overlay first render — {}ms since beginExpedition",
                     LatitudeClientState.elapsedSinceExpeditionMs());
         } else if (LatitudeClientState.elapsedSinceExpeditionMs() >= FAIL_SAFE_CLEAR_MS) {
             globe$clearLoadingFlagNow(true);
             return;
         }
-        long elapsed = now - globe$overlayStartMs;
 
-        int sw = context.guiWidth();
-        int sh = context.guiHeight();
-
-        // ── Brown pane (centered, covers the vanilla chunk grid) ──
-        int paneW = Math.min(sw - 40, 340);
-        int paneH = Math.min(sh - 40, 200);
-        int paneX = (sw - paneW) / 2;
-        int paneY = (sh - paneH) / 2;
-
-        // Border
-        context.fill(paneX - 1, paneY - 1, paneX + paneW + 1, paneY + paneH + 1, PANE_BORDER);
-        // Fill
-        context.fill(paneX, paneY, paneX + paneW, paneY + paneH, PANE_BG);
-
-        // ── Grid decoration ──
-        globe$drawGrid(context, paneX, paneY, paneW, paneH);
-
-        // ── Title ── (mirrors LatitudeCreateWorldScreen's treatment: scaled + letter-spaced when
-        // it fits the pane, falling back to compact unspaced text on very small windows)
-        int cx = sw / 2;
-        int cursorY = paneY + 12;
-        int titleAreaW = paneW - 16;
-        int scaledTitleWidth = Math.round(this.font.width(LOADING_TITLE_TEXT) * LOADING_TITLE_SCALE);
-        int titleHeight;
-        if (scaledTitleWidth <= titleAreaW) {
-            globe$drawScaledCentered(context, LOADING_TITLE_TEXT, cx, cursorY, LOADING_TITLE_SCALE, GOLD, true);
-            titleHeight = Math.round(this.font.lineHeight * LOADING_TITLE_SCALE);
-        } else {
-            globe$drawCentered(context, "LATITUDE", cx, cursorY, GOLD, true);
-            titleHeight = this.font.lineHeight;
-        }
-        cursorY += titleHeight + 3;
-
-        // ── Zone label (optional) — the climate zone this load is entering or resuming ──
-        String zoneLabel = LatitudeClientState.loadingZoneLabel();
-        if (zoneLabel != null) {
-            globe$drawMutedItalicCentered(context, "Loading " + zoneLabel, cx, cursorY, ZONE_LABEL_SCALE, MUTED);
-            cursorY += Math.round(this.font.lineHeight * ZONE_LABEL_SCALE) + 3;
-        }
-
-        // ── Loading hint ──
-        globe$drawCentered(context, "Press F9 in-game for HUD options", cx, cursorY, MUTED, false);
-
-        // ── Compass with wandering needle ──
-        int compassCY = paneY + paneH / 2 - 4;
-        int compassR = Math.min(28, Math.min(paneW, paneH) / 5);
-        globe$updateNeedle(now, delta);
-        globe$drawCompass(context, cx, compassCY, compassR);
-
-        // ── Rotating phrase with fade ──
-        int phraseY = compassCY + compassR + 16;
-        globe$drawPhrase(context, cx, phraseY, elapsed);
-
-        // ── Progress bar (strictly bounded by vanilla progress) ──
-        int barW = Math.min(160, paneW - 40);
-        int barX = cx - barW / 2;
-        int barY = paneY + paneH - 20;
+        // This is the only screen in the load chain with real chunk progress to report, so it is
+        // the only one that publishes it.
         float rawProgress = Mth.clamp(this.smoothedProgress, 0f, 1f);
         LatitudeClientState.latitudeLoadingProgress = rawProgress;
-        globe$displayProgress = rawProgress;
-        float progress = rawProgress;
-        context.fill(barX, barY, barX + barW, barY + 3, 0xFF1A1410);
-        int fillW = Math.round(progress * barW);
-        if (fillW > 0) {
-            context.fill(barX, barY, barX + fillW, barY + 3, GOLD);
-        }
-
-        // Small, quiet build identity just below the pane's right edge.
-        globe$drawVersionLabel(context, paneX, paneY, paneW, paneH);
+        LatitudeLoadingPane.render(context, this.font, delta, rawProgress, now);
     }
 
     @Inject(method = "onClose", at = @At("HEAD"), cancellable = true, require = 0, expect = 1)
@@ -275,8 +108,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         }
         GLOBE_LOGGER.info("[LAT][LOADUI] loading screen closed — {}ms since beginExpedition",
                 sinceExpedition);
-        globe$overlayStartMs = 0L;
-        globe$displayProgress = 0f;
+        LatitudeLoadingPane.reset();
     }
 
     @Unique
@@ -289,196 +121,9 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             GLOBE_LOGGER.info("[LAT][LOADUI] bespoke overlay cleared by normal client-ready path — {}ms since beginExpedition",
                     sinceExpedition);
         }
-        globe$overlayStartMs = 0L;
-        globe$displayProgress = 0f;
+        LatitudeLoadingPane.reset();
     }
 
-    // ════════════════════════════════════════════
-    // Drawing helpers
-    // ════════════════════════════════════════════
-
-    @Unique
-    private void globe$drawCentered(GuiGraphics context, String text, int cx, int y, int color, boolean shadow) {
-        int w = this.font.width(text);
-        context.drawString(this.font, text, cx - w / 2, y, color, shadow);
-    }
-
-    /** Mirrors LatitudeCreateWorldScreen's drawScaledText, centered on cx instead of a left edge. */
-    @Unique
-    private void globe$drawScaledCentered(GuiGraphics context, String text, int cx, int y, float scale, int color, boolean shadow) {
-        int w = Math.round(this.font.width(text) * scale);
-        int x = cx - w / 2;
-        var matrices = context.pose();
-        matrices.pushMatrix();
-        matrices.translate((float) x, (float) y);
-        matrices.scale(scale, scale);
-        context.drawString(this.font, text, 0, 0, color, shadow);
-        matrices.popMatrix();
-    }
-
-    /** Same scaled/centered treatment as globe$drawScaledCentered, but italic — used only for
-     * the quiet zone-label line, never for the title. */
-    @Unique
-    private void globe$drawMutedItalicCentered(GuiGraphics context, String text, int cx, int y, float scale, int color) {
-        Component styled = Component.literal(text).withStyle(Style.EMPTY.withItalic(true));
-        int w = Math.round(this.font.width(styled) * scale);
-        int x = cx - w / 2;
-        var matrices = context.pose();
-        matrices.pushMatrix();
-        matrices.translate((float) x, (float) y);
-        matrices.scale(scale, scale);
-        context.drawString(this.font, styled, 0, 0, color, false);
-        matrices.popMatrix();
-    }
-
-    @Unique
-    private void globe$drawVersionLabel(GuiGraphics context, int paneX, int paneY, int paneW, int paneH) {
-        if (globe$VERSION_LABEL.isEmpty()) {
-            return;
-        }
-        float scaledWidth = this.font.width(globe$VERSION_LABEL) * globe$VERSION_LABEL_SCALE;
-        float scaledHeight = this.font.lineHeight * globe$VERSION_LABEL_SCALE;
-        float paneRight = paneX + paneW;
-        float paneBottom = paneY + paneH;
-        float x = paneRight - scaledWidth;
-        float preferredY = paneBottom + globe$VERSION_LABEL_GAP;
-        float maxY = context.guiHeight() - scaledHeight - globe$VERSION_LABEL_SCREEN_MARGIN;
-        // Current pane geometry always reserves at least 20 px below the pane. The
-        // clamp keeps the label attached to the lower-right edge at compact heights.
-        float y = Math.min(preferredY, maxY);
-        float drawX = x / globe$VERSION_LABEL_SCALE;
-        float drawY = y / globe$VERSION_LABEL_SCALE;
-        var matrices = context.pose();
-        matrices.pushMatrix();
-        matrices.scale(globe$VERSION_LABEL_SCALE, globe$VERSION_LABEL_SCALE);
-        context.drawString(this.font, globe$VERSION_LABEL, Math.round(drawX), Math.round(drawY), MUTED, false);
-        matrices.popMatrix();
-    }
-
-    @Unique
-    private void globe$updateNeedle(long now, float delta) {
-        // Change target direction at intervals — random wandering
-        if (now - globe$lastDirectionChangeMs > DIRECTION_CHANGE_INTERVAL_MS) {
-            globe$lastDirectionChangeMs = now;
-            // Pick a new random target angle (full 360°)
-            globe$needleTarget += (Math.PI * 0.4) + (Math.random() * Math.PI * 1.2);
-            // Randomly reverse direction sometimes
-            if (Math.random() < 0.35) {
-                globe$needleTarget = globe$needleAngle - (globe$needleTarget - globe$needleAngle);
-            }
-        }
-        // Smooth interpolation toward target
-        double diff = globe$needleTarget - globe$needleAngle;
-        // Normalize diff to [-PI, PI]
-        while (diff > Math.PI) diff -= 2 * Math.PI;
-        while (diff < -Math.PI) diff += 2 * Math.PI;
-        globe$needleAngle += diff * 0.03 * delta;
-    }
-
-    @Unique
-    private void globe$drawCompass(GuiGraphics context, int cx, int cy, int radius) {
-        // Compass face — dark circle with gold ring
-        int r2 = radius * radius;
-        for (int dy = -radius; dy <= radius; dy++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                int dist2 = dx * dx + dy * dy;
-                if (dist2 <= r2) {
-                    int px = cx + dx;
-                    int py = cy + dy;
-                    if (dist2 > (radius - 2) * (radius - 2)) {
-                        context.fill(px, py, px + 1, py + 1, GOLD);
-                    } else {
-                        context.fill(px, py, px + 1, py + 1, 0xFF1A1410);
-                    }
-                }
-            }
-        }
-
-        // Cardinal tick marks (N/S/E/W)
-        int tickLen = Math.max(2, radius / 6);
-        // N tick — white
-        context.fill(cx, cy - radius + 2, cx + 1, cy - radius + 2 + tickLen, WARM_WHITE);
-        // S
-        context.fill(cx, cy + radius - 2 - tickLen, cx + 1, cy + radius - 2, MUTED);
-        // E
-        context.fill(cx + radius - 2 - tickLen, cy, cx + radius - 2, cy + 1, MUTED);
-        // W
-        context.fill(cx - radius + 2, cy, cx - radius + 2 + tickLen, cy + 1, MUTED);
-
-        // Red 'N' label at north
-        String nLabel = "N";
-        int nW = this.font.width(nLabel);
-        context.drawString(this.font, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, 0xFFCC3333, true);
-
-        // Wandering needle
-        double angle = globe$needleAngle;
-        int needleLen = radius - 4;
-
-        // Red north half
-        int nx = cx + (int) Math.round(Math.sin(angle) * needleLen);
-        int ny = cy - (int) Math.round(Math.cos(angle) * needleLen);
-        globe$drawLine(context, cx, cy, nx, ny, 0xFFCC3333);
-
-        // White south half (shorter)
-        int sx = cx - (int) Math.round(Math.sin(angle) * (needleLen * 0.6));
-        int sy = cy + (int) Math.round(Math.cos(angle) * (needleLen * 0.6));
-        globe$drawLine(context, cx, cy, sx, sy, WARM_WHITE);
-
-        // Center dot
-        context.fill(cx - 1, cy - 1, cx + 2, cy + 2, GOLD);
-    }
-
-    @Unique
-    private void globe$drawLine(GuiGraphics context, int x0, int y0, int x1, int y1, int color) {
-        int dx = Math.abs(x1 - x0);
-        int dy = Math.abs(y1 - y0);
-        int sx = x0 < x1 ? 1 : -1;
-        int sy = y0 < y1 ? 1 : -1;
-        int err = dx - dy;
-        while (true) {
-            context.fill(x0, y0, x0 + 1, y0 + 1, color);
-            if (x0 == x1 && y0 == y1) break;
-            int e2 = 2 * err;
-            if (e2 > -dy) { err -= dy; x0 += sx; }
-            if (e2 < dx) { err += dx; y0 += sy; }
-        }
-    }
-
-    @Unique
-    private void globe$drawPhrase(GuiGraphics context, int cx, int y, long elapsedMs) {
-        long cyclePos = elapsedMs % PHRASE_CYCLE_MS;
-        int phraseIdx = (globe$phraseSeedIdx + (int) ((elapsedMs / PHRASE_CYCLE_MS) % PHRASES.length)) % PHRASES.length;
-        String phrase = PHRASES[phraseIdx];
-
-        // Fade: quick in (first 15%), steady (60%), quick out (last 25%)
-        float t = (float) cyclePos / PHRASE_CYCLE_MS;
-        float alpha;
-        if (t < 0.15f) {
-            alpha = t / 0.15f;
-        } else if (t < 0.75f) {
-            alpha = 1.0f;
-        } else {
-            alpha = 1.0f - (t - 0.75f) / 0.25f;
-        }
-        alpha = Mth.clamp(alpha, 0f, 1f);
-
-        int a = Math.round(alpha * 255);
-        if (a < 4) return;
-        int color = (a << 24) | (WARM_WHITE & 0x00FFFFFF);
-
-        int w = this.font.width(phrase);
-        context.drawString(this.font, phrase, cx - w / 2, y, color, false);
-    }
-
-    @Unique
-    private static void globe$drawGrid(GuiGraphics context, int paneX, int paneY, int paneW, int paneH) {
-        for (int gy = GRID_STEP; gy < paneH; gy += GRID_STEP) {
-            context.fill(paneX, paneY + gy, paneX + paneW, paneY + gy + 1, GRID_COLOR);
-        }
-        for (int gx = GRID_STEP; gx < paneW; gx += GRID_STEP) {
-            context.fill(paneX + gx, paneY, paneX + gx + 1, paneY + paneH, GRID_COLOR);
-        }
-    }
 }
 
 @Mixin(Minecraft.class)
