@@ -1,0 +1,27 @@
+{
+  "replace": false,
+  "values": [
+    "#minecraft:logs",
+    "#minecraft:leaves",
+    "#minecraft:saplings",
+    "minecraft:azalea",
+    "minecraft:flowering_azalea",
+    "minecraft:bamboo",
+    "minecraft:bamboo_sapling",
+    "minecraft:vine",
+    "minecraft:brown_mushroom",
+    "minecraft:red_mushroom",
+    "minecraft:brown_mushroom_block",
+    "minecraft:red_mushroom_block",
+    "minecraft:mushroom_stem",
+    "minecraft:crimson_fungus",
+    "minecraft:warped_fungus",
+    "minecraft:mangrove_roots",
+    "minecraft:muddy_mangrove_roots",
+    "minecraft:hanging_roots",
+    "minecraft:leaf_litter",
+    "minecraft:pale_moss_carpet",
+    "minecraft:pale_hanging_moss",
+    "minecraft:spore_blossom"
+  ]
+}

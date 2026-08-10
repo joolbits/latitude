@@ -30,7 +30,7 @@ public class ExtremePolarVegetationGuardMixin {
         }
 
         BlockPos origin = context.origin();
-        if (LatitudeBiomes.isBlockBeyondPolarFoliageLimit(origin.getZ(), GlobeMod.BORDER_RADIUS)) {
+        if (LatitudeBiomes.isBlockBeyondPolarWoodyLimit(origin.getZ(), GlobeMod.BORDER_RADIUS)) {
             cir.setReturnValue(false);
         }
     }

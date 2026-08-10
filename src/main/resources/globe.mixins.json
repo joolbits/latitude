@@ -18,6 +18,7 @@
     "NoiseChunkGeneratorWorldgenAuthorityMixin",
     "NoiseChunkMushroomIslandDensityMixin",
     "MinecraftServerInitialSpawnMixin",
+    "ProtoChunkPolarVegetationGuardMixin",
     "ProtoChunkSnowBlockGuardMixin",
     "ChunkRegionWarmSnowTrapMixin",
     "TreeLineVegetationGuardMixin",
