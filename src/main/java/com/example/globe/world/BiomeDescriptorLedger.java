@@ -161,13 +161,11 @@ public final class BiomeDescriptorLedger {
             d("clifftree:diorite_shore", r(BiomeRoute.SUBPOLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.UPLAND),
             d("clifftree:snowy_diorite_shore", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
             d("clifftree:glacier_valley", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
-                        // Terrain.LOWLAND, not UPLAND, and that is a type-system limit rather than a
-            // judgement: the ledger invariant requires an UPLAND descriptor to own an upland route,
-            // and the only cold one (COLD_UPLAND) is mountain-gated, so a flat polar cliff-face
-            // identity has no upland route it can legally own. Same shape as the missing cold
-            // wetland route fixed earlier today. Left as LOWLAND rather than inventing a
-            // POLAR_UPLAND route unasked; flagged for the maintainer.
-            d("clifftree:glacier_cliff", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
+                        // Corrected 2026-08-10: COLD_UPLAND already exists (band >= BAND_SUBPOLAR && mountain,
+            // 50-90 degrees) and is already owned by snowy_slopes/frozen_peaks/jagged_peaks -- no
+            // new route was needed. A "cliff" is rugged terrain by name, so the mountain gate this
+            // route already carries is the right fit, not a workaround for it.
+            d("clifftree:glacier_cliff", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("clifftree:snowy_old_growth_taiga", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.TAIGA),
             d("clifftree:tundra", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
             // Underground is a separate, donor-cave-gated authority. These entries are never
@@ -180,6 +178,21 @@ public final class BiomeDescriptorLedger {
             d("terralith:cave/granite_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
             d("terralith:cave/infested_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
             d("terralith:cave/thermal_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            // CliffTree caves. Categorized from the mod's own tags/worldgen/biome/caves.json and
+            // deep_caves.json, not guessed: inferno is grouped with minecraft:deep_dark by CliffTree
+            // itself (not with its other caves), matching CAVE_DEEP's real Y<=-16 depth gate despite
+            // inferno's surface-hot temperature (2.0) -- it never reaches the surface, so that
+            // temperature is irrelevant to placement. dirt_caves is absent from CliffTree's own
+            // "caves" tag (an omission in their data, not ours) but is unambiguously a cave by name,
+            // content, and climate profile matching its shallow siblings, so it is included here.
+            d("clifftree:caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("clifftree:warm_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("clifftree:lukewarm_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("clifftree:cold_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("clifftree:frozen_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("clifftree:mushroom_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("clifftree:dirt_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("clifftree:inferno", r(BiomeRoute.CAVE_DEEP), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
             d("terralith:cave/underground_jungle", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
             d("terralith:cave/deep_caves", r(BiomeRoute.CAVE_DEEP), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
             d("terralith:cave/frostfire_caves", r(BiomeRoute.CAVE_DEEP), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),

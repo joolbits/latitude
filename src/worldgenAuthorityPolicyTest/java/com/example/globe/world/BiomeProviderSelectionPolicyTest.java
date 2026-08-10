@@ -951,7 +951,9 @@ final class BiomeProviderSelectionPolicyTest {
                 {"clifftree:diorite_shore", "0.2", "SUBPOLAR_LOWLAND"},
                 {"clifftree:snowy_diorite_shore", "0.05", "POLAR_LOWLAND"},
                 {"clifftree:glacier_valley", "0.0", "POLAR_LOWLAND"},
-                {"clifftree:glacier_cliff", "0.05", "POLAR_LOWLAND"},
+                // glacier_cliff intentionally excluded from this table: it is COLD_UPLAND, not a
+                // POLAR_LOWLAND lookalike, and is checked on its own below because it needs
+                // Terrain.UPLAND asserted too, not just the route.
                 {"clifftree:snowy_old_growth_taiga", "0.0", "POLAR_LOWLAND"},
                 {"clifftree:tundra", "0.25", "POLAR_LOWLAND"},
         };
@@ -964,6 +966,19 @@ final class BiomeProviderSelectionPolicyTest {
                             + row[1] + "): " + row[0] + " expected " + row[2]
                             + " actual " + descriptor.routes());
         }
+
+        // glacier_cliff is COLD_UPLAND (50-90 degrees, mountain-gated), the same route already
+        // owned by minecraft:snowy_slopes/frozen_peaks/jagged_peaks -- not a new route. This was a
+        // real correction: it was first placed on POLAR_LOWLAND with Terrain.LOWLAND, which the
+        // ledger's own invariant rejected (an UPLAND descriptor must own TEMPERATE_UPLAND or
+        // COLD_UPLAND), because a "cliff" is rugged terrain and COLD_UPLAND's mountain gate is the
+        // correct fit for that, not a workaround.
+        BiomeDescriptorLedger.Descriptor glacierCliff =
+                BiomeDescriptorLedger.descriptor("clifftree:glacier_cliff");
+        assertTrue(glacierCliff != null && glacierCliff.routes().contains(BiomeRoute.COLD_UPLAND),
+                "clifftree:glacier_cliff owns COLD_UPLAND, the existing cold mountain route");
+        assertEquals(BiomeDescriptorLedger.Terrain.UPLAND, glacierCliff.terrain(),
+                "clifftree:glacier_cliff is genuinely rugged terrain, not a flat polar lowland");
 
         // desert_cliff is the one intentionally dual-routed entry: an arid cliff face reachable as
         // both lowland and upland arid terrain.
@@ -981,6 +996,30 @@ final class BiomeProviderSelectionPolicyTest {
                         || conifBadlands.routes().contains(BiomeRoute.POLAR_LOWLAND),
                 "clifftree:coniferous_badlands is temperature 2.0 despite its name — it must never "
                         + "be routed to a cold band on the strength of the word 'coniferous'");
+
+        // Caves: categorized from CliffTree's OWN worldgen/biome tags (caves.json, deep_caves.json),
+        // not guessed. inferno is grouped by CliffTree itself with minecraft:deep_dark rather than
+        // its other caves, matching CAVE_DEEP's real Y<=-16 depth gate.
+        String[] shallowCaves = {
+                "clifftree:caves", "clifftree:warm_caves", "clifftree:lukewarm_caves",
+                "clifftree:cold_caves", "clifftree:frozen_caves", "clifftree:mushroom_caves",
+                "clifftree:dirt_caves",
+        };
+        for (String id : shallowCaves) {
+            BiomeDescriptorLedger.Descriptor cave = BiomeDescriptorLedger.descriptor(id);
+            assertTrue(cave != null, "CliffTree cave must have a descriptor: " + id);
+            assertTrue(cave.routes().contains(BiomeRoute.CAVE_SHALLOW),
+                    "CliffTree cave must own CAVE_SHALLOW: " + id);
+            assertEquals(BiomeDescriptorLedger.Water.UNDERGROUND, cave.water(),
+                    "CliffTree cave must be classified underground: " + id);
+        }
+        BiomeDescriptorLedger.Descriptor inferno = BiomeDescriptorLedger.descriptor("clifftree:inferno");
+        assertTrue(inferno != null && inferno.routes().contains(BiomeRoute.CAVE_DEEP),
+                "clifftree:inferno is CAVE_DEEP (CliffTree's own tags pair it with deep_dark, not "
+                        + "its other caves) despite its surface-hot temperature -- it never reaches "
+                        + "the surface, so that temperature never governs its placement");
+        assertFalse(inferno.routes().contains(BiomeRoute.CAVE_SHALLOW),
+                "inferno must not ALSO be shallow, or it can surface where its heat is nonsensical");
 
         // Oceans are a separate live authority: the lat_ocean_* tags, which (unlike the land lat_*
         // tags) are NOT shadowed by the ledger. Both CliffTree oceans are shallow is_ocean members.
