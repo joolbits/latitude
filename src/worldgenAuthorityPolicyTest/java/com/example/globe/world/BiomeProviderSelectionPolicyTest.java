@@ -35,6 +35,7 @@ final class BiomeProviderSelectionPolicyTest {
         providerProfileCompatibilityIsBirthLocked();
         polarIceSpikeAccentStaysAMinorityInEveryPoolSize();
         polarExtremeCapCatchesNameAlikeModdedBiomesConsistently();
+        cliffTreeLandAndOceanAreActuallyReachable();
         vanillaCoverageIsCompleteAndWorldSizeSafe();
         surfaceWaterCoverageIsCompleteAndWorldSizeSafe();
         sizeAwareVanillaRepresentationIsClosedAndBirthLocked();
@@ -928,6 +929,71 @@ final class BiomeProviderSelectionPolicyTest {
     }
 
     private static String namespace(String id) { return id.substring(0, id.indexOf(':')); }
+
+    /**
+     * CliffTree shipped entirely inert: its biomes appeared in five {@code lat_*} tag files but had
+     * no ledger descriptor, and the ledger is authoritative on every world this build creates, so
+     * installing the mod changed nothing about the land Latitude painted. The 2026-08-10 audit
+     * found this; the maintainer confirmed CliffTree is a keeper and every biome should be
+     * classified. This asserts the land routes actually exist and, critically, that they carry
+     * REAL climate-consistent placement rather than name-derived guesses.
+     */
+    private static void cliffTreeLandAndOceanAreActuallyReachable() throws Exception {
+        // biome id -> {temperature, expected route}. Temperatures are ground truth from the
+        // shipped CliffTree datapack JSON.
+        String[][] expected = {
+                {"clifftree:bog", "0.25", "TEMPERATE_WETLAND"},
+                {"clifftree:sparse_forest", "0.7", "TEMPERATE_LOWLAND"},
+                {"clifftree:granite_shore", "0.5", "TEMPERATE_LOWLAND"},
+                {"clifftree:coniferous_badlands", "2.0", "ARID_LOWLAND"},
+                {"clifftree:oasis", "2.0", "ARID_LOWLAND"},
+                {"clifftree:shrubland", "2.0", "ARID_LOWLAND"},
+                {"clifftree:diorite_shore", "0.2", "SUBPOLAR_LOWLAND"},
+                {"clifftree:snowy_diorite_shore", "0.05", "POLAR_LOWLAND"},
+                {"clifftree:glacier_valley", "0.0", "POLAR_LOWLAND"},
+                {"clifftree:glacier_cliff", "0.05", "POLAR_LOWLAND"},
+                {"clifftree:snowy_old_growth_taiga", "0.0", "POLAR_LOWLAND"},
+                {"clifftree:tundra", "0.25", "POLAR_LOWLAND"},
+        };
+        for (String[] row : expected) {
+            BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(row[0]);
+            assertTrue(descriptor != null,
+                    "CliffTree land biome must have a descriptor or the mod is inert: " + row[0]);
+            assertTrue(descriptor.routes().contains(BiomeRoute.valueOf(row[2])),
+                    "CliffTree land biome must own its climate-appropriate route (temperature "
+                            + row[1] + "): " + row[0] + " expected " + row[2]
+                            + " actual " + descriptor.routes());
+        }
+
+        // desert_cliff is the one intentionally dual-routed entry: an arid cliff face reachable as
+        // both lowland and upland arid terrain.
+        BiomeDescriptorLedger.Descriptor desertCliff =
+                BiomeDescriptorLedger.descriptor("clifftree:desert_cliff");
+        assertTrue(desertCliff != null && desertCliff.routes().contains(BiomeRoute.ARID_UPLAND),
+                "clifftree:desert_cliff keeps its arid upland route");
+
+        // The name-vs-climate trap this whole audit line exists to prevent: "coniferous_badlands"
+        // is temperature 2.0 (maximum heat, identical to vanilla badlands). Routing it by name
+        // would put a desert-hot identity in a cold band.
+        BiomeDescriptorLedger.Descriptor conifBadlands =
+                BiomeDescriptorLedger.descriptor("clifftree:coniferous_badlands");
+        assertFalse(conifBadlands.routes().contains(BiomeRoute.SUBPOLAR_LOWLAND)
+                        || conifBadlands.routes().contains(BiomeRoute.POLAR_LOWLAND),
+                "clifftree:coniferous_badlands is temperature 2.0 despite its name — it must never "
+                        + "be routed to a cold band on the strength of the word 'coniferous'");
+
+        // Oceans are a separate live authority: the lat_ocean_* tags, which (unlike the land lat_*
+        // tags) are NOT shadowed by the ledger. Both CliffTree oceans are shallow is_ocean members.
+        String oceanTag = read(
+                "src/main/resources/data/globe/tags/worldgen/biome/lat_ocean_temperate.json");
+        assertTrue(oceanTag.contains("clifftree:stone_ocean")
+                        && oceanTag.contains("clifftree:kelp_forest"),
+                "CliffTree's two ocean biomes must be admitted through the live lat_ocean_* tag "
+                        + "authority — they have no ledger route and are otherwise unreachable");
+        assertTrue(oceanTag.contains("\"required\": false"),
+                "optional pack biomes must be tagged required:false so a vanilla-only install does "
+                        + "not fail datapack load");
+    }
 
     private static String read(String path) throws Exception {
         return Files.readString(Path.of(path));

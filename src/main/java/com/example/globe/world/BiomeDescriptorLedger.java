@@ -134,6 +134,42 @@ public final class BiomeDescriptorLedger {
             d("terralith:snowy_maple_forest", r(BiomeRoute.SUBPOLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.TAIGA),
             d("terralith:cold_shrubland", r(BiomeRoute.SUBPOLAR_LOWLAND, BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
             d("terralith:snowy_cherry_grove", r(BiomeRoute.SUBPOLAR_LOWLAND, BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
+            // CliffTree: admitted 2026-08-10 at the maintainer's request ("one of my favorite biome
+            // mods"). Before this the mod was entirely inert -- its biomes appeared in five shipped
+            // lat_* tag files but had no descriptor, and the ledger is authoritative on every world
+            // this build creates, so installing CliffTree changed nothing about the land Latitude
+            // painted. Every route below was chosen from the biome's REAL climate in the shipped
+            // datapack JSON, not from its name; two of them contradict the name outright and are
+            // called out where they sit.
+            //
+            // Only surface LAND lives here. CliffTree's oceans go through the lat_ocean_* tags (a
+            // separate live authority), its caves through the CAVE_* routes below, and its three
+            // rivers and two beaches have NO admission path in this build at all -- river selection
+            // and pickBeachForBand are hard authorities that consult no tag, so no pack's river or
+            // beach can be admitted by data alone. That gap is real and is deliberately left for a
+            // follow-up slice; it is not specific to CliffTree.
+            d("clifftree:bog", r(BiomeRoute.TEMPERATE_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
+            d("clifftree:sparse_forest", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
+            d("clifftree:granite_shore", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.UPLAND),
+            // temperature 2.0 -- maximum heat, identical to vanilla badlands -- despite the
+            // "coniferous" name. It is a petrified/fossil-forest-in-badlands aesthetic, not a cold
+            // biome, and routing it by name would have put a desert-hot identity in the taiga band.
+            d("clifftree:coniferous_badlands", r(BiomeRoute.ARID_LOWLAND), Terrain.ARID, Water.LAND, Family.ARID),
+            d("clifftree:oasis", r(BiomeRoute.ARID_LOWLAND), Terrain.ARID, Water.LAND, Family.ARID),
+            d("clifftree:shrubland", r(BiomeRoute.ARID_LOWLAND), Terrain.ARID, Water.LAND, Family.ARID),
+            d("clifftree:desert_cliff", r(BiomeRoute.ARID_LOWLAND, BiomeRoute.ARID_UPLAND), Terrain.ARID, Water.LAND, Family.ARID),
+            d("clifftree:diorite_shore", r(BiomeRoute.SUBPOLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.UPLAND),
+            d("clifftree:snowy_diorite_shore", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
+            d("clifftree:glacier_valley", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
+                        // Terrain.LOWLAND, not UPLAND, and that is a type-system limit rather than a
+            // judgement: the ledger invariant requires an UPLAND descriptor to own an upland route,
+            // and the only cold one (COLD_UPLAND) is mountain-gated, so a flat polar cliff-face
+            // identity has no upland route it can legally own. Same shape as the missing cold
+            // wetland route fixed earlier today. Left as LOWLAND rather than inventing a
+            // POLAR_UPLAND route unasked; flagged for the maintainer.
+            d("clifftree:glacier_cliff", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
+            d("clifftree:snowy_old_growth_taiga", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.TAIGA),
+            d("clifftree:tundra", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
             // Underground is a separate, donor-cave-gated authority. These entries are never
             // admitted through a surface tag or terrain route.
             d("biomesoplenty:glowing_grotto", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
