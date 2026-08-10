@@ -220,9 +220,21 @@ public final class BiomeDescriptorLedger {
             d("minecraft:meadow", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("minecraft:cherry_grove", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("minecraft:grove", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
-            d("minecraft:windswept_hills", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
-            d("minecraft:windswept_forest", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
-            d("minecraft:windswept_gravelly_hills", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
+            // Windswept moved TEMPERATE_UPLAND -> COLD_UPLAND (maintainer ruling, 2026-08-10).
+            // These carry vanilla's temperature-0.2 / downfall-0.3 climate, which derives a
+            // desaturated grey-green grass tint. That tint is biome DATA, not a blockstate, so no
+            // code change can make it read as ordinary grass: the only levers are where the biome
+            // sits, or hiding it under snow. Hiding it under snow is what produced the original
+            // white-rimmed-grass defect. At 50-90 degrees the tint reads as correct rather than
+            // washed out, and COLD_UPLAND's mountain gate is exactly the exposed, wind-scoured
+            // terrain these biomes depict. It also fills a real gap: every other COLD_UPLAND member
+            // (snowy_slopes, frozen_peaks, jagged_peaks, glacier_cliff) is bare rock or ice, so cold
+            // mountains had no vegetated identity at all. Above the 72-degree tree line the polar
+            // guard strips their trees, so they degrade correctly toward the pole.
+            // Temperate uplands retain meadow, grove, cherry_grove, stony_peaks and caldera.
+            d("minecraft:windswept_hills", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
+            d("minecraft:windswept_forest", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
+            d("minecraft:windswept_gravelly_hills", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("minecraft:stony_peaks", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("minecraft:snowy_slopes", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("minecraft:frozen_peaks", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
