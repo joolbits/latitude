@@ -53,14 +53,16 @@ public abstract class MinecraftClientStartIntegratedMixin {
                                                          WorldStem worldStem,
                                                          boolean safeMode,
                                                          CallbackInfo ci) {
-        boolean detectedLatitudeWorld = globe$isLatitudeWorld(worldStem);
+        boolean stemDetected = globe$isLatitudeWorld(worldStem);
+        boolean diskDetected = globe$hasLatitudeSaveMarker(session);
+        boolean detectedLatitudeWorld = stemDetected || diskDetected;
         if (!detectedLatitudeWorld) {
             // Existing vanilla/superflat worlds use Minecraft's normal loading lifecycle. Clear any stale
             // Latitude flag from a prior failed launch so our overlay can never delay or trap their screen.
             if (LatitudeClientState.isLatitudeWorldLoading()) {
                 LatitudeClientState.clearLatitudeLoadingState();
             }
-            GLOBE_LOGGER.info("[Latitude lifecycle] integrated-world loading overlay skipped (latitudeWorldDetected=false)");
+            GLOBE_LOGGER.info("[Latitude lifecycle] integrated-world loading overlay skipped (stemDetected=false saveMarker=false)");
             return;
         }
 
@@ -68,8 +70,46 @@ public abstract class MinecraftClientStartIntegratedMixin {
             LatitudeClientState.beginExpedition(System.currentTimeMillis());
             LatitudeClientState.activateLatitudeLoading();
             globe$applyResumedZoneLabel(session);
-            GLOBE_LOGGER.info("[Latitude lifecycle] integrated-world loading overlay activated — {}ms since beginExpedition (latitudeWorldDetected={})",
-                    LatitudeClientState.elapsedSinceExpeditionMs(), detectedLatitudeWorld);
+            GLOBE_LOGGER.info("[Latitude lifecycle] integrated-world loading overlay activated — {}ms since beginExpedition (stemDetected={} saveMarker={})",
+                    LatitudeClientState.elapsedSinceExpeditionMs(), stemDetected, diskDetected);
+        } else {
+            GLOBE_LOGGER.info("[Latitude lifecycle] integrated-world load kept the pre-activated overlay (stemDetected={} saveMarker={})",
+                    stemDetected, diskDetected);
+        }
+    }
+
+    /**
+     * Positive, save-file-based confirmation that this is a Latitude world — the same evidence
+     * {@link WorldOpenFlowsEarlyLatitudeActivationMixin} pre-activates on, applied again here so the
+     * two hooks cannot disagree.
+     *
+     * <p>{@link #globe$isLatitudeWorld} alone is not sufficient and never was. It asks
+     * {@code NoiseBasedChunkGenerator.stable(key)}, which is {@code Holder.is(ResourceKey)} — true
+     * only for a <b>reference</b> holder that still remembers its registry key. A saved world's
+     * {@code level.dat} stores the overworld generator's {@code settings} as an <b>inline
+     * compound</b>, not as the string {@code "globe:overworld_massive"}, so the stem decodes to a
+     * direct holder with no key and {@code stable(...)} is false for every Latitude preset. (Proven
+     * against a real save on 2026-08-09: its nether and end settings are the strings
+     * {@code minecraft:nether} / {@code minecraft:end}, while the overworld's is a compound.) The
+     * hook therefore false-negatived on <i>every</i> resumed Latitude world and cleared the flag the
+     * early hook had correctly set, blanking the pane for the whole server-start and spawn-load
+     * phase — the "bespoke for a split second, then vanilla for most of the loading" reported live.
+     *
+     * <p>Kept as an OR rather than a replacement: the stem check still catches a Latitude world
+     * whose Latitude save data has not been written yet, and the marker catches the resumed case the
+     * stem check structurally cannot see.
+     */
+    @Unique
+    private static boolean globe$hasLatitudeSaveMarker(LevelStorageSource.LevelStorageAccess session) {
+        if (session == null) {
+            return false;
+        }
+        try {
+            return RecreatedWorldMetadata.latitudePresetId(session.getLevelPath(LevelResource.ROOT)) != null;
+        } catch (Exception e) {
+            GLOBE_LOGGER.warn("[Latitude lifecycle] could not read the save's Latitude marker; "
+                    + "falling back to the world-stem check alone", e);
+            return false;
         }
     }
 

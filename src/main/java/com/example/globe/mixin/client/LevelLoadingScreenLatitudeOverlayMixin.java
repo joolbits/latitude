@@ -5,7 +5,9 @@ import com.example.globe.client.LatitudeLoadingPane;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.GenericMessageScreen;
 import net.minecraft.client.gui.screens.LevelLoadingScreen;
+import net.minecraft.client.gui.screens.ProgressScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
@@ -152,6 +154,37 @@ class LatitudeLoadingClientTickMixin {
 
     @Shadow
     public LocalPlayer player;
+
+    /**
+     * Names every screen vanilla shows while Latitude owns a world load, and says whether the pane
+     * covers it.
+     *
+     * <p>This is the instrument the loading chain was missing. Every overlay hook here is
+     * {@code require = 0} by policy (GitHub #7: a moved target must degrade to the vanilla screen,
+     * never crash), which also means a screen nobody hooks is completely silent — the only symptom
+     * is a maintainer noticing "it went vanilla in the middle" and no way to tell which screen did
+     * it. {@code setScreen} is the single chokepoint every screen in the chain passes through
+     * ({@code setScreenAndShow} is {@code setScreen} plus a forced render), so one hook here
+     * enumerates the whole chain in the log, in order, for whatever load actually ran on whatever
+     * machine — including the error branches this pane deliberately does not paint.
+     *
+     * <p>The pane is deliberately <b>not</b> painted over unrecognised screens. The rest of this
+     * chain is {@code BackupConfirmScreen}, {@code RecoverWorldDataScreen},
+     * {@code DatapackLoadFailureScreen}, {@code AlertScreen} and {@code ConfirmScreen} — all
+     * interactive, all needing a click to proceed. Covering them would hide the button and hard-lock
+     * the load, so vanilla-through is the correct outcome and this line is how it stays visible.
+     */
+    @Inject(method = "setScreen", at = @At("HEAD"), require = 0, expect = 1)
+    private void globe$logWorldOpenScreen(Screen screen, CallbackInfo ci) {
+        if (!LatitudeClientState.isLatitudeWorldLoading()) {
+            return;
+        }
+        boolean covered = screen instanceof LevelLoadingScreen
+                || screen instanceof GenericMessageScreen
+                || screen instanceof ProgressScreen;
+        GLOBE_LOGGER.info("[LAT][LOADUI] world-open screen: {} (latitudePaneCovers={})",
+                screen == null ? "<none>" : screen.getClass().getName(), covered);
+    }
 
     @Inject(method = "tick", at = @At("TAIL"))
     private void globe$clearLoadingOnClientReadyTick(CallbackInfo ci) {

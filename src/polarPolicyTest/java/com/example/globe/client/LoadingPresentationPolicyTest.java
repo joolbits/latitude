@@ -5,15 +5,32 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Guards the Latitude loading pane's coverage of the whole world-open screen chain.
+ * Guards the Latitude loading pane's coverage of the whole world-open screen chain, and the flag
+ * that decides whether the pane draws at all.
  *
- * <p>Resuming a save was branded only at the very end: {@code WorldOpenFlows.openWorld} shows three
- * sequential {@code GenericMessageScreen}s before {@code LevelLoadingScreen} exists, and the
- * overlay painted only the last of them. The flag was set correctly and early — nothing painted it.
- * Every overlay hook in this lifecycle is deliberately {@code require = 0} (a missed target must
+ * <p>The chain a resumed world passes through, enumerated from the remapped 1.21.11 jar rather than
+ * from source: three {@code GenericMessageScreen}s ({@code WorldOpenFlows.openWorld},
+ * {@code openWorldLoadLevelData}, {@code openWorldLoadLevelStem}), one {@code ProgressScreen}
+ * ({@code Minecraft.doWorldLoad}'s opening {@code disconnectWithProgressScreen}), then
+ * {@code LevelLoadingScreen} twice ({@code doWorldLoad}, then {@code ClientPacketListener.handleLogin}).
+ * Every one of those is shown through {@code setScreenAndShow} or {@code setScreen}, and every one
+ * must carry the pane. The chain's remaining screens are all interactive error/confirm screens and
+ * must stay vanilla.
+ *
+ * <p>Two distinct defects have hidden in here, and this file guards both:
+ * <ul>
+ *   <li><b>Uncovered screens.</b> The overlay originally painted only {@code LevelLoadingScreen}.
+ *   <li><b>A flag switched off mid-chain.</b> The hook at {@code doWorldLoad} second-guessed the
+ *       early activation with {@code NoiseBasedChunkGenerator.stable(...)}, which cannot match a
+ *       resumed save (its {@code level.dat} inlines the overworld noise settings, so the holder has
+ *       no registry key), and cleared the flag for the entire server-start and spawn-load phase.
+ *       Full coverage of the chain is worth nothing while the flag says "not a Latitude world".
+ * </ul>
+ *
+ * <p>Every overlay hook in this lifecycle is deliberately {@code require = 0} (a missed target must
  * degrade to vanilla, never crash), which also means a hook that stops matching goes <b>silent</b>.
  * The mixin-target verifier catches a target that moved; only this catches a screen in the chain
- * that nothing covers.
+ * that nothing covers, or a verdict that turns the pane off behind its back.
  */
 public final class LoadingPresentationPolicyTest {
 
@@ -30,6 +47,8 @@ public final class LoadingPresentationPolicyTest {
         theSharedPaneOwnsTheDrawingSoTheTwoScreensCannotDrift();
         thePaneClockIsSharedSoTheHandoffDoesNotRestartIt();
         theVanillaMessageWidgetIsRestoredWheneverLatitudeIsNotLoading();
+        theResumedWorldVerdictIsNotDecidedByTheStemCheckAlone();
+        everyScreenShownDuringALatitudeLoadIsNamedInTheLog();
     }
 
     /**
@@ -42,6 +61,10 @@ public final class LoadingPresentationPolicyTest {
                         + "applies and the reload path silently reverts to vanilla-then-bespoke");
         assertTrue(config.contains("\"client.LevelLoadingScreenLatitudeOverlayMixin\""),
                 "the LevelLoadingScreen overlay stays registered");
+        assertTrue(config.contains("\"client.ProgressScreenLatitudeOverlayMixin\""),
+                "the ProgressScreen overlay must be registered — doWorldLoad opens with "
+                        + "disconnectWithProgressScreen(), whose setScreenAndShow forces a rendered "
+                        + "frame of it on every single world open");
 
         String generic = read(
                 "src/main/java/com/example/globe/mixin/client/GenericMessageScreenLatitudeOverlayMixin.java");
@@ -51,6 +74,63 @@ public final class LoadingPresentationPolicyTest {
                 "GenericMessageScreen declares renderBackground, not render — the hook must target it");
         assertTrue(generic.contains("LatitudeLoadingPane.render("),
                 "the message screens must paint the same pane as the loading screen");
+
+        String progress = read(
+                "src/main/java/com/example/globe/mixin/client/ProgressScreenLatitudeOverlayMixin.java");
+        // ProgressScreen, unlike GenericMessageScreen, does declare render().
+        assertTrue(progress.contains("method = \"render\""),
+                "ProgressScreen declares render — the hook must target it");
+        assertTrue(progress.contains("LatitudeLoadingPane.render("),
+                "the progress screen must paint the same pane as the rest of the chain");
+        assertTrue(progress.contains("require = 0"),
+                "the overlay hook fails soft, per the GitHub #7 rule");
+    }
+
+    /**
+     * The pane is only ever drawn while the loading flag is set, so a verdict that switches the flag
+     * off mid-chain blanks a fully-covered chain just as effectively as a missing hook.
+     *
+     * <p>{@code NoiseBasedChunkGenerator.stable(key)} is {@code Holder.is(ResourceKey)}, and a
+     * resumed save's {@code level.dat} stores its overworld generator settings as an inline compound
+     * rather than a registry-key string — so the decoded holder has no key and the check returns
+     * false for every Latitude world that was ever saved and reopened. Consulting the save's own
+     * Latitude marker (the same evidence the early hook pre-activates on) is what makes the two
+     * hooks agree; the stale-flag clear must never fire on the stem check alone again.
+     */
+    private static void theResumedWorldVerdictIsNotDecidedByTheStemCheckAlone() throws IOException {
+        String source = read(
+                "src/main/java/com/example/globe/mixin/client/MinecraftClientStartIntegratedMixin.java");
+        assertTrue(source.contains("RecreatedWorldMetadata.latitudePresetId("),
+                "doWorldLoad must confirm against the save's own Latitude marker, not only the "
+                        + "world stem — the stem check structurally cannot see a resumed Latitude world");
+        assertTrue(source.contains("stemDetected || diskDetected"),
+                "the verdict must be the OR of the stem check and the save marker; either alone has "
+                        + "a blind spot");
+        int verdict = source.indexOf("stemDetected || diskDetected");
+        int clear = source.indexOf("LatitudeClientState.clearLatitudeLoadingState()");
+        assertTrue(verdict > 0 && clear > verdict,
+                "the stale-flag clear must sit behind the combined verdict — clearing on the stem "
+                        + "check alone turns the pane off for the whole server-start phase of every "
+                        + "resumed Latitude world");
+    }
+
+    /**
+     * The chain's error branches are interactive and are deliberately left vanilla, so "not covered"
+     * is a legitimate outcome — which is exactly why every screen shown during a load has to be
+     * named in the log. Without it, a screen nobody hooks is indistinguishable from a hook that
+     * silently stopped matching.
+     */
+    private static void everyScreenShownDuringALatitudeLoadIsNamedInTheLog() throws IOException {
+        String source = read(
+                "src/main/java/com/example/globe/mixin/client/LevelLoadingScreenLatitudeOverlayMixin.java");
+        assertTrue(source.contains("method = \"setScreen\""),
+                "setScreen is the one chokepoint every screen in the chain passes through — the "
+                        + "enumeration hook must target it");
+        assertTrue(source.contains("latitudePaneCovers="),
+                "the log line must say whether the pane covers each screen, or an uncovered screen "
+                        + "in the chain stays invisible in a bug report");
+        assertTrue(source.contains("screen instanceof ProgressScreen"),
+                "the covered-screen set in the logger must track the set that actually has hooks");
     }
 
     /** Neither screen may carry its own copy of the pane's drawing. */
@@ -63,6 +143,7 @@ public final class LoadingPresentationPolicyTest {
         for (String mixin : new String[] {
                 "src/main/java/com/example/globe/mixin/client/LevelLoadingScreenLatitudeOverlayMixin.java",
                 "src/main/java/com/example/globe/mixin/client/GenericMessageScreenLatitudeOverlayMixin.java",
+                "src/main/java/com/example/globe/mixin/client/ProgressScreenLatitudeOverlayMixin.java",
         }) {
             String source = read(mixin);
             assertTrue(source.contains("LatitudeLoadingPane"),
