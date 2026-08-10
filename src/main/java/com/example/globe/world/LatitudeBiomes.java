@@ -6841,6 +6841,28 @@ public final class LatitudeBiomes {
         return out;
     }
 
+    /**
+     * The pool a rejected candidate is REPLACED from — deliberately narrower than the pool used to
+     * ACCEPT a candidate.
+     *
+     * <p>Acceptance and substitution are not the same question. Accepting asks "was this biome
+     * legitimately chosen for this column?", and the answer must include everything the ledger
+     * admits, or a correctly-picked biome gets thrown away (that bug made muskeg and ice_marsh
+     * unplaceable in every world). Substituting asks "may I drop this biome here sight unseen?",
+     * and route-conditional identities must answer no, because the conditions their route depends
+     * on were never evaluated for this column.
+     *
+     * <p>Wetlands are the sharp case. {@code TEMPERATE_WETLAND} and {@code SUBPOLAR_WETLAND} are
+     * gated on {@code evaluateSwamp}, which requires {@code cont > -0.20}. Substituting past that
+     * gate put {@code biomesoplenty:muskeg} on a {@code cont=-0.611} sea-level coastal column
+     * (maintainer, 2026-08-10): at temperature 0.0 every bit of its water froze, producing a flat
+     * expanse of ice where a bog should be. {@code pickFromAllowedLandPool} performs a raw pick and
+     * re-checks nothing, so the exclusion has to happen here.
+     *
+     * <p>Biomes named in {@link #allowedExtraBiomeIdsForBand} are kept: those are deliberate
+     * per-band seeds (vanilla swamp in the tropics, mangrove in the subtropics) whose presence in
+     * the substitution pool is an existing intentional decision, not a leak.
+     */
     private static List<Holder<Biome>> rerollLandPoolForBand(List<Holder<Biome>> allowedPool,
                                                              int bandIndex,
                                                              boolean mountainLike) {
@@ -6851,7 +6873,32 @@ public final class LatitudeBiomes {
                 out = subtropicalNoForest;
             }
         }
+        List<Holder<Biome>> withoutConditionalWetland = removeConditionalWetlandFamily(out, bandIndex);
+        if (!withoutConditionalWetland.isEmpty()) {
+            out = withoutConditionalWetland;
+        }
         return out;
+    }
+
+    /**
+     * Drops ledger wetland-terrain identities from a substitution pool, keeping only the explicit
+     * per-band seeds. See {@link #rerollLandPoolForBand}.
+     */
+    private static List<Holder<Biome>> removeConditionalWetlandFamily(List<Holder<Biome>> pool,
+                                                                      int bandIndex) {
+        List<String> deliberateSeeds = allowedExtraBiomeIdsForBand(bandIndex);
+        List<Holder<Biome>> filtered = new ArrayList<>(pool.size());
+        for (Holder<Biome> entry : pool) {
+            String id = biomeId(entry);
+            BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
+            boolean conditionalWetland = descriptor != null
+                    && descriptor.terrain() == BiomeDescriptorLedger.Terrain.WETLAND
+                    && !deliberateSeeds.contains(id);
+            if (!conditionalWetland) {
+                filtered.add(entry);
+            }
+        }
+        return filtered;
     }
 
     private static int landPoolVariantKey(int bandIndex, boolean mountainLike) {

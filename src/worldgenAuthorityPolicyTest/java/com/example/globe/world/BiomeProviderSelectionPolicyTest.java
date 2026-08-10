@@ -38,6 +38,7 @@ final class BiomeProviderSelectionPolicyTest {
         cliffTreeLandAndOceanAreActuallyReachable();
         riverAndBeachAdmissionIsTagDrivenAndVanillaSafe();
         everyLedgerLandRouteSurvivesTheBandPoolGate();
+        wetlandsAreAcceptedButNeverSubstitutedIn();
         vanillaCoverageIsCompleteAndWorldSizeSafe();
         surfaceWaterCoverageIsCompleteAndWorldSizeSafe();
         sizeAwareVanillaRepresentationIsClosedAndBirthLocked();
@@ -1156,6 +1157,63 @@ final class BiomeProviderSelectionPolicyTest {
             assertTrue(d != null && !d.routes().isEmpty(),
                     "regression anchor must still hold a ledger route: " + id);
         }
+    }
+
+    /**
+     * Acceptance and substitution must not use the same pool.
+     *
+     * <p>Maintainer, live 2026-08-10: teleporting to muskeg landed on a flat expanse of ice.
+     * {@code /latdev explain} showed {@code cont=-0.611} at a sea-level coastal column — far below
+     * the {@code cont > -0.20} that {@code evaluateSwamp} demands, so the wetland route was never
+     * eligible there. The cause was a regression from the band-pool fix earlier the same day:
+     * unioning the ledger roster into {@code allowedLandPool} correctly stopped muskeg being
+     * rerolled AWAY, but also made it available to be rerolled IN, and
+     * {@code pickFromAllowedLandPool} performs a raw pick that re-checks no route condition. At
+     * temperature 0.0 every bit of the bog's water then froze.
+     *
+     * <p>So the acceptance pool must keep wetlands and the substitution pool must not. Asserting
+     * both halves, because dropping either reopens a different bug: drop the union and muskeg is
+     * unplaceable again, drop this filter and it lands on frozen ocean.
+     */
+    private static void wetlandsAreAcceptedButNeverSubstitutedIn() throws Exception {
+        String source = read("src/main/java/com/example/globe/world/LatitudeBiomes.java");
+
+        // Acceptance keeps them (the earlier fix).
+        assertTrue(source.contains("ledgerLandIdsForBand(bandIndex)"),
+                "the acceptance pool must still union the ledger roster, or a legitimately picked "
+                        + "wetland is thrown away and becomes unplaceable again");
+
+        // Substitution drops them.
+        String reroll = method(source,
+                "rerollLandPoolForBand(List<Holder<Biome>> allowedPool,");
+        assertTrue(reroll.contains("removeConditionalWetlandFamily"),
+                "the substitution pool must drop route-conditional wetlands — pickFromAllowedLandPool "
+                        + "re-checks nothing, so anything left here can be dropped onto a column "
+                        + "whose route conditions were never evaluated");
+
+        String filter = method(source, "removeConditionalWetlandFamily(List<Holder<Biome>> pool,");
+        assertTrue(filter.contains("Terrain.WETLAND"),
+                "the filter keys on ledger wetland terrain, not on a hardcoded id list, so a future "
+                        + "wetland descriptor is covered automatically");
+        // Assert the seed list is CONSULTED, not merely fetched. A contains() on the method name
+        // passed with the check gutted to `&& true`, because the variable stayed assigned — the
+        // third time this exact weak-assertion shape has slipped through in this campaign.
+        assertTrue(filter.contains("!deliberateSeeds.contains(id)"),
+                "deliberate per-band seeds (vanilla swamp in the tropics, mangrove in the "
+                        + "subtropics) must actually be consulted and exempted, not just looked up — "
+                        + "those are an existing intentional decision this filter must not undo");
+
+        // The gate the substitution was bypassing must still be the real one.
+        assertTrue(source.contains("cont > -0.20"),
+                "evaluateSwamp's continentalness floor is the condition this protects; if it moves, "
+                        + "this test's premise needs rechecking");
+
+        // Both wetland routes must actually be gated on the swamp evaluation.
+        String eligible = source.replaceAll("\\s+", " ");
+        assertTrue(eligible.contains("case TEMPERATE_WETLAND -> band == BAND_TEMPERATE && !mountain && evaluateSwamp("),
+                "temperate wetland stays swamp-gated");
+        assertTrue(eligible.contains("case SUBPOLAR_WETLAND -> band == BAND_SUBPOLAR && !mountain && evaluateSwamp("),
+                "subpolar wetland stays swamp-gated");
     }
 
     private static String read(String path) throws Exception {
