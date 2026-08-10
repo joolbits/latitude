@@ -7,7 +7,7 @@
   "authors": [
   "Peetsa"
 ],
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "icon": "assets/globe/icon.png",
   "environment": "*",
   "entrypoints": {
