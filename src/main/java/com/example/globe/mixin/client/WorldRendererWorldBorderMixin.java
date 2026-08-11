@@ -15,7 +15,7 @@ public class WorldRendererWorldBorderMixin {
     // alongside Latitude's presentation, never a crash.
     @Inject(method = "render", at = @At("HEAD"), cancellable = true, require = 0, expect = 1)
     private void globe$cancelVanillaWorldBorder(WorldBorderRenderState state, Vec3 cameraPos, double viewDistanceBlocks, double farPlaneDistance, CallbackInfo ci) {
-        if (!GlobeClientState.DEBUG_EW_SUPPRESS_VANILLA_BORDER) return;
+        if (!GlobeClientState.SUPPRESS_VANILLA_EW_BORDER) return;
         ci.cancel();
     }
 }

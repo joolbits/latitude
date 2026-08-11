@@ -124,7 +124,7 @@ public abstract class WorldSelectionListEntryMixin {
             try {
                 this.globe$recreatedWorldPresetId = RecreatedWorldMetadata.latitudePresetId(worldRoot);
             } catch (IOException e) {
-                GLOBE_LOGGER.warn("[LAT][CWPATH] could not read saved Latitude Re-Create identity", e);
+                GLOBE_LOGGER.warn("[Latitude] could not read saved Re-Create identity", e);
             }
         }
 
@@ -132,10 +132,6 @@ public abstract class WorldSelectionListEntryMixin {
                 client, onClose, levelSettings, context, tempDataPackDir);
         ((RecreatedWorldPresetCarrier) screen)
                 .globe$setRecreatedWorldPresetId(this.globe$recreatedWorldPresetId);
-        GLOBE_LOGGER.info(
-                "[LAT][CWPATH] carried persisted Re-Create preset={} world={}",
-                this.globe$recreatedWorldPresetId,
-                this.summary.getLevelId());
         return screen;
     }
 }

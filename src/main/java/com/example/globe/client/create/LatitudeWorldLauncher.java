@@ -70,17 +70,12 @@ public final class LatitudeWorldLauncher {
                                        boolean startWithCompass, boolean bonusChest,
                                        boolean generateStructures,
                                        GameRules gameRules, int worldTypeIdx) {
-        LOGGER.info("[LAT][CWPATH] LatitudeWorldLauncher.beginExpedition screen={} worldTypeIdx={} worldName={}",
-                screen.getClass().getName(), worldTypeIdx, worldName);
         // worldTypeIdx: 0=Latitude, 1=Vanilla, 2=Vanilla Superflat
         boolean isLatitude = worldTypeIdx == 0;
         long t0 = System.currentTimeMillis();
         if (isLatitude) {
             LatitudeClientState.beginExpedition(t0);
         }
-        LOGGER.info("[Latitude lifecycle] begin expedition — type={}, size={}, zone={}, {}ms since beginExpedition",
-                isLatitude ? "latitude" : worldTypeIdx == 1 ? "vanilla" : "superflat",
-                size.name(), randomSpawnZone ? "random" : spawnZone.id(), LatitudeClientState.elapsedSinceExpeditionMs());
         try {
             // ── 1. Size preset resolution ──
             net.minecraft.resources.Identifier presetId;
@@ -182,8 +177,6 @@ public final class LatitudeWorldLauncher {
             if (isLatitude) {
                 String bakedId = boundGlobeSettingsId(dimensionsConfig);
                 boolean serializable = globeSettingsSerializable(dimensionsConfig, combinedDynamicRegistries);
-                LOGGER.info("[LAT][CWPATH] globe settings binding: forced={} baked={} serializable={}",
-                        noiseSettingsId(launchDimensions.overworld()), bakedId, serializable);
                 if (bakedId == null || !serializable) {
                     LOGGER.error("[Latitude] Refusing to create world '{}': the Latitude preset's noise "
                                     + "settings would not persist as a registry reference "
@@ -263,8 +256,6 @@ public final class LatitudeWorldLauncher {
                     // Known synchronously, no round trip needed: a concrete zone shows its label
                     // immediately; Random shows nothing until the world has actually been played.
                     LatitudeClientState.setLoadingZoneLabel(randomSpawnZone ? null : spawnZone.displayName());
-                    LOGGER.info("[Latitude lifecycle] bespoke overlay activated — {}ms since beginExpedition",
-                            LatitudeClientState.elapsedSinceExpeditionMs());
                 }
 
                 client.execute(() -> {
@@ -317,13 +308,6 @@ public final class LatitudeWorldLauncher {
 
         WorldDimensions launchDimensions = new WorldDimensions(mergedDimensions)
                 .replaceOverworldGenerator(context.worldgenLoadContext(), globeOverworldGen);
-        LOGGER.info("[Latitude] create-world: forced overworld to Latitude preset generator (preset={} class={} settings={}); presetDimensions={}, datapackDimensions={}, launchDimensions={}",
-                presetEntry.unwrapKey().map(key -> key.identifier().toString()).orElse("<unbound>"),
-                globeOverworldGen.getClass().getSimpleName(),
-                noiseSettingsId(globeOverworldGen),
-                presetDimensions.dimensions().size(),
-                context.datapackDimensions().entrySet().size(),
-                launchDimensions.dimensions().size());
         return launchDimensions;
     }
 

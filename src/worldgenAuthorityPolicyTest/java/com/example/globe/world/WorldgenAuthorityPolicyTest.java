@@ -361,7 +361,7 @@ public final class WorldgenAuthorityPolicyTest {
         String source = normalize(read(
                 "src/main/java/com/example/globe/world/LatitudeBiomeSource.java"));
         int methodStart = source.indexOf("Holder<Biome> getLocatePreviewNoiseBiome(");
-        int methodEnd = source.indexOf("private record SurfaceLocateOutcome", methodStart);
+        int methodEnd = source.indexOf("private static boolean shouldPreserveCave", methodStart);
         assertTrue(methodStart >= 0 && methodEnd > methodStart,
                 "the custom surface locate preview must remain a distinct, reviewable helper");
         String preview = source.substring(methodStart, methodEnd);

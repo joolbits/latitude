@@ -1,6 +1,5 @@
 package com.example.globe.world;
 
-import com.example.globe.GlobeMod;
 import com.example.globe.mixin.BiomeSourceAccessor;
 import com.mojang.datafixers.util.Pair;
 import com.mojang.serialization.DataResult;
@@ -258,13 +257,12 @@ public final class LatitudeBiomeSource extends BiomeSource {
             // Larger than the complete build-height span: Mth.outFromOrigin emits one Y.
             boundedVerticalStep = Math.max(1, level.getMaxY() - level.getMinY() + 2);
             verticalSamples = 1;
-            long started = System.nanoTime();
             boolean targetIncludesMangrove = matching.stream().anyMatch(candidate ->
                     LatitudeBiomes.isBiomeIdPublic(candidate, "minecraft:mangrove_swamp"));
             boolean wetlandOnlyTarget = matching.stream().allMatch(candidate ->
                     LatitudeBiomes.isBiomeIdPublic(candidate, "minecraft:mangrove_swamp")
                             || LatitudeBiomes.isBiomeIdPublic(candidate, "minecraft:swamp"));
-            SurfaceLocateOutcome outcome = findClosestSurfaceBiome(
+            return findClosestSurfaceBiome(
                     boundedOrigin,
                     safeRadius,
                     safeHorizontalStep,
@@ -276,23 +274,6 @@ public final class LatitudeBiomeSource extends BiomeSource {
                     wetlandOnlyTarget,
                     sampler,
                     level);
-            long elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
-            int previewWorstCase = LatitudeLocateBudgetPolicy.worstCaseSamples(
-                    safeRadius, boundedHorizontalStep, 1);
-            GlobeMod.LOGGER.info(
-                    "[Latitude] bounded biome locate surfaceOnly=true radius={} previewStep={} previewProbes={} previewWorstCase={} exactCandidateChecks={} exactCandidateLimit={} fallbackUsed={} plannedFallbackUsed={} fallbackWorstCase={} elapsedMs={} found={}",
-                    safeRadius,
-                    boundedHorizontalStep,
-                    outcome.previewProbes(),
-                    previewWorstCase,
-                    outcome.exactCandidateChecks(),
-                    LatitudeLocateBudgetPolicy.MAX_SURFACE_EXACT_VERIFICATIONS,
-                    outcome.fallbackUsed(),
-                    outcome.plannedFallbackUsed(),
-                    outcome.fallbackWorstCaseSamples(),
-                    elapsedMillis,
-                    outcome.result() != null);
-            return outcome.result();
         } else {
             verticalSamples = (int) Mth.outFromOrigin(
                     origin.getY(),
@@ -304,31 +285,17 @@ public final class LatitudeBiomeSource extends BiomeSource {
                     safeRadius, safeHorizontalStep, verticalSamples);
         }
 
-        int worstCaseSamples = LatitudeLocateBudgetPolicy.worstCaseSamples(
-                safeRadius, boundedHorizontalStep, verticalSamples);
-        long started = System.nanoTime();
-        Pair<BlockPos, Holder<Biome>> result = super.findClosestBiome3d(
+        return centerQuartResult(super.findClosestBiome3d(
                 boundedOrigin,
                 safeRadius,
                 boundedHorizontalStep,
                 boundedVerticalStep,
                 target,
                 sampler,
-                level);
-        long elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
-        GlobeMod.LOGGER.info(
-                "[Latitude] bounded biome locate surfaceOnly={} radius={} horizontalStep={} verticalSamples={} worstCaseSamples={} elapsedMs={} found={}",
-                hasSurfaceTarget && !hasCaveTarget,
-                safeRadius,
-                boundedHorizontalStep,
-                verticalSamples,
-                worstCaseSamples,
-                elapsedMillis,
-                result != null);
-        return centerQuartResult(result);
+                level));
     }
 
-    private SurfaceLocateOutcome findClosestSurfaceBiome(
+    private Pair<BlockPos, Holder<Biome>> findClosestSurfaceBiome(
             BlockPos origin,
             int radius,
             int requestedHorizontalStep,
@@ -342,7 +309,6 @@ public final class LatitudeBiomeSource extends BiomeSource {
             LevelReader level) {
         int rings = radius / Math.max(1, previewHorizontalStep);
         int quartY = QuartPos.fromBlock(origin.getY());
-        int previewProbes = 0;
         int exactCandidateChecks = 0;
 
         for (BlockPos.MutableBlockPos offset : BlockPos.spiralAround(
@@ -352,8 +318,6 @@ public final class LatitudeBiomeSource extends BiomeSource {
             int quartX = QuartPos.fromBlock(sampleX);
             int quartZ = QuartPos.fromBlock(sampleZ);
             Holder<Biome> preview = getLocatePreviewNoiseBiome(quartX, quartY, quartZ, sampler);
-            previewProbes++;
-
             // Live mangroves are the terrain-validated coastal form of a SOURCE swamp,
             // so swamp is a necessary broad-phase proxy for a mangrove request.
             boolean plausible = target.test(preview)
@@ -373,9 +337,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
                         QuartPos.toBlock(quartX) + 2,
                         origin.getY(),
                         QuartPos.toBlock(quartZ) + 2));
-                return new SurfaceLocateOutcome(
-                        Pair.of(located, exact), previewProbes, exactCandidateChecks,
-                        false, false, 0);
+                return Pair.of(located, exact);
             }
         }
 
@@ -383,16 +345,13 @@ public final class LatitudeBiomeSource extends BiomeSource {
             // SOURCE swamp/mangrove output is a superset of the live terrain-validated
             // wetlands. If every broad-phase candidate failed the exact check, a second
             // terrain sweep cannot reveal another wetland family and only adds a stall.
-            return new SurfaceLocateOutcome(
-                    null, previewProbes, exactCandidateChecks, false, false, 0);
+            return null;
         }
 
         // Terrain-derived biomes may not appear in the cheap SOURCE broad phase. Give those
         // requests a much smaller exact spiral rather than silently making them unlocatable.
         int fallbackHorizontalStep = LatitudeLocateBudgetPolicy.surfaceExactFallbackHorizontalStep(
                 radius, requestedHorizontalStep);
-        int fallbackWorstCase = LatitudeLocateBudgetPolicy.worstCaseSamples(
-                radius, fallbackHorizontalStep, 1);
         Pair<BlockPos, Holder<Biome>> fallback = centerQuartResult(super.findClosestBiome3d(
                 origin,
                 radius,
@@ -404,13 +363,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
         Pair<BlockPos, Holder<Biome>> plannedFallback = fallback == null
                 ? findPlannedSurfaceWaterCoverage(matching, origin, target, sampler)
                 : null;
-        return new SurfaceLocateOutcome(
-                fallback != null ? fallback : plannedFallback,
-                previewProbes,
-                exactCandidateChecks,
-                true,
-                plannedFallback != null,
-                fallbackWorstCase);
+        return fallback != null ? fallback : plannedFallback;
     }
 
     /**
@@ -508,15 +461,6 @@ public final class LatitudeBiomeSource extends BiomeSource {
                 null,
                 null,
                 null);
-    }
-
-    private record SurfaceLocateOutcome(
-            Pair<BlockPos, Holder<Biome>> result,
-            int previewProbes,
-            int exactCandidateChecks,
-            boolean fallbackUsed,
-            boolean plannedFallbackUsed,
-            int fallbackWorstCaseSamples) {
     }
 
     private static boolean shouldPreserveCave(Holder<Biome> current, Holder<Biome> surfaceBase, int blockY) {
