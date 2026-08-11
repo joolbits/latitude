@@ -126,10 +126,11 @@ requiring operator permission:
 - `/latitude tpBand <band> [edge]` — teleport to a latitude band
 - `/latitude flyspeed <1-5>`, `/latitude help`
 
-For backed-up older non-Latitude worlds, operators can use `/latitude retrofit enable` followed by
+For backed-up older Latitude worlds, operators can use `/latitude retrofit enable` followed by
 `/latitude retrofit confirm` to apply Latitude decoration to newly loaded eligible chunks. The worker
 is deliberately bounded to two chunks per tick and a 2,048-chunk pending queue; `/latitude retrofit
-status` reports progress and `/latitude retrofit disable` clears the session. It refuses Latitude worlds.
+status` reports progress and `/latitude retrofit disable` clears the session. It refuses non-Latitude
+worlds rather than converting them.
 
 These are inspection and navigation tools only. Latitude's development tooling — session recording,
 screenshot capture, world export, seam auditing, chunk pregeneration, and every automatic harness — is

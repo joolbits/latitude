@@ -22,8 +22,8 @@ worlds.
 
 ## Optional retrofit command
 
-Operators may use `/latitude retrofit` on a backed-up older non-Latitude world. The command refuses
-Latitude worlds and requires the explicit `enable` then `confirm` sequence. Its worker processes at most
+Operators may use `/latitude retrofit` on a backed-up older Latitude world. The command refuses
+non-Latitude worlds and requires the explicit `enable` then `confirm` sequence. Its worker processes at most
 two chunks per tick, caps the pending queue at 2,048 chunks, exposes progress through `status`, and clears
 its session when disabled or when the server stops.
 
