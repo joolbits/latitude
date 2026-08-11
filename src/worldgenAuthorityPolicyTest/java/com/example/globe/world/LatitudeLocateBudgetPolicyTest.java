@@ -39,6 +39,19 @@ public final class LatitudeLocateBudgetPolicyTest {
         assertEquals(1,
                 LatitudeLocateBudgetPolicy.MAX_WETLAND_EXACT_PROBES_PER_TICK,
                 "wetland terrain-probe tick bound");
+        assertTrue(LatitudeLocateBudgetPolicy.MAX_BIOME_LOCATE_TICK_NANOS == 8_000_000L,
+                "all-biome locate tick-time budget changed unexpectedly");
+        assertEquals(4_096,
+                LatitudeLocateBudgetPolicy.MAX_SURFACE_PREVIEW_PROBES_PER_TICK,
+                "surface preview tick bound");
+        assertEquals(8,
+                LatitudeLocateBudgetPolicy.MAX_THREE_DIMENSIONAL_EXACT_PROBES_PER_TICK,
+                "three-dimensional exact-probe tick bound");
+        assertTrue(
+                LatitudeLocateBudgetPolicy.worstCaseSamples(6_400, 128, 1)
+                        + LatitudeLocateBudgetPolicy.worstCaseSamples(6_400, 400, 1)
+                        == 11_290,
+                "the surface progress route must cover its full finite preview and fallback plan");
 
         assertTrue(
                 LatitudeLocateBudgetPolicy.allowsSwampProxyForTarget(true, false, 2, 1),

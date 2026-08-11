@@ -26,6 +26,7 @@ public final class WorldgenAuthorityPolicyTest {
         recreatedLatitudeWorldKeepsItsWorldTypeAndSize();
         coastalSwampUsesMangroveIdentity();
         wetlandLocateFilterMatchesFinalIdentityLaw();
+        biomeLocateServiceClaimsAllSupportedTargets();
         profileAdoptionRefusesWorldsLatitudeDidNotGenerate();
         offDiskStateReaderDerivesItsPathFromTheSavedDataId();
         LatitudeLocateBudgetPolicyTest.main(new String[0]);
@@ -322,6 +323,32 @@ public final class WorldgenAuthorityPolicyTest {
                 service.contains("tickExactProbes < LatitudeLocateBudgetPolicy.MAX_WETLAND_EXACT_PROBES_PER_TICK")
                         && service.contains("tickExactProbes++;"),
                 "the live scheduler must enforce and consume the one-exact-probe tick budget");
+    }
+
+    private static void biomeLocateServiceClaimsAllSupportedTargets() throws Exception {
+        String service = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeBiomeLocateService.java"));
+        String mixin = normalize(read(
+                "src/main/java/com/example/globe/mixin/LocateCommandMixin.java"));
+
+        assertTrue(
+                mixin.contains("LatitudeBiomeLocateService.beginIfLatitudeBiome(source, target)"),
+                "the command hook must route all supported Latitude biome requests into the progress worker");
+        assertTrue(
+                service.contains("else if (!includesCave) { job = new SurfaceLocateJob(")
+                        && service.contains("else { job = new ThreeDimensionalLocateJob("),
+                "surface, cave, and mixed biome targets must all receive bounded tick-sliced routes");
+        assertTrue(
+                service.contains("ServerPlayConnectionEvents.DISCONNECT.register(")
+                        && service.contains("ServerLifecycleEvents.SERVER_STOPPED.register(server -> cancel(server, null))"),
+                "disconnect and server-stop cancellation must reach the active locate job");
+        assertTrue(
+                occurrences(service, "bossBar.removeAllPlayers()") >= 3,
+                "success, failure, and cancellation must all clear the locate boss bar");
+        assertTrue(
+                service.contains("LatitudeLocateBudgetPolicy.MAX_SURFACE_PREVIEW_PROBES_PER_TICK")
+                        && service.contains("LatitudeLocateBudgetPolicy.MAX_THREE_DIMENSIONAL_EXACT_PROBES_PER_TICK"),
+                "general biome routes must remain explicitly bounded per tick");
     }
 
     private static void raisedTerrainCannotKeepAnOceanBiome() throws Exception {

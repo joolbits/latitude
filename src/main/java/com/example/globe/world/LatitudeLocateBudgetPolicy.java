@@ -9,6 +9,9 @@ public final class LatitudeLocateBudgetPolicy {
     public static final long MAX_WETLAND_LOCATE_TICK_NANOS = 8_000_000L;
     public static final int MAX_WETLAND_GRID_PROBES_PER_TICK = 4_096;
     public static final int MAX_WETLAND_EXACT_PROBES_PER_TICK = 1;
+    public static final long MAX_BIOME_LOCATE_TICK_NANOS = 8_000_000L;
+    public static final int MAX_SURFACE_PREVIEW_PROBES_PER_TICK = 4_096;
+    public static final int MAX_THREE_DIMENSIONAL_EXACT_PROBES_PER_TICK = 8;
 
     private LatitudeLocateBudgetPolicy() {
     }

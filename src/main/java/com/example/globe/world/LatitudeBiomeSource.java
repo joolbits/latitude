@@ -413,7 +413,11 @@ public final class LatitudeBiomeSource extends BiomeSource {
                 fallbackWorstCase);
     }
 
-    private Pair<BlockPos, Holder<Biome>> findPlannedSurfaceWaterCoverage(
+    /**
+     * Resolves the final planned-water fallback used by bounded surface-biome locate searches.
+     * The tick-sliced command worker calls this only after its finite direct probes miss.
+     */
+    Pair<BlockPos, Holder<Biome>> findPlannedSurfaceWaterCoverage(
             Set<Holder<Biome>> matching,
             BlockPos origin,
             Predicate<Holder<Biome>> target,
@@ -454,7 +458,12 @@ public final class LatitudeBiomeSource extends BiomeSource {
                 : Pair.of(centerQuartPosition(result.getFirst()), result.getSecond());
     }
 
-    private Holder<Biome> getLocatePreviewNoiseBiome(
+    /**
+     * Terrain-free broad-phase preview for the tick-sliced surface-biome locate worker.
+     * A preview is never reported as a locate result; callers must verify it with
+     * {@link #getNoiseBiome(int, int, int, Climate.Sampler)}.
+     */
+    Holder<Biome> getLocatePreviewNoiseBiome(
             int x,
             int y,
             int z,
@@ -508,7 +517,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
         return true;
     }
 
-    private static boolean isCaveBiome(Holder<Biome> entry) {
+    static boolean isCaveBiome(Holder<Biome> entry) {
         if (entry.is(ConventionalBiomeTags.IS_CAVE)
                 || entry.is(ConventionalBiomeTags.IS_UNDERGROUND)) {
             return true;
