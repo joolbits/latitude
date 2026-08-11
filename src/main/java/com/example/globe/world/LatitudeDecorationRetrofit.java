@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import net.fabricmc.fabric.api.attachment.v1.AttachmentRegistry;
 import net.fabricmc.fabric.api.attachment.v1.AttachmentType;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -68,7 +69,8 @@ import net.minecraft.world.level.levelgen.placement.PlacedFeature;
  * <p>Chunks are marked with a persistent {@code globe:retrofit_decorated} attachment once handled
  * — and every newly generated chunk is marked at decoration time by
  * {@code ChunkGeneratorGenerateFeaturesBiomeSetMixin} — so no chunk is ever processed twice, and
- * post-fix chunks are never touched at all. Work is throttled to a few chunks per server tick.
+ * post-fix chunks are never touched at all. Work is throttled to two chunks per server tick, with
+ * at most 2,048 chunks pending at once.
  *
  * <p>On a world that never captured a provider-ticket profile (created by a dedicated server
  * before that fix), enabling the retrofit also adopts a profile so NEW chunks gain the full
@@ -123,16 +125,24 @@ public final class LatitudeDecorationRetrofit {
                     Identifier.fromNamespaceAndPath("globe", "retrofit_decorated"), Codec.BOOL);
 
     private static final int CHUNKS_PER_TICK = 2;
+    private static final int MAX_PENDING_CHUNKS = 2048;
     private static final int ENABLE_SWEEP_RADIUS_CHUNKS = 10;
     private static final long CONFIRM_WINDOW_MS = 60_000L;
+    private static final long OVERFLOW_WARNING_INTERVAL_MS = 60_000L;
+    private static final long COMPLETION_INFO_INTERVAL_MS = 60_000L;
 
     // All mutated on the server thread only (commands, chunk-load events, end-of-tick).
     private static final ArrayDeque<Long> QUEUE = new ArrayDeque<>();
     private static final Set<Long> QUEUED = new HashSet<>();
     private static volatile long pendingConfirmDeadlineMs;
+    private static final AtomicInteger CHUNKS_PROCESSED = new AtomicInteger();
     private static final AtomicInteger CHUNKS_SCANNED = new AtomicInteger();
+    private static final AtomicInteger CHUNKS_DEFERRED = new AtomicInteger();
     private static final AtomicInteger CHUNKS_RETROFITTED = new AtomicInteger();
     private static final AtomicInteger FEATURES_PLACED = new AtomicInteger();
+    private static volatile long lastOverflowWarningMs = Long.MIN_VALUE;
+    private static volatile long lastCompletionInfoMs = Long.MIN_VALUE;
+    private static volatile boolean completionSummaryPending;
     private static volatile List<Identifier> eligibleCache;
 
     private LatitudeDecorationRetrofit() {
@@ -146,6 +156,7 @@ public final class LatitudeDecorationRetrofit {
 
         ServerChunkEvents.CHUNK_LOAD.register(LatitudeDecorationRetrofit::onChunkLoad);
         ServerTickEvents.END_SERVER_TICK.register(LatitudeDecorationRetrofit::onEndTick);
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> clearQueueState());
     }
 
     /** Marks a chunk as decorated under the fixed index; called from the decoration mixin. */
@@ -209,6 +220,9 @@ public final class LatitudeDecorationRetrofit {
         state.setRetrofitEnabled(true);
         eligibleCache = null;
         int seeded = sweepAroundPlayers(world);
+        GlobeMod.LOGGER.info(
+                "[Latitude] retrofit enabled: pending={}/{} deferred={} seeded={}",
+                QUEUE.size(), MAX_PENDING_CHUNKS, CHUNKS_DEFERRED.get(), seeded);
         lines.add("Retrofit enabled. Already-loaded terrain near players has been queued ("
                 + seeded + " chunks); other affected chunks are handled as they load.");
         return lines;
@@ -220,8 +234,12 @@ public final class LatitudeDecorationRetrofit {
         if (state != null) {
             state.setRetrofitEnabled(false);
         }
-        QUEUE.clear();
-        QUEUED.clear();
+        GlobeMod.LOGGER.info(
+                "[Latitude] retrofit disabled: pending={}/{} processed={} scanned={} deferred={} "
+                        + "retrofitted={} featuresPlaced={}",
+                QUEUE.size(), MAX_PENDING_CHUNKS, CHUNKS_PROCESSED.get(), CHUNKS_SCANNED.get(),
+                CHUNKS_DEFERRED.get(), CHUNKS_RETROFITTED.get(), FEATURES_PLACED.get());
+        clearQueueState();
         return List.of("Retrofit disabled. Chunks already retrofitted keep their decoration; "
                 + "unprocessed chunks stay as they are.");
     }
@@ -233,8 +251,10 @@ public final class LatitudeDecorationRetrofit {
         return List.of(
                 "Retrofit: " + (enabled ? "ENABLED" : "disabled")
                         + " | provider roster: " + (hasProfile ? "present" : "absent"),
-                "Queued: " + QUEUE.size() + " | scanned: " + CHUNKS_SCANNED.get()
-                        + " | retrofitted: " + CHUNKS_RETROFITTED.get()
+                "pending/capacity: " + QUEUE.size() + "/" + MAX_PENDING_CHUNKS
+                        + " | processed/scanned: " + CHUNKS_PROCESSED.get() + "/" + CHUNKS_SCANNED.get()
+                        + " | deferred: " + CHUNKS_DEFERRED.get(),
+                "retrofitted: " + CHUNKS_RETROFITTED.get()
                         + " | features placed: " + FEATURES_PLACED.get(),
                 "Eligible biomes: " + eligibleSummary(world));
     }
@@ -248,17 +268,21 @@ public final class LatitudeDecorationRetrofit {
         if (Boolean.TRUE.equals(chunk.getAttached(DECORATED_UNDER_FIXED_INDEX))) {
             return;
         }
-        enqueue(chunk.getPos());
+        if (!enqueue(chunk.getPos())) {
+            // A duplicate is already pending; an overflow rejection remains unmarked so a later
+            // chunk-load event can retry it after capacity becomes available.
+            return;
+        }
     }
 
     private static void onEndTick(MinecraftServer server) {
         if (QUEUE.isEmpty()) {
+            maybeLogCompletionSummary();
             return;
         }
         ServerLevel world = server.overworld();
         if (world == null || !isEnabled(world)) {
-            QUEUE.clear();
-            QUEUED.clear();
+            clearQueueState();
             return;
         }
         for (int i = 0; i < CHUNKS_PER_TICK && !QUEUE.isEmpty(); i++) {
@@ -266,13 +290,25 @@ public final class LatitudeDecorationRetrofit {
             QUEUED.remove(packed);
             processChunk(world, new ChunkPos(packed));
         }
+        if (QUEUE.isEmpty()) {
+            maybeLogCompletionSummary();
+        }
     }
 
-    private static void enqueue(ChunkPos pos) {
+    private static boolean enqueue(ChunkPos pos) {
         long packed = pos.toLong();
-        if (QUEUED.add(packed)) {
-            QUEUE.addLast(packed);
+        if (QUEUED.contains(packed)) {
+            return false;
         }
+        if (QUEUE.size() >= MAX_PENDING_CHUNKS) {
+            CHUNKS_DEFERRED.incrementAndGet();
+            maybeWarnQueueOverflow(pos);
+            return false;
+        }
+        QUEUED.add(packed);
+        QUEUE.addLast(packed);
+        completionSummaryPending = true;
+        return true;
     }
 
     private static int sweepAroundPlayers(ServerLevel world) {
@@ -285,8 +321,9 @@ public final class LatitudeDecorationRetrofit {
                             .getChunk(center.x + dx, center.z + dz, ChunkStatus.FULL, false);
                     if (chunk instanceof LevelChunk level
                             && !Boolean.TRUE.equals(level.getAttached(DECORATED_UNDER_FIXED_INDEX))) {
-                        enqueue(level.getPos());
-                        seeded++;
+                        if (enqueue(level.getPos())) {
+                            seeded++;
+                        }
                     }
                 }
             }
@@ -297,6 +334,7 @@ public final class LatitudeDecorationRetrofit {
     // ── The actual work ──
 
     private static void processChunk(ServerLevel world, ChunkPos pos) {
+        CHUNKS_PROCESSED.incrementAndGet();
         ChunkAccess access = world.getChunkSource().getChunk(pos.x, pos.z, ChunkStatus.FULL, false);
         if (!(access instanceof LevelChunk chunk)) {
             return;
@@ -311,7 +349,7 @@ public final class LatitudeDecorationRetrofit {
                 int placed = replayVegetalFeatures(world, pos, present);
                 FEATURES_PLACED.addAndGet(placed);
                 CHUNKS_RETROFITTED.incrementAndGet();
-                GlobeMod.LOGGER.info("[Latitude] retrofit decorated chunk {},{}: biomes={} featuresPlaced={}",
+                GlobeMod.LOGGER.debug("[Latitude] retrofit decorated chunk {},{}: biomes={} featuresPlaced={}",
                         pos.x, pos.z,
                         present.stream().map(h -> h.unwrapKey().map(k -> k.identifier().toString()).orElse("?")).toList(),
                         placed);
@@ -323,6 +361,52 @@ public final class LatitudeDecorationRetrofit {
         }
         markDecoratedUnderFixedIndex(chunk);
         chunk.markUnsaved();
+    }
+
+    private static void maybeWarnQueueOverflow(ChunkPos pos) {
+        long now = System.currentTimeMillis();
+        if (lastOverflowWarningMs == Long.MIN_VALUE
+                || now < lastOverflowWarningMs
+                || now - lastOverflowWarningMs >= OVERFLOW_WARNING_INTERVAL_MS) {
+            lastOverflowWarningMs = now;
+            GlobeMod.LOGGER.warn(
+                    "[Latitude] retrofit queue is full ({}/{}); deferred chunk {},{} will retry on a later load",
+                    QUEUE.size(), MAX_PENDING_CHUNKS, pos.x, pos.z);
+        }
+    }
+
+    private static void maybeLogCompletionSummary() {
+        if (!completionSummaryPending) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (lastCompletionInfoMs != Long.MIN_VALUE
+                && now >= lastCompletionInfoMs
+                && now - lastCompletionInfoMs < COMPLETION_INFO_INTERVAL_MS) {
+            return;
+        }
+        lastCompletionInfoMs = now;
+        completionSummaryPending = false;
+        GlobeMod.LOGGER.info(
+                "[Latitude] retrofit queue complete: processed={} scanned={} deferred={} retrofitted={} "
+                        + "featuresPlaced={}",
+                CHUNKS_PROCESSED.get(), CHUNKS_SCANNED.get(), CHUNKS_DEFERRED.get(),
+                CHUNKS_RETROFITTED.get(), FEATURES_PLACED.get());
+    }
+
+    private static void clearQueueState() {
+        QUEUE.clear();
+        QUEUED.clear();
+        pendingConfirmDeadlineMs = 0L;
+        CHUNKS_PROCESSED.set(0);
+        CHUNKS_SCANNED.set(0);
+        CHUNKS_DEFERRED.set(0);
+        CHUNKS_RETROFITTED.set(0);
+        FEATURES_PLACED.set(0);
+        lastOverflowWarningMs = Long.MIN_VALUE;
+        lastCompletionInfoMs = Long.MIN_VALUE;
+        completionSummaryPending = false;
+        eligibleCache = null;
     }
 
     private static List<Holder<Biome>> eligibleBiomesIn(ServerLevel world, LevelChunk chunk) {

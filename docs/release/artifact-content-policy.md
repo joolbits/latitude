@@ -14,8 +14,9 @@ surface under their existing artifact-identity gating.
 
 ## The rule
 
-A public release artifact **ships** operator-usable Latitude commands, and **never** ships recording,
-sentinel, or auto-harness work.
+A public release artifact **ships** operator-usable Latitude commands, and **never** ships recording
+or auto-harness work. Background work is excluded except for the single, explicitly bounded
+`/latitude retrofit` maintenance operation defined below.
 
 The exclusion exists for one reason: recording and sentinel work is the class of payload that can prevent
 a public release from being greenlit. Keeping it out of the artifact is what keeps the greenlight
@@ -56,11 +57,30 @@ A command may ship when **all** of the following hold:
 3. It requires operator permission (`Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)`).
 4. It cannot arm itself; it only runs when a player types it.
 
+### Permitted exception — operator-confirmed decoration retrofit
+
+`/latitude retrofit` is the only background worker permitted in a public artifact. It repairs
+already-generated Latitude chunks whose provider-biome decoration predates the fixed decoration
+index. The exception is valid only while all of these constraints remain mechanically enforced:
+
+1. The root command requires operator permission and refuses non-Latitude worlds.
+2. Activation requires `enable` followed by `confirm` within 60 seconds; it never auto-arms.
+3. The pending queue and deduplication set are capped at 2,048 chunks.
+4. Work is capped at two chunks per server tick.
+5. A chunk rejected at capacity is not marked handled and may retry on a later load.
+6. Overflow warnings are limited to one per 60 seconds and per-chunk success is DEBUG-only.
+7. `status` reports pending capacity, processed/scanned, deferred, retrofitted, and placed work.
+8. `disable` and server shutdown clear all transient queue, confirmation, counter, and cache state.
+
+Any second worker, hidden activation route, wider queue, faster tick budget, or weaker cleanup is a
+policy failure rather than an implied extension of this exception.
+
 ## Current classification
 
 | Class | Members | In release artifact |
 | --- | --- | --- |
 | Permitted operator queries | `help`, `here`, `explainHere` (chat-only variant), `probe`, `tpLat`, `tpBand`, `flyspeed` | **Yes** |
+| Permitted bounded maintenance | `retrofit` (`status`, `enable`, `confirm`, `disable`) | **Yes, under the exact exception above** |
 | Recording | `DevTestSession` (`case`/`start`/`mark`/`capture`/`finish`), `DevPresentationTrace` (`presentationTrace`), `BiomePreviewExporter` (`biomePng`, `biomePngY`), `DevCaptureKeybind` + `ClipboardImageWriter`, `BiomePreviewHeadlessRunner`, `LatitudeDevCommand.writeExplainLog` | No |
 | Sentinel | `ChunkPregenerator` jobs (`transect`, `transectDeg`, `slicePoleNS`, `pause`, `resume`, `stop`, `status`, `budgetMs`, `budgetAuto`), `ChunkRegenerator` (`regen`, `regenChunk`), `SeamAuditCoordinator` (`seamAudit`), `audit/AutonomousSeamAuditJob` | No |
 | Auto-harness | `AutoCreateWorldProbe`, `client/SeamAuditClientBridge`, `client/audit/SeamAuditHarness` | No |
@@ -99,10 +119,13 @@ edit can quietly widen what ships.
    `com/example/globe/dev/**` entries, that it *does* contain the shipping `com/example/globe/tools/**`
    surface, and that shipping command sources contain no file-write, tick-listener, or harness references.
    Its `verify_tools_sources()` also pins the shipped subcommand and argument sets **exactly**, so an
-   unknown new subcommand fails the gate rather than widening the surface silently.
+   unknown new subcommand fails the gate rather than widening the surface silently. Its retrofit gate
+   separately pins the sole exception's command, queue, tick budget, retry, logging, status, and cleanup
+   invariants.
 6. **Build-enforced, not script-enforced.** `latitudeShippingToolsPolicyTest` and
-   `latitudeArtifactPolicySourceScan` run under `check`. This repository has no CI, so a verifier that
-   nothing invokes is not an enforcement point — the boundary has to be wired into the build itself.
+   `latitudeArtifactPolicySourceScan` run under `check`, and CI runs the same `build check` gate. A
+   verifier that nothing invokes is not an enforcement point — the boundary stays wired into both the
+   local build and CI.
 7. **Registration containment.** Command registration exists only in `com.example.globe.tools` and
    `com.example.globe.dev`; no other package may reference Brigadier. A new command therefore cannot
    reach a release artifact without passing through the gated surface.
@@ -121,7 +144,7 @@ Run against the built candidate jar, before staging and again before publication
 unzip -l <candidate>.jar | grep -c "com/example/globe/dev/"    # must be 0
 unzip -l <candidate>.jar | grep -c "com/example/globe/tools/"  # must be > 0
 unzip -p <candidate>.jar META-INF/MANIFEST.MF                  # Build-Dirty: false, no Latitude-Artifact-Role
-python3 tools/verify_phase6_dev_tooling.py --jar <candidate>.jar
+python3 tools/verify_phase6_dev_tooling.py --public-jar <candidate>.jar
 ```
 
 Then, in a live session on the staged artifact: confirm the permitted commands exist and require operator
@@ -130,7 +153,6 @@ shipped command, and confirm no Latitude capture keybind appears in the vanilla 
 
 ## Amendment protocol
 
-This policy changes only by owner directive. Any amendment adds a new evidence row in
-[`../external record/evidence-registry.md`](../external record/evidence-registry.md) with scope `release`, sets `supersedes`
-to the prior row, and updates this document in the same pass. Prior text is superseded, never rewritten —
-the history of what shipped under which rule stays readable.
+This policy changes only by owner directive. Release evidence and amendment chronology live in the
+private Latitude notes for the applicable source line; this public document records only the current,
+stable artifact contract. Git history preserves prior public versions of that contract.

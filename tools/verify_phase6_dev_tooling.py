@@ -234,6 +234,55 @@ def verify_tools_sources(failures: list[str]) -> None:
            "production metadata references the tools package", failures)
 
 
+def verify_retrofit_worker_exception(failures: list[str]) -> None:
+    """Constrain the sole shipped background-worker exception to /latitude retrofit.
+
+    The normal shipping-tools policy rejects workers, delayed work, and hidden activation. The
+    ledger-decoration repair is deliberately exceptional because it must process already-loaded
+    chunks after an operator's explicit confirmation. Keep that exception narrow and inspectable:
+    bounded admission, bounded per-tick work, retry-safe rejection, rate-limited warnings, and
+    cleanup on both disable and server stop.
+    """
+    retrofit = read("src/main/java/com/example/globe/world/LatitudeDecorationRetrofit.java")
+    command = read("src/main/java/com/example/globe/tools/LatitudeToolsCommand.java")
+    globe = read("src/main/java/com/example/globe/GlobeMod.java")
+
+    require(retrofit, "private static final int MAX_PENDING_CHUNKS = 2048;",
+            "exact retrofit queue cap", failures)
+    require(retrofit, "private static final int CHUNKS_PER_TICK = 2;",
+            "exact retrofit chunks-per-tick cap", failures)
+    require(retrofit, "private static boolean enqueue(ChunkPos pos)",
+            "retry-aware retrofit enqueue result", failures)
+    require(retrofit, "if (QUEUE.size() >= MAX_PENDING_CHUNKS)",
+            "retrofit full-queue admission rejection", failures)
+    require(retrofit, "if (!enqueue(chunk.getPos()))",
+            "retrofit rejected chunk remains retryable", failures)
+    on_chunk_load = method_body(
+        retrofit, "private static void onChunkLoad(ServerLevel world, LevelChunk chunk)"
+    )
+    forbid(on_chunk_load, "markDecoratedUnderFixedIndex",
+           "retrofit rejected chunk marked handled", failures)
+    require(retrofit, "private static final long OVERFLOW_WARNING_INTERVAL_MS = 60_000L;",
+            "retrofit overflow warning rate limit", failures)
+    require(retrofit, "GlobeMod.LOGGER.warn", "retrofit overflow warning", failures)
+    require(retrofit, "GlobeMod.LOGGER.debug(\"[Latitude] retrofit decorated chunk",
+            "retrofit per-chunk success debug logging", failures)
+    require(retrofit, "deferred:", "retrofit deferred-count status", failures)
+    require(retrofit, "private static void clearQueueState()",
+            "retrofit shared cleanup owner", failures)
+    require(retrofit, "ServerLifecycleEvents.SERVER_STOPPED.register",
+            "retrofit server-stop cleanup wiring", failures)
+
+    disable = method_body(retrofit, "public static List<String> disable(ServerLevel world)")
+    require(disable, "clearQueueState();", "retrofit disable cleanup", failures)
+    require(command, "Commands.literal(\"retrofit\")", "shipped retrofit command root", failures)
+    require(command, "LatitudeDecorationRetrofit.confirmEnable(",
+            "operator-confirmed retrofit activation", failures)
+    require(retrofit, "pendingConfirmDeadlineMs", "bounded retrofit confirmation state", failures)
+    require(retrofit, "state.setRetrofitEnabled(true);", "retrofit enables only after confirmation", failures)
+    require(globe, "LatitudeDecorationRetrofit.init();", "exact shipped retrofit worker wiring", failures)
+
+
 def verify_sources(failures: list[str]) -> None:
     globe = read("src/main/java/com/example/globe/GlobeMod.java")
     globe_client = read("src/main/java/com/example/globe/GlobeModClient.java")
@@ -1251,6 +1300,7 @@ def main() -> int:
     failures: list[str] = []
     verify_sources(failures)
     verify_tools_sources(failures)
+    verify_retrofit_worker_exception(failures)
     public_jar = args.public_jar or args.jar
     if args.test_jar and not public_jar:
         failures.append("--test-jar requires --public-jar")

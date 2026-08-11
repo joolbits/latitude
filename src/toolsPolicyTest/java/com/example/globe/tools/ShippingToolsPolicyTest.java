@@ -4,6 +4,8 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.tree.CommandNode;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -54,6 +56,7 @@ public final class ShippingToolsPolicyTest {
 
         shippingTreeIsExactlyThePermittedOperatorSet();
         shippingClassCarriesNoExcludedCoupling();
+        retrofitWorkerIsTheSingleBoundedOperatorConfirmedException();
         System.out.println("SHIPPING_TOOLS_POLICY_TEST_PASS assertions=" + assertions);
     }
 
@@ -124,6 +127,68 @@ public final class ShippingToolsPolicyTest {
                                 + " (" + parameter.getName() + ")");
             }
         }
+    }
+
+    /**
+     * Retrofit is the sole deliberately shipped background worker. Its queue must stay bounded,
+     * retry-safe, operator-confirmed, and disposable; this is source policy rather than a fake
+     * Minecraft server simulation.
+     */
+    private static void retrofitWorkerIsTheSingleBoundedOperatorConfirmedException() throws Exception {
+        String retrofit = Files.readString(Path.of(
+                "src/main/java/com/example/globe/world/LatitudeDecorationRetrofit.java"));
+        String command = Files.readString(Path.of(
+                "src/main/java/com/example/globe/tools/LatitudeToolsCommand.java"));
+        String globe = Files.readString(Path.of("src/main/java/com/example/globe/GlobeMod.java"));
+
+        expectTrue(retrofit.contains("private static final int MAX_PENDING_CHUNKS = 2048;"),
+                "retrofit queue is capped at exactly 2048 chunks");
+        expectTrue(retrofit.contains("private static final int CHUNKS_PER_TICK = 2;"),
+                "retrofit processes exactly two chunks per server tick");
+        expectTrue(retrofit.contains("private static boolean enqueue(ChunkPos pos)"),
+                "retrofit enqueue reports acceptance so callers can preserve retry safety");
+        expectTrue(retrofit.contains("if (QUEUE.size() >= MAX_PENDING_CHUNKS)"),
+                "retrofit rejects a new queue entry when its cap is reached");
+        expectTrue(retrofit.contains("return false;"),
+                "full retrofit queue has an explicit rejection path");
+        expectTrue(retrofit.contains("if (!enqueue(chunk.getPos()))"),
+                "chunk-load rejection is distinct from successful enqueue");
+        int onLoad = retrofit.indexOf("private static void onChunkLoad(ServerLevel world, LevelChunk chunk)");
+        int onLoadEnd = retrofit.indexOf("private static void onEndTick", onLoad);
+        expectTrue(onLoad >= 0 && onLoadEnd > onLoad
+                        && !retrofit.substring(onLoad, onLoadEnd)
+                                .contains("markDecoratedUnderFixedIndex"),
+                "a rejected chunk is never marked handled and can retry on a later load");
+        expectTrue(retrofit.contains("private static final long OVERFLOW_WARNING_INTERVAL_MS = 60_000L;"),
+                "overflow warning is limited to at most once per 60 seconds");
+        expectTrue(retrofit.contains("GlobeMod.LOGGER.warn"),
+                "queue overflow produces an operator-visible warning");
+        expectTrue(retrofit.contains("GlobeMod.LOGGER.debug(\"[Latitude] retrofit decorated chunk"),
+                "per-chunk retrofit success is DEBUG rather than noisy INFO");
+        expectTrue(retrofit.contains("deferred:"),
+                "status reports deferred chunks separately from the active queue");
+        expectTrue(retrofit.contains("features placed:"),
+                "status retains feature-placement work accounting");
+        expectTrue(retrofit.contains("ServerLifecycleEvents.SERVER_STOPPED.register"),
+                "server stop clears the exceptional worker state");
+        expectTrue(retrofit.contains("private static void clearQueueState()"),
+                "queue cleanup has one shared owner");
+        int disable = retrofit.indexOf("public static List<String> disable(ServerLevel world)");
+        int disableEnd = retrofit.indexOf("// ── Event plumbing", disable);
+        expectTrue(disable >= 0 && disableEnd > disable
+                        && retrofit.substring(disable, disableEnd).contains("clearQueueState();"),
+                "disable clears queued and deferred work immediately");
+
+        expectTrue(command.contains("Commands.literal(\"retrofit\")"),
+                "the only shipping exception remains under /latitude retrofit");
+        expectTrue(command.contains("LatitudeDecorationRetrofit.confirmEnable("),
+                "activation requires the explicit retrofit confirm command");
+        expectTrue(retrofit.contains("pendingConfirmDeadlineMs"),
+                "the worker retains a bounded confirmation window rather than auto-activating");
+        expectTrue(retrofit.contains("state.setRetrofitEnabled(true);"),
+                "only confirmed activation enables retrofit processing");
+        expectTrue(globe.contains("LatitudeDecorationRetrofit.init();"),
+                "the registered worker is the exact Latitude retrofit implementation");
     }
 
     private static boolean typeIsAllowed(String typeName) {

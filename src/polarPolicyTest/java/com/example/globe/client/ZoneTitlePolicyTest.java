@@ -30,9 +30,11 @@ public final class ZoneTitlePolicyTest {
         lingeringOnABoundaryIsAnnouncedOnceNotRepeatedly();
         leavingAndReturningAnnouncesAgain();
         cooldownExpiryAnnouncesAgainEvenWithoutMoving();
+        clockRollbackPreservesZoneAnnouncementCooldown();
         teleportAlwaysAnnounces();
         firstZoneOfSessionAlwaysAnnounces();
         theOverlayUsesThePolicyAndKeepsNoStickyIdentity();
+        theOverlayResyncsZoneAnnouncementClockWithoutDestroyingTheSentinel();
         noProcessAttributionInShippedSource();
     }
 
@@ -134,6 +136,31 @@ public final class ZoneTitlePolicyTest {
                 "at cooldown expiry the announcement is allowed again");
     }
 
+    /** A same-world clock rollback must preserve the age of the last title announcement. */
+    private static void clockRollbackPreservesZoneAnnouncementCooldown() {
+        long originalWorldTime = 40_000L;
+        long originalAnnouncementTime = 39_500L;
+        long rollbackWorldTime = 1_000L;
+        long deltaTicks = rollbackWorldTime - originalWorldTime;
+        long shiftedAnnouncementTime = originalAnnouncementTime + deltaTicks;
+
+        assertFalse(ZoneTitlePolicy.shouldAnnounce(
+                        50.01,
+                        originalAnnouncementTime + ZoneTitlePolicy.REANNOUNCE_COOLDOWN_TICKS - 1,
+                        50.0, originalAnnouncementTime, false, false),
+                "the original clock suppresses a repeat one tick before expiry");
+        assertFalse(ZoneTitlePolicy.shouldAnnounce(
+                        50.01,
+                        shiftedAnnouncementTime + ZoneTitlePolicy.REANNOUNCE_COOLDOWN_TICKS - 1,
+                        50.0, shiftedAnnouncementTime, false, false),
+                "the delta-shifted timestamp preserves suppression after a world-clock rollback");
+        assertTrue(ZoneTitlePolicy.shouldAnnounce(
+                        50.01,
+                        shiftedAnnouncementTime + ZoneTitlePolicy.REANNOUNCE_COOLDOWN_TICKS,
+                        50.0, shiftedAnnouncementTime, false, false),
+                "the delta-shifted timestamp still expires at the intended cooldown");
+    }
+
     /** A teleport is a genuine arrival somewhere new and must never be rate-limited. */
     private static void teleportAlwaysAnnounces() {
         assertTrue(ZoneTitlePolicy.shouldAnnounce(50.01, 1_005L, 50.0, 1_000L, false, true),
@@ -186,6 +213,22 @@ public final class ZoneTitlePolicyTest {
         assertTrue(identity >= 0 && store > identity && announce > store,
                 "order must be resolve -> store -> decide, so a suppressed announcement can never "
                         + "leave the zone misreported");
+    }
+
+    /** Resync adjusts a real title timestamp but must retain the never-announced sentinel. */
+    private static void theOverlayResyncsZoneAnnouncementClockWithoutDestroyingTheSentinel()
+            throws Exception {
+        String overlay = read("src/main/java/com/example/globe/client/GlobeWarningOverlay.java");
+        int resync = overlay.indexOf("private static void resyncWorldClock(long worldTime)");
+        assertTrue(resync >= 0, "overlay keeps a dedicated same-world clock-resync method");
+        String resyncBody = overlay.substring(
+                resync, overlay.indexOf("private static void clearWarningWorldState", resync));
+        assertTrue(resyncBody.contains("long deltaTicks = worldTime - lastWarningWorldTime;"),
+                "resync computes the original-to-current world-clock delta");
+        assertTrue(resyncBody.contains("if (lastZoneAnnounceWorldTime != Long.MIN_VALUE)"),
+                "resync must conditionally preserve the never-announced zone-title sentinel");
+        assertTrue(resyncBody.contains("lastZoneAnnounceWorldTime += deltaTicks;"),
+                "resync shifts the real last-zone announcement timestamp with the world clock");
     }
 
     /** The public repo carries no process narrative or personal attribution in source comments. */

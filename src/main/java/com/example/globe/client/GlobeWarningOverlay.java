@@ -382,6 +382,9 @@ public final class GlobeWarningOverlay {
         if (lastZoneUpdateWorldTime != Long.MIN_VALUE) {
             lastZoneUpdateWorldTime += deltaTicks;
         }
+        if (lastZoneAnnounceWorldTime != Long.MIN_VALUE) {
+            lastZoneAnnounceWorldTime += deltaTicks;
+        }
         if (lastWarningDebugWorldTime != Long.MIN_VALUE) {
             lastWarningDebugWorldTime += deltaTicks;
         }
