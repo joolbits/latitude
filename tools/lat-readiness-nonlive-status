@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Historical 1.4 verifier. It is retained for reproducibility and is not a Beta 1 release gate;
+# see docs/release/beta1-checklist.md for the active checklist.
 set -u
 
 EXPECTED_ROOT="<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2"

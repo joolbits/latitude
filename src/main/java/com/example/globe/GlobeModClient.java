@@ -44,9 +44,6 @@ public class GlobeModClient implements ClientModInitializer {
     public void onInitializeClient() {
         GlobeNet.registerPayloads();
         GlobeMod.LOGGER.info("Globe client init OK");
-        if (GlobeClientState.DEBUG_EW_FOG) {
-            GlobeMod.LOGGER.info("[Latitude] debugEwFog=true");
-        }
 
         LatitudeConfig.get();
         ClientLifecycleEvents.CLIENT_STARTED.register(GlobeModClient::registerPromenadePalmTintCompat);
@@ -155,15 +152,8 @@ public class GlobeModClient implements ClientModInitializer {
             return;
         }
 
-        // Clamp client-side view distance for EW storms (Sodium-proof fog wall).
-        GlobeClientState.clampEwViewDistance(client);
-
         // Trust GlobeClientState (server-synced)
         if (!GlobeClientState.isGlobeWorld()) {
-            return;
-        }
-
-        if (GlobeClientState.DEBUG_DISABLE_WARNINGS) {
             return;
         }
 

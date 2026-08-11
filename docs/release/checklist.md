@@ -1,5 +1,8 @@
 # Release checklist
 
+> Historical 1.4 checklist. It does not describe the active 1.5.1 Beta 1 candidate. See
+> [`beta1-checklist.md`](./beta1-checklist.md) for the current local release gates.
+
 ## Standing policy (all versions)
 
 Artifact content is governed by [`artifact-content-policy.md`](./artifact-content-policy.md), established

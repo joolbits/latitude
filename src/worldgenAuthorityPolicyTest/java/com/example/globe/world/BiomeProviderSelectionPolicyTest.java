@@ -880,8 +880,15 @@ final class BiomeProviderSelectionPolicyTest {
                 Path.of("src/main/java/com/example/globe/world/LatitudeBiomeSource.java"));
         assertTrue(locateSource.contains("findPlannedSurfaceWaterCoverage("),
                 "bounded locate has a constant-cost fallback to the birth plan");
-        assertTrue(locateSource.contains("plannedFallbackUsed"),
-                "locate telemetry distinguishes the direct birth-plan fallback");
+        int exactFallback = locateSource.indexOf(
+                "Pair<BlockPos, Holder<Biome>> fallback = centerQuartResult(");
+        int plannedFallback = locateSource.indexOf(
+                "Pair<BlockPos, Holder<Biome>> plannedFallback = fallback == null", exactFallback);
+        int selectedFallback = locateSource.indexOf(
+                "return fallback != null ? fallback : plannedFallback;", plannedFallback);
+        assertTrue(exactFallback >= 0 && plannedFallback > exactFallback
+                        && selectedFallback > plannedFallback,
+                "birth-plan fallback runs only after the exact fallback misses and its result is returned");
         VanillaSurfaceWaterCoveragePlan impossibleWater = VanillaSurfaceWaterCoveragePlan.build(
                 10_000, 41L, 63, (id, route, x, z) -> false);
         VanillaSurfaceWaterCoveragePlan.SearchStats shoreStats =

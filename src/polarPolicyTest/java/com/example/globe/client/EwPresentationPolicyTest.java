@@ -404,9 +404,9 @@ public final class EwPresentationPolicyTest {
         String disconnectReset = methodSection(overlay, "public static void resetForDisconnect(");
         assertEquals(2, countOccurrences(overlayRender, "clearWarningWorldState();"),
                 "null client and disconnected player or level both clear warning state");
-        assertTrue(overlayRender.indexOf("client.player == null || client.level == null")
-                        < overlayRender.indexOf("GlobeClientState.DEBUG_DISABLE_WARNINGS"),
-                "disconnect cleanup cannot be skipped by the warning debug switch");
+        assertTrue(!overlayRender.contains("DEBUG_DISABLE_WARNINGS")
+                        && !overlayRender.contains("Boolean.getBoolean("),
+                "release warning rendering has no debug switch that can bypass disconnect cleanup");
         assertTrue(clearWarningState.contains("resetForDisconnect()"),
                 "render-time null cleanup delegates to the explicit lifecycle reset");
         assertTrue(disconnectReset.contains("lastWarningLevel = null")

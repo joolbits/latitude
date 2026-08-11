@@ -19,6 +19,7 @@ public final class VillageLatitudePolicyTest {
         biomeFamilyPolicyRejectsNamedVillageMismatches();
         physicalTerrainPolicyRejectsCliffsideVillageStarts();
         climateMismatchRejectsInvalidStartsBeforeStore();
+        locateRejectsInvalidGeneratedStarts();
         staticIntegrationProofsHold();
         System.out.println("VILLAGE_LATITUDE_POLICY_TEST_PASS");
     }
@@ -409,6 +410,36 @@ public final class VillageLatitudePolicyTest {
         assertEquals(1, result.storedStarts(), message + " registers one valid start");
         assertEquals(1, result.serializedValidStarts(), message + " serializes one valid start");
         assertEquals(1, result.locatableStartsAfterReload(), message + " remains locate-visible after reload");
+    }
+
+    private static void locateRejectsInvalidGeneratedStarts() throws IOException {
+        String locate = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeStructureLocateService.java"));
+        assertTrue(
+                locate.contains("StructureStart start = candidate.structure().generate(")
+                        && locate.contains("generator.getBiomeSource()")
+                        && locate.contains("candidate.structure().biomes()::contains")
+                        && locate.contains("if (!start.isValid())"),
+                "structure locate validates candidates through Minecraft's real start generator");
+        assertTrue(
+                locate.indexOf("candidate.placement().applyAdditionalChunkRestrictions(") >= 0
+                        && locate.indexOf("candidate.placement().applyAdditionalChunkRestrictions(")
+                        < locate.indexOf("if (!hasValidGeneratedStart(")
+                        && locate.indexOf("if (!hasValidGeneratedStart(") >= 0
+                        && locate.indexOf("if (!hasValidGeneratedStart(")
+                        < locate.indexOf("double distSqr = origin.distSqr(locatePos);"),
+                "placement restrictions and invalid starts are rejected before result selection");
+        assertTrue(
+                locate.contains("tally.rejectedPlacement++")
+                        && locate.contains("tally.rejectedInvalidStart++")
+                        && locate.contains("tally.startValidationFailures++"),
+                "placement, structure-start, and validation failures remain visible in one summary log");
+        assertTrue(
+                locate.contains("progress.update(ring + 1)")
+                        && locate.contains("source.getServer().execute(() ->")
+                        && locate.contains("bossBar.setProgress(percent / 100.0F)")
+                        && locate.contains("+ percent + \"%\""),
+                "structure locate advances named boss-bar progress from the background search safely");
     }
 
     private static void staticIntegrationProofsHold() throws IOException {

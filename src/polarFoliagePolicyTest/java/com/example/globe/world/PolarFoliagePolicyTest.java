@@ -13,6 +13,7 @@ public final class PolarFoliagePolicyTest {
         snowySubpolarFirefliesAreRejectedWithoutChangingWarmFireflies();
         staticIntegrationProofsHold();
         treeLineIsStrictAndBelowTheFoliageLimit();
+        woodyCompletionBufferDoesNotMoveTheTreeStartLine();
         blockLevelGuardClosesTheFeatureClassBypass();
         theWoodyAndFoliageTagsDoNotOverlap();
         windsweptSnowLineDescendsPolewardAndCannotOrphanSnowyGrass();
@@ -224,6 +225,27 @@ public final class PolarFoliagePolicyTest {
         }
     }
 
+    private static void woodyCompletionBufferDoesNotMoveTheTreeStartLine() {
+        assertTrue(PolarFoliagePolicy.WOODY_COMPLETION_BUFFER_BLOCKS == 16,
+                "the completion allowance stays a tiny, reviewable canopy-sized band");
+        for (int radius : new int[]{3_750, 7_500, 20_000}) {
+            double treeLineZ = radius * 72.0 / 90.0;
+            for (int hemisphere : new int[]{-1, 1}) {
+                double justPastTreeLine = hemisphere * (treeLineZ + 1.0);
+                double insideCompletionBand = hemisphere * (treeLineZ + 15.9);
+                double outsideCompletionBand = hemisphere * (treeLineZ + 16.1);
+                assertTrue(PolarFoliagePolicy.isBeyondWoodyLimit(justPastTreeLine, radius, 1),
+                        "trees still cannot start one block past 72 degrees");
+                assertFalse(PolarFoliagePolicy.isBeyondWoodyCompletionLimit(
+                                insideCompletionBand, radius, 1),
+                        "a legal tree can finish its canopy across the boundary");
+                assertTrue(PolarFoliagePolicy.isBeyondWoodyCompletionLimit(
+                                outsideCompletionBand, radius, 1),
+                        "the completion band remains finite");
+            }
+        }
+    }
+
     /**
      * Guards the fix for the reported defect: trees forbidden at the pole while logs and mushrooms
      * appeared anyway. The cause was that {@code globe:polar_foliage} had exactly ONE reader, and
@@ -251,6 +273,8 @@ public final class PolarFoliagePolicyTest {
                 "the guard is worldgen-only — bonemeal, sapling growth and /place stay the player's");
         assertTrue(guard.contains("polar_woody") && guard.contains("polar_foliage"),
                 "both tiers must be consulted, or the split collapses to one threshold");
+        assertTrue(guard.contains("PolarFoliagePolicy.isBeyondWoodyCompletionLimit("),
+                "the block-write seam permits only the bounded canopy completion band");
 
         // Both tiers, and the berry exemption, at the pure-policy level.
         assertTrue(PolarFoliagePolicy.shouldSuppressPolarBlock(true, false, true, false, false, false),

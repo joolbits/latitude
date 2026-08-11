@@ -1,23 +1,21 @@
 # Changelog
 
-## Latitude 1.5.0 (Minecraft 1.21.11) — DRAFT, not yet released
+## Latitude 1.5.1 Beta 1 (Minecraft 1.21.11)
 
-> **Draft changelog, prepared ahead of live acceptance.** Written against the port's own commit
-> history and gate results; not yet reviewed against a live-tested build, and no release, tag, or
-> upload has been made. Update the summary numbers below if live testing changes them before this
-> is finalized.
+This is a beta release. Back up important worlds before testing, and use the optional retrofit command
+only on a disposable copy or a world with a current backup.
 
 **The first Latitude release on this Minecraft version since 1.3.** Latitude 1.3.0 was published on
 1.21.11; the 1.4 "Cohesive Horizons" worldgen and custom-biome overhaul that followed it was only
-ever published on Minecraft 26.1.2, never on this line. **1.21.11 is Latitude's best-performing
-version to date**, so if you're coming from 1.3.0 here, this single release carries *two* full
+ever published on Minecraft 26.1.2, never on this line. If you're coming from 1.3.0 here, this single
+release carries *two* full
 development cycles at once — 1.4's worldgen rebuild and the entire 1.5 polish campaign on top of it.
 
 Latitude 1.5 targets **Minecraft 1.21.11**, the same Minecraft version as 1.3.0.
 
 ### Before you update
 
-- **This is a same-Minecraft-version upgrade.** 1.3.0 and 1.5.0 both target 1.21.11, so there is no
+- **This is a same-Minecraft-version upgrade.** 1.3.0 and 1.5.1 Beta 1 both target 1.21.11, so there is no
   save-format conversion to cross going from one to the other — unlike jumping here from an older
   Minecraft version.
 - **Existing worlds keep their original biome selection**, including in chunks you have not visited
@@ -103,6 +101,9 @@ how climate is decided.
 
 ### Create-world screen
 
+- A short Latitude title now fades in, holds, and fades out when Create World first opens. Vanilla
+  preparation text stays hidden, and changing climate, world size, tabs, seed, or layout does not
+  replay the intro.
 - Rebuilt around a **square Atlas preview** (the circular disc, the "ATLAS" caption and the degree
   gutter are gone).
 - Smaller worlds draw a constant-size Regular-world reference underlay; larger worlds show a darkened
@@ -125,6 +126,12 @@ requiring operator permission:
 - `/latitude tpBand <band> [edge]` — teleport to a latitude band
 - `/latitude flyspeed <1-5>`, `/latitude help`
 
+For backed-up older Latitude worlds, operators can use `/latitude retrofit enable` followed by
+`/latitude retrofit confirm` to apply Latitude decoration to newly loaded eligible chunks. The worker
+is deliberately bounded to two chunks per tick and a 2,048-chunk pending queue; `/latitude retrofit
+status` reports progress and `/latitude retrofit disable` clears the session. It refuses non-Latitude
+worlds rather than converting them.
+
 These are inspection and navigation tools only. Latitude's development tooling — session recording,
 screenshot capture, world export, seam auditing, chunk pregeneration, and every automatic harness — is
 excluded from public builds by policy and cannot be reached from a release jar.
@@ -137,9 +144,7 @@ excluded from public builds by policy and cannot be reached from a release jar.
   underneath it — fixing both a structure generating in a biome it doesn't belong in, and
   `/locate structure` reporting a structure that was never actually going to appear. On this port,
   `/locate structure` was also extended to cover structures at all — vanilla's own search is blind to
-  Latitude's repainted biomes and has no world-border awareness; both are fixed. Verified live: a
-  located desert pyramid and a located `#minecraft:village` (resolving to `village_savanna`) both sit
-  inside their matching repainted biome, and both inside the world border.
+  Latitude's repainted biomes and has no world-border awareness; both are fixed.
 
 ### Performance
 
@@ -147,7 +152,7 @@ excluded from public builds by policy and cannot be reached from a release jar.
 - Analog compass disc spans are batched.
 - `/locate` is bounded and responsive, including searches that find nothing — `/locate structure` no
   longer searches past the world border or stalls force-generating chunks it can never reach.
-- Sodium fog-culling reachability restored and re-verified against this target's Sodium line
+- Sodium fog-culling reachability restored for this target's Sodium line
   (0.8.13+mc1.21.11): fog tightening happens before Sodium's own culling snapshot, so distant terrain
   Latitude fogs out is still culled rather than rendered and hidden behind fog.
 
@@ -161,7 +166,8 @@ excluded from public builds by policy and cannot be reached from a release jar.
   one degree past its own boundary, into Temperate — every zone's spawn target is now the true
   midpoint of its latitude band, not a hand-picked value that was never checked against it.
 - Zone and hemisphere titles are measured from the world's equator rather than a fixed line, fixing an
-  inverted or offset hemisphere readout, and no longer fire spuriously after a long teleport.
+  inverted or offset hemisphere readout, and no longer fire spuriously after a long teleport or a
+  backward world-clock change.
 
 ### Existing worlds
 

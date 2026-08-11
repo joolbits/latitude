@@ -1,6 +1,5 @@
 package com.example.globe.client;
 
-import com.example.globe.GlobeMod;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -9,20 +8,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.border.WorldBorder;
 
 public final class GlobeClientState {
-    public static boolean DEBUG_EW_WALL = true;
-    public static boolean DEBUG_EW_SUPPRESS_VANILLA_BORDER = true;
-    public static boolean DEBUG_EW_FOG = Boolean.parseBoolean(System.getProperty("latitude.debugEwFog", "false"));
-    public static boolean DEBUG_EW_WALL_LINES = true;
-    public static int DEBUG_TICK = 0;
-    public static int DEBUG_TICK2 = 0;
-    public static final boolean DEBUG_DISABLE_WARNINGS = Boolean.getBoolean("latitude.debugDisableWarnings");
-    public static final boolean DEBUG_DISABLE_FOG = Boolean.getBoolean("latitude.debugDisableFog");
-    // --- TEMP EW DIST DEBUG (remove after) ---
-    private static long globe$ewLastLogMs = 0L;
-    // -----------------------------------------
-
-    private static long lastEwFogLogTick = Long.MIN_VALUE;
-    private static long lastEwStateLogTick = Long.MIN_VALUE;
+    public static final boolean SUPPRESS_VANILLA_EW_BORDER = true;
     private static int baseViewDistanceChunks = -1;
     private static int lastAppliedViewDistanceChunks = -1;
     private static float currentViewDistanceF = -1f;
@@ -112,69 +98,6 @@ public final class GlobeClientState {
         return EwStormStage.NONE;
     }
 
-    public static void debugLogEwFogOncePerSec(String hook, float ewEnd, double camX) {
-        if (!DEBUG_EW_FOG) {
-            return;
-        }
-
-        Minecraft client = Minecraft.getInstance();
-        if (client.player == null || client.level == null) {
-            return;
-        }
-
-        long time = client.level.getGameTime();
-        if (time - lastEwFogLogTick < 20L) {
-            return;
-        }
-
-        lastEwFogLogTick = time;
-        var border = client.level.getWorldBorder();
-        double progress = com.example.globe.util.LatitudeMath.hazardProgress(border, camX);
-        EwStormStage stage = ewStageForProgress(progress);
-        GlobeMod.LOGGER.info("[LAT_EW_FOG] hook={} camX={} stage={} progress={} ewEnd={}",
-                hook, camX, stage, progress, ewEnd);
-    }
-
-    public static void debugLogEwFogStateOncePerSec(double camX) {
-        if (!DEBUG_EW_FOG) {
-            return;
-        }
-
-        Minecraft client = Minecraft.getInstance();
-        if (client.player == null || client.level == null) {
-            return;
-        }
-
-        if (!client.level.dimension().identifier().equals(Level.OVERWORLD.identifier())) {
-            return;
-        }
-
-        long time = client.level.getGameTime();
-        if (time - lastEwStateLogTick < 20L) {
-            return;
-        }
-        lastEwStateLogTick = time;
-
-        var border = client.level.getWorldBorder();
-        double half = com.example.globe.util.LatitudeMath.halfSize(border);
-        double dist = half - Math.abs(camX);
-        double progress = com.example.globe.util.LatitudeMath.hazardProgress(border, camX);
-        EwStormStage stage = ewStageForProgress(progress);
-        float ewEnd = computeEwFogEnd(camX);
-
-        GlobeMod.LOGGER.info("[LAT_EW_FOG_STATE] x={} radius={} dist={} stage={} progress={} ewEnd={}", camX, half, dist, stage, progress, ewEnd);
-    }
-
-    /**
-     * Clamp client-side view distance during EW storms (Sodium-proof). Only tightens; restores when inactive.
-     */
-    public static void clampEwViewDistance(Minecraft client) {
-        // Tripwire: no view-distance mutations allowed. Enable with -Dlatitude.debugEwClampTripwire=true if needed.
-        if (Boolean.getBoolean("latitude.debugEwClampTripwire")) {
-            GlobeMod.LOGGER.error("EW DISTANCE MUTATION PATH HIT");
-        }
-    }
-
     private static int polarRank(PolarStage stage) {
         return switch (stage) {
             case NONE -> 0;
@@ -218,26 +141,12 @@ public final class GlobeClientState {
     }
 
     public static WarningState computeWarningState(ClientLevel world, Player player) {
-        if (DEBUG_DISABLE_WARNINGS) {
-            return WarningState.NONE;
-        }
-
         var border = world.getWorldBorder();
 
         double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
         PolarStage polar = polarStageForProgress(border, player.getZ(), progressZ);
 
         double distToBorder = Math.min(Math.abs(player.getX() - border.getMinX()), Math.abs(border.getMaxX() - player.getX()));
-
-        // Debug print every 10s to verify thresholds (opt-in)
-        if (Boolean.getBoolean("latitude.debugEwWarn")) {
-            long now = System.currentTimeMillis();
-            if (now - globe$ewLastLogMs >= 10_000L) {
-                globe$ewLastLogMs = now;
-                GlobeMod.LOGGER.info("[Latitude EW] distToBorder={} x={} west={} east={} L1=500 L2=100",
-                        distToBorder, player.getX(), border.getMinX(), border.getMaxX());
-            }
-        }
 
         EwStormStage ewTextStage = ewTextStageForDistance(distToBorder);
         return arbitrateWarning(polar, ewTextStage);
@@ -297,12 +206,7 @@ public final class GlobeClientState {
 
     public static int ewWarningStage(double x) {
         double d = distanceToEwBorderBlocks(x);
-        int stage = EwPresentationPolicy.warningStageRank(d);
-
-        if (Boolean.getBoolean("latitude.debugEwWarn")) {
-            GlobeMod.LOGGER.info("[LAT_EW_WARN] stage={} d={}", stage, d);
-        }
-        return stage;
+        return EwPresentationPolicy.warningStageRank(d);
     }
 
     public static float ewIntensity01(double x) {
@@ -347,9 +251,6 @@ public final class GlobeClientState {
     }
 
     public static float computeEwFogEnd(double camX, float baselineEnd) {
-        if (DEBUG_DISABLE_WARNINGS || DEBUG_DISABLE_FOG) {
-            return -1.0f;
-        }
         return EwPresentationPolicy.fogEndDistance(
                 distanceToEwBorderBlocks(camX),
                 baselineEnd,
@@ -357,9 +258,6 @@ public final class GlobeClientState {
     }
 
     public static float computeEwFogStart(double camX, float baselineStart) {
-        if (DEBUG_DISABLE_WARNINGS || DEBUG_DISABLE_FOG) {
-            return baselineStart;
-        }
         return EwPresentationPolicy.fogStartDistance(
                 distanceToEwBorderBlocks(camX),
                 baselineStart,
@@ -481,11 +379,6 @@ public final class GlobeClientState {
         boolean poleCritical = com.example.globe.util.LatitudeMath.hazardStageIndex(world.getWorldBorder(), player.getZ(), progressZ) >= 4;
         boolean stormCritical = com.example.globe.util.LatitudeMath.hazardStageIndexEW(progressX) >= 4;
 
-        if (DEBUG_DISABLE_WARNINGS) {
-            cachedEval = new Eval(true, surfaceOk, absX, absZ, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false);
-            return cachedEval;
-        }
-
         float polarFog = poleSeverity;
         float polarWhiteout = poleSeverity;
 
@@ -572,9 +465,6 @@ public final class GlobeClientState {
     }
 
     public static float computePoleFogEnd(double z, float baselineEnd) {
-        if (DEBUG_DISABLE_WARNINGS || DEBUG_DISABLE_FOG) {
-            return -1.0f;
-        }
         Minecraft client = Minecraft.getInstance();
         if (client.level == null) {
             return -1.0f;
@@ -585,9 +475,6 @@ public final class GlobeClientState {
     }
 
     public static float computePoleFogIntensity(double z) {
-        if (DEBUG_DISABLE_WARNINGS || DEBUG_DISABLE_FOG) {
-            return 0.0f;
-        }
         Minecraft client = Minecraft.getInstance();
         if (client.level == null) {
             return 0.0f;
@@ -598,9 +485,6 @@ public final class GlobeClientState {
     }
 
     public static float computeEdgeFogEnd(double x) {
-        if (DEBUG_DISABLE_WARNINGS) {
-            return -1.0f;
-        }
         Minecraft client = Minecraft.getInstance();
         if (client.player == null || client.level == null) {
             return -1.0f;
@@ -629,9 +513,6 @@ public final class GlobeClientState {
     }
 
     public static float computePoleWhiteoutFactor(double z) {
-        if (DEBUG_DISABLE_WARNINGS) {
-            return 0.0f;
-        }
         Minecraft client = Minecraft.getInstance();
         if (client.player == null || client.level == null) {
             return 0.0f;

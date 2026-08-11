@@ -26,6 +26,9 @@ public final class WorldgenAuthorityPolicyTest {
         recreatedLatitudeWorldKeepsItsWorldTypeAndSize();
         coastalSwampUsesMangroveIdentity();
         wetlandLocateFilterMatchesFinalIdentityLaw();
+        biomeLocateServiceClaimsAllSupportedTargets();
+        structureLocateUsesTheLatitudeBossBarSurface();
+        customSurfaceLocatePreviewUsesRegistryAuthority();
         profileAdoptionRefusesWorldsLatitudeDidNotGenerate();
         offDiskStateReaderDerivesItsPathFromTheSavedDataId();
         LatitudeLocateBudgetPolicyTest.main(new String[0]);
@@ -295,8 +298,8 @@ public final class WorldgenAuthorityPolicyTest {
                         && service.contains("BlockPos.spiralAround("),
                 "the optimization must preserve the full-radius nearest-first grid");
         assertTrue(
-                service.contains("latitudeSource, worldRadius, randomState.sampler()"),
-                "the live service must pass the exact world radius into its job");
+                service.contains("latitudeSource, worldRadius, searchRadius, randomState.sampler()"),
+                "the live service must pass the exact world and search radii into its job");
         assertTrue(
                 service.contains("LatitudeBiomes.isPotentialWetlandLocateCandidate( blockX, blockZ, worldRadius, sampler, includesSwamp, includesMangrove)"),
                 "the live service must wire the exact world radius into the cheap filter");
@@ -322,6 +325,67 @@ public final class WorldgenAuthorityPolicyTest {
                 service.contains("tickExactProbes < LatitudeLocateBudgetPolicy.MAX_WETLAND_EXACT_PROBES_PER_TICK")
                         && service.contains("tickExactProbes++;"),
                 "the live scheduler must enforce and consume the one-exact-probe tick budget");
+    }
+
+    private static void biomeLocateServiceClaimsAllSupportedTargets() throws Exception {
+        String service = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeBiomeLocateService.java"));
+        String mixin = normalize(read(
+                "src/main/java/com/example/globe/mixin/LocateCommandMixin.java"));
+
+        assertTrue(
+                mixin.contains("LatitudeBiomeLocateService.beginIfLatitudeBiome(source, target)"),
+                "the command hook must route all supported Latitude biome requests into the progress worker");
+        assertTrue(
+                service.contains("else if (!includesCave) { job = new SurfaceLocateJob(")
+                        && service.contains("else { job = new ThreeDimensionalLocateJob("),
+                "surface, cave, and mixed biome targets must all receive bounded tick-sliced routes");
+        assertTrue(
+                service.contains("ServerPlayConnectionEvents.DISCONNECT.register(")
+                        && service.contains("ServerLifecycleEvents.SERVER_STOPPED.register(server -> cancel(server, null))"),
+                "disconnect and server-stop cancellation must reach the active locate job");
+        assertTrue(
+                occurrences(service, "bossBar.removeAllPlayers()") >= 3,
+                "success, failure, and cancellation must all clear the locate boss bar");
+        assertTrue(
+                service.contains("LatitudeLocateBudgetPolicy.MAX_SURFACE_PREVIEW_PROBES_PER_TICK")
+                        && service.contains("LatitudeLocateBudgetPolicy.MAX_THREE_DIMENSIONAL_EXACT_PROBES_PER_TICK"),
+                "general biome routes must remain explicitly bounded per tick");
+        assertTrue(
+                service.contains("LatitudeLocateBudgetPolicy.fullWorldSearchRadius(")
+                        && service.contains("isWithinLatitudeWorld(blockX, blockZ)"),
+                "a boss-bar locate must cover the playable Latitude world without reporting outside it");
+    }
+
+    private static void customSurfaceLocatePreviewUsesRegistryAuthority() throws Exception {
+        String source = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeBiomeSource.java"));
+        int methodStart = source.indexOf("Holder<Biome> getLocatePreviewNoiseBiome(");
+        int methodEnd = source.indexOf("private static boolean shouldPreserveCave", methodStart);
+        assertTrue(methodStart >= 0 && methodEnd > methodStart,
+                "the custom surface locate preview must remain a distinct, reviewable helper");
+        String preview = source.substring(methodStart, methodEnd);
+
+        assertTrue(
+                preview.contains("if (biomeRegistry != null) { return LatitudeBiomes.pick( biomeRegistry, base"),
+                "an admitted custom surface target must preview through Latitude's existing registry authority");
+        assertTrue(
+                preview.indexOf("if (biomeRegistry != null)")
+                        < preview.indexOf("Collection<Holder<Biome>> sourceCandidates"),
+                "the donor-only preview fallback must remain unreachable when the locate registry is available");
+    }
+
+    private static void structureLocateUsesTheLatitudeBossBarSurface() throws Exception {
+        String service = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeStructureLocateService.java"));
+        assertTrue(
+                service.contains("new ServerBossEvent(")
+                        && service.contains("BossEvent.BossBarColor.BLUE")
+                        && service.contains("bossBar.removeAllPlayers()"),
+                "Latitude structure searches must use the same removable blue boss-bar surface as biomes");
+        assertTrue(
+                !service.contains("commands.latitude.locate.structure.searching"),
+                "Latitude structure searches must not retain a separate legacy chat acknowledgement");
     }
 
     private static void raisedTerrainCannotKeepAnOceanBiome() throws Exception {

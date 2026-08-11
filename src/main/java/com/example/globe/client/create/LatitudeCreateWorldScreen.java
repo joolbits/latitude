@@ -130,7 +130,6 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final String[] WORLD_TYPE_NAMES = { "Latitude", "Vanilla", "Vanilla Superflat" };
     private static final int[] WORLD_TYPE_COLORS = { GOLD, WARM_WHITE, MUTED };
     private static final int DISABLED_COLOR = 0xFF605850;
-    private static final boolean DEBUG_UI_SWITCH_LAG = Boolean.getBoolean("latitude.debug.uiSwitchLag");
 
     private final Runnable onClose;
     @Nullable
@@ -245,29 +244,22 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final int TAB_GAP = 2;
     private int tabStripY;
     private int tabPanelTop; // content area top (below tab strip)
-    private long debugSwitchSampleDeadlineMs;
-    private int debugSwitchSeq;
 
     // ── Title intro (tabbedMode only; EXPERIMENTAL per maintainer ruling, 2026-08-08 -- shipped to
     // be judged live, revert freely) -- plays once per screen-open instead of permanently reserving header space
     // for the title at high GUI scale, where it never comfortably fit anyway. Skippable by any
     // click/key so it never blocks the player. Layout is NOT animated -- panelTop already reflects
     // the collapsed (no-title) header the whole time; only the title overlay's own alpha and the
-    // widgets' visibility change across the intro. See introActive()/introTitleAlpha().
-    private long introStartMs = -1L;
+    // widgets' visibility change across the intro. See introActive()/renderIntroTitle(). The clock
+    // itself lives in CreateWorldIntroTitle, shared with the mixin that paints this same title over
+    // vanilla's "Preparing for world creation" screen -- see that class's javadoc.
     private boolean introSkipped;
-    private static final long INTRO_FADE_IN_MS = 450L;
-    private static final long INTRO_HOLD_MS = 750L;
-    private static final long INTRO_FADE_OUT_MS = 400L;
-    private static final long INTRO_TOTAL_MS = INTRO_FADE_IN_MS + INTRO_HOLD_MS + INTRO_FADE_OUT_MS;
+    private boolean introClockClaimed;
     private Button createWorldBtn;
     private Button cancelBtn;
 
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
         super(Component.literal("New World"));
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.<init> parent={} holder={}",
-                parent == null ? "null" : parent.getClass().getName(),
-                holder);
         this.onClose = onClose;
         this.parent = parent;
         this.holder = holder;
@@ -280,8 +272,6 @@ public class LatitudeCreateWorldScreen extends Screen {
         this(onClose, parent, initialState.getSettings());
         if (recreated) {
             hydrateInitialState(initialState, recreated, recreatedPresetId);
-        } else {
-            LOGGER.info("[LAT][CWPATH] fresh create state keeps Latitude defaults");
         }
     }
 
@@ -299,12 +289,6 @@ public class LatitudeCreateWorldScreen extends Screen {
     public static void openLoaded(Minecraft client, Runnable onClose, @Nullable Screen parent,
                                   WorldCreationUiState initialState, boolean recreated,
                                   @Nullable String recreatedPresetId) {
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.openLoaded parent={} recreated={} stateName={} seedSet={} holder={}",
-                parent == null ? "null" : parent.getClass().getName(),
-                recreated,
-                initialState.getName(),
-                initialState.getSeed() != null && !initialState.getSeed().isBlank(),
-                initialState.getSettings());
         client.setScreen(new LatitudeCreateWorldScreen(
                 onClose, parent, initialState, recreated, recreatedPresetId));
     }
@@ -347,17 +331,6 @@ public class LatitudeCreateWorldScreen extends Screen {
             }
         }
 
-        LOGGER.info(
-                "[LAT][CWPATH] hydrated create state name={} seedSet={} mode={} commands={} difficulty={} bonusChest={} structures={} worldType={} size={}",
-                this.worldNameInput,
-                this.seedInput != null && !this.seedInput.isBlank(),
-                MODE_NAMES[this.selectedModeIdx],
-                this.allowCommands,
-                this.selectedDifficulty,
-                this.bonusChest,
-                this.generateStructures,
-                this.worldTypeIdx,
-                this.selectedSize);
     }
 
     @Nullable
@@ -434,8 +407,6 @@ public class LatitudeCreateWorldScreen extends Screen {
      * Replicates CreateWorldScreen.show() lines 166-196.
      */
     public static void open(Minecraft client, Runnable onClose, @Nullable Screen parent) {
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.open parent={}",
-                parent == null ? "null" : parent.getClass().getName());
         // Show "Preparing..." message (vanilla pattern)
         client.setScreenAndShow(new GenericMessageScreen(Component.translatable("createWorld.preparing")));
 
@@ -507,28 +478,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         return guiScale >= HIGH_GUI_SCALE || viewportWidth < MIN_COMFORTABLE_THREE_COL_WIDTH;
     }
 
-    private long introElapsedMs() {
-        return introStartMs < 0L ? 0L : Util.getMillis() - introStartMs;
-    }
-
     /** Only tabbedMode ever plays the intro -- three-column already fits comfortably. */
     private boolean introActive() {
-        return tabbedMode && !introSkipped && introElapsedMs() < INTRO_TOTAL_MS;
-    }
-
-    private float introTitleAlpha() {
-        long t = introElapsedMs();
-        if (t < INTRO_FADE_IN_MS) {
-            return Math.max(0f, t / (float) INTRO_FADE_IN_MS);
-        }
-        if (t < INTRO_FADE_IN_MS + INTRO_HOLD_MS) {
-            return 1.0f;
-        }
-        long fadeOutT = t - INTRO_FADE_IN_MS - INTRO_HOLD_MS;
-        if (fadeOutT < INTRO_FADE_OUT_MS) {
-            return 1.0f - (fadeOutT / (float) INTRO_FADE_OUT_MS);
-        }
-        return 0f;
+        return tabbedMode && !introSkipped && CreateWorldIntroClock.active();
     }
 
     private void skipIntro() {
@@ -537,16 +489,15 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     @Override
     protected void init() {
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.init screen={} holder={}",
-                this.getClass().getName(), this.holder);
         zoneRows.clear();
         // Screen.rebuildWidgets() clears Screen-owned collections, not this private render registry.
         // Clear it on every init so resize/sub-screen return cannot leave a frozen ghost layer.
         settingsScrollWidgets.clear();
-        if (introStartMs < 0L) {
-            // Set once, on the very first init() -- later resizes/rebuilds (size cycling, window
-            // resize) must not restart the intro.
-            introStartMs = Util.getMillis();
+        // Screen.init() also runs after widget rebuilds. Claim the shared clock only on this screen
+        // instance's first init so ordinary menu interactions can never replay the intro.
+        if (!introClockClaimed) {
+            introClockClaimed = true;
+            CreateWorldIntroClock.beginIfInactive(Util.getMillis());
         }
         // Maintainer ruling, live 2026-08-09: too much negative space around the World Creation
         // screen's edges and between its panels/tabs. This port has no shortScreen/compact-layout
@@ -796,16 +747,9 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void cycleWorldType(int delta) {
-        long t0 = Util.getMillis();
         worldTypeIdx = (worldTypeIdx + delta + WORLD_TYPE_NAMES.length) % WORLD_TYPE_NAMES.length;
         updateSettingsButtons();
         updateRightLayout();
-        if (DEBUG_UI_SWITCH_LAG) {
-            debugSwitchSeq++;
-            debugSwitchSampleDeadlineMs = t0 + 2_000L; // sample for 2s after switch
-            long elapsed = Util.getMillis() - t0;
-            LOGGER.info("[lat-ui] switchLag seq={} worldType={} handler_ms={}", debugSwitchSeq, currentWorldTypeName(), elapsed);
-        }
     }
 
     private boolean isLatitudeWorld() {
@@ -1418,8 +1362,6 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     public void probeAutoConfirmWorldCreation() {
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.probeAutoConfirmWorldCreation screen={}",
-                this.getClass().getName());
         this.beginExpedition();
     }
 
@@ -1437,18 +1379,11 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (size != null) {
             this.selectedSize = size;
         }
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.probeSetWorldInputs screen={} worldName={} seedSet={} size={}",
-                this.getClass().getName(),
-                this.worldNameField != null ? this.worldNameField.getValue() : "<missing>",
-                seed != null && !seed.isBlank(),
-                this.selectedSize);
     }
 
     public void probeSetCreativeMode() {
         this.selectedModeIdx = 2;
         this.allowCommands = true;
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.probeSetCreativeMode screen={} mode={} allowCommands={}",
-                this.getClass().getName(), MODE_NAMES[this.selectedModeIdx], this.allowCommands);
     }
 
     // ── Close behavior ──
@@ -1609,6 +1544,11 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     @Override
     public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
+        // Advance the intro one rendered frame before anything reads introActive(). Unconditional
+        // (not gated on tabbedMode) so the shared clock can never be left frozen mid-animation by a
+        // three-column run, which would make the NEXT create-world attempt inherit a stale
+        // mid-fade. See CreateWorldIntroClock: the fade is frame-driven, never wall-clock.
+        CreateWorldIntroClock.advance(Util.getMillis());
         // One authoritative layout pass per rendered frame keeps rectangles, culling, focus, and narration
         // synchronized after scroll, resize, tab changes, world-size changes, or sub-screen return.
         updateLeftLayout();
@@ -1810,24 +1750,10 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     /** Full-screen-centered title overlay for the tabbedMode intro -- independent of the (now
      *  collapsed) header strip so it can use as much room as it wants for the brief moment it's
-     *  shown. Pure alpha fade, no motion, kept deliberately simple as a first pass. */
+     *  shown. Delegates to CreateWorldIntroTitle so this is pixel-identical to whatever the
+     *  preparing-screen mixin already painted, continuing the same fade rather than restarting it. */
     private void renderIntroTitle(GuiGraphics context) {
-        float alpha = introTitleAlpha();
-        if (alpha <= 0f) return;
-        int a = Math.round(alpha * 255f) << 24;
-        int goldA = (GOLD & 0x00FFFFFF) | a;
-        int warmA = (WARM_WHITE & 0x00FFFFFF) | a;
-
-        int titleWidth = Math.round(uiTextWidth(CREATE_TITLE_TEXT) * CREATE_TITLE_SCALE);
-        int titleHeight = Math.round(uiFontHeight() * CREATE_TITLE_SCALE);
-        int subtitleGap = scaledUi(10);
-        int blockHeight = titleHeight + subtitleGap + uiFontHeight();
-        int startY = (this.height - blockHeight) / 2;
-        int cx = this.width / 2;
-
-        drawScaledText(context, CREATE_TITLE_TEXT, cx - titleWidth / 2, startY, CREATE_TITLE_SCALE, goldA, true);
-        int subtitleY = startY + titleHeight + subtitleGap;
-        drawCenteredBoundedText(context, "New World", new UiRect(0, subtitleY, this.width, uiFontHeight()), warmA, true, false);
+        CreateWorldIntroTitle.render(context, this.font, this.width, this.height);
     }
 
     private void renderSizeLabel(GuiGraphics context, int x, int y, int availW) {
@@ -1847,7 +1773,6 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void renderPlanispherePreview(GuiGraphics context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
-        long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
         // Regular is the visual reference size. Smaller worlds sit within its quiet underlay; larger worlds
         // grow outward from it and retain a darkened Regular map as an honest scale comparison. Size changes
         // interpolate their displayed diameter briefly so this relationship is visible instead of abrupt.
@@ -1915,12 +1840,6 @@ public class LatitudeCreateWorldScreen extends Screen {
                     new UiRect(areaLeft + inset, captionY + uiFontHeight(), areaRight - areaLeft - inset * 2, uiFontHeight()),
                     smallerThanRegular ? 0x668C8078 : 0xAA8C8078, false, true);
         }
-        if (DEBUG_UI_SWITCH_LAG && Util.getMillis() <= debugSwitchSampleDeadlineMs) {
-            long elapsed = Util.getMillis() - dbgStart;
-            if (elapsed >= 1L) {
-                LOGGER.info("[lat-ui] switchLag seq={} worldType={} section=planispherePreview ms={}", debugSwitchSeq, currentWorldTypeName(), elapsed);
-            }
-        }
     }
 
     private int animatedAtlasDiameter(long nowMs) {
@@ -1939,7 +1858,6 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void renderSpawnZoneDisabled(GuiGraphics context) {
-        long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
         int overlayTop = rightDividerY + 2;
         int overlayBottom = rightViewportBottom;
         if (overlayBottom <= overlayTop + 4) return;
@@ -1953,16 +1871,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int ty = midY - totalTextH / 2;
         drawCenteredBoundedText(context, line1, new UiRect(rightX + 4, ty, textW, uiFontHeight()), DISABLED_COLOR, false, true);
         drawCenteredBoundedText(context, line2, new UiRect(rightX + 4, ty + uiFontHeight() + gap, textW, uiFontHeight()), MUTED, false, true);
-        if (DEBUG_UI_SWITCH_LAG && Util.getMillis() <= debugSwitchSampleDeadlineMs) {
-            long elapsed = Util.getMillis() - dbgStart;
-            if (elapsed >= 1L) {
-                LOGGER.info("[lat-ui] switchLag seq={} worldType={} section=spawnZoneDisabled ms={}", debugSwitchSeq, currentWorldTypeName(), elapsed);
-            }
-        }
     }
 
     private void renderPlanisphereDisabled(GuiGraphics context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
-        long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
         int areaW = Math.max(0, areaRight - areaLeft);
         int areaH = Math.max(0, areaBottom - areaTop);
         if (areaW <= 6 || areaH <= 6) return;
@@ -1990,12 +1901,6 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         String label = "Preview available only for Latitude";
         drawCenteredBoundedText(context, label, new UiRect(boxLeft + pad, boxTop + pad, boxRight - boxLeft - pad * 2, uiFontHeight()), DISABLED_COLOR, false, true);
-        if (DEBUG_UI_SWITCH_LAG && Util.getMillis() <= debugSwitchSampleDeadlineMs) {
-            long elapsed = Util.getMillis() - dbgStart;
-            if (elapsed >= 1L) {
-                LOGGER.info("[lat-ui] switchLag seq={} worldType={} section=planisphereDisabled ms={}", debugSwitchSeq, currentWorldTypeName(), elapsed);
-            }
-        }
     }
 
     private PreviewLayout computePreviewLayout(int areaLeft, int areaTop, int areaRight, int areaBottom,

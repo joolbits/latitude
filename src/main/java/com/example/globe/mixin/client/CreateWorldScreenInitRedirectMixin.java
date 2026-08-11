@@ -2,8 +2,6 @@ package com.example.globe.mixin.client;
 
 import com.example.globe.client.create.LatitudeCreateWorldScreen;
 import com.example.globe.client.create.RecreatedWorldPresetCarrier;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -18,14 +16,11 @@ import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 
 @Mixin(CreateWorldScreen.class)
 public abstract class CreateWorldScreenInitRedirectMixin {
-    private static final Logger LOGGER = LoggerFactory.getLogger("globe");
-
     @Shadow
     private boolean recreated;
 
     @Inject(method = "init", at = @At("HEAD"), cancellable = true)
     private void globe$redirectRecreateSafely(CallbackInfo ci) {
-        LOGGER.info("[LAT][CWPATH] CreateWorldScreenInitRedirectMixin.init screen={}", this.getClass().getName());
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.screen != (Object) this) {
             return;
@@ -37,8 +32,6 @@ public abstract class CreateWorldScreenInitRedirectMixin {
         WorldCreationUiState initialState = ((CreateWorldScreenMixin) (Object) this).getUiState();
         String recreatedPresetId = ((RecreatedWorldPresetCarrier) this).globe$getRecreatedWorldPresetId();
         if (!LatitudeCreateWorldScreen.canRepresent(initialState, this.recreated, recreatedPresetId)) {
-            LOGGER.info("[LAT][CWPATH] leaving unsupported create-world preset on vanilla screen: {}",
-                    initialState.getWorldType());
             return;
         }
 

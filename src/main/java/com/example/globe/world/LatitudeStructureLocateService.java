@@ -16,8 +16,12 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.commands.LocateCommand;
+import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.BossEvent;
 import net.minecraft.tags.StructureTags;
+import net.minecraft.util.Mth;
 import net.minecraft.util.Util;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.biome.Biome;
@@ -29,6 +33,7 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.structure.Structure;
+import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStructurePlacement;
 import net.minecraft.world.level.levelgen.structure.placement.StructurePlacement;
 
@@ -68,15 +73,16 @@ import net.minecraft.world.level.levelgen.structure.placement.StructurePlacement
  */
 public final class LatitudeStructureLocateService {
     private static final int VANILLA_MAX_RINGS = 100;
+    private static final long PROGRESS_UPDATE_NANOS = 100_000_000L;
 
     private LatitudeStructureLocateService() {
     }
 
     /**
      * Claims {@code /locate structure} in Latitude worlds when every matched structure resolves
-     * only to random-spread placements. The search itself runs asynchronously; an immediate
-     * acknowledgement is sent so a slow search (villages in a sparse biome band can take many
-     * real seconds — see the class javadoc) reads as "working," not "hung."
+     * only to random-spread placements. The search itself runs asynchronously and owns the same
+     * visible blue boss bar as Latitude biome search, so a slow result reads as working without a
+     * separate legacy chat acknowledgement.
      *
      * @return true when the command was claimed (the answer may still be pending)
      */
@@ -131,8 +137,18 @@ public final class LatitudeStructureLocateService {
         long seed = structureState.getLevelSeed();
         BiomeSource finalRawSource = rawSource;
 
-        source.sendSuccess(() -> Component.translatableEscape(
-                "commands.latitude.locate.structure.searching", target.asPrintable()), false);
+        ServerPlayer requester = source.getPlayer();
+        ServerBossEvent bossBar = new ServerBossEvent(
+                Component.literal("Searching for " + target.asPrintable() + "..."),
+                BossEvent.BossBarColor.BLUE,
+                BossEvent.BossBarOverlay.PROGRESS);
+        bossBar.setProgress(0.0F);
+        if (requester != null) {
+            bossBar.addPlayer(requester);
+        }
+        ProgressReporter progress = new ProgressReporter(
+                source, target.asPrintable(), bossBar,
+                effectiveRingCount(candidateSources, worldRadius));
 
         long started = System.nanoTime();
         CompletableFuture
@@ -140,10 +156,12 @@ public final class LatitudeStructureLocateService {
                     Tally tally = new Tally();
                     Pair<BlockPos, Holder<Structure>> result = search(
                             candidateSources, origin, worldRadius, border,
-                            biomeRegistry, finalRawSource, generator, randomState, level, seed, tally);
+                            biomeRegistry, finalRawSource, generator, randomState, level, seed, tally,
+                            progress);
                     return new SearchOutcome(result, tally);
                 }, Util.backgroundExecutor())
                 .whenCompleteAsync((outcome, error) -> {
+                    bossBar.removeAllPlayers();
                     Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
                     if (error != null) {
                         GlobeMod.LOGGER.warn("[Latitude] structure locate failed for target={}",
@@ -168,9 +186,11 @@ public final class LatitudeStructureLocateService {
                                 "commands.locate.structure.success", false, elapsed);
                     }
                     GlobeMod.LOGGER.info(
-                            "[Latitude] structure locate target={} worldRadius={} candidatesTested={} rejectedPickedBiome={} rejectedVillageGuard={} pickFailures={} outOfBorder={} ringsScanned={} elapsedMs={} found={}",
-                            target.asPrintable(), worldRadius, tally.tested, tally.rejectedPicked,
-                            tally.rejectedVillageGuard, tally.pickFailed, tally.outOfBorder,
+                            "[Latitude] structure locate target={} worldRadius={} candidatesTested={} rejectedPlacement={} rejectedPickedBiome={} rejectedVillageGuard={} rejectedInvalidStart={} startValidationFailures={} pickFailures={} outOfBorder={} ringsScanned={} elapsedMs={} found={}",
+                            target.asPrintable(), worldRadius, tally.tested, tally.rejectedPlacement,
+                            tally.rejectedPicked,
+                            tally.rejectedVillageGuard, tally.rejectedInvalidStart,
+                            tally.startValidationFailures, tally.pickFailed, tally.outOfBorder,
                             tally.ringsScanned, elapsed.toMillis(), result != null);
                 }, source.getServer());
         return true;
@@ -190,7 +210,8 @@ public final class LatitudeStructureLocateService {
             RandomState randomState,
             ServerLevel level,
             long seed,
-            Tally tally) {
+            Tally tally,
+            ProgressReporter progress) {
         int originChunkX = origin.getX() >> 4;
         int originChunkZ = origin.getZ() >> 4;
 
@@ -226,12 +247,21 @@ public final class LatitudeStructureLocateService {
                         tally.tested++;
 
                         BlockPos locatePos = candidate.placement.getLocatePos(candidateChunk);
+                        if (!candidate.placement().applyAdditionalChunkRestrictions(
+                                candidateChunk.x, candidateChunk.z, seed)) {
+                            tally.rejectedPlacement++;
+                            continue;
+                        }
                         boolean accepted = candidate.village()
                                 ? evaluateVillageCandidate(candidate, candidateChunk, biomeRegistry,
                                         rawSource, generator, randomState, level, worldRadius, tally)
                                 : evaluateCandidate(candidate.structure(), candidateChunk, biomeRegistry,
                                         rawSource, generator, randomState, level, worldRadius, tally) != null;
                         if (!accepted) {
+                            continue;
+                        }
+                        if (!hasValidGeneratedStart(candidate, candidateChunk, generator,
+                                randomState, level, seed, tally)) {
                             continue;
                         }
                         double distSqr = origin.distSqr(locatePos);
@@ -243,6 +273,7 @@ public final class LatitudeStructureLocateService {
                 }
             }
 
+            progress.update(ring + 1);
             if (ringBest != null) {
                 return ringBest;
             }
@@ -253,6 +284,85 @@ public final class LatitudeStructureLocateService {
             }
         }
         return null;
+    }
+
+    private static int effectiveRingCount(List<Candidate> candidates, int worldRadius) {
+        return candidates.stream()
+                .mapToInt(candidate -> {
+                    int spacing = candidate.placement().spacing();
+                    return Math.min(VANILLA_MAX_RINGS, (worldRadius + spacing) / spacing) + 1;
+                })
+                .max()
+                .orElse(VANILLA_MAX_RINGS + 1);
+    }
+
+    /** Throttles background search progress and applies boss-bar changes on the server thread. */
+    private static final class ProgressReporter {
+        private final CommandSourceStack source;
+        private final String targetName;
+        private final ServerBossEvent bossBar;
+        private final int totalRings;
+        private long nextUpdateNanos;
+
+        private ProgressReporter(
+                CommandSourceStack source,
+                String targetName,
+                ServerBossEvent bossBar,
+                int totalRings) {
+            this.source = source;
+            this.targetName = targetName;
+            this.bossBar = bossBar;
+            this.totalRings = Math.max(1, totalRings);
+        }
+
+        private void update(int completedRings) {
+            long now = System.nanoTime();
+            if (now < nextUpdateNanos) {
+                return;
+            }
+            int percent = Mth.clamp(
+                    (int) ((long) completedRings * 100L / totalRings), 1, 99);
+            source.getServer().execute(() -> {
+                bossBar.setProgress(percent / 100.0F);
+                bossBar.setName(Component.literal(
+                        "Searching for " + targetName + "... " + percent + "%"));
+            });
+            nextUpdateNanos = now + PROGRESS_UPDATE_NANOS;
+        }
+    }
+
+    /** Validates the candidate through Minecraft's real, write-free structure-start generator. */
+    private static boolean hasValidGeneratedStart(
+            Candidate candidate,
+            ChunkPos candidateChunk,
+            NoiseBasedChunkGenerator generator,
+            RandomState randomState,
+            ServerLevel level,
+            long seed,
+            Tally tally) {
+        try {
+            StructureStart start = candidate.structure().generate(
+                    candidate.holder(),
+                    level.dimension(),
+                    level.registryAccess(),
+                    generator,
+                    generator.getBiomeSource(),
+                    randomState,
+                    level.getServer().getStructureManager(),
+                    seed,
+                    candidateChunk,
+                    0,
+                    level,
+                    candidate.structure().biomes()::contains);
+            if (!start.isValid()) {
+                tally.rejectedInvalidStart++;
+                return false;
+            }
+            return true;
+        } catch (RuntimeException validationFailure) {
+            tally.startValidationFailures++;
+            return false;
+        }
     }
 
     /**
@@ -403,8 +513,11 @@ public final class LatitudeStructureLocateService {
     /** Per-search diagnostic counters, logged once per command so a "not found" is explainable. */
     private static final class Tally {
         private int tested;
+        private int rejectedPlacement;
         private int rejectedPicked;
         private int rejectedVillageGuard;
+        private int rejectedInvalidStart;
+        private int startValidationFailures;
         private int pickFailed;
         private int outOfBorder;
         private int ringsScanned;

@@ -234,6 +234,117 @@ def verify_tools_sources(failures: list[str]) -> None:
            "production metadata references the tools package", failures)
 
 
+def verify_retrofit_worker_exception(failures: list[str]) -> None:
+    """Constrain the sole shipped background-worker exception to /latitude retrofit.
+
+    The normal shipping-tools policy rejects workers, delayed work, and hidden activation. The
+    ledger-decoration repair is deliberately exceptional because it must process already-loaded
+    chunks after an operator's explicit confirmation. Keep that exception narrow and inspectable:
+    bounded admission, bounded per-tick work, retry-safe rejection, rate-limited warnings, and
+    cleanup on both disable and server stop.
+    """
+    retrofit = read("src/main/java/com/example/globe/world/LatitudeDecorationRetrofit.java")
+    command = read("src/main/java/com/example/globe/tools/LatitudeToolsCommand.java")
+    globe = read("src/main/java/com/example/globe/GlobeMod.java")
+
+    require(retrofit, "private static final int MAX_PENDING_CHUNKS = 2048;",
+            "exact retrofit queue cap", failures)
+    require(retrofit, "private static final int CHUNKS_PER_TICK = 2;",
+            "exact retrofit chunks-per-tick cap", failures)
+    require(retrofit, "private static boolean enqueue(ChunkPos pos)",
+            "retry-aware retrofit enqueue result", failures)
+    require(retrofit, "if (QUEUE.size() >= MAX_PENDING_CHUNKS)",
+            "retrofit full-queue admission rejection", failures)
+    require(retrofit, "if (!enqueue(chunk.getPos()))",
+            "retrofit rejected chunk remains retryable", failures)
+    on_chunk_load = method_body(
+        retrofit, "private static void onChunkLoad(ServerLevel world, LevelChunk chunk)"
+    )
+    forbid(on_chunk_load, "markDecoratedUnderFixedIndex",
+           "retrofit rejected chunk marked handled", failures)
+    require(retrofit, "private static final long OVERFLOW_WARNING_INTERVAL_MS = 60_000L;",
+            "retrofit overflow warning rate limit", failures)
+    require(retrofit, "GlobeMod.LOGGER.warn", "retrofit overflow warning", failures)
+    require(retrofit, "GlobeMod.LOGGER.debug(\"[Latitude] retrofit decorated chunk",
+            "retrofit per-chunk success debug logging", failures)
+    require(retrofit, "deferred:", "retrofit deferred-count status", failures)
+    require(retrofit, "private static void clearQueueState()",
+            "retrofit shared cleanup owner", failures)
+    require(retrofit, "ServerLifecycleEvents.SERVER_STOPPED.register",
+            "retrofit server-stop cleanup wiring", failures)
+
+    disable = method_body(retrofit, "public static List<String> disable(ServerLevel world)")
+    require(disable, "clearQueueState();", "retrofit disable cleanup", failures)
+    require(command, "Commands.literal(\"retrofit\")", "shipped retrofit command root", failures)
+    require(command, "LatitudeDecorationRetrofit.confirmEnable(",
+            "operator-confirmed retrofit activation", failures)
+    require(retrofit, "pendingConfirmDeadlineMs", "bounded retrofit confirmation state", failures)
+    require(retrofit, "state.setRetrofitEnabled(true);", "retrofit enables only after confirmation", failures)
+    require(globe, "LatitudeDecorationRetrofit.init();", "exact shipped retrofit worker wiring", failures)
+
+
+def verify_release_runtime_instrumentation(failures: list[str]) -> None:
+    """Keep 1.5.1 presentation hot paths free of packaged test traces and toggles."""
+    presentation_paths = (
+        "src/main/java/com/example/globe/client/GlobeClientState.java",
+        "src/main/java/com/example/globe/client/GlobeWarningOverlay.java",
+        "src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java",
+        "src/main/java/com/example/globe/client/create/LatitudeWorldLauncher.java",
+        "src/main/java/com/example/globe/mixin/client/CreateWorldScreenInitRedirectMixin.java",
+        "src/main/java/com/example/globe/mixin/client/CreateWorldScreenMixin.java",
+        "src/main/java/com/example/globe/mixin/client/WorldCreatorMixin.java",
+        "src/main/java/com/example/globe/mixin/client/WorldSelectionListEntryMixin.java",
+    )
+    forbidden_markers = (
+        "latitude.debugEntryTitles",
+        "latitude.debugEwWarn",
+        "latitude.debug.uiSwitchLag",
+        "latitude.debugEwFog",
+        "latitude.debugDisableWarnings",
+        "latitude.debugDisableFog",
+        "latitude.debugEwClampTripwire",
+        "[LAT][ENTRY_TITLE]",
+        "[LAT][WARNING_RENDER]",
+        "[LAT][CWPATH]",
+        "[lat-ui] switchLag",
+        "[LAT_EW_",
+        "GlobeMod.LOGGER.info(",
+        "LOGGER.info(",
+    )
+    for path in presentation_paths:
+        source = read(path)
+        for marker in forbidden_markers:
+            if marker in source:
+                failures.append(
+                    f"release presentation source contains diagnostic instrumentation: "
+                    f"{path} ({marker!r})"
+                )
+
+    # INFO is permitted only as one bounded command/session summary in these changed workers.
+    operational_info = {
+        "src/main/java/com/example/globe/world/LatitudeBiomeLocateService.java": (
+            "[Latitude] started tick-sliced biome locate",
+            "[Latitude] finished tick-sliced biome locate",
+        ),
+        "src/main/java/com/example/globe/world/LatitudeStructureLocateService.java": (
+            "[Latitude] structure locate target=",
+        ),
+        "src/main/java/com/example/globe/world/LatitudeDecorationRetrofit.java": (
+            "[Latitude] retrofit enabled:",
+            "[Latitude] retrofit disabled:",
+            "[Latitude] retrofit queue complete:",
+        ),
+    }
+    for path, allowed_prefixes in operational_info.items():
+        source = read(path)
+        messages = re.findall(r"GlobeMod\.LOGGER\.info\(\s*\"([^\"]+)", source)
+        for message in messages:
+            if not any(message.startswith(prefix) for prefix in allowed_prefixes):
+                failures.append(
+                    f"release worker has non-allowlisted INFO logging: {path} ({message!r})"
+                )
+
+
 def verify_sources(failures: list[str]) -> None:
     globe = read("src/main/java/com/example/globe/GlobeMod.java")
     globe_client = read("src/main/java/com/example/globe/GlobeModClient.java")
@@ -797,6 +908,18 @@ def verify_public_entries(
         b"latdev/cases",
         b"key.globe.dev_explain_here",
         b"latitude.debug.autoCreateWorldProbe",
+        b"latitude.debugEntryTitles",
+        b"latitude.debugEwWarn",
+        b"latitude.debug.uiSwitchLag",
+        b"latitude.debugEwFog",
+        b"latitude.debugDisableWarnings",
+        b"latitude.debugDisableFog",
+        b"latitude.debugEwClampTripwire",
+        b"[LAT][ENTRY_TITLE]",
+        b"[LAT][WARNING_RENDER]",
+        b"[LAT][CWPATH]",
+        b"[lat-ui] switchLag",
+        b"[LAT_EW_",
     ):
         if denied in payload:
             failures.append(f"public jar contains Phase 6 action payload: {denied!r}")
@@ -1251,6 +1374,8 @@ def main() -> int:
     failures: list[str] = []
     verify_sources(failures)
     verify_tools_sources(failures)
+    verify_retrofit_worker_exception(failures)
+    verify_release_runtime_instrumentation(failures)
     public_jar = args.public_jar or args.jar
     if args.test_jar and not public_jar:
         failures.append("--test-jar requires --public-jar")

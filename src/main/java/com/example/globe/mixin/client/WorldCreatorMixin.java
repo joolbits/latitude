@@ -15,12 +15,9 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.levelgen.presets.WorldPreset;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 @Mixin(WorldCreationUiState.class)
 public abstract class WorldCreatorMixin {
-    private static final Logger LOGGER = LoggerFactory.getLogger("globe");
     private static final Identifier GLOBE_WORLD_PRESET_ID = Identifier.fromNamespaceAndPath("globe", "globe");
 
     @Shadow
@@ -34,7 +31,6 @@ public abstract class WorldCreatorMixin {
 
     @Inject(method = "updatePresetLists", at = @At("TAIL"))
     private void globe$ensureGlobePresetIsListed(CallbackInfo ci) {
-        LOGGER.info("[LAT][CWPATH] WorldCreatorMixin.updatePresetLists settings={}", this.settings);
         Registry<WorldPreset> presets = this.settings
                 .worldgenLoadContext()
                 .lookupOrThrow(Registries.WORLD_PRESET);

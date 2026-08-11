@@ -9,6 +9,9 @@ public final class LatitudeLocateBudgetPolicy {
     public static final long MAX_WETLAND_LOCATE_TICK_NANOS = 8_000_000L;
     public static final int MAX_WETLAND_GRID_PROBES_PER_TICK = 4_096;
     public static final int MAX_WETLAND_EXACT_PROBES_PER_TICK = 1;
+    public static final long MAX_BIOME_LOCATE_TICK_NANOS = 8_000_000L;
+    public static final int MAX_SURFACE_PREVIEW_PROBES_PER_TICK = 4_096;
+    public static final int MAX_THREE_DIMENSIONAL_EXACT_PROBES_PER_TICK = 8;
 
     private LatitudeLocateBudgetPolicy() {
     }
@@ -40,6 +43,17 @@ public final class LatitudeLocateBudgetPolicy {
         long side = 2L * rings + 1L;
         long samples = side * side * Math.max(1, verticalSamples);
         return samples > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) samples;
+    }
+
+    /**
+     * Smallest square search radius that covers every playable coordinate in a Latitude world
+     * from the command origin. The caller still rejects probes outside the world border.
+     */
+    public static int fullWorldSearchRadius(int originX, int originZ, int worldRadius) {
+        long safeWorldRadius = Math.max(0L, worldRadius);
+        long xReach = safeWorldRadius + Math.abs((long) originX);
+        long zReach = safeWorldRadius + Math.abs((long) originZ);
+        return (int) Math.min(Integer.MAX_VALUE, Math.max(xReach, zReach));
     }
 
     /** Exact block coordinate represented by the center of a four-block biome quart cell. */
