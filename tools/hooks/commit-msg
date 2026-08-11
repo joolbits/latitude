@@ -11,6 +11,16 @@ fail() { echo ""; echo "  ✗ GUARDRAIL: $1"; echo ""; exit 1; }
 
 # ── S-7: forbidden paths — proprietary sources, diaries, runtime state ───────────────────────
 BAD_PATHS="$(echo "$STAGED" | grep -E '^_mcsrc|^docs/binder/|^run-headless/|^tmp/|\.7z$|\.zip$|^Gallery ' || true)"
+
+# One generated archive predates S-7. Permit removing that exact legacy path, while continuing to
+# reject adding, modifying, renaming, or copying it and every other archive.
+LEGACY_GENERATED_ZIP="datapacks/globe-latitude-biomes-datapack.zip"
+if printf '%s\n' "$BAD_PATHS" | grep -Fxq "$LEGACY_GENERATED_ZIP" \
+    && git diff --cached --diff-filter=D --name-only -- "$LEGACY_GENERATED_ZIP" \
+        | grep -Fxq "$LEGACY_GENERATED_ZIP"; then
+  BAD_PATHS="$(printf '%s\n' "$BAD_PATHS" | grep -Fvx "$LEGACY_GENERATED_ZIP" || true)"
+fi
+
 if [ -n "$BAD_PATHS" ]; then
   fail "S-7: staged paths are forbidden in this public repo (decompiled sources / diary docs /
        runtime state / archives). Diaries belong in the maintainer notes directory, extracted

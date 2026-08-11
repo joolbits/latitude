@@ -2,9 +2,9 @@
 
 A globe-style world + latitude-based biome bands with a customizable compass HUD and warnings.
 
-## Current 1.4 candidate status
+## Current release line
 
-This checkout is the canonical Minecraft `26.1.2` Latitude 1.4 candidate root. Current release-readiness truth lives in `docs/release/checklist.md`; do not treat older published `1.4.0+26.1.2` or `1.21.11` records as the active candidate gate.
+Latitude `1.5.1-beta.1+1.21.11` targets Minecraft `1.21.11` on Fabric and requires Java 21. It is a beta: back up important worlds before testing, especially before using the optional retrofit command on an older world.
 
 ## Features
 
@@ -17,16 +17,16 @@ This checkout is the canonical Minecraft `26.1.2` Latitude 1.4 candidate root. C
   - Alt+Left-Click a compass icon in inventory to toggle (shows a red X when disabled)
   - Fully configurable: anchors, offsets, scale, background alpha, colors, show modes, direction modes
 
-## Design Spec / Release Gate
-See: docs/design-spec.md
+## Design specification
 
-## Guardrails / Workflows
-- Savepoint Autopilot: `.windsurf/workflows/latitude-savepoint-autopilot.md`
+See [`docs/design-spec.md`](docs/design-spec.md).
 
 ## Dependencies
 
-- Fabric Loader (Minecraft 26.1.2)
+- Minecraft 1.21.11
+- Fabric Loader 0.17.3 or newer
 - Fabric API
+- Java 21 or newer
 
 ## Biome tag integration
 
@@ -48,14 +48,22 @@ Compass HUD configuration is stored in:
 
 ## Building
 
-```powershell
-.\gradlew.bat clean build
+```sh
+./gradlew clean build
 ```
 
-The release jar to upload is in:
+On Windows, use `.\gradlew.bat clean build`.
 
-- `build/libs/` (the remapped main jar, not `-dev` / `-sources`)
+The remapped runtime JAR is:
+
+- `build/libs/latitude-1.5.1-beta.1+1.21.11.jar`
+
+Do not upload development or sources JARs as the playable release file.
+
+## License
+
+Latitude is available under the [GNU General Public License v3.0 or later](LICENSE).
 
 ## Support
 
-ko-fi.com/peetsa
+[Support Latitude on Ko-fi](https://ko-fi.com/peetsa)

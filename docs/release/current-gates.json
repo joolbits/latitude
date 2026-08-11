@@ -1,5 +1,7 @@
 {
   "schemaVersion": 1,
+  "historicalRecord": true,
+  "supersededBy": "docs/release/beta1-checklist.md",
   "updated": "2026-06-21",
   "releaseReadiness": "partial",
   "releaseAuthorized": false,

@@ -1,5 +1,8 @@
 # Latitude 1.4 Live Proof Runbook
 
+> Historical 1.4 runbook. Do not use its JAR, profile, commit, or version as Beta 1 evidence. The
+> 1.5.1 Beta 1 live gate is recorded in [`beta1-checklist.md`](./beta1-checklist.md).
+
 `status: final live cruise green; release authorization pending` · `updated: 2026-06-21` · `current-candidate-sha256: 1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477`
 
 This runbook records the safe route and result for the final release cruise. It is not authorization for future Minecraft control by itself; live work still needs current Maintainer authorization and must follow exact Java-window discipline. The current staged profile/runtime candidate `1f50c595...` was rebuilt from savepoint `c9da0f93` and includes the desert locate fix, accepted stony-peaks tuning, and restored Y168/28 treeline. The 2026-06-21 live attempt proves launch/load/desert/soak/savequit, and a narrow follow-up proves current-world stony locate/HUD/server predicate.
