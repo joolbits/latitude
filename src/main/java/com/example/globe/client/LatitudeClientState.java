@@ -10,10 +10,6 @@ public final class LatitudeClientState {
     public static volatile float latitudeLoadingProgress = 0f;
     /** Single source of truth for bespoke loading overlay lifecycle. */
     private static volatile boolean latitudeWorldLoading = false;
-    /** Latches first client-ready observation to avoid log spam across ticks. */
-    private static volatile boolean clientReadyObserved = false;
-    /** Last elapsed value captured during a lifecycle clear, for post-clear logging. */
-    private static volatile long lastLifecycleClearElapsedMs = -1L;
     /**
      * Display label for the loading screen's optional "Loading &lt;Zone&gt;" line, or null to show
      * nothing. Reset to null whenever a new loading sequence begins (see
@@ -28,8 +24,6 @@ public final class LatitudeClientState {
         expeditionStartMs = startMs;
         latitudeLoadingProgress = 0f;
         latitudeWorldLoading = false;
-        clientReadyObserved = false;
-        lastLifecycleClearElapsedMs = -1L;
     }
 
     public static synchronized void activateLatitudeLoading() {
@@ -46,7 +40,6 @@ public final class LatitudeClientState {
         }
         latitudeWorldLoading = true;
         latitudeLoadingProgress = 0f;
-        clientReadyObserved = false;
     }
 
     public static boolean isLatitudeWorldLoading() {
@@ -62,27 +55,11 @@ public final class LatitudeClientState {
         return loadingZoneLabel;
     }
 
-    public static synchronized boolean markClientReadyObserved() {
-        if (!latitudeWorldLoading || clientReadyObserved) {
-            return false;
-        }
-        clientReadyObserved = true;
-        return true;
-    }
-
-    public static long lastLifecycleClearElapsedMs() {
-        return lastLifecycleClearElapsedMs;
-    }
-
-    public static synchronized long clearLatitudeLoadingState() {
-        long sinceExpedition = elapsedSinceExpeditionMs();
+    public static synchronized void clearLatitudeLoadingState() {
         latitudeWorldLoading = false;
-        clientReadyObserved = false;
-        lastLifecycleClearElapsedMs = sinceExpedition;
         expeditionStartMs = 0L;
         latitudeLoadingProgress = 0f;
         loadingZoneLabel = null;
-        return sinceExpedition;
     }
 
 }

@@ -65,13 +65,9 @@ public abstract class WorldOpenFlowsEarlyLatitudeActivationMixin {
             if (band != null) {
                 LatitudeClientState.setLoadingZoneLabel(band.displayName());
             }
-            GLOBE_LOGGER.info(
-                    "[Latitude lifecycle] pre-activated loading overlay before vanilla's first "
-                            + "world-open screen (levelId={} presetId={})",
-                    levelId, presetId);
         } catch (Exception e) {
             GLOBE_LOGGER.warn(
-                    "[Latitude lifecycle] could not pre-check saved world for early overlay "
+                    "[Latitude] could not pre-check saved world for early overlay "
                             + "activation; overlay will activate at its later, doWorldLoad fallback point",
                     e);
         }

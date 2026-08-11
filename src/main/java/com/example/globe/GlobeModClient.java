@@ -63,10 +63,7 @@ public class GlobeModClient implements ClientModInitializer {
             } else if (LatitudeClientState.isLatitudeWorldLoading()) {
                 LatitudeClientState.clearLatitudeLoadingState();
             }
-            context.client().execute(() -> {
-                GlobeClientState.setGlobeWorld(payload.isGlobe());
-                GlobeMod.LOGGER.info("S2C globe state: isGlobe={}", payload.isGlobe());
-            });
+            context.client().execute(() -> GlobeClientState.setGlobeWorld(payload.isGlobe()));
         });
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.OpenSpawnPickerPayload.ID, (payload, context) -> {
