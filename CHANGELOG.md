@@ -144,9 +144,7 @@ excluded from public builds by policy and cannot be reached from a release jar.
   underneath it — fixing both a structure generating in a biome it doesn't belong in, and
   `/locate structure` reporting a structure that was never actually going to appear. On this port,
   `/locate structure` was also extended to cover structures at all — vanilla's own search is blind to
-  Latitude's repainted biomes and has no world-border awareness; both are fixed. Verified live: a
-  located desert pyramid and a located `#minecraft:village` (resolving to `village_savanna`) both sit
-  inside their matching repainted biome, and both inside the world border.
+  Latitude's repainted biomes and has no world-border awareness; both are fixed.
 
 ### Performance
 
@@ -154,7 +152,7 @@ excluded from public builds by policy and cannot be reached from a release jar.
 - Analog compass disc spans are batched.
 - `/locate` is bounded and responsive, including searches that find nothing — `/locate structure` no
   longer searches past the world border or stalls force-generating chunks it can never reach.
-- Sodium fog-culling reachability restored and re-verified against this target's Sodium line
+- Sodium fog-culling reachability restored for this target's Sodium line
   (0.8.13+mc1.21.11): fog tightening happens before Sodium's own culling snapshot, so distant terrain
   Latitude fogs out is still culled rather than rendered and hidden behind fog.
 
