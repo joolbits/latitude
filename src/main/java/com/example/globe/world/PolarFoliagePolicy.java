@@ -27,6 +27,13 @@ public final class PolarFoliagePolicy {
      */
     public static final double MAX_WOODY_ABSOLUTE_LATITUDE_DEGREES = 72.0;
 
+    /**
+     * A tree may legally begin just inside the 72-degree tree line while its outer leaves extend
+     * a few blocks beyond it. Keep those already-started trees whole without moving the latitude
+     * at which new trees may begin.
+     */
+    public static final int WOODY_COMPLETION_BUFFER_BLOCKS = 16;
+
     private PolarFoliagePolicy() {
     }
 
@@ -52,6 +59,20 @@ public final class PolarFoliagePolicy {
             int borderRadiusFallback) {
         return absoluteLatitudeDegrees(blockZ, activeRadiusBlocks, borderRadiusFallback)
                 > MAX_WOODY_ABSOLUTE_LATITUDE_DEGREES;
+    }
+
+    /**
+     * Final block writes use a tiny completion band beyond the strict tree-start limit. Feature
+     * guards still use {@link #isBeyondWoodyLimit} so a tree cannot start outside 72 degrees.
+     */
+    public static boolean isBeyondWoodyCompletionLimit(
+            double blockZ,
+            int activeRadiusBlocks,
+            int borderRadiusFallback) {
+        int radius = activeRadiusBlocks > 0 ? activeRadiusBlocks : borderRadiusFallback;
+        double treeLineZ = Math.max(1, radius)
+                * MAX_WOODY_ABSOLUTE_LATITUDE_DEGREES / 90.0;
+        return Math.abs(blockZ) > treeLineZ + WOODY_COMPLETION_BUFFER_BLOCKS;
     }
 
     /**

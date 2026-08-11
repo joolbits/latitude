@@ -16,7 +16,10 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.commands.LocateCommand;
+import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.BossEvent;
 import net.minecraft.tags.StructureTags;
 import net.minecraft.util.Util;
 import net.minecraft.world.level.ChunkPos;
@@ -74,9 +77,9 @@ public final class LatitudeStructureLocateService {
 
     /**
      * Claims {@code /locate structure} in Latitude worlds when every matched structure resolves
-     * only to random-spread placements. The search itself runs asynchronously; an immediate
-     * acknowledgement is sent so a slow search (villages in a sparse biome band can take many
-     * real seconds — see the class javadoc) reads as "working," not "hung."
+     * only to random-spread placements. The search itself runs asynchronously and owns the same
+     * visible blue boss bar as Latitude biome search, so a slow result reads as working without a
+     * separate legacy chat acknowledgement.
      *
      * @return true when the command was claimed (the answer may still be pending)
      */
@@ -131,8 +134,15 @@ public final class LatitudeStructureLocateService {
         long seed = structureState.getLevelSeed();
         BiomeSource finalRawSource = rawSource;
 
-        source.sendSuccess(() -> Component.translatableEscape(
-                "commands.latitude.locate.structure.searching", target.asPrintable()), false);
+        ServerPlayer requester = source.getPlayer();
+        ServerBossEvent bossBar = new ServerBossEvent(
+                Component.literal("Searching for " + target.asPrintable() + "..."),
+                BossEvent.BossBarColor.BLUE,
+                BossEvent.BossBarOverlay.PROGRESS);
+        bossBar.setProgress(0.0F);
+        if (requester != null) {
+            bossBar.addPlayer(requester);
+        }
 
         long started = System.nanoTime();
         CompletableFuture
@@ -144,6 +154,7 @@ public final class LatitudeStructureLocateService {
                     return new SearchOutcome(result, tally);
                 }, Util.backgroundExecutor())
                 .whenCompleteAsync((outcome, error) -> {
+                    bossBar.removeAllPlayers();
                     Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
                     if (error != null) {
                         GlobeMod.LOGGER.warn("[Latitude] structure locate failed for target={}",

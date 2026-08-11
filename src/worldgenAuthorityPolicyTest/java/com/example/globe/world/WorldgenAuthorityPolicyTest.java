@@ -27,6 +27,7 @@ public final class WorldgenAuthorityPolicyTest {
         coastalSwampUsesMangroveIdentity();
         wetlandLocateFilterMatchesFinalIdentityLaw();
         biomeLocateServiceClaimsAllSupportedTargets();
+        structureLocateUsesTheLatitudeBossBarSurface();
         customSurfaceLocatePreviewUsesRegistryAuthority();
         profileAdoptionRefusesWorldsLatitudeDidNotGenerate();
         offDiskStateReaderDerivesItsPathFromTheSavedDataId();
@@ -372,6 +373,19 @@ public final class WorldgenAuthorityPolicyTest {
                 preview.indexOf("if (biomeRegistry != null)")
                         < preview.indexOf("Collection<Holder<Biome>> sourceCandidates"),
                 "the donor-only preview fallback must remain unreachable when the locate registry is available");
+    }
+
+    private static void structureLocateUsesTheLatitudeBossBarSurface() throws Exception {
+        String service = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeStructureLocateService.java"));
+        assertTrue(
+                service.contains("new ServerBossEvent(")
+                        && service.contains("BossEvent.BossBarColor.BLUE")
+                        && service.contains("bossBar.removeAllPlayers()"),
+                "Latitude structure searches must use the same removable blue boss-bar surface as biomes");
+        assertTrue(
+                !service.contains("commands.latitude.locate.structure.searching"),
+                "Latitude structure searches must not retain a separate legacy chat acknowledgement");
     }
 
     private static void raisedTerrainCannotKeepAnOceanBiome() throws Exception {

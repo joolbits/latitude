@@ -95,7 +95,10 @@ public class ProtoChunkPolarVegetationGuardMixin {
         }
 
         int activeRadius = LatitudeBiomes.getActiveRadiusBlocks();
-        boolean beyondWoody = PolarFoliagePolicy.isBeyondWoodyLimit(
+        // Tree features still reject origins beyond the strict 72-degree limit. At this final
+        // block-write seam, allow only a fixed overhang so a legal tree that begins inside the
+        // line can finish its canopy instead of losing leaves across the latitude boundary.
+        boolean beyondWoody = PolarFoliagePolicy.isBeyondWoodyCompletionLimit(
                 pos.getZ(), activeRadius, GlobeMod.BORDER_RADIUS);
         if (!beyondWoody) {
             // Below the tree line neither tier applies; the foliage limit is strictly higher.
