@@ -320,6 +320,25 @@ def verify_release_runtime_instrumentation(failures: list[str]) -> None:
                     f"{path} ({marker!r})"
                 )
 
+    release_log_paths = (
+        "src/main/java/com/example/globe/GlobeModClient.java",
+        "src/main/java/com/example/globe/mixin/client/LevelLoadingScreenLatitudeOverlayMixin.java",
+        "src/main/java/com/example/globe/mixin/client/MinecraftClientStartIntegratedMixin.java",
+        "src/main/java/com/example/globe/mixin/client/WorldOpenFlowsEarlyLatitudeActivationMixin.java",
+    )
+    forbidden_release_log_markers = (
+        "[LAT][LOADUI]",
+        "[Latitude lifecycle]",
+        "S2C globe state:",
+    )
+    for path in release_log_paths:
+        source = read(path)
+        for marker in forbidden_release_log_markers:
+            if marker in source:
+                failures.append(
+                    f"release source contains loading diagnostic logging: {path} ({marker!r})"
+                )
+
     # INFO is permitted only as one bounded command/session summary in these changed workers.
     operational_info = {
         "src/main/java/com/example/globe/world/LatitudeBiomeLocateService.java": (

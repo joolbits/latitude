@@ -62,7 +62,6 @@ public abstract class MinecraftClientStartIntegratedMixin {
             if (LatitudeClientState.isLatitudeWorldLoading()) {
                 LatitudeClientState.clearLatitudeLoadingState();
             }
-            GLOBE_LOGGER.info("[Latitude lifecycle] integrated-world loading overlay skipped (stemDetected=false saveMarker=false)");
             return;
         }
 
@@ -70,11 +69,6 @@ public abstract class MinecraftClientStartIntegratedMixin {
             LatitudeClientState.beginExpedition(System.currentTimeMillis());
             LatitudeClientState.activateLatitudeLoading();
             globe$applyResumedZoneLabel(session);
-            GLOBE_LOGGER.info("[Latitude lifecycle] integrated-world loading overlay activated — {}ms since beginExpedition (stemDetected={} saveMarker={})",
-                    LatitudeClientState.elapsedSinceExpeditionMs(), stemDetected, diskDetected);
-        } else {
-            GLOBE_LOGGER.info("[Latitude lifecycle] integrated-world load kept the pre-activated overlay (stemDetected={} saveMarker={})",
-                    stemDetected, diskDetected);
         }
     }
 
@@ -107,7 +101,7 @@ public abstract class MinecraftClientStartIntegratedMixin {
         try {
             return RecreatedWorldMetadata.latitudePresetId(session.getLevelPath(LevelResource.ROOT)) != null;
         } catch (Exception e) {
-            GLOBE_LOGGER.warn("[Latitude lifecycle] could not read the save's Latitude marker; "
+            GLOBE_LOGGER.warn("[Latitude] could not read the save's Latitude marker; "
                     + "falling back to the world-stem check alone", e);
             return false;
         }
@@ -127,7 +121,7 @@ public abstract class MinecraftClientStartIntegratedMixin {
                 LatitudeClientState.setLoadingZoneLabel(band.displayName());
             }
         } catch (Exception e) {
-            GLOBE_LOGGER.warn("[Latitude lifecycle] could not read last-known band for the loading screen", e);
+            GLOBE_LOGGER.warn("[Latitude] could not read last-known band for the loading screen", e);
         }
     }
 

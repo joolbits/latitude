@@ -48,7 +48,7 @@ public final class LoadingPresentationPolicyTest {
         thePaneClockIsSharedSoTheHandoffDoesNotRestartIt();
         theVanillaMessageWidgetIsRestoredWheneverLatitudeIsNotLoading();
         theResumedWorldVerdictIsNotDecidedByTheStemCheckAlone();
-        everyScreenShownDuringALatitudeLoadIsNamedInTheLog();
+        releaseBuildCarriesNoLoadingTraceHook();
     }
 
     /**
@@ -114,23 +114,16 @@ public final class LoadingPresentationPolicyTest {
                         + "resumed Latitude world");
     }
 
-    /**
-     * The chain's error branches are interactive and are deliberately left vanilla, so "not covered"
-     * is a legitimate outcome — which is exactly why every screen shown during a load has to be
-     * named in the log. Without it, a screen nobody hooks is indistinguishable from a hook that
-     * silently stopped matching.
-     */
-    private static void everyScreenShownDuringALatitudeLoadIsNamedInTheLog() throws IOException {
+    /** Release builds keep the loading behavior but omit the screen-by-screen diagnostic probe. */
+    private static void releaseBuildCarriesNoLoadingTraceHook() throws IOException {
         String source = read(
                 "src/main/java/com/example/globe/mixin/client/LevelLoadingScreenLatitudeOverlayMixin.java");
-        assertTrue(source.contains("method = \"setScreen\""),
-                "setScreen is the one chokepoint every screen in the chain passes through — the "
-                        + "enumeration hook must target it");
-        assertTrue(source.contains("latitudePaneCovers="),
-                "the log line must say whether the pane covers each screen, or an uncovered screen "
-                        + "in the chain stays invisible in a bug report");
-        assertTrue(source.contains("screen instanceof ProgressScreen"),
-                "the covered-screen set in the logger must track the set that actually has hooks");
+        assertFalse(source.contains("method = \"setScreen\""),
+                "the release mixin must not retain the screen-enumeration diagnostic hook");
+        assertFalse(source.contains("[LAT][LOADUI]") || source.contains("[Latitude lifecycle]"),
+                "the release loading path must not emit development lifecycle traces");
+        assertFalse(source.contains("globe$lastReadinessWaitLogTick"),
+                "the release loading path must not retain the log-only wait counter");
     }
 
     /** Neither screen may carry its own copy of the pane's drawing. */
