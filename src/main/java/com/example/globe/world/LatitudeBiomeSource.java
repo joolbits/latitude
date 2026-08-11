@@ -477,6 +477,24 @@ public final class LatitudeBiomeSource extends BiomeSource {
         if (shouldPreserveCave(current, base, blockY)) {
             return LatitudeBiomes.caveCoverageOverride(biomes, current, blockX, blockY, blockZ);
         }
+        // Locate's candidate set already includes the registry-resolved Latitude roster. Use the
+        // same existing registry picker here so an admitted custom surface biome can reach the
+        // terrain-aware exact check; the donor source's possible-biome collection omits provider
+        // biomes by construction.
+        if (biomeRegistry != null) {
+            return LatitudeBiomes.pick(
+                    biomeRegistry,
+                    base,
+                    blockX,
+                    blockZ,
+                    blockY,
+                    borderRadiusBlocks,
+                    sampler,
+                    "SOURCE",
+                    null,
+                    null,
+                    null);
+        }
         Collection<Holder<Biome>> sourceCandidates = LatitudeBiomes.expandSourceCandidatePool(biomes);
         return LatitudeBiomes.pick(
                 sourceCandidates,

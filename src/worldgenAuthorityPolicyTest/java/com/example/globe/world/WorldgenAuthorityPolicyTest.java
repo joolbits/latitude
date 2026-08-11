@@ -27,6 +27,7 @@ public final class WorldgenAuthorityPolicyTest {
         coastalSwampUsesMangroveIdentity();
         wetlandLocateFilterMatchesFinalIdentityLaw();
         biomeLocateServiceClaimsAllSupportedTargets();
+        customSurfaceLocatePreviewUsesRegistryAuthority();
         profileAdoptionRefusesWorldsLatitudeDidNotGenerate();
         offDiskStateReaderDerivesItsPathFromTheSavedDataId();
         LatitudeLocateBudgetPolicyTest.main(new String[0]);
@@ -353,6 +354,24 @@ public final class WorldgenAuthorityPolicyTest {
                 service.contains("LatitudeLocateBudgetPolicy.fullWorldSearchRadius(")
                         && service.contains("isWithinLatitudeWorld(blockX, blockZ)"),
                 "a boss-bar locate must cover the playable Latitude world without reporting outside it");
+    }
+
+    private static void customSurfaceLocatePreviewUsesRegistryAuthority() throws Exception {
+        String source = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeBiomeSource.java"));
+        int methodStart = source.indexOf("Holder<Biome> getLocatePreviewNoiseBiome(");
+        int methodEnd = source.indexOf("private record SurfaceLocateOutcome", methodStart);
+        assertTrue(methodStart >= 0 && methodEnd > methodStart,
+                "the custom surface locate preview must remain a distinct, reviewable helper");
+        String preview = source.substring(methodStart, methodEnd);
+
+        assertTrue(
+                preview.contains("if (biomeRegistry != null) { return LatitudeBiomes.pick( biomeRegistry, base"),
+                "an admitted custom surface target must preview through Latitude's existing registry authority");
+        assertTrue(
+                preview.indexOf("if (biomeRegistry != null)")
+                        < preview.indexOf("Collection<Holder<Biome>> sourceCandidates"),
+                "the donor-only preview fallback must remain unreachable when the locate registry is available");
     }
 
     private static void raisedTerrainCannotKeepAnOceanBiome() throws Exception {
