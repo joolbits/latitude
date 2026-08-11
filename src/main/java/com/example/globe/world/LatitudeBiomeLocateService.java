@@ -55,9 +55,9 @@ public final class LatitudeBiomeLocateService {
     }
 
     /**
-     * Claims supported biome locate commands in Latitude worlds. The normal command's 6,400-block
-     * search remains the semantic bound, but the work is distributed across ticks so the requester
-     * sees a boss bar instead of a stalled client or intermittent chat acknowledgement.
+     * Claims supported biome locate commands in Latitude worlds. The search covers the playable
+     * Latitude border from the command origin and distributes that finite work across ticks, so
+     * the requester sees a boss bar instead of a stalled client or intermittent chat acknowledgement.
      */
     public static boolean beginIfLatitudeBiome(
             CommandSourceStack source,
@@ -93,6 +93,9 @@ public final class LatitudeBiomeLocateService {
         }
 
         BlockPos origin = BlockPos.containing(source.getPosition());
+        int searchRadius = Math.max(COMMAND_RADIUS,
+                LatitudeLocateBudgetPolicy.fullWorldSearchRadius(
+                        origin.getX(), origin.getZ(), worldRadius));
         boolean includesSwamp = matching.stream().anyMatch(candidate ->
                 LatitudeBiomes.isBiomeIdPublic(candidate, "minecraft:swamp"));
         boolean includesMangrove = matching.stream().anyMatch(candidate ->
@@ -105,17 +108,17 @@ public final class LatitudeBiomeLocateService {
         BiomeLocateJob job;
         if (!includesCave && wetlandOnly && (includesSwamp || includesMangrove)) {
             job = new WetlandLocateJob(source, target, origin, latitudeSource, worldRadius,
-                    randomState.sampler(), includesSwamp, includesMangrove);
+                    searchRadius, randomState.sampler(), includesSwamp, includesMangrove);
         } else if (!includesCave) {
-            job = new SurfaceLocateJob(source, target, origin, latitudeSource,
-                    randomState.sampler(), matching, includesMangrove);
+            job = new SurfaceLocateJob(source, target, origin, latitudeSource, worldRadius,
+                    searchRadius, randomState.sampler(), matching, includesMangrove);
         } else {
-            job = new ThreeDimensionalLocateJob(source, target, origin, latitudeSource,
-                    randomState.sampler(), level);
+            job = new ThreeDimensionalLocateJob(source, target, origin, latitudeSource, worldRadius,
+                    searchRadius, randomState.sampler(), level);
         }
         ACTIVE_JOBS.put(server, job);
-        GlobeMod.LOGGER.info("[Latitude] started tick-sliced biome locate target={} route={} origin={} radius={}",
-                target.asPrintable(), job.route(), origin.toShortString(), COMMAND_RADIUS);
+        GlobeMod.LOGGER.info("[Latitude] started tick-sliced biome locate target={} route={} origin={} radius={} worldRadius={}",
+                target.asPrintable(), job.route(), origin.toShortString(), searchRadius, worldRadius);
         return true;
     }
 
@@ -150,6 +153,8 @@ public final class LatitudeBiomeLocateService {
         protected final BlockPos origin;
         protected final LatitudeBiomeSource latitudeSource;
         protected final Climate.Sampler sampler;
+        protected final int worldRadius;
+        protected final int searchRadius;
         private final ServerPlayer requester;
         private final long startedNanos;
         private final ServerBossEvent bossBar;
@@ -161,11 +166,15 @@ public final class LatitudeBiomeLocateService {
                 ResourceOrTagArgument.Result<Biome> target,
                 BlockPos origin,
                 LatitudeBiomeSource latitudeSource,
+                int worldRadius,
+                int searchRadius,
                 Climate.Sampler sampler) {
             this.source = source;
             this.target = target;
             this.origin = origin;
             this.latitudeSource = latitudeSource;
+            this.worldRadius = worldRadius;
+            this.searchRadius = searchRadius;
             this.sampler = sampler;
             this.requester = source.getPlayer();
             this.startedNanos = System.nanoTime();
@@ -191,6 +200,11 @@ public final class LatitudeBiomeLocateService {
         final boolean deadlineExceeded(long tickStarted) {
             return System.nanoTime() - tickStarted
                     >= LatitudeLocateBudgetPolicy.MAX_BIOME_LOCATE_TICK_NANOS;
+        }
+
+        final boolean isWithinLatitudeWorld(int blockX, int blockZ) {
+            return Math.abs((long) blockX) <= worldRadius
+                    && Math.abs((long) blockZ) <= worldRadius;
         }
 
         final void updateProgress(int completed, int total) {
@@ -243,7 +257,6 @@ public final class LatitudeBiomeLocateService {
 
     /** Preserves the exact wetland broad phase because terrain can promote source shorelines. */
     private static final class WetlandLocateJob extends BiomeLocateJob {
-        private final int worldRadius;
         private final boolean includesSwamp;
         private final boolean includesMangrove;
         private final Iterator<BlockPos.MutableBlockPos> offsets;
@@ -257,16 +270,16 @@ public final class LatitudeBiomeLocateService {
                 BlockPos origin,
                 LatitudeBiomeSource latitudeSource,
                 int worldRadius,
+                int searchRadius,
                 Climate.Sampler sampler,
                 boolean includesSwamp,
                 boolean includesMangrove) {
-            super(source, target, origin, latitudeSource, sampler);
-            this.worldRadius = worldRadius;
+            super(source, target, origin, latitudeSource, worldRadius, searchRadius, sampler);
             this.includesSwamp = includesSwamp;
             this.includesMangrove = includesMangrove;
             this.offsets = BlockPos.spiralAround(
                     BlockPos.ZERO,
-                    COMMAND_RADIUS / COMMAND_HORIZONTAL_STEP,
+                    searchRadius / COMMAND_HORIZONTAL_STEP,
                     Direction.EAST,
                     Direction.SOUTH).iterator();
             this.surfaceY = Mth.clamp(
@@ -299,6 +312,9 @@ public final class LatitudeBiomeLocateService {
                 int quartZ = QuartPos.fromBlock(sampleZ);
                 int blockX = QuartPos.toBlock(quartX) + 2;
                 int blockZ = QuartPos.toBlock(quartZ) + 2;
+                if (!isWithinLatitudeWorld(blockX, blockZ)) {
+                    continue;
+                }
                 if (!LatitudeBiomes.isPotentialWetlandLocateCandidate(
                         blockX, blockZ, worldRadius, sampler, includesSwamp, includesMangrove)) {
                     continue;
@@ -326,7 +342,7 @@ public final class LatitudeBiomeLocateService {
                 }
             }
             updateProgress(gridProbes, LatitudeLocateBudgetPolicy.worstCaseSamples(
-                    COMMAND_RADIUS, COMMAND_HORIZONTAL_STEP, 1));
+                    searchRadius, COMMAND_HORIZONTAL_STEP, 1));
             if (!offsets.hasNext()) {
                 finish(null);
                 log(false);
@@ -362,10 +378,12 @@ public final class LatitudeBiomeLocateService {
                 ResourceOrTagArgument.Result<Biome> target,
                 BlockPos origin,
                 LatitudeBiomeSource latitudeSource,
+                int worldRadius,
+                int searchRadius,
                 Climate.Sampler sampler,
                 Set<Holder<Biome>> matching,
                 boolean targetIncludesMangrove) {
-            super(source, target, origin, latitudeSource, sampler);
+            super(source, target, origin, latitudeSource, worldRadius, searchRadius, sampler);
             this.matching = matching;
             this.targetIncludesMangrove = targetIncludesMangrove;
             this.surfaceY = Mth.clamp(
@@ -373,17 +391,17 @@ public final class LatitudeBiomeLocateService {
                     source.getLevel().getMinY() + 1,
                     source.getLevel().getMaxY());
             this.previewStep = LatitudeLocateBudgetPolicy.surfaceHorizontalStep(
-                    COMMAND_RADIUS, COMMAND_HORIZONTAL_STEP);
+                    searchRadius, COMMAND_HORIZONTAL_STEP);
             this.fallbackStep = LatitudeLocateBudgetPolicy.surfaceExactFallbackHorizontalStep(
-                    COMMAND_RADIUS, COMMAND_HORIZONTAL_STEP);
+                    searchRadius, COMMAND_HORIZONTAL_STEP);
             this.previewTotal = LatitudeLocateBudgetPolicy.worstCaseSamples(
-                    COMMAND_RADIUS, previewStep, 1);
+                    searchRadius, previewStep, 1);
             this.fallbackTotal = LatitudeLocateBudgetPolicy.worstCaseSamples(
-                    COMMAND_RADIUS, fallbackStep, 1);
+                    searchRadius, fallbackStep, 1);
             this.previewOffsets = BlockPos.spiralAround(BlockPos.ZERO,
-                    COMMAND_RADIUS / previewStep, Direction.EAST, Direction.SOUTH).iterator();
+                    searchRadius / previewStep, Direction.EAST, Direction.SOUTH).iterator();
             this.fallbackOffsets = BlockPos.spiralAround(BlockPos.ZERO,
-                    COMMAND_RADIUS / fallbackStep, Direction.EAST, Direction.SOUTH).iterator();
+                    searchRadius / fallbackStep, Direction.EAST, Direction.SOUTH).iterator();
         }
 
         @Override
@@ -404,6 +422,11 @@ public final class LatitudeBiomeLocateService {
                     previewProbes++;
                     int quartX = QuartPos.fromBlock(origin.getX() + offset.getX() * previewStep);
                     int quartZ = QuartPos.fromBlock(origin.getZ() + offset.getZ() * previewStep);
+                    int blockX = QuartPos.toBlock(quartX) + 2;
+                    int blockZ = QuartPos.toBlock(quartZ) + 2;
+                    if (!isWithinLatitudeWorld(blockX, blockZ)) {
+                        continue;
+                    }
                     Holder<Biome> preview = latitudeSource.getLocatePreviewNoiseBiome(
                             quartX, QuartPos.fromBlock(surfaceY), quartZ, sampler);
                     boolean plausible = target.test(preview)
@@ -442,6 +465,12 @@ public final class LatitudeBiomeLocateService {
                 fallbackChecks++;
                 int quartX = QuartPos.fromBlock(origin.getX() + offset.getX() * fallbackStep);
                 int quartZ = QuartPos.fromBlock(origin.getZ() + offset.getZ() * fallbackStep);
+                int blockX = QuartPos.toBlock(quartX) + 2;
+                int blockZ = QuartPos.toBlock(quartZ) + 2;
+                if (!isWithinLatitudeWorld(blockX, blockZ)) {
+                    updateProgress(previewTotal + fallbackChecks, previewTotal + fallbackTotal);
+                    return false;
+                }
                 Holder<Biome> exact = latitudeSource.getNoiseBiome(
                         quartX, QuartPos.fromBlock(surfaceY), quartZ, sampler);
                 if (target.test(exact)) {
@@ -486,17 +515,19 @@ public final class LatitudeBiomeLocateService {
                 ResourceOrTagArgument.Result<Biome> target,
                 BlockPos origin,
                 LatitudeBiomeSource latitudeSource,
+                int worldRadius,
+                int searchRadius,
                 Climate.Sampler sampler,
                 ServerLevel level) {
-            super(source, target, origin, latitudeSource, sampler);
+            super(source, target, origin, latitudeSource, worldRadius, searchRadius, sampler);
             this.verticalSamples = Mth.outFromOrigin(origin.getY(),
                     level.getMinY() + 1, level.getMaxY() + 1, COMMAND_VERTICAL_STEP).toArray();
             this.horizontalStep = LatitudeLocateBudgetPolicy.threeDimensionalHorizontalStep(
-                    COMMAND_RADIUS, COMMAND_HORIZONTAL_STEP, Math.max(1, verticalSamples.length));
+                    searchRadius, COMMAND_HORIZONTAL_STEP, Math.max(1, verticalSamples.length));
             this.offsets = BlockPos.spiralAround(BlockPos.ZERO,
-                    COMMAND_RADIUS / horizontalStep, Direction.EAST, Direction.SOUTH).iterator();
+                    searchRadius / horizontalStep, Direction.EAST, Direction.SOUTH).iterator();
             this.totalSamples = LatitudeLocateBudgetPolicy.worstCaseSamples(
-                    COMMAND_RADIUS, horizontalStep, Math.max(1, verticalSamples.length));
+                    searchRadius, horizontalStep, Math.max(1, verticalSamples.length));
         }
 
         @Override
@@ -526,6 +557,13 @@ public final class LatitudeBiomeLocateService {
                 int quartZ = QuartPos.fromBlock(origin.getZ() + currentOffset.getZ() * horizontalStep);
                 sampled++;
                 tickExactProbes++;
+                if (!isWithinLatitudeWorld(
+                        QuartPos.toBlock(quartX) + 2, QuartPos.toBlock(quartZ) + 2)) {
+                    if (verticalIndex >= verticalSamples.length) {
+                        currentOffset = null;
+                    }
+                    continue;
+                }
                 Holder<Biome> exact = latitudeSource.getNoiseBiome(quartX, quartY, quartZ, sampler);
                 if (target.test(exact)) {
                     finish(Pair.of(LatitudeBiomeSource.centerQuartPosition(new BlockPos(

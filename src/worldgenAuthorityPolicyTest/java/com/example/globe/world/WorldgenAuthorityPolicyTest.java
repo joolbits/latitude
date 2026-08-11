@@ -296,8 +296,8 @@ public final class WorldgenAuthorityPolicyTest {
                         && service.contains("BlockPos.spiralAround("),
                 "the optimization must preserve the full-radius nearest-first grid");
         assertTrue(
-                service.contains("latitudeSource, worldRadius, randomState.sampler()"),
-                "the live service must pass the exact world radius into its job");
+                service.contains("latitudeSource, worldRadius, searchRadius, randomState.sampler()"),
+                "the live service must pass the exact world and search radii into its job");
         assertTrue(
                 service.contains("LatitudeBiomes.isPotentialWetlandLocateCandidate( blockX, blockZ, worldRadius, sampler, includesSwamp, includesMangrove)"),
                 "the live service must wire the exact world radius into the cheap filter");
@@ -349,6 +349,10 @@ public final class WorldgenAuthorityPolicyTest {
                 service.contains("LatitudeLocateBudgetPolicy.MAX_SURFACE_PREVIEW_PROBES_PER_TICK")
                         && service.contains("LatitudeLocateBudgetPolicy.MAX_THREE_DIMENSIONAL_EXACT_PROBES_PER_TICK"),
                 "general biome routes must remain explicitly bounded per tick");
+        assertTrue(
+                service.contains("LatitudeLocateBudgetPolicy.fullWorldSearchRadius(")
+                        && service.contains("isWithinLatitudeWorld(blockX, blockZ)"),
+                "a boss-bar locate must cover the playable Latitude world without reporting outside it");
     }
 
     private static void raisedTerrainCannotKeepAnOceanBiome() throws Exception {

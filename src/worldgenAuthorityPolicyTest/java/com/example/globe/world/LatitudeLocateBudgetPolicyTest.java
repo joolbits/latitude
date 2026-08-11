@@ -52,6 +52,15 @@ public final class LatitudeLocateBudgetPolicyTest {
                         + LatitudeLocateBudgetPolicy.worstCaseSamples(6_400, 400, 1)
                         == 11_290,
                 "the surface progress route must cover its full finite preview and fallback plan");
+        assertEquals(3_750,
+                LatitudeLocateBudgetPolicy.fullWorldSearchRadius(0, 0, 3_750),
+                "center-origin search reaches the complete playable radius");
+        assertEquals(6_250,
+                LatitudeLocateBudgetPolicy.fullWorldSearchRadius(2_500, -500, 3_750),
+                "off-center search reaches the opposite playable edge");
+        assertEquals(7_500,
+                LatitudeLocateBudgetPolicy.fullWorldSearchRadius(-3_750, 3_750, 3_750),
+                "edge-origin search reaches the far corner without becoming unbounded");
 
         assertTrue(
                 LatitudeLocateBudgetPolicy.allowsSwampProxyForTarget(true, false, 2, 1),

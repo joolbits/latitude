@@ -45,6 +45,17 @@ public final class LatitudeLocateBudgetPolicy {
         return samples > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) samples;
     }
 
+    /**
+     * Smallest square search radius that covers every playable coordinate in a Latitude world
+     * from the command origin. The caller still rejects probes outside the world border.
+     */
+    public static int fullWorldSearchRadius(int originX, int originZ, int worldRadius) {
+        long safeWorldRadius = Math.max(0L, worldRadius);
+        long xReach = safeWorldRadius + Math.abs((long) originX);
+        long zReach = safeWorldRadius + Math.abs((long) originZ);
+        return (int) Math.min(Integer.MAX_VALUE, Math.max(xReach, zReach));
+    }
+
     /** Exact block coordinate represented by the center of a four-block biome quart cell. */
     public static int quartCenterBlock(int blockCoordinate) {
         return Math.floorDiv(blockCoordinate, 4) * 4 + 2;
