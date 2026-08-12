@@ -19,6 +19,7 @@ public final class VillageLatitudePolicyTest {
         biomeFamilyPolicyRejectsNamedVillageMismatches();
         physicalTerrainPolicyRejectsCliffsideVillageStarts();
         climateMismatchRejectsInvalidStartsBeforeStore();
+        structureAdmissionUsesFinalLatitudeBiomeBeforeStartRegistration();
         staticIntegrationProofsHold();
         System.out.println("VILLAGE_LATITUDE_POLICY_TEST_PASS");
     }
@@ -473,6 +474,11 @@ public final class VillageLatitudePolicyTest {
                         "LatitudeBiomes.villageVariantVsBiomeMismatch( structureId.getPath(), finalBiomeId.toString())"),
                 "generation-time owner compares the named village variant with Latitude's final biome");
         assertTrue(
+                startGuard.contains("BiomeSource structureBiomeSource = biomeSource;")
+                        && startGuard.contains("LatitudeBiomeSource.forStructure( biomeSource, biomeRegistry, radius, noise, randomState, heightAccessor)")
+                        && startGuard.contains("chunkGenerator, structureBiomeSource, randomState,"),
+                "vanilla Structure.generate receives Latitude's final biome source for every new structure start");
+        assertTrue(
                 startGuard.contains("VillageTerrainSuitabilityPolicy.SAMPLE_COUNT")
                         && startGuard.contains(
                         "dz = -VillageTerrainSuitabilityPolicy.SAMPLE_RADIUS_BLOCKS")
@@ -550,6 +556,16 @@ public final class VillageLatitudePolicyTest {
                 build.contains("tasks.register('latitudeVillageLatitudePolicyTest', JavaExec)")
                         && build.contains("dependsOn tasks.named('latitudeVillageLatitudePolicyTest')"),
                 "village latitude proof is automatically wired into Gradle check/build");
+    }
+
+    private static void structureAdmissionUsesFinalLatitudeBiomeBeforeStartRegistration()
+            throws IOException {
+        String biomeSource = normalize(read("src/main/java/com/example/globe/world/LatitudeBiomeSource.java"));
+        assertTrue(
+                biomeSource.contains("static LatitudeBiomeSource forStructure(")
+                        && biomeSource.contains("new LatitudeBiomeSource(base, base.possibleBiomes(), biomeRegistry,")
+                        && biomeSource.contains("heightView, \"MIXIN\")"),
+                "structure starts use the registry and terrain-aware resolver used by Latitude-generated terrain");
     }
 
     private enum SimulatedStart {
