@@ -41,6 +41,7 @@ final class BiomeProviderSelectionPolicyTest {
         wetlandsAreAcceptedButNeverSubstitutedIn();
         cohesionGatePoolAgreesWithTheLedger();
         vanillaCoverageIsCompleteAndWorldSizeSafe();
+        erodedBadlandsIsGuaranteedOnTheLowlandAridRoute();
         surfaceWaterCoverageIsCompleteAndWorldSizeSafe();
         sizeAwareVanillaRepresentationIsClosedAndBirthLocked();
         caveCoverageIsClosedAndWorldSizeSafe();
@@ -447,6 +448,61 @@ final class BiomeProviderSelectionPolicyTest {
                 impossibleLand.missingDiagnostics().get("minecraft:windswept_hills");
         assertTrue(landStats != null && landStats.centerEligible() == 0,
                 "land-plan diagnostics distinguish absent eligible terrain from topology/capacity");
+    }
+
+    /**
+     * Eroded Badlands is guaranteed on the lowland arid route, not the upland one (maintainer
+     * ruling, 2026-08-12).
+     *
+     * <p>ARID_UPLAND demands mountain terrain AND a WARM_DRY province at the anchor centre and at
+     * all four shoulders, and those are independent sparse fields. On the live Regular seed
+     * 8507730871486520283 that intersection held at a centre 66 times and never once survived the
+     * shoulders, so the coverage guarantee simply could not be issued. The shape below is that
+     * live failure in miniature: an upland pocket narrower than the reservation, so every eligible
+     * centre loses a shoulder, while lowland arid terrain stays coherent. Revert the route to
+     * ARID_UPLAND and this fails — the planner finds a centre and no anchor.</p>
+     */
+    private static void erodedBadlandsIsGuaranteedOnTheLowlandAridRoute() {
+        assertEquals(BiomeRoute.ARID_LOWLAND,
+                VanillaBiomeCoveragePlan.requiredRoutes().get("minecraft:eroded_badlands"),
+                "Eroded Badlands is guaranteed on the same arid route its representation profile "
+                        + "and descriptor ledger already use");
+
+        BiomeSelectionProfile vanilla = BiomeSelectionProfile.capture(registryFor(Set.of()));
+        int radius = 10_000;
+        long seed = 8_507_730_871_486_520_283L;
+        // Only ARID_UPLAND is pinched. Every other route keeps its ordinary synthetic eligibility,
+        // so this cannot pass by making the rest of the map easier.
+        VanillaBiomeCoveragePlan plan = VanillaBiomeCoveragePlan.build(
+                radius, seed, vanilla,
+                (id, route, x, z) -> {
+                    if (!insideSyntheticRoute(route, x, z, radius)) return false;
+                    if (route != BiomeRoute.ARID_UPLAND) return true;
+                    // 48-block stripe against a 64-block reservation: centres land on it (they are
+                    // 16-aligned), but x+32 or x-32 always falls off it.
+                    return Math.floorMod(x, 512) < 48;
+                });
+        assertTrue(plan.complete(),
+                "an unsatisfiable upland arid pocket cannot cost the world its Eroded Badlands: "
+                        + plan.missingBiomeIds());
+
+        VanillaBiomeCoveragePlan.Anchor eroded = plan.anchors().stream()
+                .filter(anchor -> anchor.biomeId().equals("minecraft:eroded_badlands"))
+                .findFirst().orElse(null);
+        assertTrue(eroded != null && eroded.route() == BiomeRoute.ARID_LOWLAND,
+                "the reservation Eroded Badlands receives is a lowland arid province");
+
+        // The pinch is real: the same shape still starves a route that genuinely requires upland.
+        VanillaBiomeCoveragePlan uplandOnly = VanillaBiomeCoveragePlan.build(
+                radius, seed, vanilla,
+                Map.of("minecraft:eroded_badlands", BiomeRoute.ARID_UPLAND),
+                (id, route, x, z) -> insideSyntheticRoute(route, x, z, radius)
+                        && Math.floorMod(x, 512) < 48);
+        VanillaBiomeCoveragePlan.SearchStats pinched =
+                uplandOnly.missingDiagnostics().get("minecraft:eroded_badlands");
+        assertTrue(pinched != null && pinched.centerEligible() > 0
+                        && pinched.topologyEligible() == 0,
+                "the modelled pocket reproduces the live centre-eligible/shoulder-failing shape");
     }
 
     private static void caveCoverageIsClosedAndWorldSizeSafe() throws Exception {
