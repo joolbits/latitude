@@ -31,6 +31,21 @@ public final class CreateWorldIntroClock {
         }
     }
 
+    /**
+     * Transfers an active fade to the screen that replaces its preparing surface. If loading took
+     * longer than the complete animation, the replacement screen receives a fresh fade instead.
+     * Repeated claims by the replacement screen remain a no-op after either path.
+     */
+    public static void continueForOwner(Object requester, long nowMs) {
+        if (owner == requester) {
+            return;
+        }
+        if (!active()) {
+            reset(nowMs);
+        }
+        owner = requester;
+    }
+
     private static void reset(long nowMs) {
         progressMs = 0L;
         lastFrameMs = nowMs;

@@ -2,6 +2,10 @@ package com.example.globe.client;
 
 import com.example.globe.client.create.CreateWorldIntroClock;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 /** Focused regression checks for the create-world intro's frame-driven timing. */
 public final class CreateWorldIntroClockPolicyTest {
 
@@ -17,6 +21,8 @@ public final class CreateWorldIntroClockPolicyTest {
         aRenderThreadStallCannotConsumeTheFade();
         normalFramesProduceFadeInHoldAndFadeOut();
         theIntroPlaysOncePerScreenInstance();
+        preparingSurfaceHandsOffTheActiveFade();
+        preparingTextIsAbsentFromTheCreateWorldPath();
     }
 
     /**
@@ -42,6 +48,43 @@ public final class CreateWorldIntroClockPolicyTest {
                 "a new screen instance must start its own full fade from the beginning");
         assertTrue(CreateWorldIntroClock.active(),
                 "the fresh fade must be active for the new screen instance");
+    }
+
+    private static void preparingSurfaceHandsOffTheActiveFade() {
+        Object preparingScreen = new Object();
+        Object createWorldScreen = new Object();
+        long now = 70_000L;
+        CreateWorldIntroClock.beginForOwner(preparingScreen, now);
+        CreateWorldIntroClock.advance(now);
+        now = advanceBy(now, CreateWorldIntroClock.FADE_IN_MS / 2);
+        long visibleProgress = CreateWorldIntroClock.progressMs();
+
+        CreateWorldIntroClock.continueForOwner(createWorldScreen, now + 10L);
+        assertTrue(CreateWorldIntroClock.progressMs() == visibleProgress,
+                "the completed create screen must continue the preparing surface's visible fade");
+
+        advanceBy(now, CreateWorldIntroClock.TOTAL_MS);
+        CreateWorldIntroClock.continueForOwner(createWorldScreen, now + CreateWorldIntroClock.TOTAL_MS + 10L);
+        assertFalse(CreateWorldIntroClock.active(),
+                "reinitializing the completed screen must not replay a finished intro");
+    }
+
+    private static void preparingTextIsAbsentFromTheCreateWorldPath() {
+        try {
+            String createScreen = Files.readString(Path.of(
+                    "src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java"));
+            String preparingScreen = Files.readString(Path.of(
+                    "src/main/java/com/example/globe/client/create/CreateWorldPreparingScreen.java"));
+
+            assertFalse(createScreen.contains("createWorld.preparing"),
+                    "the create-world path must not install vanilla's visible preparation message");
+            assertTrue(createScreen.contains("new CreateWorldPreparingScreen()"),
+                    "the create-world path must install the Latitude title surface immediately");
+            assertTrue(preparingScreen.contains("CreateWorldIntroTitle.render"),
+                    "the preparing surface must draw the shared Latitude title");
+        } catch (IOException e) {
+            throw new AssertionError("unable to inspect the create-world intro sources", e);
+        }
     }
 
     private static void aRenderThreadStallCannotConsumeTheFade() {
