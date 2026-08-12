@@ -17,7 +17,7 @@ public abstract class LocateCommandMixin {
             CommandSourceStack source,
             ResourceOrTagArgument.Result<Biome> target,
             CallbackInfoReturnable<Integer> cir) {
-        if (LatitudeBiomeLocateService.beginIfLatitudeWetland(source, target)) {
+        if (LatitudeBiomeLocateService.beginIfLatitudeBiome(source, target)) {
             cir.setReturnValue(1);
         }
     }
