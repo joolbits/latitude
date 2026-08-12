@@ -130,7 +130,8 @@ shipped command, and confirm no Latitude capture keybind appears in the vanilla 
 
 ## Amendment protocol
 
-This policy changes only by owner directive. Any amendment adds a new evidence row in
-[`../binder/evidence-registry.md`](../binder/evidence-registry.md) with scope `release`, sets `supersedes`
-to the prior row, and updates this document in the same pass. Prior text is superseded, never rewritten —
-the history of what shipped under which rule stays readable.
+This policy changes only by owner directive. Any amendment records a new evidence entry, scope
+`release`, in the maintainer's notes directory (`~/CascadeProjects/Latitude-notes/1.5-26.2/`) —
+never in this tree — sets `supersedes` to the prior entry, and updates this document in the same
+pass. Prior text is superseded, never rewritten — the history of what shipped under which rule
+stays readable.
