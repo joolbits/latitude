@@ -5,6 +5,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
+import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeWorldgenScope;
 import com.example.globe.world.VillageTerrainSuitabilityPolicy;
 import net.minecraft.core.Holder;
@@ -32,10 +33,11 @@ import org.spongepowered.asm.mixin.injection.At;
 import java.util.function.Predicate;
 
 /**
- * Rejects invalid fresh village starts before vanilla can register them. Villages are rejected
- * strictly beyond 80 degrees absolute latitude, when their declared climate conflicts with the
- * canonical Latitude band, or when a bounded physical sample crosses cliff-scale terrain.
- * Compatible/neutral villages on suitable terrain and other structures are not affected.
+ * Gives every fresh structure start Latitude's final biome authority before vanilla registers it,
+ * so each structure's own declared biome predicate sees the same terrain that is generated.
+ * Villages are additionally rejected strictly beyond 80 degrees absolute latitude, when their
+ * declared climate conflicts with the canonical Latitude band, or when a bounded physical sample
+ * crosses cliff-scale terrain.
  */
 @Mixin(ChunkGenerator.class)
 public abstract class ExtremePolarVillageStartGuardMixin {
@@ -61,17 +63,26 @@ public abstract class ExtremePolarVillageStartGuardMixin {
             Predicate<Holder<Biome>> validBiome,
             Operation<StructureStart> original) {
         int blockZ = chunkPos.getMiddleBlockZ();
+        BiomeSource structureBiomeSource = biomeSource;
         if (LatitudeWorldgenScope.isActive()
                 && chunkGenerator instanceof NoiseBasedChunkGenerator noise
                 && GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
             try {
+                int radius = GlobeMod.borderRadiusForNoiseGenerator(noise);
+                Registry<Biome> biomeRegistry = registryAccess.lookupOrThrow(Registries.BIOME);
+                structureBiomeSource = LatitudeBiomeSource.forStructure(
+                        biomeSource,
+                        biomeRegistry,
+                        radius,
+                        noise,
+                        randomState,
+                        heightAccessor);
                 Registry<Structure> registry =
                         registryAccess.lookupOrThrow(Registries.STRUCTURE);
                 Identifier structureId = registry.getKey(structure);
                 boolean village = structureHolder.is(StructureTags.VILLAGE)
                         || (structureId != null && structureId.getPath().contains("village"));
                 if (structureId != null && village) {
-                    int radius = GlobeMod.borderRadiusForNoiseGenerator(noise);
                     int blockX = chunkPos.getMiddleBlockX();
                     double absDeg = Math.abs((double) blockZ) * 90.0 / Math.max(1, radius);
                     LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
@@ -99,8 +110,6 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                     if (!VillageTerrainSuitabilityPolicy.isSuitable(terrainHeights)) {
                         return StructureStart.INVALID_START;
                     }
-                    Registry<Biome> biomeRegistry =
-                            registryAccess.lookupOrThrow(Registries.BIOME);
                     Holder<Biome> baseBiome = biomeSource.getNoiseBiome(
                             Math.floorDiv(blockX, 4),
                             Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
@@ -136,7 +145,7 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                 levelKey,
                 registryAccess,
                 chunkGenerator,
-                biomeSource,
+                structureBiomeSource,
                 randomState,
                 templateManager,
                 seed,

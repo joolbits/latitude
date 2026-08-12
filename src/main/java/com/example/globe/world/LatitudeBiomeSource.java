@@ -62,6 +62,23 @@ public final class LatitudeBiomeSource extends BiomeSource {
                 borderRadiusBlocks, generator, noiseConfig, heightView, "MIXIN");
     }
 
+    /**
+     * Gives vanilla structure starts the same resolved surface-biome view that populates Latitude
+     * terrain. Structure starts must perform their legal-biome check before a start is saved.
+     */
+    public static LatitudeBiomeSource forStructure(BiomeSource original,
+                                                   Registry<Biome> biomeRegistry,
+                                                   int borderRadiusBlocks,
+                                                   NoiseBasedChunkGenerator generator,
+                                                   RandomState noiseConfig,
+                                                   LevelHeightAccessor heightView) {
+        BiomeSource base = original instanceof LatitudeBiomeSource latitudeSource
+                ? latitudeSource.original()
+                : original;
+        return new LatitudeBiomeSource(base, base.possibleBiomes(), biomeRegistry,
+                borderRadiusBlocks, generator, noiseConfig, heightView, "MIXIN");
+    }
+
     private LatitudeBiomeSource(BiomeSource original,
                                 Collection<Holder<Biome>> biomes,
                                 Registry<Biome> biomeRegistry,
