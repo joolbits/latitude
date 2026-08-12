@@ -3099,10 +3099,23 @@ public final class LatitudeBiomes {
             ThreadLocal.withInitial(PreviewHeightCache::new);
     private static final long UPLAND_ROLL_SALT = 0x1CEB0D03L;
     private static final long UPLAND_POOL_SALT = 0x1CEB0D04L;
+    /**
+     * The pool the land-cohesion gate paints from when a flat-family candidate lands on measured
+     * relief ({@code TerrainBiomeCohesionPolicy}, relief >= 6 or height >= sea+40). This runs AFTER
+     * {@code enforceLandBandPool}, so nothing here is re-checked against any route or band pool —
+     * every entry must independently deserve to appear on a temperate shoulder at ANY altitude,
+     * because the relief trigger has no height floor (maintainer's live find, 2026-08-10: meadow
+     * painted at Y=79 on an 8-block coastal shoulder — the gate working exactly as shipped).
+     *
+     * <p>windswept_hills/windswept_forest were removed 2026-08-10. Their ledger route moved to
+     * COLD_UPLAND that morning (maintainer ruling: the grey windswept tint belongs at 50+ degrees),
+     * but this array was a SECOND, independent placement mechanism that kept painting them into
+     * temperate through the cohesion gate — the route move fixed the lottery and missed this.
+     * grove is deliberately NOT a replacement (temperature -0.2: it snows at low Y, the exact
+     * defect class fixed the same day), and cherry_grove keeps its own contiguity authority.
+     */
     private static final String[] TEMPERATE_UPLAND_BIOMES = {
-            "minecraft:meadow",
-            "minecraft:windswept_hills",
-            "minecraft:windswept_forest"
+            "minecraft:meadow"
     };
     private static final double TEMPERATE_WARM_EDGE_SHOULDER_FRAC = 0.18;
     private static final int TEMPERATE_WARM_EDGE_SHOULDER_MIN_BLOCKS = 96;
@@ -6632,6 +6645,60 @@ public final class LatitudeBiomes {
         };
     }
 
+    /**
+     * Routes that can legally place in a band — the exact inverse of {@code landRouteEligible}'s
+     * switch, and the bridge that stops the ledger and the band pool from disagreeing.
+     *
+     * <p>{@link #allowedLandPool} used to be built from the {@code lat_*} tags alone. Selection,
+     * however, is ledger-driven under the provider-ticket policy, so any biome the ledger admitted
+     * but no tag listed was selected and then immediately rerolled away by
+     * {@code enforceLandBandPool} — silently unplaceable, with no error anywhere. Measured
+     * casualties: {@code biomesoplenty:muskeg} and {@code terralith:ice_marsh} (in NO lat_* tag at
+     * all, so never placeable in any world, before or after their 2026-08-10 re-route), and
+     * {@code clifftree:glacier_cliff} (present only in {@code lat_polar_secondary}, so rerolled
+     * across the subpolar half of its COLD_UPLAND range).
+     *
+     * <p>Unioning the ledger's own band roster in preserves exactly what the pool gate is for —
+     * it still rejects a tropical identity that leaked into the polar band — while making
+     * "the ledger admitted it" and "the pool accepts it" the same statement by construction.
+     */
+    private static List<BiomeRoute> landRoutesForBand(int bandIndex) {
+        return switch (bandIndex) {
+            case BAND_TROPICAL -> List.of(BiomeRoute.TROPICAL_HUMID_LOWLAND);
+            case BAND_SUBTROPICAL -> List.of(
+                    BiomeRoute.SUBTROPICAL_HUMID_LOWLAND,
+                    BiomeRoute.WARM_TRANSITION,
+                    BiomeRoute.WARM_UPLAND,
+                    BiomeRoute.ARID_LOWLAND,
+                    BiomeRoute.ARID_UPLAND);
+            case BAND_TEMPERATE -> List.of(
+                    BiomeRoute.TEMPERATE_LOWLAND,
+                    BiomeRoute.TEMPERATE_WETLAND,
+                    BiomeRoute.TEMPERATE_UPLAND);
+            case BAND_SUBPOLAR -> List.of(
+                    BiomeRoute.SUBPOLAR_LOWLAND,
+                    BiomeRoute.SUBPOLAR_WETLAND,
+                    BiomeRoute.COLD_UPLAND);
+            default -> List.of(
+                    BiomeRoute.POLAR_LOWLAND,
+                    BiomeRoute.COLD_UPLAND);
+        };
+    }
+
+    private static List<String> ledgerLandIdsForBand(int bandIndex) {
+        List<BiomeRoute> routes = landRoutesForBand(bandIndex);
+        List<String> ids = new ArrayList<>();
+        for (BiomeDescriptorLedger.Descriptor descriptor : BiomeDescriptorLedger.descriptors()) {
+            for (BiomeRoute route : routes) {
+                if (descriptor.routes().contains(route)) {
+                    ids.add(descriptor.biomeId());
+                    break;
+                }
+            }
+        }
+        return ids;
+    }
+
     private static List<String> allowedExtraBiomeIdsForBand(int bandIndex) {
         return switch (bandIndex) {
             case BAND_TROPICAL -> List.of(
@@ -6677,6 +6744,15 @@ public final class LatitudeBiomes {
                 // Optional biome not present in current registry/datapack set.
             }
         }
+        // Ledger-admitted identities for this band. See landRoutesForBand: without this the pool
+        // gate rerolls away anything the ledger admitted but no lat_* tag happens to list.
+        for (String id : ledgerLandIdsForBand(bandIndex)) {
+            try {
+                addAllowedEntry(allowed, seen, biome(biomes, id));
+            } catch (Throwable ignored) {
+                // Optional biome not present in current registry/datapack set.
+            }
+        }
         allowed.sort(Comparator.comparing(LatitudeBiomes::biomeId));
         List<Holder<Biome>> immutable = List.copyOf(allowed);
         synchronized (ALLOWED_LAND_POOL_REGISTRY_CACHE) {
@@ -6703,6 +6779,13 @@ public final class LatitudeBiomes {
             }
         }
         for (String id : allowedExtraBiomeIdsForBand(bandIndex)) {
+            Holder<Biome> entry = entryById(biomes, id);
+            if (entry != null) {
+                addAllowedEntry(allowed, seen, entry);
+            }
+        }
+        // Ledger-admitted identities for this band — see the registry twin and landRoutesForBand.
+        for (String id : ledgerLandIdsForBand(bandIndex)) {
             Holder<Biome> entry = entryById(biomes, id);
             if (entry != null) {
                 addAllowedEntry(allowed, seen, entry);
@@ -6759,6 +6842,28 @@ public final class LatitudeBiomes {
         return out;
     }
 
+    /**
+     * The pool a rejected candidate is REPLACED from — deliberately narrower than the pool used to
+     * ACCEPT a candidate.
+     *
+     * <p>Acceptance and substitution are not the same question. Accepting asks "was this biome
+     * legitimately chosen for this column?", and the answer must include everything the ledger
+     * admits, or a correctly-picked biome gets thrown away (that bug made muskeg and ice_marsh
+     * unplaceable in every world). Substituting asks "may I drop this biome here sight unseen?",
+     * and route-conditional identities must answer no, because the conditions their route depends
+     * on were never evaluated for this column.
+     *
+     * <p>Wetlands are the sharp case. {@code TEMPERATE_WETLAND} and {@code SUBPOLAR_WETLAND} are
+     * gated on {@code evaluateSwamp}, which requires {@code cont > -0.20}. Substituting past that
+     * gate put {@code biomesoplenty:muskeg} on a {@code cont=-0.611} sea-level coastal column
+     * (maintainer, 2026-08-10): at temperature 0.0 every bit of its water froze, producing a flat
+     * expanse of ice where a bog should be. {@code pickFromAllowedLandPool} performs a raw pick and
+     * re-checks nothing, so the exclusion has to happen here.
+     *
+     * <p>Biomes named in {@link #allowedExtraBiomeIdsForBand} are kept: those are deliberate
+     * per-band seeds (vanilla swamp in the tropics, mangrove in the subtropics) whose presence in
+     * the substitution pool is an existing intentional decision, not a leak.
+     */
     private static List<Holder<Biome>> rerollLandPoolForBand(List<Holder<Biome>> allowedPool,
                                                              int bandIndex,
                                                              boolean mountainLike) {
@@ -6769,7 +6874,32 @@ public final class LatitudeBiomes {
                 out = subtropicalNoForest;
             }
         }
+        List<Holder<Biome>> withoutConditionalWetland = removeConditionalWetlandFamily(out, bandIndex);
+        if (!withoutConditionalWetland.isEmpty()) {
+            out = withoutConditionalWetland;
+        }
         return out;
+    }
+
+    /**
+     * Drops ledger wetland-terrain identities from a substitution pool, keeping only the explicit
+     * per-band seeds. See {@link #rerollLandPoolForBand}.
+     */
+    private static List<Holder<Biome>> removeConditionalWetlandFamily(List<Holder<Biome>> pool,
+                                                                      int bandIndex) {
+        List<String> deliberateSeeds = allowedExtraBiomeIdsForBand(bandIndex);
+        List<Holder<Biome>> filtered = new ArrayList<>(pool.size());
+        for (Holder<Biome> entry : pool) {
+            String id = biomeId(entry);
+            BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
+            boolean conditionalWetland = descriptor != null
+                    && descriptor.terrain() == BiomeDescriptorLedger.Terrain.WETLAND
+                    && !deliberateSeeds.contains(id);
+            if (!conditionalWetland) {
+                filtered.add(entry);
+            }
+        }
+        return filtered;
     }
 
     private static int landPoolVariantKey(int bandIndex, boolean mountainLike) {

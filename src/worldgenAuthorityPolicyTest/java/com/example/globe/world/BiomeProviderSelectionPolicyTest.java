@@ -36,6 +36,9 @@ final class BiomeProviderSelectionPolicyTest {
         polarIceSpikeAccentStaysAMinorityInEveryPoolSize();
         polarExtremeCapCatchesNameAlikeModdedBiomesConsistently();
         cliffTreeLandAndOceanAreActuallyReachable();
+        everyLedgerLandRouteSurvivesTheBandPoolGate();
+        wetlandsAreAcceptedButNeverSubstitutedIn();
+        cohesionGatePoolAgreesWithTheLedger();
         vanillaCoverageIsCompleteAndWorldSizeSafe();
         surfaceWaterCoverageIsCompleteAndWorldSizeSafe();
         sizeAwareVanillaRepresentationIsClosedAndBirthLocked();
@@ -1018,6 +1021,165 @@ final class BiomeProviderSelectionPolicyTest {
         assertTrue(oceanTag.contains("\"required\": false"),
                 "optional pack biomes must be tagged required:false so a vanilla-only install does "
                         + "not fail datapack load");
+    }
+
+    /**
+     * The band pool gate must accept everything the ledger admits, or a biome is selected and then
+     * silently rerolled away with no error anywhere.
+     *
+     * <p>This is the defect the maintainer hit live on two separate worlds (2026-08-10): she could
+     * not locate {@code biomesoplenty:muskeg} or {@code clifftree:glacier_cliff}.
+     * {@code enforceLandBandPool} validated the final pick against {@code allowedLandPool}, which
+     * was built from the {@code lat_*} tags and a small hardcoded extras list — never from the
+     * ledger. Selection under the provider-ticket policy is ledger-driven, so the two authorities
+     * disagreed. muskeg and {@code terralith:ice_marsh} appear in NO {@code lat_*} tag at all and
+     * were therefore unplaceable in every world ever generated, before AND after their cold-wetland
+     * re-route; glacier_cliff sat only in {@code lat_polar_secondary} and so was rerolled across
+     * the whole subpolar half of its COLD_UPLAND range.
+     *
+     * <p>Asserted structurally rather than by listing ids, so a future ledger addition cannot
+     * reintroduce the same silent hole by being forgotten in a tag file.
+     */
+    private static void everyLedgerLandRouteSurvivesTheBandPoolGate() throws Exception {
+        String source = read("src/main/java/com/example/globe/world/LatitudeBiomes.java");
+        assertTrue(source.contains("ledgerLandIdsForBand(bandIndex)"),
+                "allowedLandPool must union in the ledger's own band roster — building the gate "
+                        + "from lat_* tags alone lets ledger-admitted biomes be selected and then "
+                        + "immediately rerolled away, with no error raised anywhere");
+        assertEquals(2, occurrences(source, "ledgerLandIdsForBand(bandIndex)"),
+                "BOTH allowedLandPool overloads (registry-source and collection-source) must union "
+                        + "the ledger roster; fixing only one leaves the hole open on that path");
+
+        // landRoutesForBand must stay the exact inverse of landRouteEligible's switch. If a route
+        // is added to the enum and omitted here, its biomes silently stop being placeable.
+        String routesForBand = method(source, "landRoutesForBand(int bandIndex) {");
+        for (BiomeRoute route : BiomeRoute.values()) {
+            if (route == BiomeRoute.CAVE_SHALLOW || route == BiomeRoute.CAVE_DEEP) {
+                assertFalse(routesForBand.contains(route.name()),
+                        "cave routes must never enter a LAND band pool: " + route);
+                continue;
+            }
+            assertTrue(routesForBand.contains(route.name()),
+                    "every non-cave route must map to a band in landRoutesForBand, or biomes owning "
+                            + "it become unplaceable: " + route);
+        }
+
+        // The three measured casualties, named so the specific regression cannot return quietly.
+        for (String id : new String[]{
+                "biomesoplenty:muskeg", "terralith:ice_marsh", "clifftree:glacier_cliff"}) {
+            BiomeDescriptorLedger.Descriptor d = BiomeDescriptorLedger.descriptor(id);
+            assertTrue(d != null && !d.routes().isEmpty(),
+                    "regression anchor must still hold a ledger route: " + id);
+        }
+    }
+
+
+    /**
+     * Acceptance and substitution must not use the same pool.
+     *
+     * <p>Maintainer, live 2026-08-10: teleporting to muskeg landed on a flat expanse of ice.
+     * {@code /latdev explain} showed {@code cont=-0.611} at a sea-level coastal column — far below
+     * the {@code cont > -0.20} that {@code evaluateSwamp} demands, so the wetland route was never
+     * eligible there. The cause was a regression from the band-pool fix earlier the same day:
+     * unioning the ledger roster into {@code allowedLandPool} correctly stopped muskeg being
+     * rerolled AWAY, but also made it available to be rerolled IN, and
+     * {@code pickFromAllowedLandPool} performs a raw pick that re-checks no route condition. At
+     * temperature 0.0 every bit of the bog's water then froze.
+     *
+     * <p>So the acceptance pool must keep wetlands and the substitution pool must not. Asserting
+     * both halves, because dropping either reopens a different bug: drop the union and muskeg is
+     * unplaceable again, drop this filter and it lands on frozen ocean.
+     */
+    private static void wetlandsAreAcceptedButNeverSubstitutedIn() throws Exception {
+        String source = read("src/main/java/com/example/globe/world/LatitudeBiomes.java");
+
+        // Acceptance keeps them (the earlier fix).
+        assertTrue(source.contains("ledgerLandIdsForBand(bandIndex)"),
+                "the acceptance pool must still union the ledger roster, or a legitimately picked "
+                        + "wetland is thrown away and becomes unplaceable again");
+
+        // Substitution drops them.
+        String reroll = method(source,
+                "rerollLandPoolForBand(List<Holder<Biome>> allowedPool,");
+        assertTrue(reroll.contains("removeConditionalWetlandFamily"),
+                "the substitution pool must drop route-conditional wetlands — pickFromAllowedLandPool "
+                        + "re-checks nothing, so anything left here can be dropped onto a column "
+                        + "whose route conditions were never evaluated");
+
+        String filter = method(source, "removeConditionalWetlandFamily(List<Holder<Biome>> pool,");
+        assertTrue(filter.contains("Terrain.WETLAND"),
+                "the filter keys on ledger wetland terrain, not on a hardcoded id list, so a future "
+                        + "wetland descriptor is covered automatically");
+        // Assert the seed list is CONSULTED, not merely fetched. A contains() on the method name
+        // passed with the check gutted to `&& true`, because the variable stayed assigned — the
+        // third time this exact weak-assertion shape has slipped through in this campaign.
+        assertTrue(filter.contains("!deliberateSeeds.contains(id)"),
+                "deliberate per-band seeds (vanilla swamp in the tropics, mangrove in the "
+                        + "subtropics) must actually be consulted and exempted, not just looked up — "
+                        + "those are an existing intentional decision this filter must not undo");
+
+        // The gate the substitution was bypassing must still be the real one.
+        assertTrue(source.contains("cont > -0.20"),
+                "evaluateSwamp's continentalness floor is the condition this protects; if it moves, "
+                        + "this test's premise needs rechecking");
+
+        // Both wetland routes must actually be gated on the swamp evaluation.
+        String eligible = source.replaceAll("\\s+", " ");
+        assertTrue(eligible.contains("case TEMPERATE_WETLAND -> band == BAND_TEMPERATE && !mountain && evaluateSwamp("),
+                "temperate wetland stays swamp-gated");
+        assertTrue(eligible.contains("case SUBPOLAR_WETLAND -> band == BAND_SUBPOLAR && !mountain && evaluateSwamp("),
+                "subpolar wetland stays swamp-gated");
+    }
+
+
+    /**
+     * The land-cohesion gate's paint pool must agree with the ledger about which band its members
+     * belong to.
+     *
+     * <p>Found live (maintainer, 2026-08-10): meadow painted at Y=79 with mountainNoiseLike=false.
+     * Root cause chain, proven from her own /latdev explain values: robustDelta=8 >= the gate's
+     * relief threshold of 6, so TerrainBiomeCohesionPolicy forced the upland family AFTER
+     * enforceLandBandPool, painting from the hardcoded TEMPERATE_UPLAND_BIOMES array. That array
+     * still contained windswept_hills/windswept_forest after their ledger route moved to
+     * COLD_UPLAND — a second, independent placement mechanism the route move missed, quietly
+     * reintroducing windswept into temperate through the cohesion gate.
+     *
+     * <p>The invariant, asserted structurally: every id in the gate array must hold a ledger route
+     * that reaches the temperate band, so the array cannot silently disagree with a future routing
+     * decision the way it disagreed with the windswept one.
+     */
+    private static void cohesionGatePoolAgreesWithTheLedger() throws Exception {
+        String source = read("src/main/java/com/example/globe/world/LatitudeBiomes.java");
+        int start = source.indexOf("private static final String[] TEMPERATE_UPLAND_BIOMES = {");
+        assertTrue(start >= 0, "the cohesion-gate paint pool must exist");
+        int end = source.indexOf("};", start);
+        String arrayBlock = source.substring(start, end);
+
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\"([a-z0-9_.-]+:[a-z0-9_./-]+)\"").matcher(arrayBlock);
+        while (m.find()) {
+            ids.add(m.group(1));
+        }
+        assertTrue(!ids.isEmpty(), "the gate pool must not be empty — an empty pool would make the "
+                + "cohesion gate a no-op and quietly revert the sunflower-plains-on-a-ridge fix");
+
+        java.util.Set<BiomeRoute> temperateRoutes = java.util.Set.of(
+                BiomeRoute.TEMPERATE_LOWLAND, BiomeRoute.TEMPERATE_WETLAND, BiomeRoute.TEMPERATE_UPLAND);
+        for (String id : ids) {
+            BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
+            assertTrue(descriptor != null,
+                    "every cohesion-gate pool member must be ledger-admitted: " + id);
+            boolean reachesTemperate = descriptor.routes().stream().anyMatch(temperateRoutes::contains);
+            assertTrue(reachesTemperate,
+                    "cohesion-gate pool member must hold a temperate-band ledger route — the gate "
+                            + "paints AFTER enforceLandBandPool with no re-check, so an entry routed "
+                            + "elsewhere (windswept -> COLD_UPLAND) is smuggled into temperate "
+                            + "through the back door: " + id);
+        }
+        assertFalse(arrayBlock.contains("windswept"),
+                "windswept must not return to the temperate cohesion-gate pool (maintainer ruling, "
+                        + "2026-08-10: the windswept family belongs at 50+ degrees)");
     }
 
     private static String read(String path) throws Exception {
