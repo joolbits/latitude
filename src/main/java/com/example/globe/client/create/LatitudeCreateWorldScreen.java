@@ -13,7 +13,6 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
-import net.minecraft.client.gui.screens.GenericMessageScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.worldselection.DataPackReloadCookie;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationGameRulesScreen;
@@ -258,10 +257,16 @@ public class LatitudeCreateWorldScreen extends Screen {
     // appearance are shared, frame-driven, and immune to loading stalls -- see those classes.
     private boolean introSkipped;
     private boolean introClockClaimed;
+    private final boolean continueIntroFromPreparing;
     private Button createWorldBtn;
     private Button cancelBtn;
 
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
+        this(onClose, parent, holder, false);
+    }
+
+    private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent,
+                                      WorldCreationContext holder, boolean continueIntroFromPreparing) {
         super(Component.literal("New World"));
         LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.<init> parent={} holder={}",
                 parent == null ? "null" : parent.getClass().getName(),
@@ -269,6 +274,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.onClose = onClose;
         this.parent = parent;
         this.holder = holder;
+        this.continueIntroFromPreparing = continueIntroFromPreparing;
         this.gameRules = new GameRules(holder.dataConfiguration().enabledFeatures());
     }
 
@@ -428,14 +434,14 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     /**
-     * Phase 5A: Load datapacks (vanilla "Preparing..." screen), then open the bespoke screen.
+     * Phase 5A: Load datapacks behind the Latitude title, then open the bespoke screen.
      * Replicates CreateWorldScreen.show() lines 166-196.
      */
     public static void open(Minecraft client, Runnable onClose, @Nullable Screen parent) {
         LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.open parent={}",
                 parent == null ? "null" : parent.getClass().getName());
-        // Show "Preparing..." message (vanilla pattern)
-        client.setScreenAndShow(new GenericMessageScreen(Component.translatable("createWorld.preparing")));
+        CreateWorldPreparingScreen preparingScreen = new CreateWorldPreparingScreen();
+        client.setScreenAndShow(preparingScreen);
 
         try {
             // Build datapack configuration (replicates createServerConfig, lines 511-513)
@@ -457,7 +463,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                     new WorldCreationContext(settings.worldGenSettings(), dynamicRegistries, dataPackContents, settings.dataConfiguration());
 
             // Load datapacks asynchronously so the UI stays responsive while the
-            // preparing screen is visible.
+            // title surface is visible.
             CompletableFuture<WorldCreationContext> future = WorldLoader.load(
                     serverConfig,
                     context -> new WorldLoader.DataLoadOutput<>(
@@ -477,21 +483,21 @@ public class LatitudeCreateWorldScreen extends Screen {
                     if (throwable != null) {
                         LOGGER.error("Failed to load datapacks for Latitude create-world screen", throwable);
                         onClose.run();
-                        if (client.gui.screen() == null || client.gui.screen() instanceof GenericMessageScreen) {
+                        if (client.gui.screen() == null || client.gui.screen() == preparingScreen) {
                             client.gui.setScreen(parent);
                         }
                         return;
                     }
 
                     // Open the bespoke screen with the loaded holder.
-                    client.gui.setScreen(new LatitudeCreateWorldScreen(onClose, parent, loadedHolder));
+                    client.gui.setScreen(new LatitudeCreateWorldScreen(onClose, parent, loadedHolder, true));
                 });
             });
         } catch (Exception e) {
             LOGGER.error("Failed to load datapacks for Latitude create-world screen", e);
             // 5A error path: return to caller screen, never show bespoke screen
             onClose.run();
-            if (client.gui.screen() == null || client.gui.screen() instanceof GenericMessageScreen) {
+            if (client.gui.screen() == null || client.gui.screen() == preparingScreen) {
                 client.gui.setScreen(parent);
             }
         }
@@ -527,7 +533,11 @@ public class LatitudeCreateWorldScreen extends Screen {
         // NEW screen instance always starts a fresh fade instead of inheriting a stale one.
         if (!introClockClaimed) {
             introClockClaimed = true;
-            CreateWorldIntroClock.beginForOwner(this, Util.getMillis());
+            if (continueIntroFromPreparing) {
+                CreateWorldIntroClock.continueForOwner(this, Util.getMillis());
+            } else {
+                CreateWorldIntroClock.beginForOwner(this, Util.getMillis());
+            }
         }
         int headerGap = scaledUi(6);
         int bottomMargin = scaledUi(28);
