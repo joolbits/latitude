@@ -426,8 +426,11 @@ public final class VillageLatitudePolicyTest {
         String vegetation = normalize(read(
                 "src/main/java/com/example/globe/mixin/ExtremePolarVegetationGuardMixin.java"));
         assertTrue(
-                vegetation.contains("LatitudeBiomes.isBlockBeyondPolarFoliageLimit(origin.getZ(), GlobeMod.BORDER_RADIUS)"),
-                "tree foliage uses its dedicated strict-80 predicate");
+                vegetation.contains("LatitudeBiomes.isBlockBeyondPolarWoodyLimit(origin.getZ(), GlobeMod.BORDER_RADIUS)"),
+                "trees use their own dedicated 72-degree tree-line predicate — the point of this"
+                        + " assertion is that vegetation NEVER borrows the village limit; the tier it"
+                        + " does use moved from strict-80 to the tree line on 2026-08-10 when woody"
+                        + " content and ground vegetation were split");
         assertTrue(
                 !vegetation.contains("isBlockBeyondPolarVillageLimit"),
                 "village limit cannot alter vegetation");
