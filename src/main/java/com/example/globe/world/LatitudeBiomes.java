@@ -7538,6 +7538,20 @@ public final class LatitudeBiomes {
     }
 
     /**
+     * Tree line. Woody and tree-derived content stops at 72 degrees — the outer edge of Earth's
+     * real Arctic treeline — while ordinary ground vegetation continues to the strict-80 foliage
+     * limit above. See {@link PolarFoliagePolicy#MAX_WOODY_ABSOLUTE_LATITUDE_DEGREES}.
+     */
+    public static boolean isBlockBeyondPolarWoodyLimit(
+            int blockZ,
+            int borderRadiusFallback) {
+        return PolarFoliagePolicy.isBeyondWoodyLimit(
+                blockZ,
+                getActiveRadiusBlocks(),
+                borderRadiusFallback);
+    }
+
+    /**
      * Village-only polar limit. Origins at exactly 80 degrees remain allowed; only origins
      * strictly beyond 80 degrees are vetoed. This remains separate from the 74.5-degree biome
      * ecology cap; vegetation uses its own independent strict-80 policy.
