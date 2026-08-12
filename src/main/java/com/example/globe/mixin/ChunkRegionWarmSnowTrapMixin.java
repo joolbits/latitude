@@ -73,7 +73,11 @@ public abstract class ChunkRegionWarmSnowTrapMixin {
         // and ProtoChunkSnowBlockGuardMixin or this layer strips what they place.
         if (com.example.globe.world.WindsweptSnowLinePolicy.appliesTo(
                 biome.unwrapKey().map(key -> key.identifier().toString()).orElse(null),
-                pos.getY(), region.getSeaLevel())) {
+                pos.getY(), region.getSeaLevel(),
+                com.example.globe.world.WindsweptSnowLinePolicy.absoluteLatitudeDegrees(
+                        pos.getZ(),
+                        com.example.globe.world.LatitudeBiomes.getActiveRadiusBlocks(),
+                        com.example.globe.GlobeMod.BORDER_RADIUS))) {
             return state;
         }
 
