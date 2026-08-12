@@ -19,6 +19,7 @@ public final class PolarPresentationPolicyTest {
         outlineIsAnExplicitOnePixelRing();
         staticIntegrationProofsHold();
         EwPresentationPolicyTest.runAll();
+        ZoneTitlePolicyTest.runAll();
         System.out.println("POLAR_PRESENTATION_POLICY_TEST_PASS");
     }
 

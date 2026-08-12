@@ -17,17 +17,12 @@ public final class GlobeWarningOverlay {
     private static ClientLevel lastWarningLevel;
     private static long lastWarningWorldTime = Long.MIN_VALUE;
     private static String lastZoneKey;
-    // Border buffer (Peetsa 2026-08-10 ask): the STICKY climate-band segment last announced (see
-    // resolveZoneSegmentHysteretic). -1 = unseeded (a fresh world join resolves the raw segment with no
-    // buffer). canonicalZoneKey in render() is derived from this, not from a raw per-sample lookup --
-    // see there for why the raw lookup re-fired the big title on every sample while wobbling on a
-    // boundary (the reported case: walking back and forth between 49.9 and 50.0 deg).
-    private static int lastZoneSegment = -1;
-    /** Degrees of latitude a reading must move PAST a climate-band boundary before the announced zone
-     *  actually flips. Applies uniformly to all four boundaries (23.5/35/50/66.5) by construction --
-     *  {@link #resolveZoneSegmentHysteretic} only ever compares against the ONE boundary adjacent to the
-     *  last-announced segment. */
-    private static final double ZONE_BORDER_BUFFER_DEG = 2.0;
+    /** Absolute latitude at which the last zone-entry notification fired; NaN = none this session. */
+    private static double lastZoneAnnounceLatDeg = Double.NaN;
+    /** World time of the last zone-entry notification; used only to rate-limit repeats. */
+    private static long lastZoneAnnounceWorldTime = Long.MIN_VALUE;
+    // Zone identity and the zone-entry notification rate limit both live in ZoneTitlePolicy, which
+    // is pure and directly testable. This class only wires it to the client.
 
     private static final String POLE_WARN_1_TEXT =
             "The air is turning bitterly cold. You should consider turning back.";
@@ -186,31 +181,39 @@ public final class GlobeWarningOverlay {
 
             if (eval.surfaceOk()
                     && (lastZoneUpdateWorldTime == Long.MIN_VALUE || movedFar || (worldTime % 10L) == 0L)) {
+                // Captured BEFORE the sample is overwritten: a teleport must never be rate-limited
+                // as if it were someone loitering on a boundary.
+                int previousSampleZ = lastZoneUpdateZ;
                 lastZoneUpdateWorldTime = worldTime;
                 lastZoneUpdateX = px;
                 lastZoneUpdateZ = pz;
 
                 var border = client.level.getWorldBorder();
-                // Border buffer: resolve the announced climate segment STICKILY instead of with a raw
-                // per-sample lookup. The raw lookup (canonicalTitleZoneKey's own logic) flips the moment
-                // the instantaneous band differs from the last-announced one -- including a couple of
-                // blocks of ordinary movement jitter across an exact boundary -- and every such flip
-                // unconditionally re-fired the big title below, with no cooldown of its own (unlike the
-                // hemisphere path just below, which already has a dead zone + teleport guard + 15s
-                // cooldown). resolveZoneSegmentHysteretic holds the last segment until the reading has
-                // moved ZONE_BORDER_BUFFER_DEG (2 deg) past the boundary, so a wobble confined to that
-                // buffer never re-announces.
+                // Zone identity is the RAW band for this latitude, so the reported zone and the
+                // displayed title change at the exact boundary and always agree with the world.
+                // Repeat NOTIFICATIONS while lingering on that boundary are rate-limited separately,
+                // below -- suppressing the announcement must never mean misreporting the zone.
                 double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, client.player.getZ());
-                lastZoneSegment = resolveZoneSegmentHysteretic(absLatDeg, lastZoneSegment);
-                String canonicalZoneKey = LatitudeBands.Band.values()[lastZoneSegment].name();
+                String canonicalZoneKey = LatitudeBands.Band.values()[ZoneTitlePolicy.segmentFor(absLatDeg)].name();
                 if (lastZoneKey == null || !lastZoneKey.equals(canonicalZoneKey)) {
+                    boolean firstZoneOfSession = lastZoneKey == null;
                     lastZoneKey = canonicalZoneKey;
-                    if (LatitudeConfig.zoneEnterTitleEnabled) {
+                    boolean teleported = previousSampleZ != Integer.MIN_VALUE
+                            && ZoneTitlePolicy.isTeleportStep(previousSampleZ, pz);
+                    if (LatitudeConfig.zoneEnterTitleEnabled
+                            && ZoneTitlePolicy.shouldAnnounce(absLatDeg, worldTime,
+                                    lastZoneAnnounceLatDeg, lastZoneAnnounceWorldTime,
+                                    firstZoneOfSession, teleported)) {
+                        lastZoneAnnounceLatDeg = absLatDeg;
+                        lastZoneAnnounceWorldTime = worldTime;
                         String titleText = buildZoneEnterTitle(client, canonicalZoneKey);
                         int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
                         double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
                         logEntryTitle("zone_trigger", titleText, client, client.player.getZ(), '\0', 0.0);
                         ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
+                    } else {
+                        logEntryTitle("zone_reannounce_suppressed", canonicalZoneKey,
+                                client, client.player.getZ(), '\0', 0.0);
                     }
                 }
 
@@ -350,7 +353,8 @@ public final class GlobeWarningOverlay {
     private static void resetWorldEntryState(long worldTime) {
         debugStartWorldTime = worldTime;
         lastZoneKey = null;
-        lastZoneSegment = -1;
+        lastZoneAnnounceLatDeg = Double.NaN;
+        lastZoneAnnounceWorldTime = Long.MIN_VALUE;
         lastZoneUpdateWorldTime = Long.MIN_VALUE;
         lastZoneUpdateX = Integer.MIN_VALUE;
         lastZoneUpdateZ = Integer.MIN_VALUE;
@@ -377,6 +381,9 @@ public final class GlobeWarningOverlay {
         }
         if (lastZoneUpdateWorldTime != Long.MIN_VALUE) {
             lastZoneUpdateWorldTime += deltaTicks;
+        }
+        if (lastZoneAnnounceWorldTime != Long.MIN_VALUE) {
+            lastZoneAnnounceWorldTime += deltaTicks;
         }
         if (lastWarningDebugWorldTime != Long.MIN_VALUE) {
             lastWarningDebugWorldTime += deltaTicks;
@@ -574,52 +581,6 @@ public final class GlobeWarningOverlay {
         double absDeg = Math.abs(com.example.globe.util.LatitudeMath.degreesFromZ(border, z));
         LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
         return band.name();
-    }
-
-    /**
-     * Which of the five climate-band segments {@code absLatDeg} falls in, with NO buffer: 0 = deep
-     * tropical, 1 = subtropical, 2 = temperate, 3 = subpolar, 4 = polar. Segment index order matches
-     * {@code LatitudeBands.Band}'s declared enum order, so a caller can index {@code Band.values()}
-     * directly. A pure raw lookup, mirrors {@code LatitudeBands.fromAbsoluteLatitudeDeg}.
-     */
-    private static int rawZoneSegment(double absLatDeg) {
-        LatitudeBands.Band[] bands = LatitudeBands.Band.values();
-        int segment = 0; // TROPICAL, the band with lowDeg 0 -- never itself a boundary to test against
-        for (int i = 1; i < bands.length; i++) {
-            if (absLatDeg >= bands[i].lowDeg()) {
-                segment = i;
-            }
-        }
-        return segment;
-    }
-
-    /**
-     * Hysteretic (sticky) segment resolution -- the border buffer itself (Peetsa, 2026-08-10 ask). Once
-     * a segment has been announced ({@code lastSegment >= 0}), the resolved segment only changes once
-     * {@code absLatDeg} has moved at least {@link #ZONE_BORDER_BUFFER_DEG} beyond the boundary between
-     * {@code lastSegment} and the raw segment, so oscillating within the buffer around any one boundary
-     * keeps returning {@code lastSegment} instead of flipping on every sample. {@code lastSegment < 0}
-     * (unseeded / a fresh world join) always resolves the raw segment with no buffer -- the very first
-     * announcement is exact, never delayed.
-     *
-     * <p>A jump of more than one segment (e.g. a teleport clearing an entire band in one sample) is
-     * accepted immediately: there is no single boundary being straddled, so no buffer applies.
-     */
-    private static int resolveZoneSegmentHysteretic(double absLatDeg, int lastSegment) {
-        int raw = rawZoneSegment(absLatDeg);
-        if (lastSegment < 0 || raw == lastSegment) {
-            return raw;
-        }
-        if (Math.abs(raw - lastSegment) != 1) {
-            return raw;
-        }
-        LatitudeBands.Band[] bands = LatitudeBands.Band.values();
-        boolean movingOutward = raw > lastSegment;
-        double boundary = movingOutward ? bands[lastSegment].highDeg() : bands[lastSegment].lowDeg();
-        boolean pastBuffer = movingOutward
-                ? absLatDeg >= boundary + ZONE_BORDER_BUFFER_DEG
-                : absLatDeg <= boundary - ZONE_BORDER_BUFFER_DEG;
-        return pastBuffer ? raw : lastSegment;
     }
 
     private static double clamp(double v, double lo, double hi) {
