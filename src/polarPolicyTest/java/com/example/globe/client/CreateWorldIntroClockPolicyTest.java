@@ -22,7 +22,7 @@ public final class CreateWorldIntroClockPolicyTest {
         normalFramesProduceFadeInHoldAndFadeOut();
         theIntroPlaysOncePerScreenInstance();
         preparingSurfaceHandsOffTheActiveFade();
-        preparingTextIsAbsentFromTheCreateWorldPath();
+        preparingTextIsReplacedBeforeTheLatitudeScreenExists();
     }
 
     /**
@@ -69,19 +69,30 @@ public final class CreateWorldIntroClockPolicyTest {
                 "reinitializing the completed screen must not replay a finished intro");
     }
 
-    private static void preparingTextIsAbsentFromTheCreateWorldPath() {
+    private static void preparingTextIsReplacedBeforeTheLatitudeScreenExists() {
         try {
             String createScreen = Files.readString(Path.of(
                     "src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java"));
             String preparingScreen = Files.readString(Path.of(
                     "src/main/java/com/example/globe/client/create/CreateWorldPreparingScreen.java"));
+            String genericMessageMixin = Files.readString(Path.of(
+                    "src/main/java/com/example/globe/mixin/client/GenericMessageScreenLatitudeOverlayMixin.java"));
+            String mixinConfig = Files.readString(Path.of("src/main/resources/globe.mixins.json"));
 
             assertFalse(createScreen.contains("createWorld.preparing"),
-                    "the create-world path must not install vanilla's visible preparation message");
+                    "the completed Latitude screen must not install vanilla's preparation message");
             assertTrue(createScreen.contains("new CreateWorldPreparingScreen()"),
-                    "the create-world path must install the Latitude title surface immediately");
+                    "the direct Latitude loading path must install the title surface immediately");
+            assertTrue(createScreen.contains("recreatedPresetId, true"),
+                    "the completed screen must continue the earlier vanilla loading fade");
             assertTrue(preparingScreen.contains("CreateWorldIntroTitle.render"),
-                    "the preparing surface must draw the shared Latitude title");
+                    "the direct loading surface must draw the shared Latitude title");
+            assertTrue(mixinConfig.contains("client.GenericMessageScreenLatitudeOverlayMixin"),
+                    "the early vanilla preparation screen must load the Latitude overlay hook");
+            assertTrue(genericMessageMixin.contains("textWidget.visible = false"),
+                    "the early vanilla preparation text must be hidden before its first render");
+            assertTrue(genericMessageMixin.contains("CreateWorldIntroTitle.render"),
+                    "the early vanilla preparation screen must draw the shared Latitude title");
         } catch (IOException e) {
             throw new AssertionError("unable to inspect the create-world intro sources", e);
         }
