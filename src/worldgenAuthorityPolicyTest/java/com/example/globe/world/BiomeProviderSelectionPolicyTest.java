@@ -200,7 +200,7 @@ final class BiomeProviderSelectionPolicyTest {
     }
 
     /**
-     * Uses vanilla-only, vanilla+BOP, vanilla+Terralith, and the combined supported stack.
+     * Uses every combination of the three supported optional providers, including CliffTree.
      * The four-sigma bounds are binomial bounds declared before any world/map sample is run.
      */
     private static void everySupportedStackGetsEqualRouteTickets() {
@@ -208,7 +208,11 @@ final class BiomeProviderSelectionPolicyTest {
                 Set.<String>of(),
                 Set.of("biomesoplenty"),
                 Set.of("terralith"),
-                Set.of("biomesoplenty", "terralith"))) {
+                Set.of("clifftree"),
+                Set.of("biomesoplenty", "terralith"),
+                Set.of("biomesoplenty", "clifftree"),
+                Set.of("terralith", "clifftree"),
+                Set.of("biomesoplenty", "terralith", "clifftree"))) {
             BiomeSelectionProfile profile = BiomeSelectionProfile.capture(registryFor(stack));
             for (BiomeRoute route : BiomeRoute.values()) {
                 List<String> ids = profile.entries(route);
@@ -956,6 +960,15 @@ final class BiomeProviderSelectionPolicyTest {
                             + " actual " + descriptor.routes());
         }
 
+        BiomeSelectionProfile cliffTreeProfile =
+                BiomeSelectionProfile.capture(registryFor(Set.of("clifftree")));
+        assertTrue(cliffTreeProfile.providers().contains("clifftree"),
+                "an installed CliffTree registry must activate its provider ticket");
+        for (String[] row : expected) {
+            assertTrue(cliffTreeProfile.contains(BiomeRoute.valueOf(row[2]), row[0]),
+                    "CliffTree land biome must enter its active route profile: " + row[0]);
+        }
+
         // glacier_cliff is COLD_UPLAND (50-90 degrees, mountain-gated), the same route already
         // owned by minecraft:snowy_slopes/frozen_peaks/jagged_peaks -- not a new route. This was a
         // real correction: it was first placed on POLAR_LOWLAND with Terrain.LOWLAND, which the
@@ -1050,18 +1063,29 @@ final class BiomeProviderSelectionPolicyTest {
                 "BOTH allowedLandPool overloads (registry-source and collection-source) must union "
                         + "the ledger roster; fixing only one leaves the hole open on that path");
 
-        // landRoutesForBand must stay the exact inverse of landRouteEligible's switch. If a route
-        // is added to the enum and omitted here, its biomes silently stop being placeable.
+        // landRoutesForBand must stay the exact inverse of landRouteEligible's switch. Presence
+        // alone is insufficient: a route in the wrong band is just as dangerous as an omission.
         String routesForBand = method(source, "landRoutesForBand(int bandIndex) {");
-        for (BiomeRoute route : BiomeRoute.values()) {
-            if (route == BiomeRoute.CAVE_SHALLOW || route == BiomeRoute.CAVE_DEEP) {
-                assertFalse(routesForBand.contains(route.name()),
-                        "cave routes must never enter a LAND band pool: " + route);
-                continue;
-            }
-            assertTrue(routesForBand.contains(route.name()),
-                    "every non-cave route must map to a band in landRoutesForBand, or biomes owning "
-                            + "it become unplaceable: " + route);
+        Map<String, Set<BiomeRoute>> expectedRoutesByArm = Map.of(
+                "case BAND_TROPICAL ->", Set.of(BiomeRoute.TROPICAL_HUMID_LOWLAND),
+                "case BAND_SUBTROPICAL ->", Set.of(
+                        BiomeRoute.SUBTROPICAL_HUMID_LOWLAND,
+                        BiomeRoute.WARM_TRANSITION,
+                        BiomeRoute.WARM_UPLAND,
+                        BiomeRoute.ARID_LOWLAND,
+                        BiomeRoute.ARID_UPLAND),
+                "case BAND_TEMPERATE ->", Set.of(
+                        BiomeRoute.TEMPERATE_LOWLAND,
+                        BiomeRoute.TEMPERATE_WETLAND,
+                        BiomeRoute.TEMPERATE_UPLAND),
+                "case BAND_SUBPOLAR ->", Set.of(
+                        BiomeRoute.SUBPOLAR_LOWLAND,
+                        BiomeRoute.SUBPOLAR_WETLAND,
+                        BiomeRoute.COLD_UPLAND),
+                "default ->", Set.of(BiomeRoute.POLAR_LOWLAND, BiomeRoute.COLD_UPLAND));
+        for (Map.Entry<String, Set<BiomeRoute>> entry : expectedRoutesByArm.entrySet()) {
+            assertEquals(entry.getValue(), routesInSwitchArm(routesForBand, entry.getKey()),
+                    "landRoutesForBand must preserve the exact route set for " + entry.getKey());
         }
 
         // The three measured casualties, named so the specific regression cannot return quietly.
@@ -1224,17 +1248,32 @@ final class BiomeProviderSelectionPolicyTest {
                         + "decides snowy vs rocky, and only the identity within that category is "
                         + "tag-driven; losing it in either path silently rerolls every polar "
                         + "coastline on vanilla-only worlds");
-        String beachMethod = method(source, "pickBeachForBand(Registry<Biome> biomes,");
-        assertTrue(beachMethod.contains("LAT_BEACH_COLD_SNOWY") && beachMethod.contains("LAT_BEACH_COLD_ROCKY"),
-                "both cold categories resolve through their own tag");
-        assertFalse(beachMethod.contains("biome(biomes, \"minecraft:beach\")"),
+        String registryBeachMethod = method(source, "pickBeachForBand(Registry<Biome> biomes,");
+        String collectionBeachMethod = method(source, "pickBeachForBand(Collection<Holder<Biome>> biomes,");
+        for (String authority : new String[]{
+                "LAT_BEACH_TROPICAL", "LAT_BEACH_TEMPERATE",
+                "LAT_BEACH_COLD_SNOWY", "LAT_BEACH_COLD_ROCKY"}) {
+            assertTrue(registryBeachMethod.contains(authority)
+                            && collectionBeachMethod.contains(authority),
+                    "both beach-pick paths must wire the tag authority: " + authority);
+        }
+        assertFalse(registryBeachMethod.contains("biome(biomes, \"minecraft:beach\")"),
                 "the hardcoded vanilla beach literal must be gone from the pick path — it is now "
                         + "only a fallback argument");
 
         // The freeze verdict is a latitude ramp and must NOT have become tag- or band-driven.
-        assertTrue(source.contains("shouldFreezeRiver(blockX, blockZ)")
-                        && source.contains("LAT_RIVER_FROZEN"),
-                "shouldFreezeRiver still decides frozen vs liquid; the tag only decides identity");
+        String registryPick = method(source,
+                "public static Holder<Biome> pick(Registry<Biome> biomeRegistry,");
+        String collectionPick = method(source,
+                "public static Holder<Biome> pick(Collection<Holder<Biome>> biomePool,");
+        for (String authority : new String[]{
+                "LAT_RIVER_WARM", "LAT_RIVER_TEMPERATE", "LAT_RIVER_FROZEN"}) {
+            assertTrue(registryPick.contains(authority) && collectionPick.contains(authority),
+                    "both river-pick paths must wire the tag authority: " + authority);
+        }
+        assertTrue(registryPick.contains("shouldFreezeRiver(blockX, blockZ)")
+                        && collectionPick.contains("shouldFreezeRiver(blockX, blockZ)"),
+                "both river-pick paths must preserve shouldFreezeRiver as the frozen/liquid verdict");
 
         // Shores are a beach authority, never ledger land. Latitude's own isBeachLike() matches any
         // path containing "shore", so routing one as land would place a coastal identity inland.
@@ -1276,12 +1315,29 @@ final class BiomeProviderSelectionPolicyTest {
         return source.substring(start, next >= 0 ? next : source.length());
     }
 
+    private static Set<BiomeRoute> routesInSwitchArm(String switchMethod, String armLabel) {
+        int start = switchMethod.indexOf(armLabel);
+        if (start < 0) throw new AssertionError("missing switch arm: " + armLabel);
+        int searchFrom = start + armLabel.length();
+        int nextCase = switchMethod.indexOf("case ", searchFrom);
+        int nextDefault = switchMethod.indexOf("default ->", searchFrom);
+        int end = switchMethod.length();
+        if (nextCase >= 0) end = Math.min(end, nextCase);
+        if (nextDefault >= 0) end = Math.min(end, nextDefault);
+        String arm = switchMethod.substring(start, end);
+        Set<BiomeRoute> routes = new HashSet<>();
+        for (BiomeRoute route : BiomeRoute.values()) {
+            if (arm.contains("BiomeRoute." + route.name())) routes.add(route);
+        }
+        return routes;
+    }
+
     /**
      * The 2026-08-10 biome-picker audit measured this cap at its PRE-fix threshold (0.45) and
      * found it retained ~59% of ice_spikes picks rather than capping them — a vanilla-only world
      * (the hard "must work with no providers" case) still finished with ice_spikes on ~27% of the
      * polar band, not the minority accent {@code lat_polar_accent.json} declares. This proves the
-     * RETUNED threshold (0.78) against the real pipeline: BiomeProviderSelectionPolicy's argmax
+     * RETUNED threshold (0.88) against the real pipeline: BiomeProviderSelectionPolicy's argmax
      * pick over the actual POLAR_LOWLAND pool, then PolarIceSpikeAccentPolicy's cap on top,
      * sampled on a coherent, non-adjacent grid so no single accent patch is double-counted.
      */

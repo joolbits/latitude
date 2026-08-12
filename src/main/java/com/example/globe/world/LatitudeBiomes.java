@@ -3035,7 +3035,7 @@ public final class LatitudeBiomes {
     // Polar forest/taiga sanitize: coherent ice_spikes accent over a snowy_taiga/snowy_plains base.
     // The cap itself (threshold + rationale) now lives in PolarIceSpikeAccentPolicy, extracted
     // 2026-08-10 so its measured threshold is directly testable rather than re-derived from a
-    // comment; see that class for why 0.45 under-capped and 0.78 replaced it.
+    // comment; see that class for why 0.45 under-capped and 0.88 replaced it.
     private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 1408;
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
     private static final int BLEND_NOISE_PATCH_CHUNKS = 10;
