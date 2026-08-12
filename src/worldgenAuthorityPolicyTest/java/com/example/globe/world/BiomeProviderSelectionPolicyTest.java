@@ -26,13 +26,16 @@ final class BiomeProviderSelectionPolicyTest {
 
     static void run() throws Exception {
         descriptorAdmissionIsClosedAndCanonical();
-        wetlandDescriptorsHaveOnlyAnOwnedLowlandRoute();
+        wetlandRoutesMatchRealBiomeClimate();
         climateLowlandDescriptorsRemainRouteBounded();
         everySupportedStackGetsEqualRouteTickets();
         selectionIsWorldSeededAndCoherent();
         routeSelectionCannotFallBackToAnUnclassifiedTag();
         providerTicketHotPathCachesAndInvalidates();
         providerProfileCompatibilityIsBirthLocked();
+        polarIceSpikeAccentStaysAMinorityInEveryPoolSize();
+        polarExtremeCapCatchesNameAlikeModdedBiomesConsistently();
+        cliffTreeLandAndOceanAreActuallyReachable();
         vanillaCoverageIsCompleteAndWorldSizeSafe();
         surfaceWaterCoverageIsCompleteAndWorldSizeSafe();
         sizeAwareVanillaRepresentationIsClosedAndBirthLocked();
@@ -74,20 +77,59 @@ final class BiomeProviderSelectionPolicyTest {
                 "duplicate saved route rows are rejected");
     }
 
-    private static void wetlandDescriptorsHaveOnlyAnOwnedLowlandRoute() {
-        for (String id : List.of(
-                "biomesoplenty:bog",
-                "biomesoplenty:muskeg",
-                "terralith:ice_marsh")) {
+    /**
+     * Wetland routing is checked against REAL biome climate, not against the ledger's own opinion.
+     *
+     * <p>This test used to assert {@code Set.of(TEMPERATE_WETLAND)} for muskeg and ice_marsh — it
+     * read the ledger's {@code routes()} and compared them to literals typed into the test, so it
+     * passed by construction and pinned a reported defect in place as expected behaviour. The
+     * temperatures below are ground truth lifted from the shipped datapack JSON of the providers
+     * themselves, so the assertion can now FAIL when a route contradicts the climate.
+     *
+     * <p>The rule is vanilla's own snow threshold: {@code Biome.coldEnoughToSnow} is
+     * {@code temperature < 0.15f}. A wetland that snows permanently belongs in the subpolar band;
+     * one that does not belongs in the temperate band. muskeg (0.0) and ice_marsh (0.14, plus a
+     * frozen modifier) are the two that snow; bog at 0.2 does not, and deliberately stays temperate.
+     */
+    private static void wetlandRoutesMatchRealBiomeClimate() {
+        // biome id -> temperature, from the providers' own worldgen/biome JSON.
+        String[][] wetlandClimate = {
+                {"biomesoplenty:muskeg", "0.0"},
+                {"terralith:ice_marsh", "0.14"},
+                {"biomesoplenty:bog", "0.2"},
+                {"biomesoplenty:wetland", "0.6"},
+                {"biomesoplenty:marsh", "0.65"},
+                {"terralith:orchid_swamp", "0.8"},
+                {"minecraft:swamp", "0.8"},
+        };
+        double snowThreshold = 0.15;
+        for (String[] row : wetlandClimate) {
+            String id = row[0];
+            double temperature = Double.parseDouble(row[1]);
             BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
             assertTrue(descriptor != null, "admitted wetland has an explicit descriptor: " + id);
-            assertEquals(Set.of(BiomeRoute.TEMPERATE_WETLAND), descriptor.routes(),
-                    "wetland has no generic dry, highland, or fallback route: " + id);
+
+            BiomeRoute expected = temperature < snowThreshold
+                    ? BiomeRoute.SUBPOLAR_WETLAND
+                    : BiomeRoute.TEMPERATE_WETLAND;
+            assertEquals(Set.of(expected), descriptor.routes(),
+                    "wetland route must match its real climate (temperature " + temperature
+                            + (temperature < snowThreshold ? ", snows permanently" : ", never snows")
+                            + "), and must carry no generic dry, highland or fallback route: " + id);
             assertEquals(BiomeDescriptorLedger.Terrain.WETLAND, descriptor.terrain(),
                     "wetland is never admitted as ordinary land: " + id);
             assertEquals(BiomeDescriptorLedger.Water.WETLAND, descriptor.water(),
                     "wetland requires the wetland water authority: " + id);
         }
+
+        // A cold wetland must now be authorable at all — the old invariant threw for any wetland
+        // that did not own TEMPERATE_WETLAND, which is why the cold pair could not be fixed in place.
+        assertTrue(BiomeDescriptorLedger.descriptor("biomesoplenty:muskeg")
+                        .routes().contains(BiomeRoute.SUBPOLAR_WETLAND),
+                "the cold wetland route must actually be owned, or it is dead config — the old "
+                        + "invariant threw for any wetland that did not own TEMPERATE_WETLAND, "
+                        + "which is why this pair could not be fixed in place");
+
         assertTrue(BiomeDescriptorLedger.descriptor("biomesoplenty:bayou") == null,
                 "warm bayou remains closed until Latitude owns a warm-wetland route");
         assertTrue(BiomeDescriptorLedger.descriptor("biomesoplenty:floodplain") == null,
@@ -848,7 +890,7 @@ final class BiomeProviderSelectionPolicyTest {
                     ARID_LOWLAND, ARID_UPLAND -> latitudeFraction >= 0.27 && latitudeFraction <= 0.39;
             case TEMPERATE_LOWLAND, TEMPERATE_WETLAND, TEMPERATE_UPLAND ->
                     latitudeFraction >= 0.41 && latitudeFraction <= 0.56;
-            case SUBPOLAR_LOWLAND -> latitudeFraction >= 0.59 && latitudeFraction <= 0.73;
+            case SUBPOLAR_LOWLAND, SUBPOLAR_WETLAND -> latitudeFraction >= 0.59 && latitudeFraction <= 0.73;
             case POLAR_LOWLAND -> latitudeFraction >= 0.77 && latitudeFraction <= 0.91;
             case COLD_UPLAND -> latitudeFraction >= 0.61 && latitudeFraction <= 0.89;
             case CAVE_SHALLOW, CAVE_DEEP -> false;
@@ -874,6 +916,118 @@ final class BiomeProviderSelectionPolicyTest {
 
     private static String namespace(String id) { return id.substring(0, id.indexOf(':')); }
 
+    /**
+     * CliffTree shipped entirely inert: its biomes appeared in five {@code lat_*} tag files but had
+     * no ledger descriptor, and the ledger is authoritative on every world this build creates, so
+     * installing the mod changed nothing about the land Latitude painted. The 2026-08-10 audit
+     * found this; the maintainer confirmed CliffTree is a keeper and every biome should be
+     * classified. This asserts the land routes actually exist and, critically, that they carry
+     * REAL climate-consistent placement rather than name-derived guesses.
+     */
+    private static void cliffTreeLandAndOceanAreActuallyReachable() throws Exception {
+        // biome id -> {temperature, expected route}. Temperatures are ground truth from the
+        // shipped CliffTree datapack JSON.
+        String[][] expected = {
+                {"clifftree:bog", "0.25", "TEMPERATE_WETLAND"},
+                {"clifftree:sparse_forest", "0.7", "TEMPERATE_LOWLAND"},
+                {"clifftree:granite_shore", "0.5", "TEMPERATE_LOWLAND"},
+                {"clifftree:coniferous_badlands", "2.0", "ARID_LOWLAND"},
+                {"clifftree:oasis", "2.0", "ARID_LOWLAND"},
+                {"clifftree:shrubland", "2.0", "ARID_LOWLAND"},
+                {"clifftree:diorite_shore", "0.2", "SUBPOLAR_LOWLAND"},
+                {"clifftree:snowy_diorite_shore", "0.05", "POLAR_LOWLAND"},
+                {"clifftree:glacier_valley", "0.0", "POLAR_LOWLAND"},
+                // glacier_cliff intentionally excluded from this table: it is COLD_UPLAND, not a
+                // POLAR_LOWLAND lookalike, and is checked on its own below because it needs
+                // Terrain.UPLAND asserted too, not just the route.
+                {"clifftree:snowy_old_growth_taiga", "0.0", "POLAR_LOWLAND"},
+                {"clifftree:tundra", "0.25", "POLAR_LOWLAND"},
+        };
+        for (String[] row : expected) {
+            BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(row[0]);
+            assertTrue(descriptor != null,
+                    "CliffTree land biome must have a descriptor or the mod is inert: " + row[0]);
+            assertTrue(descriptor.routes().contains(BiomeRoute.valueOf(row[2])),
+                    "CliffTree land biome must own its climate-appropriate route (temperature "
+                            + row[1] + "): " + row[0] + " expected " + row[2]
+                            + " actual " + descriptor.routes());
+        }
+
+        // glacier_cliff is COLD_UPLAND (50-90 degrees, mountain-gated), the same route already
+        // owned by minecraft:snowy_slopes/frozen_peaks/jagged_peaks -- not a new route. This was a
+        // real correction: it was first placed on POLAR_LOWLAND with Terrain.LOWLAND, which the
+        // ledger's own invariant rejected (an UPLAND descriptor must own TEMPERATE_UPLAND or
+        // COLD_UPLAND), because a "cliff" is rugged terrain and COLD_UPLAND's mountain gate is the
+        // correct fit for that, not a workaround.
+        BiomeDescriptorLedger.Descriptor glacierCliff =
+                BiomeDescriptorLedger.descriptor("clifftree:glacier_cliff");
+        assertTrue(glacierCliff != null && glacierCliff.routes().contains(BiomeRoute.COLD_UPLAND),
+                "clifftree:glacier_cliff owns COLD_UPLAND, the existing cold mountain route");
+        assertEquals(BiomeDescriptorLedger.Terrain.UPLAND, glacierCliff.terrain(),
+                "clifftree:glacier_cliff is genuinely rugged terrain, not a flat polar lowland");
+
+        // desert_cliff is the one intentionally dual-routed entry: an arid cliff face reachable as
+        // both lowland and upland arid terrain.
+        BiomeDescriptorLedger.Descriptor desertCliff =
+                BiomeDescriptorLedger.descriptor("clifftree:desert_cliff");
+        assertTrue(desertCliff != null && desertCliff.routes().contains(BiomeRoute.ARID_UPLAND),
+                "clifftree:desert_cliff keeps its arid upland route");
+
+        // The name-vs-climate trap this whole audit line exists to prevent: "coniferous_badlands"
+        // is temperature 2.0 (maximum heat, identical to vanilla badlands). Routing it by name
+        // would put a desert-hot identity in a cold band.
+        BiomeDescriptorLedger.Descriptor conifBadlands =
+                BiomeDescriptorLedger.descriptor("clifftree:coniferous_badlands");
+        assertFalse(conifBadlands.routes().contains(BiomeRoute.SUBPOLAR_LOWLAND)
+                        || conifBadlands.routes().contains(BiomeRoute.POLAR_LOWLAND),
+                "clifftree:coniferous_badlands is temperature 2.0 despite its name — it must never "
+                        + "be routed to a cold band on the strength of the word 'coniferous'");
+
+        // Caves: categorized from CliffTree's OWN worldgen/biome tags (caves.json, deep_caves.json),
+        // not guessed. inferno is grouped by CliffTree itself with minecraft:deep_dark rather than
+        // its other caves, matching CAVE_DEEP's real Y<=-16 depth gate.
+        String[] shallowCaves = {
+                "clifftree:caves", "clifftree:warm_caves", "clifftree:lukewarm_caves",
+                "clifftree:cold_caves", "clifftree:frozen_caves", "clifftree:mushroom_caves",
+                "clifftree:dirt_caves",
+        };
+        for (String id : shallowCaves) {
+            BiomeDescriptorLedger.Descriptor cave = BiomeDescriptorLedger.descriptor(id);
+            assertTrue(cave != null, "CliffTree cave must have a descriptor: " + id);
+            assertTrue(cave.routes().contains(BiomeRoute.CAVE_SHALLOW),
+                    "CliffTree cave must own CAVE_SHALLOW: " + id);
+            assertEquals(BiomeDescriptorLedger.Water.UNDERGROUND, cave.water(),
+                    "CliffTree cave must be classified underground: " + id);
+        }
+        BiomeDescriptorLedger.Descriptor inferno = BiomeDescriptorLedger.descriptor("clifftree:inferno");
+        assertTrue(inferno != null && inferno.routes().contains(BiomeRoute.CAVE_DEEP),
+                "clifftree:inferno is CAVE_DEEP (CliffTree's own tags pair it with deep_dark, not "
+                        + "its other caves) despite its surface-hot temperature -- it never reaches "
+                        + "the surface, so that temperature never governs its placement");
+        assertFalse(inferno.routes().contains(BiomeRoute.CAVE_SHALLOW),
+                "inferno must not ALSO be shallow, or it can surface where its heat is nonsensical");
+
+        // Oceans are a separate live authority: the lat_ocean_* tags, which (unlike the land lat_*
+        // tags) are NOT shadowed by the ledger. Both CliffTree oceans are shallow is_ocean members.
+        String oceanTag = read(
+                "src/main/resources/data/globe/tags/worldgen/biome/lat_ocean_temperate.json");
+        assertTrue(oceanTag.contains("clifftree:stone_ocean")
+                        && oceanTag.contains("clifftree:kelp_forest"),
+                "CliffTree's two ocean biomes must be admitted through the live lat_ocean_* tag "
+                        + "authority — they have no ledger route and are otherwise unreachable");
+        assertTrue(oceanTag.contains("\"required\": false"),
+                "optional pack biomes must be tagged required:false so a vanilla-only install does "
+                        + "not fail datapack load");
+    }
+
+    private static String read(String path) throws Exception {
+        return Files.readString(Path.of(path));
+    }
+
+    private static String normalize(String value) {
+        return value.replaceAll("\\s+", " ");
+    }
+
     private static int occurrences(String value, String needle) {
         int count = 0;
         for (int at = value.indexOf(needle); at >= 0; at = value.indexOf(needle, at + needle.length())) count++;
@@ -885,6 +1039,87 @@ final class BiomeProviderSelectionPolicyTest {
         if (start < 0) throw new AssertionError("missing method: " + signature);
         int next = source.indexOf("\n    private static ", start + signature.length());
         return source.substring(start, next >= 0 ? next : source.length());
+    }
+
+    /**
+     * The 2026-08-10 biome-picker audit measured this cap at its PRE-fix threshold (0.45) and
+     * found it retained ~59% of ice_spikes picks rather than capping them — a vanilla-only world
+     * (the hard "must work with no providers" case) still finished with ice_spikes on ~27% of the
+     * polar band, not the minority accent {@code lat_polar_accent.json} declares. This proves the
+     * RETUNED threshold (0.78) against the real pipeline: BiomeProviderSelectionPolicy's argmax
+     * pick over the actual POLAR_LOWLAND pool, then PolarIceSpikeAccentPolicy's cap on top,
+     * sampled on a coherent, non-adjacent grid so no single accent patch is double-counted.
+     */
+    private static void polarIceSpikeAccentStaysAMinorityInEveryPoolSize() {
+        List<String> vanillaOnly = List.of("minecraft:ice_spikes", "minecraft:snowy_plains");
+        List<String> withProviders = List.of(
+                "minecraft:ice_spikes", "minecraft:snowy_plains",
+                "biomesoplenty:auroral_garden", "biomesoplenty:snowblossom_grove",
+                "biomesoplenty:snowy_coniferous_forest", "biomesoplenty:snowy_fir_clearing",
+                "biomesoplenty:tundra", "biomesoplenty:wintry_origin_valley",
+                "terralith:cold_shrubland", "terralith:siberian_grove", "terralith:siberian_taiga",
+                "terralith:snowy_cherry_grove", "terralith:wintry_forest", "terralith:wintry_lowlands");
+
+        double vanillaOnlyShare = measurePolarIceSpikeShare(vanillaOnly);
+        double withProvidersShare = measurePolarIceSpikeShare(withProviders);
+
+        assertTrue(vanillaOnlyShare < 0.08,
+                "vanilla-only polar band must not read as an ice_spikes monoculture — the hard "
+                        + "'must work with no providers' case is the worst case for this cap "
+                        + "because the pool is smallest; measured ~5.9% on this exact grid when the "
+                        + "policy's threshold was tuned, so 8% leaves headroom without masking a "
+                        + "real regression: observed=" + vanillaOnlyShare);
+        assertTrue(withProvidersShare <= vanillaOnlyShare + 0.02,
+                "installing providers must not INCREASE ice_spikes' share of the polar band — "
+                        + "the cap is source-agnostic, so a wider pool should only dilute it further: "
+                        + "vanillaOnly=" + vanillaOnlyShare + " withProviders=" + withProvidersShare);
+        assertTrue(withProvidersShare > 0.0,
+                "the accent must still be reachable, not fully eliminated, with providers installed");
+    }
+
+    private static double measurePolarIceSpikeShare(List<String> biomeIds) {
+        BiomeProviderSelectionPolicy.Pool pool = BiomeProviderSelectionPolicy.createPool(biomeIds);
+        int total = 0;
+        int iceSpikes = 0;
+        int bandIndex = 4; // BAND_POLAR
+        for (long seed : AUDIT_SEEDS) {
+            for (int x : NONADJACENT_POINTS) {
+                for (int z : NONADJACENT_POINTS) {
+                    int index = BiomeProviderSelectionPolicy.selectIndex(
+                            pool, seed, x, z, bandIndex, "POLAR_LOWLAND", 0L);
+                    total++;
+                    if ("minecraft:ice_spikes".equals(pool.ids().get(index))
+                            && PolarIceSpikeAccentPolicy.keepPolarIceSpike(seed, x, z)) {
+                        iceSpikes++;
+                    }
+                }
+            }
+        }
+        return iceSpikes / (double) total;
+    }
+
+    /**
+     * terralith:siberian_grove and terralith:siberian_taiga carry IDENTICAL ground-truth climate
+     * and content (temperature 0.13, trees + mushrooms + logs — from the 2026-08-10 audit corpus)
+     * but the extreme-polar-cap catch-all only matched "forest"/"taiga" substrings, so the two
+     * were banned inconsistently by name alone. Source-scan rather than a live pick, matching this
+     * suite's existing convention for LatitudeBiomes internals that are not independently public.
+     */
+    private static void polarExtremeCapCatchesNameAlikeModdedBiomesConsistently() throws Exception {
+        String source = normalize(read("src/main/java/com/example/globe/world/LatitudeBiomes.java"));
+        String leakMethod = method(source, "isExtremePolarSoftColdLeak(Holder<Biome> candidate) {");
+        assertTrue(leakMethod.contains("path.contains(\"grove\")"),
+                "the catch-all must include \"grove\", or terralith:siberian_grove and "
+                        + "terralith:siberian_taiga (identical climate/content, different name) are "
+                        + "banned inconsistently at the extreme polar cap");
+        assertTrue(leakMethod.contains("path.contains(\"forest\")")
+                        && leakMethod.contains("path.contains(\"taiga\")"),
+                "the pre-existing forest/taiga catch-all must remain — this is additive, not a "
+                        + "replacement");
+        assertTrue(source.contains("EXTREME_POLAR_CAP_MIN_DEG = 74.5"),
+                "the constant this javadoc describes must still be 74.5, or the corrected javadoc "
+                        + "(fixed 2026-08-10; previously claimed 85 against this same 74.5 constant) "
+                        + "is itself now wrong");
     }
 
     private static void assertWithinFourSigma(Map<String, Integer> counts, String key, int samples, double expected, String message) {
