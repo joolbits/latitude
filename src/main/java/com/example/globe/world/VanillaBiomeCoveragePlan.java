@@ -235,9 +235,18 @@ public final class VanillaBiomeCoveragePlan {
         add(routes, BiomeRoute.WARM_TRANSITION, "minecraft:savanna");
         add(routes, BiomeRoute.WARM_UPLAND,
                 "minecraft:savanna_plateau", "minecraft:windswept_savanna");
+        // eroded_badlands is guaranteed on ARID_LOWLAND, not ARID_UPLAND (maintainer ruling,
+        // 2026-08-12). ARID_UPLAND asks for mountain terrain AND a WARM_DRY province at every
+        // sampled point of the reservation, and those are independent sparse fields: on the live
+        // Regular seed 8507730871486520283 not one of 66 center-eligible candidates kept all four
+        // shoulders eligible, so the guarantee could never be issued. Lowland is what the rest of
+        // the mod already says — VanillaBiomeRepresentationProfile routes BADLANDS_UPLAND_VARIANT
+        // to ARID_LOWLAND, the ledger admits it there, and the picker places eroded_badlands with
+        // no mountain requirement at all. This map guarantees identity availability; it does not
+        // owe every BiomeRoute a reservation, and ARID_UPLAND stays a legal ledger route.
         add(routes, BiomeRoute.ARID_LOWLAND,
-                "minecraft:badlands", "minecraft:desert", "minecraft:wooded_badlands");
-        add(routes, BiomeRoute.ARID_UPLAND, "minecraft:eroded_badlands");
+                "minecraft:badlands", "minecraft:desert", "minecraft:eroded_badlands",
+                "minecraft:wooded_badlands");
         add(routes, BiomeRoute.SUBPOLAR_LOWLAND,
                 "minecraft:old_growth_spruce_taiga", "minecraft:snowy_taiga");
         add(routes, BiomeRoute.POLAR_LOWLAND, "minecraft:ice_spikes", "minecraft:snowy_plains");
