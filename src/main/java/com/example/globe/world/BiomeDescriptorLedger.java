@@ -142,12 +142,9 @@ public final class BiomeDescriptorLedger {
             // datapack JSON, not from its name; two of them contradict the name outright and are
             // called out where they sit.
             //
-            // Only surface LAND lives here. CliffTree's oceans go through the lat_ocean_* tags (a
-            // separate live authority), its caves through the CAVE_* routes below, and its three
-            // rivers and two beaches have NO admission path in this build at all -- river selection
-            // and pickBeachForBand are hard authorities that consult no tag, so no pack's river or
-            // beach can be admitted by data alone. That gap is real and is deliberately left for a
-            // follow-up slice; it is not specific to CliffTree.
+            // Only surface LAND lives here. CliffTree's oceans use the lat_ocean_* tags, its caves
+            // use the CAVE_* routes below, and its rivers and beaches use the lat_river_* and
+            // lat_beach_* tag authorities. None belongs in the ledger's land routes.
             // CliffTree's three *_shore biomes are deliberately NOT here. Shores are a hard
             // authority in Latitude, not ledger land: vanilla minecraft:stony_shore, beach,
             // snowy_beach, river and frozen_river have no ledger route either, and Latitude's own
@@ -165,7 +162,7 @@ public final class BiomeDescriptorLedger {
             d("clifftree:shrubland", r(BiomeRoute.ARID_LOWLAND), Terrain.ARID, Water.LAND, Family.ARID),
             d("clifftree:desert_cliff", r(BiomeRoute.ARID_LOWLAND, BiomeRoute.ARID_UPLAND), Terrain.ARID, Water.LAND, Family.ARID),
             d("clifftree:glacier_valley", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
-                        // Corrected 2026-08-10: COLD_UPLAND already exists (band >= BAND_SUBPOLAR && mountain,
+            // Corrected 2026-08-10: COLD_UPLAND already exists (band >= BAND_SUBPOLAR && mountain,
             // 50-90 degrees) and is already owned by snowy_slopes/frozen_peaks/jagged_peaks -- no
             // new route was needed. A "cliff" is rugged terrain by name, so the mountain gate this
             // route already carries is the right fit, not a workaround for it.
