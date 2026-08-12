@@ -193,7 +193,7 @@ public final class VanillaBiomeCoveragePlan {
             case SUBTROPICAL_HUMID_LOWLAND, WARM_TRANSITION, WARM_UPLAND,
                     ARID_LOWLAND, ARID_UPLAND -> new double[]{0.28, 0.38};
             case TEMPERATE_LOWLAND, TEMPERATE_WETLAND, TEMPERATE_UPLAND -> new double[]{0.42, 0.55};
-            case SUBPOLAR_LOWLAND -> new double[]{0.60, 0.72};
+            case SUBPOLAR_LOWLAND, SUBPOLAR_WETLAND -> new double[]{0.60, 0.72};
             case POLAR_LOWLAND -> new double[]{0.78, 0.90};
             case COLD_UPLAND -> new double[]{0.62, 0.88};
             case CAVE_SHALLOW, CAVE_DEEP -> throw new IllegalArgumentException("cave routes use CaveBiomeCoveragePlan");
@@ -231,8 +231,7 @@ public final class VanillaBiomeCoveragePlan {
         add(routes, BiomeRoute.TEMPERATE_WETLAND, "minecraft:swamp");
         add(routes, BiomeRoute.TEMPERATE_UPLAND,
                 "minecraft:cherry_grove", "minecraft:grove", "minecraft:meadow",
-                "minecraft:stony_peaks", "minecraft:windswept_forest",
-                "minecraft:windswept_gravelly_hills", "minecraft:windswept_hills");
+                "minecraft:stony_peaks");
         add(routes, BiomeRoute.WARM_TRANSITION, "minecraft:savanna");
         add(routes, BiomeRoute.WARM_UPLAND,
                 "minecraft:savanna_plateau", "minecraft:windswept_savanna");
@@ -242,8 +241,14 @@ public final class VanillaBiomeCoveragePlan {
         add(routes, BiomeRoute.SUBPOLAR_LOWLAND,
                 "minecraft:old_growth_spruce_taiga", "minecraft:snowy_taiga");
         add(routes, BiomeRoute.POLAR_LOWLAND, "minecraft:ice_spikes", "minecraft:snowy_plains");
+        // windswept_* moved here from TEMPERATE_UPLAND with the ledger (maintainer ruling,
+        // 2026-08-10). This map is the vanilla-coverage guarantee and must name the SAME route the
+        // ledger routes each identity to, or the plan anchors a biome into a band the picker will
+        // never choose it in — the suite asserts that agreement and caught this move.
         add(routes, BiomeRoute.COLD_UPLAND,
-                "minecraft:frozen_peaks", "minecraft:jagged_peaks", "minecraft:snowy_slopes");
+                "minecraft:frozen_peaks", "minecraft:jagged_peaks", "minecraft:snowy_slopes",
+                "minecraft:windswept_forest", "minecraft:windswept_gravelly_hills",
+                "minecraft:windswept_hills");
         return Collections.unmodifiableMap(routes.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .collect(java.util.stream.Collectors.toMap(
