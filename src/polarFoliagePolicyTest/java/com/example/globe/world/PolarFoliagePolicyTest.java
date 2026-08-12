@@ -17,6 +17,7 @@ public final class PolarFoliagePolicyTest {
         blockLevelGuardClosesTheFeatureClassBypass();
         theWoodyAndFoliageTagsDoNotOverlap();
         windsweptSnowLineDescendsPolewardAndCannotOrphanSnowyGrass();
+        windsweptSnowLineThresholdRowDisagreesUnlessNormalizedToTheSnowPosition();
         System.out.println("POLAR_FOLIAGE_POLICY_TEST_PASS");
     }
 
@@ -379,9 +380,54 @@ public final class PolarFoliagePolicyTest {
                         + "nothing on top, which is the reported rendering defect");
         assertTrue(guard.contains("globe$columnKeepsSnow"),
                 "strip and SNOWY-clear must share one predicate");
-        assertTrue(occurrences(guard, "globe$columnKeepsSnow(pos)") == 2,
-                "both the SNOWY clear and the snow strip must call the shared predicate — if only "
-                        + "one does, they can disagree and the orphaned-grass defect returns");
+
+        // Coordinate fix (maintainer, 2026-08-12): the two call sites must NOT ask about the same
+        // position. grass_block sits one row below the snow it explains, and globe$columnKeepsSnow
+        // is height-dependent (coldEnoughToSnow falls with Y; the windswept ramp is a strict
+        // Y>=threshold test), so asking the grass block's own row can disagree with the row
+        // directly above it -- keeping the snow at Y while clearing SNOWY on the grass at Y-1.
+        // Exactly ONE call site normalizes to the row above (the SNOWY-clear branch); exactly ONE
+        // asks about its own row (the snow/layer strip branch, which IS the position being
+        // decided). Equal counts here would mean the coordinate fix was reverted.
+        assertTrue(occurrences(guard, "globe$columnKeepsSnow(pos.above())") == 1,
+                "the SNOWY-clear branch must ask about the row ABOVE the grass block -- the snow "
+                        + "layer's own row -- not the grass block's own row, or the SNOWY decision "
+                        + "can disagree with the block actually written one row up");
+        assertTrue(occurrences(guard, "globe$columnKeepsSnow(pos)") == 1,
+                "exactly one call site (the snow/layer strip branch) asks about its own row; if "
+                        + "this count is 2, the coordinate normalization above was undone and the "
+                        + "grass branch is back to asking about the wrong row");
+    }
+
+    /**
+     * Pure-math proof of the defect the coordinate fix corrects, independent of the mixin itself:
+     * at the exact windswept snow-line threshold, the snow layer's row and the row directly below
+     * it (where the grass_block sits) give DIFFERENT answers from the shared height-dependent
+     * predicate. A grass decision that queries its own row instead of the row above it will
+     * therefore disagree with the snow actually written above it at precisely this row.
+     */
+    private static void windsweptSnowLineThresholdRowDisagreesUnlessNormalizedToTheSnowPosition() {
+        int seaLevel = 63;
+        double fullyLoweredLatitude = 55.0; // >= 50 deg: offset is fully lowered to +27
+        int snowY = seaLevel + WindsweptSnowLinePolicy.SNOW_LINE_OFFSET_ABOVE_SEA; // 90
+        int grassY = snowY - 1; // 89 -- where grass_block sits beneath that snow layer
+
+        assertTrue(
+                WindsweptSnowLinePolicy.appliesTo(
+                        "minecraft:windswept_forest", snowY, seaLevel, fullyLoweredLatitude),
+                "the snow layer's own row keeps snow at the exact threshold");
+        assertFalse(
+                WindsweptSnowLinePolicy.appliesTo(
+                        "minecraft:windswept_forest", grassY, seaLevel, fullyLoweredLatitude),
+                "one row below the threshold, asked about ITS OWN row, the predicate disagrees -- "
+                        + "this is the exact coordinate mismatch the guard must not use for the "
+                        + "grass block's SNOWY decision");
+        assertTrue(
+                WindsweptSnowLinePolicy.appliesTo(
+                        "minecraft:windswept_forest", grassY + 1, seaLevel, fullyLoweredLatitude),
+                "the grass row's position ABOVE it (pos.above() from the grass block) is exactly "
+                        + "the snow row, and agrees with the snow layer's own answer -- this is "
+                        + "the row the SNOWY decision must be normalized to");
     }
 
     private static String read(String path) throws Exception {
