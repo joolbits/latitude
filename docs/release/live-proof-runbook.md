@@ -211,7 +211,6 @@ Completed updates after all live gates passed:
 
 - `docs/release/current-readiness-audit.md`
 - `docs/release/checklist.md`
-- `<home>/CascadeProjects/Latitude (Globe)/docs/release/checklist.md`
-- `docs/binder/evidence-registry.md`
+- the maintainer's private notes index for the active release line
 
-Savepoint/tag/push/upload/release rows remain manual and blocked until Maintainer separately authorizes that lane; the stony locate/HUD caveat is resolved by `tmp/closeout-1.4-20260621/stony-followup-c9-195009`.
+Savepoint/tag/push/upload/release rows remain manual and blocked until Maintainer separately authorizes that lane; the stony locate/HUD caveat is resolved by archived follow-up evidence held in the maintainer's private notes.
