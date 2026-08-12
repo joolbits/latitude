@@ -281,7 +281,13 @@ public class LatitudeCreateWorldScreen extends Screen {
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent,
                                       WorldCreationUiState initialState, boolean recreated,
                                       @Nullable String recreatedPresetId) {
-        this(onClose, parent, initialState.getSettings());
+        this(onClose, parent, initialState, recreated, recreatedPresetId, false);
+    }
+
+    private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent,
+                                      WorldCreationUiState initialState, boolean recreated,
+                                      @Nullable String recreatedPresetId, boolean continueIntroFromPreparing) {
+        this(onClose, parent, initialState.getSettings(), continueIntroFromPreparing);
         if (recreated) {
             hydrateInitialState(initialState, recreated, recreatedPresetId);
         } else {
@@ -310,7 +316,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 initialState.getSeed() != null && !initialState.getSeed().isBlank(),
                 initialState.getSettings());
         client.gui.setScreen(new LatitudeCreateWorldScreen(
-                onClose, parent, initialState, recreated, recreatedPresetId));
+                onClose, parent, initialState, recreated, recreatedPresetId, true));
     }
 
     public static void openLoaded(Minecraft client, Runnable onClose, @Nullable Screen parent,

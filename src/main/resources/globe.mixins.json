@@ -40,6 +40,7 @@
     "client.InGameHudMixin",
     "client.LatitudeLoadingClientTickMixin",
     "client.LevelLoadingScreenLatitudeOverlayMixin",
+    "client.GenericMessageScreenLatitudeOverlayMixin",
     "client.FogRendererEwMixin"
   ],
   "injectors": {
