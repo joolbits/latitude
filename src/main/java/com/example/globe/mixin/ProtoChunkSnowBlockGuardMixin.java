@@ -134,10 +134,20 @@ public class ProtoChunkSnowBlockGuardMixin {
         //
         // 26.2 owns this property on BlockStateProperties; the source line's SnowyDirtBlock does not
         // exist here. Same BooleanProperty, different declaring type.
+        //
+        // Coordinate fix (maintainer, 2026-08-12): grass_block is written one row BELOW the snow
+        // layer it sits under, not at the same position. globe$columnKeepsSnow is height-dependent
+        // twice over -- Biome#coldEnoughToSnow's own temperature falls with Y, and the windswept
+        // ramp above is a strict Y>=threshold test -- so asking it about the grass block's OWN row
+        // can disagree with the answer at the snow layer's row directly above it. At the exact
+        // threshold row this keeps the snow (asked at Y) while clearing SNOWY on the grass beneath
+        // it (asked at Y-1), reproducing the orphan the whole guard exists to prevent. Ask about
+        // pos.above() -- the snow position -- so the SNOWY decision agrees with what is actually
+        // written one block up, regardless of write order between the two features.
         if (state.is(Blocks.GRASS_BLOCK)
                 && state.hasProperty(BlockStateProperties.SNOWY)
                 && state.getValue(BlockStateProperties.SNOWY)
-                && !globe$columnKeepsSnow(pos)) {
+                && !globe$columnKeepsSnow(pos.above())) {
             cir.setReturnValue(state.setValue(
                     BlockStateProperties.SNOWY, Boolean.FALSE));
             return;
