@@ -483,7 +483,7 @@ public final class LatitudeBiomeLocateService {
                 return false;
             }
 
-            Pair<BlockPos, Holder<Biome>> planned = latitudeSource.findPlannedSurfaceWaterCoverage(
+            Pair<BlockPos, Holder<Biome>> planned = latitudeSource.findPlannedSurfaceCoverage(
                     matching, new BlockPos(origin.getX(), surfaceY, origin.getZ()), target, sampler);
             finish(planned);
             log(planned != null);

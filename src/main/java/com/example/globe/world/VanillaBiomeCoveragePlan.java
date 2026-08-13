@@ -1,6 +1,7 @@
 package com.example.globe.world;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -127,6 +128,24 @@ public final class VanillaBiomeCoveragePlan {
             if (anchor.contains(blockX, blockZ)) matches.add(anchor);
         }
         return List.copyOf(matches);
+    }
+
+    /** Returns the nearest birth-plan anchor for an exact requested biome identity. */
+    public Anchor nearestAnchorFor(Collection<String> biomeIds, int originX, int originZ) {
+        if (biomeIds == null || biomeIds.isEmpty()) return null;
+        Anchor nearest = null;
+        long nearestDistanceSquared = Long.MAX_VALUE;
+        for (Anchor anchor : anchors) {
+            if (!biomeIds.contains(anchor.biomeId())) continue;
+            long dx = (long) anchor.blockX() - originX;
+            long dz = (long) anchor.blockZ() - originZ;
+            long distanceSquared = dx * dx + dz * dz;
+            if (nearest == null || distanceSquared < nearestDistanceSquared) {
+                nearest = anchor;
+                nearestDistanceSquared = distanceSquared;
+            }
+        }
+        return nearest;
     }
 
     public List<Anchor> anchors() { return anchors; }
