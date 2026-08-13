@@ -15,6 +15,7 @@ import com.example.globe.client.EwPresentationPolicy;
 import com.example.globe.dev.DevCaptureKeybind;
 import com.example.globe.dev.client.SeamAuditClientBridge;
 import com.example.globe.dev.client.audit.SeamAuditHarness;
+import com.example.globe.util.LatitudeBands;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.api.ClientModInitializer;
@@ -64,6 +65,10 @@ public class GlobeModClient implements ClientModInitializer {
             if (payload.isGlobe()) {
                 // Flip the bespoke loading flag as soon as the handshake packet arrives (network thread).
                 LatitudeClientState.activateLatitudeLoading();
+                LatitudeBands.Band band = LatitudeBands.fromCanonicalId(payload.loadingBandId());
+                if (band != null) {
+                    LatitudeClientState.setLoadingZoneLabel(band.displayName());
+                }
             } else if (LatitudeClientState.isLatitudeWorldLoading()) {
                 LatitudeClientState.clearLatitudeLoadingState();
             }

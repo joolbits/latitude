@@ -25,11 +25,13 @@ public final class GlobeNet {
         PayloadTypeRegistry.serverboundPlay().register(SetSpawnPickerPayload.ID, SetSpawnPickerPayload.CODEC);
     }
 
-    public record GlobeStatePayload(boolean isGlobe) implements CustomPacketPayload {
+    public record GlobeStatePayload(boolean isGlobe, String loadingBandId) implements CustomPacketPayload {
         public static final Type<GlobeStatePayload> ID = new Type<>(Identifier.fromNamespaceAndPath("globe", "s2c_globe_state"));
         public static final StreamCodec<RegistryFriendlyByteBuf, GlobeStatePayload> CODEC = StreamCodec.composite(
                 ByteBufCodecs.BOOL,
                 GlobeStatePayload::isGlobe,
+                ByteBufCodecs.STRING_UTF8,
+                GlobeStatePayload::loadingBandId,
                 GlobeStatePayload::new
         );
 
