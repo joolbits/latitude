@@ -22,14 +22,14 @@ public final class SpawnSafetyPolicyTest {
 
     private static void initialSpawnStaysInRequestedLatitudeWithBoundedFallback() throws IOException {
         assertEquals(
-                1,
+                0,
                 SpawnSafetyPolicy.INITIAL_SPAWN_TERRAIN_VALIDATION_BUDGET,
-                "initial creation begins with one normal terrain-column validation");
+                "initial creation skips the unbounded-cost speculative terrain-column validation");
         assertEquals(
-                1,
+                0,
                 SpawnSafetyPolicy.maximumInitialSpawnChunkLoadCalls(
                         SpawnSafetyPolicy.INITIAL_SPAWN_TERRAIN_VALIDATION_BUDGET),
-                "the normal initial attempt has a one-FULL-chunk validation bound");
+                "initial creation makes no FULL-chunk request before its deterministic fallback");
 
         List<SpawnSafetyPolicy.FallbackCandidate> initialFallback =
                 SpawnSafetyPolicy.safeFallbackCandidates(
@@ -42,9 +42,9 @@ public final class SpawnSafetyPolicyTest {
                         SpawnSafetyPolicy.FALLBACK_MAX_RINGS);
         assertEquals(9, initialFallback.size(),
                 "initial fallback remains the bounded center plus one eight-point ring");
-        assertEquals(10, SpawnSafetyPolicy.INITIAL_SPAWN_TERRAIN_VALIDATION_BUDGET
+        assertEquals(9, SpawnSafetyPolicy.INITIAL_SPAWN_TERRAIN_VALIDATION_BUDGET
                         + initialFallback.size(),
-                "a failed initial candidate costs at most ten target-chunk loads, never a globe scan");
+                "initial creation has only the nine bounded fallback target-chunk loads");
         for (SpawnSafetyPolicy.FallbackCandidate candidate : initialFallback) {
             double degrees = Math.abs(candidate.z()) * 90.0 / 10_000.0;
             assertTrue(degrees >= 35.0 && degrees < 50.0,
