@@ -419,7 +419,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
                 sampler,
                 level));
         Pair<BlockPos, Holder<Biome>> plannedFallback = fallback == null
-                ? findPlannedSurfaceWaterCoverage(matching, origin, target, sampler)
+                ? findPlannedSurfaceCoverage(matching, origin, target, sampler)
                 : null;
         return new SurfaceLocateOutcome(
                 fallback != null ? fallback : plannedFallback,
@@ -428,6 +428,47 @@ public final class LatitudeBiomeSource extends BiomeSource {
                 true,
                 plannedFallback != null,
                 fallbackWorstCase);
+    }
+
+    /** Resolves reserved land first, then preserves the existing surface/water fallback. */
+    Pair<BlockPos, Holder<Biome>> findPlannedSurfaceCoverage(
+            Set<Holder<Biome>> matching,
+            BlockPos origin,
+            Predicate<Holder<Biome>> target,
+            Climate.Sampler sampler) {
+        Pair<BlockPos, Holder<Biome>> land = findPlannedLandCoverage(
+                matching, origin, target, sampler);
+        return land != null
+                ? land
+                : findPlannedSurfaceWaterCoverage(matching, origin, target, sampler);
+    }
+
+    private Pair<BlockPos, Holder<Biome>> findPlannedLandCoverage(
+            Set<Holder<Biome>> matching,
+            BlockPos origin,
+            Predicate<Holder<Biome>> target,
+            Climate.Sampler sampler) {
+        Set<String> requestedIds = matching.stream()
+                .map(LatitudeBiomes::biomeIdPublic)
+                .filter(id -> id != null && !id.isBlank())
+                .collect(Collectors.toUnmodifiableSet());
+        VanillaBiomeCoveragePlan.Anchor anchor =
+                LatitudeBiomes.nearestPlannedLandCoverageAnchor(
+                        requestedIds, origin.getX(), origin.getZ());
+        if (anchor == null) return null;
+        int quartX = QuartPos.fromBlock(anchor.blockX());
+        int quartZ = QuartPos.fromBlock(anchor.blockZ());
+        Holder<Biome> exact = getNoiseBiome(
+                quartX,
+                QuartPos.fromBlock(origin.getY()),
+                quartZ,
+                sampler);
+        if (!target.test(exact)
+                || !anchor.biomeId().equals(LatitudeBiomes.biomeIdPublic(exact))) {
+            return null;
+        }
+        return Pair.of(centerQuartPosition(
+                new BlockPos(anchor.blockX(), origin.getY(), anchor.blockZ())), exact);
     }
 
     /**
