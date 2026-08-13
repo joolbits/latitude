@@ -132,6 +132,7 @@ public class GlobeMod implements ModInitializer {
             // com.example.globe.tools is packaged into release artifacts, so a missing class is a
             // build error worth surfacing rather than something to swallow reflectively.
             com.example.globe.tools.LatitudeToolsCommand.register(dispatcher);
+            com.example.globe.world.LatitudeStructureLocateService.registerTeleportCommand(dispatcher);
             registerDevOnlyCommand(dispatcher);
         });
 
