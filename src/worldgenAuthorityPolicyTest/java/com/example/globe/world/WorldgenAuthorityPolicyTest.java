@@ -144,8 +144,7 @@ public final class WorldgenAuthorityPolicyTest {
         assertEquals(
                 2,
                 occurrences(source, "PreviewTerrain gateProbe = onDemandGateTerrain("),
-                "both picker paths probe real terrain on demand so the gate is not inert under the"
-                        + " worldgen preview fast path");
+                "both picker paths derive non-reentrant terrain evidence under the worldgen fast path");
         assertEquals(
                 2,
                 occurrences(
@@ -164,7 +163,32 @@ public final class WorldgenAuthorityPolicyTest {
         assertEquals(
                 2,
                 occurrences(source, "PreviewTerrain finalAridProbe = onDemandFinalAridTerrain("),
-                "both live picker paths measure a rugged final lowland-arid candidate on demand");
+                "both picker paths classify a final lowland-arid candidate without generator re-entry");
+        assertTrue(
+                source.contains(
+                        "if (\"MIXIN\".equals(normalized) || \"CAVE_CLAMP\".equals(normalized)) { return true; }"),
+                "MIXIN and CAVE_CLAMP unconditionally skip generator-reentrant terrain previews");
+        String onDemandGate = methodBody(source, "private static PreviewTerrain onDemandGateTerrain(");
+        String onDemandArid = methodBody(source, "private static PreviewTerrain onDemandFinalAridTerrain(");
+        String nonReentrantEvidence = methodBody(
+                source, "private static PreviewTerrain nonReentrantTerrainEvidence(");
+        for (String criticalPath : new String[]{onDemandGate, onDemandArid, nonReentrantEvidence}) {
+            assertFalse(
+                    criticalPath.contains("previewTerrain(")
+                            || criticalPath.contains("previewHeight(")
+                            || criticalPath.contains("getBaseHeight("),
+                    "live on-demand terrain classification cannot re-enter the chunk generator");
+        }
+        for (String routedPath : new String[]{onDemandGate, onDemandArid}) {
+            assertTrue(
+                    routedPath.contains("nonReentrantTerrainEvidence("),
+                    "live terrain classification reuses cached height plus sampler relief");
+        }
+        assertTrue(
+                nonReentrantEvidence.contains("new PreviewTerrain(")
+                        && nonReentrantEvidence.contains(
+                                "ruggedNoiseLike ? TerrainBiomeCohesionPolicy.RUGGED_RELIEF_BLOCKS : 0"),
+                "the terminal live evidence contains only cached height and the sampler ruggedness proxy");
         int firstWetlandLaw = source.indexOf("out = applyFinalWetlandIdentityLaw(");
         int firstFinalUpland = source.indexOf(
                 "TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland(");
@@ -224,6 +248,26 @@ public final class WorldgenAuthorityPolicyTest {
                 physicalUpland,
                 descriptor.routes().contains(BiomeRoute.ARID_LOWLAND),
                 descriptor.routes().contains(BiomeRoute.ARID_UPLAND));
+    }
+
+    private static String methodBody(String source, String declaration) {
+        int start = source.indexOf(declaration);
+        assertTrue(start >= 0, "expected method declaration: " + declaration);
+        int brace = source.indexOf('{', start);
+        assertTrue(brace >= 0, "expected method body: " + declaration);
+        int depth = 0;
+        for (int i = brace; i < source.length(); i++) {
+            char c = source.charAt(i);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return source.substring(brace + 1, i);
+                }
+            }
+        }
+        throw new AssertionError("unterminated method body: " + declaration);
     }
 
     private static void recreatedLatitudeWorldKeepsItsWorldTypeAndSize() throws Exception {
