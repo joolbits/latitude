@@ -73,6 +73,36 @@ public final class WorldgenAuthorityPolicyTest {
         assertFalse(
                 TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland(false, false),
                 "ordinary temperate land is not globally promoted");
+
+        BiomeDescriptorLedger.Descriptor vanillaDesert =
+                BiomeDescriptorLedger.descriptor("minecraft:desert");
+        assertTrue(
+                aridTerrainCompatible(vanillaDesert, false),
+                "minecraft:desert is accepted on lowland arid terrain");
+        assertFalse(
+                aridTerrainCompatible(vanillaDesert, true),
+                "minecraft:desert is rejected when the final physical terrain class is upland");
+
+        BiomeDescriptorLedger.Descriptor highlandArid =
+                BiomeDescriptorLedger.descriptor("clifftree:desert_cliff");
+        assertTrue(
+                aridTerrainCompatible(highlandArid, true),
+                "an explicitly ARID_UPLAND custom descriptor remains eligible on upland arid terrain");
+
+        BiomeDescriptorLedger.Descriptor ordinaryCustomDesert =
+                BiomeDescriptorLedger.descriptor("biomesoplenty:lush_desert");
+        assertFalse(
+                aridTerrainCompatible(ordinaryCustomDesert, true),
+                "an ordinary custom lowland desert is not promoted merely because it is third-party");
+
+        BiomeDescriptorLedger.Descriptor nonAridUpland =
+                BiomeDescriptorLedger.descriptor("minecraft:stony_peaks");
+        assertTrue(
+                aridTerrainCompatible(nonAridUpland, true),
+                "existing non-arid upland behavior is unchanged");
+        assertTrue(
+                aridTerrainCompatible(nonAridUpland, false),
+                "existing non-arid lowland behavior is unchanged");
         assertFalse(
                 TerrainBiomeCohesionPolicy.shouldApplyLandGate(
                         true, false, false, highTerrain + 30, 30, seaLevel),
@@ -120,8 +150,21 @@ public final class WorldgenAuthorityPolicyTest {
                 2,
                 occurrences(
                         source,
-                        "TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland( forceTemperateUpland, out != null && out.is(LAT_TEMPERATE_MOUNTAIN))"),
-                "both picker paths preserve physical upland authority through the final return");
+                        "TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland( forceTemperateUpland, hasBiomeRoute(out, BiomeRoute.TEMPERATE_UPLAND))"),
+                "both picker paths preserve descriptor-approved physical upland identities "
+                        + "through the final return");
+        assertEquals(
+                2,
+                occurrences(source, "boolean finalPhysicalUpland = TerrainBiomeCohesionPolicy.isPhysicalUpland("),
+                "both picker paths derive the arid elevation gate from final physical terrain evidence");
+        assertEquals(
+                2,
+                occurrences(source, "out = enforceFinalAridTerrainAuthority("),
+                "both picker paths enforce the descriptor-owned arid terrain route at final return");
+        assertEquals(
+                2,
+                occurrences(source, "PreviewTerrain finalAridProbe = onDemandFinalAridTerrain("),
+                "both live picker paths measure a rugged final lowland-arid candidate on demand");
         int firstWetlandLaw = source.indexOf("out = applyFinalWetlandIdentityLaw(");
         int firstFinalUpland = source.indexOf(
                 "TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland(");
@@ -134,9 +177,53 @@ public final class WorldgenAuthorityPolicyTest {
                         && secondWetlandLaw > firstFinalUpland
                         && secondFinalUpland > secondWetlandLaw,
                 "the final physical-upland clamp runs after every late arid/wetland rewrite");
+        int firstCoverage = source.indexOf("out = applyVanillaCoverage(");
+        int firstPolarClamp = source.indexOf(
+                "out = clampFinalPolarNonMountainAlpineOutput(", firstCoverage);
+        int firstJungleGate = source.indexOf("out = gateWarmJungleSurvival(", firstCoverage);
+        int firstAridLatitude = source.indexOf("out = applyFinalAridLatitudeLaw(", firstCoverage);
+        int firstAridTerrain = source.indexOf("out = enforceFinalAridTerrainAuthority(");
+        int secondCoverage = source.indexOf("out = applyVanillaCoverage(", firstCoverage + 1);
+        int secondPolarClamp = source.indexOf(
+                "out = clampFinalPolarNonMountainAlpineOutput(", secondCoverage);
+        int secondJungleGate = source.indexOf("out = gateWarmJungleSurvival(", secondCoverage);
+        int secondAridLatitude = source.indexOf("out = applyFinalAridLatitudeLaw(", secondCoverage);
+        int secondAridTerrain = source.indexOf(
+                "out = enforceFinalAridTerrainAuthority(", firstAridTerrain + 1);
+        assertTrue(
+                firstCoverage >= 0
+                        && firstPolarClamp > firstCoverage
+                        && firstJungleGate > firstPolarClamp
+                        && firstAridLatitude > firstJungleGate
+                        && firstAridTerrain > firstCoverage
+                        && secondCoverage > firstAridTerrain
+                        && secondPolarClamp > secondCoverage
+                        && secondJungleGate > secondPolarClamp
+                        && secondAridLatitude > secondJungleGate
+                        && secondAridTerrain > secondCoverage,
+                "both picker paths run polar, humidity, arid-latitude, and physical-terrain "
+                        + "authorities after land coverage");
+        assertEquals(
+                2,
+                occurrences(source, "out = applyVanillaCoverage("),
+                "each picker path has exactly one final-admission land coverage point");
+        assertFalse(
+                source.contains(
+                        "if (isBiomeId(chosen, \"minecraft:cherry_grove\") && landBandIndex < BAND_POLAR) { return chosen; }"),
+                "Cherry Grove must pass through the same final land admission sequence");
         assertTrue(
                 source.contains("isBiomeId(candidate, \"minecraft:sunflower_plains\")"),
                 "the exact lowland biome visible in TEST 19 is classified with the plains family");
+    }
+
+    private static boolean aridTerrainCompatible(
+            BiomeDescriptorLedger.Descriptor descriptor,
+            boolean physicalUpland) {
+        assertTrue(descriptor != null, "the discriminator biome has a ledger descriptor");
+        return TerrainBiomeCohesionPolicy.isAridBiomeCompatibleWithTerrain(
+                physicalUpland,
+                descriptor.routes().contains(BiomeRoute.ARID_LOWLAND),
+                descriptor.routes().contains(BiomeRoute.ARID_UPLAND));
     }
 
     private static void recreatedLatitudeWorldKeepsItsWorldTypeAndSize() throws Exception {

@@ -1,5 +1,6 @@
 package com.example.globe.world;
 
+import com.mojang.serialization.Lifecycle;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -9,6 +10,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import net.minecraft.core.Holder;
+import net.minecraft.core.MappedRegistry;
+import net.minecraft.core.RegistrationInfo;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.attribute.EnvironmentAttributeMap;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeGenerationSettings;
+import net.minecraft.world.level.biome.BiomeSpecialEffects;
+import net.minecraft.world.level.biome.Climate;
+import net.minecraft.world.level.biome.MobSpawnSettings;
+import net.minecraft.world.level.levelgen.DensityFunctions;
 
 /** Deterministic provider-ticket, descriptor admission, and fresh-world coverage checks. */
 final class BiomeProviderSelectionPolicyTest {
@@ -41,6 +56,7 @@ final class BiomeProviderSelectionPolicyTest {
         wetlandsAreAcceptedButNeverSubstitutedIn();
         cohesionGatePoolAgreesWithTheLedger();
         vanillaCoverageIsCompleteAndWorldSizeSafe();
+        vanillaCoverageFinalOutputHonorsHumidityAndPickerParity();
         erodedBadlandsIsGuaranteedOnTheLowlandAridRoute();
         surfaceWaterCoverageIsCompleteAndWorldSizeSafe();
         sizeAwareVanillaRepresentationIsClosedAndBirthLocked();
@@ -448,6 +464,486 @@ final class BiomeProviderSelectionPolicyTest {
                 impossibleLand.missingDiagnostics().get("minecraft:windswept_hills");
         assertTrue(landStats != null && landStats.centerEligible() == 0,
                 "land-plan diagnostics distinguish absent eligible terrain from topology/capacity");
+    }
+
+    private static void vanillaCoverageFinalOutputHonorsHumidityAndPickerParity() throws Exception {
+        long seed = 131L;
+        net.minecraft.SharedConstants.tryDetectVersion();
+        net.minecraft.server.Bootstrap.bootStrap();
+        MappedRegistry<Biome> registry = testBiomeRegistry();
+        List<Holder<Biome>> pool = registry.listElements()
+                .map(entry -> (Holder<Biome>) entry)
+                .toList();
+        Holder<Biome> neutral = registry.get(
+                        ResourceKey.create(Registries.BIOME, Identifier.parse("minecraft:plains")))
+                .orElseThrow();
+        BiomeSelectionProfile providerProfile = BiomeSelectionProfile.capture(
+                registry.keySet().stream().map(Identifier::toString).toList());
+        for (int radius : List.of(10_000, 5_000)) {
+            VanillaBiomeRepresentationProfile representation =
+                    VanillaBiomeRepresentationProfile.capture(radius, seed, providerProfile);
+            Climate.Sampler provisionalSampler = coverageSampler(null);
+            LatitudeBiomes.activateWorldgenContext(
+                    radius,
+                    seed,
+                    LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE,
+                    providerProfile,
+                    representation,
+                    provisionalSampler,
+                    null,
+                    63);
+            VanillaBiomeCoveragePlan provisionalPlan =
+                    LatitudeBiomes.activeVanillaCoveragePlanForPolicyTest();
+            assertTrue(provisionalPlan != null && provisionalPlan.complete(),
+                    "the provisional final-output plan must locate every saved land target");
+            VanillaBiomeCoveragePlan.Anchor swampAnchor = provisionalPlan.anchors().stream()
+                    .filter(anchor -> anchor.route() == BiomeRoute.TEMPERATE_WETLAND)
+                    .findFirst()
+                    .orElseThrow();
+            WetlandEvidence wetland = new WetlandEvidence();
+            wetland.add(new WetlandFootprint(
+                    swampAnchor.blockX(),
+                    swampAnchor.blockZ(),
+                    swampAnchor.radiusBlocks()));
+            LatitudeBiomes.clearWorldgenContext();
+            Climate.Sampler sampler = coverageSampler(wetland);
+            try {
+                LatitudeBiomes.activateWorldgenContext(
+                        radius,
+                        seed,
+                        LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE,
+                        providerProfile,
+                        representation,
+                        sampler,
+                        null,
+                        63);
+            VanillaBiomeCoveragePlan plan = LatitudeBiomes.activeVanillaCoveragePlanForPolicyTest();
+            assertTrue(plan != null && plan.complete(),
+                    "the final-output proof requires a complete birth-locked land plan");
+
+            int samples = 0;
+            for (VanillaBiomeCoveragePlan.Anchor anchor : plan.anchors()) {
+                int half = anchor.radiusBlocks() / 2;
+                int[][] offsets = {{0, 0}, {half, 0}, {-half, 0}, {0, half}, {0, -half}};
+                for (int[] offset : offsets) {
+                    int x = anchor.blockX() + offset[0];
+                    int z = anchor.blockZ() + offset[1];
+                    VanillaBiomeCoveragePlan.Anchor visible = plan.match(x, z);
+                    assertTrue(visible != null && visible.biomeId().equals(anchor.biomeId()),
+                            "every saved target remains visible at its center and four shoulders");
+                    assertTrue(insideSyntheticRoute(anchor.route(), x, z, radius),
+                            "the tested coverage sample remains inside its declared route");
+                    Holder<Biome> registryOut = LatitudeBiomes.pick(
+                            registry, neutral, x, z, 80, radius, sampler, "ATLAS_SAMPLER");
+                    Holder<Biome> collectionOut = LatitudeBiomes.pick(
+                            pool, neutral, x, z, 80, radius, sampler, "ATLAS_SAMPLER");
+                    assertEquals(anchor.biomeId(), LatitudeBiomes.biomeIdPublic(registryOut),
+                            "registry picker preserves the valid saved land target at final output");
+                    assertEquals(anchor.biomeId(), LatitudeBiomes.biomeIdPublic(collectionOut),
+                            "collection picker preserves the valid saved land target at final output");
+                    samples++;
+                }
+            }
+            assertEquals(plan.anchors().size() * 5, samples,
+                    "every saved land target reaches final output at its center and four shoulders");
+
+            List<VanillaBiomeCoveragePlan.Anchor> humidAnchors = plan.anchors().stream()
+                    .filter(anchor -> anchor.route() == BiomeRoute.TROPICAL_HUMID_LOWLAND)
+                    .toList();
+            assertTrue(!humidAnchors.isEmpty(),
+                    "each representation profile retains a descriptor-approved humid equivalent");
+            if (radius == 10_000) {
+                assertEquals(Set.of(
+                                "minecraft:jungle",
+                                "minecraft:bamboo_jungle",
+                                "minecraft:sparse_jungle"),
+                        humidAnchors.stream()
+                                .map(VanillaBiomeCoveragePlan.Anchor::biomeId)
+                                .collect(java.util.stream.Collectors.toSet()),
+                        "the Regular profile retains every exact jungle-family target");
+            }
+            for (VanillaBiomeCoveragePlan.Anchor anchor : humidAnchors) {
+                assertTrue(LatitudeBiomes.classifyProvince(anchor.blockX(), anchor.blockZ())
+                                == ProvinceAuthority.Province.WARM_WET,
+                        "humid coverage planning admits " + anchor.biomeId() + " only inside WARM_WET");
+            }
+
+            int[] medium = findUnreservedTropicalProvince(
+                    plan, ProvinceAuthority.Province.WARM_MEDIUM, radius, false);
+            int[] dry = findUnreservedTropicalProvince(
+                    plan, ProvinceAuthority.Province.WARM_DRY, radius, false);
+            for (String jungleId : List.of(
+                    "minecraft:jungle", "minecraft:bamboo_jungle", "minecraft:sparse_jungle",
+                    "terralith:tropical_jungle")) {
+                Holder<Biome> jungle = testBiomeHolder(registry, jungleId);
+                assertPickerPairReturns(
+                        registry, pool, jungle, medium[0], medium[1], radius, sampler,
+                        "minecraft:savanna",
+                        jungleId + " is rewritten by final admission in WARM_MEDIUM");
+                assertPickerPairReturnsOneOf(
+                        registry, pool, jungle, dry[0], dry[1], radius, sampler,
+                        Set.of(
+                                "minecraft:desert",
+                                "minecraft:badlands",
+                                "minecraft:wooded_badlands",
+                                "minecraft:eroded_badlands",
+                                "minecraft:savanna",
+                                "minecraft:savanna_plateau",
+                                "minecraft:windswept_savanna"),
+                        jungleId + " is rewritten by final admission in WARM_DRY");
+            }
+
+            int[] dryUpland = findUnreservedTropicalProvince(
+                    plan, ProvinceAuthority.Province.WARM_DRY, radius, true);
+            assertPickerPairDoesNotReturn(
+                    registry, pool, testBiomeHolder(registry, "minecraft:desert"),
+                    dryUpland[0], dryUpland[1], radius, sampler,
+                    "minecraft:desert",
+                    "lowland desert is rejected by final physical admission on upland terrain");
+
+            if (radius == 10_000) {
+                int[] temperateLowland = findUnreservedBandCoordinate(plan, radius, 0.43, false);
+                assertPickerPairDoesNotReturn(
+                        registry, pool, testBiomeHolder(registry, "minecraft:jungle"),
+                        temperateLowland[0], temperateLowland[1], radius, sampler,
+                        "minecraft:jungle",
+                        "jungle moved to the wrong latitude band is rewritten");
+                assertPickerPairDoesNotReturn(
+                        registry, pool, testBiomeHolder(registry, "minecraft:swamp"),
+                        temperateLowland[0], temperateLowland[1], radius, sampler,
+                        "minecraft:swamp",
+                        "a wetland target without wetland evidence is rewritten");
+
+                assertOrdinaryTemperateTaigaStillUsesInteriorGate(registry, pool, neutral, radius);
+
+                int[] subpolarLowland = findUnreservedBandCoordinate(plan, radius, 0.62, false);
+                assertPickerPairDoesNotReturn(
+                        registry, pool, testBiomeHolder(registry, "minecraft:windswept_forest"),
+                        subpolarLowland[0], subpolarLowland[1], radius, sampler,
+                        "minecraft:windswept_forest",
+                        "cold-upland identity is rejected on final lowland terrain");
+
+                VanillaBiomeCoveragePlan.Anchor unrelated = plan.anchors().stream()
+                        .filter(anchor -> anchor.route() == BiomeRoute.TEMPERATE_LOWLAND)
+                        .findFirst()
+                        .orElseThrow();
+                int[] paleAnchor = LatitudeBiomes.paleGardenAnchorForPolicyTest(sampler);
+                assertPickerPairReturns(
+                        registry, pool, testBiomeHolder(registry, "minecraft:pale_garden"),
+                        paleAnchor[0], paleAnchor[1], radius, sampler,
+                        "minecraft:pale_garden",
+                        "the real Pale Garden authority survives final selection");
+                WetlandFootprint added = new WetlandFootprint(
+                        unrelated.blockX(), unrelated.blockZ(), unrelated.radiusBlocks());
+                wetland.add(added);
+                try {
+                    assertPickerPairReturns(
+                            registry, pool, testBiomeHolder(registry, "minecraft:swamp"),
+                            unrelated.blockX(), unrelated.blockZ(), radius, sampler,
+                            "minecraft:swamp",
+                            "unrelated land coverage does not erase a validated wetland");
+                } finally {
+                    wetland.remove(added);
+                }
+            }
+            } finally {
+                LatitudeBiomes.clearWorldgenContext();
+            }
+        }
+
+        String source;
+        try {
+            source = Files.readString(Path.of(
+                    "src/main/java/com/example/globe/world/LatitudeBiomes.java"));
+        } catch (Exception failure) {
+            throw new AssertionError("unable to inspect final land-coverage authority", failure);
+        }
+        assertTrue(source.contains(
+                        "case TROPICAL_HUMID_LOWLAND -> band == BAND_TROPICAL && !mountain\n"
+                                + "                    && province == ProvinceAuthority.Province.WARM_WET;"),
+                "jungle-family coverage cannot be planned in WARM_MEDIUM or WARM_DRY");
+        assertTrue(source.contains("mayReplaceWithVanillaLandCoverage(out, anchor.route())"),
+                "both coverage resolvers share the stronger-authority protection predicate");
+    }
+
+    private static int[] findUnreservedTropicalProvince(
+            VanillaBiomeCoveragePlan plan,
+            ProvinceAuthority.Province province,
+            int radius,
+            boolean upland) {
+        int tropicalLimit = radius / 5;
+        for (int z = -tropicalLimit; z <= tropicalLimit; z += 47) {
+            for (int x = -radius / 2; x <= radius / 2; x += 53) {
+                if (syntheticUpland(x) != upland || plan.match(x, z) != null) continue;
+                if ((long) x * x + (long) z * z >= (long) radius * radius) continue;
+                if (LatitudeBiomes.classifyProvince(x, z) == province) {
+                    return new int[]{x, z};
+                }
+            }
+        }
+        throw new AssertionError("no unreserved synthetic " + province
+                + (upland ? " upland" : " lowland") + " coordinate");
+    }
+
+    private static int[] findUnreservedBandCoordinate(
+            VanillaBiomeCoveragePlan plan,
+            int radius,
+            double zFraction,
+            boolean upland) {
+        int z = (int) Math.round(radius * zFraction);
+        for (int x = -radius / 2; x <= radius / 2; x += 53) {
+            if (syntheticUpland(x) != upland || plan.match(x, z) != null) continue;
+            if ((long) x * x + (long) z * z < (long) radius * radius) {
+                return new int[]{x, z};
+            }
+        }
+        throw new AssertionError("no unreserved synthetic band coordinate at z/radius=" + zFraction);
+    }
+
+    private static Holder<Biome> testBiomeHolder(MappedRegistry<Biome> registry, String id) {
+        return registry.get(ResourceKey.create(Registries.BIOME, Identifier.parse(id)))
+                .orElseThrow();
+    }
+
+    private static void assertOrdinaryTemperateTaigaStillUsesInteriorGate(
+            MappedRegistry<Biome> registry,
+            List<Holder<Biome>> pool,
+            Holder<Biome> neutral,
+            int radius) throws Exception {
+        Holder<Biome> taiga = testBiomeHolder(registry, "minecraft:old_growth_pine_taiga");
+        Set<String> transitionIds = Set.of(
+                "minecraft:plains",
+                "minecraft:sunflower_plains",
+                "minecraft:flower_forest",
+                "minecraft:birch_forest",
+                "minecraft:old_growth_birch_forest");
+        java.lang.reflect.Method clear = LatitudeBiomes.class.getDeclaredMethod("clearSelectionState");
+        clear.setAccessible(true);
+        java.lang.reflect.Method registryGate = LatitudeBiomes.class.getDeclaredMethod(
+                "gateTemperateTaigaInterior",
+                Registry.class,
+                Holder.class,
+                Holder.class,
+                int.class,
+                int.class,
+                int.class,
+                int.class,
+                int.class,
+                boolean.class);
+        registryGate.setAccessible(true);
+        java.lang.reflect.Method collectionGate = LatitudeBiomes.class.getDeclaredMethod(
+                "gateTemperateTaigaInterior",
+                java.util.Collection.class,
+                Holder.class,
+                Holder.class,
+                int.class,
+                int.class,
+                int.class,
+                int.class,
+                int.class,
+                boolean.class);
+        collectionGate.setAccessible(true);
+
+        int blockX = 0;
+        int blockZ = radius / 2;
+        int temperateBand = 2;
+        clear.invoke(null);
+        @SuppressWarnings("unchecked")
+        Holder<Biome> registryOut = (Holder<Biome>) registryGate.invoke(
+                null,
+                registry,
+                neutral,
+                taiga,
+                blockX,
+                blockZ,
+                radius,
+                temperateBand,
+                temperateBand,
+                false);
+        clear.invoke(null);
+        @SuppressWarnings("unchecked")
+        Holder<Biome> collectionOut = (Holder<Biome>) collectionGate.invoke(
+                null,
+                pool,
+                neutral,
+                taiga,
+                blockX,
+                blockZ,
+                radius,
+                temperateBand,
+                temperateBand,
+                false);
+        String registryId = LatitudeBiomes.biomeIdPublic(registryOut);
+        String collectionId = LatitudeBiomes.biomeIdPublic(collectionOut);
+        assertTrue(transitionIds.contains(registryId),
+                "ordinary non-coverage temperate taiga still reaches the registry interior gate: "
+                        + registryId);
+        assertTrue(transitionIds.contains(collectionId),
+                "ordinary non-coverage temperate taiga still reaches the collection interior gate: "
+                        + collectionId);
+        assertEquals(registryId, collectionId,
+                "ordinary non-coverage temperate taiga keeps picker parity");
+    }
+
+    private static void assertPickerPairReturns(
+            MappedRegistry<Biome> registry,
+            List<Holder<Biome>> pool,
+            Holder<Biome> donor,
+            int x,
+            int z,
+            int radius,
+            Climate.Sampler sampler,
+            String expectedId,
+            String message) {
+        Holder<Biome> registryOut = LatitudeBiomes.pick(
+                registry, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER");
+        Holder<Biome> collectionOut = LatitudeBiomes.pick(
+                pool, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER");
+        assertEquals(expectedId, LatitudeBiomes.biomeIdPublic(registryOut), message + " (registry)");
+        assertEquals(expectedId, LatitudeBiomes.biomeIdPublic(collectionOut), message + " (collection)");
+    }
+
+    private static void assertPickerPairReturnsOneOf(
+            MappedRegistry<Biome> registry,
+            List<Holder<Biome>> pool,
+            Holder<Biome> donor,
+            int x,
+            int z,
+            int radius,
+            Climate.Sampler sampler,
+            Set<String> expectedIds,
+            String message) {
+        Holder<Biome> registryOut = LatitudeBiomes.pick(
+                registry, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER");
+        Holder<Biome> collectionOut = LatitudeBiomes.pick(
+                pool, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER");
+        String registryId = LatitudeBiomes.biomeIdPublic(registryOut);
+        String collectionId = LatitudeBiomes.biomeIdPublic(collectionOut);
+        assertTrue(expectedIds.contains(registryId), message + " (registry): " + registryId);
+        assertTrue(expectedIds.contains(collectionId), message + " (collection): " + collectionId);
+        assertEquals(registryId, collectionId, message + " keeps picker parity");
+    }
+
+    private static void assertPickerPairDoesNotReturn(
+            MappedRegistry<Biome> registry,
+            List<Holder<Biome>> pool,
+            Holder<Biome> donor,
+            int x,
+            int z,
+            int radius,
+            Climate.Sampler sampler,
+            String rejectedId,
+            String message) {
+        Holder<Biome> registryOut = LatitudeBiomes.pick(
+                registry, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER");
+        Holder<Biome> collectionOut = LatitudeBiomes.pick(
+                pool, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER");
+        assertFalse(rejectedId.equals(LatitudeBiomes.biomeIdPublic(registryOut)), message + " (registry)");
+        assertFalse(rejectedId.equals(LatitudeBiomes.biomeIdPublic(collectionOut)), message + " (collection)");
+        assertEquals(LatitudeBiomes.biomeIdPublic(registryOut), LatitudeBiomes.biomeIdPublic(collectionOut),
+                message + " keeps picker parity");
+    }
+
+    private static Climate.Sampler coverageSampler(WetlandEvidence wetland) {
+        var zero = DensityFunctions.zero();
+        var continentalness = new TestDensityFunction(
+                (x, z) -> wetland == null || wetland.contains(x, z) ? 0.35 : 0.75);
+        var erosion = new TestDensityFunction((x, z) -> syntheticUpland(x) ? -0.6 : 0.0);
+        var weirdness = new TestDensityFunction((x, z) -> syntheticUpland(x) ? 0.6 : 0.0);
+        return new Climate.Sampler(
+                zero,
+                zero,
+                continentalness,
+                erosion,
+                zero,
+                weirdness,
+                List.of());
+    }
+
+    private static boolean syntheticUpland(int blockX) {
+        int stripe = Math.floorMod(blockX, 512);
+        return stripe <= 96 || stripe >= 416;
+    }
+
+    private record WetlandFootprint(int blockX, int blockZ, int halfWidth) {
+        boolean contains(int x, int z) {
+            return Math.abs(x - blockX) <= halfWidth
+                    && Math.abs(z - blockZ) <= halfWidth;
+        }
+    }
+
+    private static final class WetlandEvidence {
+        private final List<WetlandFootprint> footprints = new java.util.ArrayList<>();
+
+        void add(WetlandFootprint footprint) {
+            footprints.add(footprint);
+        }
+
+        void remove(WetlandFootprint footprint) {
+            footprints.remove(footprint);
+        }
+
+        boolean contains(int x, int z) {
+            return footprints.stream().anyMatch(footprint -> footprint.contains(x, z));
+        }
+    }
+
+    private static MappedRegistry<Biome> testBiomeRegistry() {
+        MappedRegistry<Biome> registry = new MappedRegistry<>(Registries.BIOME, Lifecycle.stable());
+        Set<String> ids = new java.util.TreeSet<>(registryFor(Set.of()));
+        ids.add("minecraft:pale_garden");
+        ids.add("terralith:tropical_jungle");
+        for (String id : ids) {
+            registry.register(
+                    ResourceKey.create(Registries.BIOME, Identifier.parse(id)),
+                    testBiome(),
+                    RegistrationInfo.BUILT_IN);
+        }
+        registry.freeze();
+        registry.prepareTagReload(new net.minecraft.tags.TagLoader.LoadResult<>(
+                Registries.BIOME, Map.of())).apply();
+        return registry;
+    }
+
+    private static Biome testBiome() {
+        EnvironmentAttributeMap.Builder attributes = EnvironmentAttributeMap.builder();
+        return new Biome.BiomeBuilder()
+                .hasPrecipitation(true)
+                .temperature(0.8F)
+                .downfall(0.4F)
+                .putAttributes(attributes)
+                .specialEffects(new BiomeSpecialEffects.Builder().waterColor(0x3F76E4).build())
+                .mobSpawnSettings(MobSpawnSettings.EMPTY)
+                .generationSettings(BiomeGenerationSettings.EMPTY)
+                .build();
+    }
+
+    private record TestDensityFunction(CoordinateValue value)
+            implements net.minecraft.world.level.levelgen.DensityFunction.SimpleFunction {
+        @Override
+        public double compute(net.minecraft.world.level.levelgen.DensityFunction.FunctionContext context) {
+            return value.at(context.blockX(), context.blockZ());
+        }
+
+        @Override
+        public double minValue() {
+            return -1.0;
+        }
+
+        @Override
+        public double maxValue() {
+            return 1.0;
+        }
+
+        @Override
+        public net.minecraft.util.KeyDispatchDataCodec<? extends net.minecraft.world.level.levelgen.DensityFunction> codec() {
+            throw new UnsupportedOperationException("policy-test density functions are not serialized");
+        }
+    }
+
+    @FunctionalInterface
+    private interface CoordinateValue {
+        double at(int blockX, int blockZ);
     }
 
     /**
