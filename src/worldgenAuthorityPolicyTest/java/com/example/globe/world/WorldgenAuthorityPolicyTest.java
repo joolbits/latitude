@@ -67,7 +67,8 @@ public final class WorldgenAuthorityPolicyTest {
         assertTrue(
                 mixin.contains("boolean woodlandMansionInCustomBiome = structureId != null")
                         && mixin.contains("\"minecraft\".equals(structureId.getNamespace())")
-                        && mixin.contains("\"woodland_mansion\".equals(structureId.getPath())")
+                        && mixin.contains("\"mansion\".equals(structureId.getPath())")
+                        && !mixin.contains("\"woodland_mansion\".equals(structureId.getPath())")
                         && mixin.contains("!\"minecraft\".equals(biomeId.getNamespace())")
                         && mixin.contains("|| woodlandMansionInCustomBiome"),
                 "a woodland mansion must not treat a third-party biome tag as Latitude admission");
@@ -564,9 +565,11 @@ public final class WorldgenAuthorityPolicyTest {
                 "success, failure, and cancellation must all clear the structure progress bar");
         assertTrue(
                 service.contains("ServerPlayConnectionEvents.DISCONNECT.register(")
-                        && service.contains("ServerLifecycleEvents.SERVER_STOPPED.register(server -> cancel(server, null))")
-                        && service.contains("cancel(server, handler.player)"),
-                "disconnect and server stop must cancel the owned structure search");
+                        && service.contains("ServerLifecycleEvents.SERVER_STOPPED.register(server -> {")
+                        && service.contains("cancel(server, null);")
+                        && service.contains("PENDING_TELEPORTS.remove(server);")
+                        && service.contains("clearPendingTeleport(server, handler.player);"),
+                "disconnect and server stop must cancel the owned structure search and clear teleport tokens");
         assertTrue(
                 service.contains("private static final Map<MinecraftServer, StructureLocateJob> ACTIVE_JOBS")
                         && service.contains("if (ACTIVE_JOBS.containsKey(server))"),
@@ -595,14 +598,13 @@ public final class WorldgenAuthorityPolicyTest {
                 "locate candidates must pass Minecraft's real generation-point, Latitude footprint, and village admission path");
         assertTrue(
                 service.contains("showTeleportLocateResult(source, target, context.origin(), outcome.result())")
-                        && service.contains("ClickEvent clickEvent = new ClickEvent.RunCommand(")
-                        && service.contains("\"/tp \" + location.getX() + \" ~ \" + location.getZ())")
-                        && !service.contains("latitude_locate_teleport")
-                        && !service.contains("PENDING_TELEPORTS")
-                        && !service.contains("CommandDispatcher<CommandSourceStack>")
-                        && !service.contains("Commands.literal(")
+                        && service.contains("new ClickEvent.RunCommand(\"/latitude_locate_teleport \" + token)")
+                        && service.contains("pending == null || !pending.token().equals(token)")
+                        && service.contains("Util.getMillis() > pending.expiresAtMs()")
+                        && service.contains("serverTeleports.remove(player.getUUID())")
+                        && !service.contains("new ClickEvent.RunCommand(\"/tp ")
                         && service.contains("\"commands.locate.structure.not_found\""),
-                "the coordinate click must use vanilla teleport authority without adding a shipping command, or show a clear not-found message");
+                "the coordinate click must use a player-bound, expiring one-time action or show a clear not-found message");
         assertTrue(
                 service.contains("try { job.start(); } catch (Throwable failure) { ACTIVE_JOBS.remove(server); job.finishWithFailure(failure); }")
                         && service.contains("finally { finished = true; clearBossBar(); }")
@@ -612,6 +614,7 @@ public final class WorldgenAuthorityPolicyTest {
         String net = normalize(read("src/main/java/com/example/globe/GlobeNet.java"));
         String server = normalize(read("src/main/java/com/example/globe/GlobeMod.java"));
         String client = normalize(read("src/main/java/com/example/globe/GlobeModClient.java"));
+        String tools = normalize(read("src/main/java/com/example/globe/tools/LatitudeToolsCommand.java"));
         String launcher = normalize(read(
                 "src/main/java/com/example/globe/client/create/LatitudeWorldLauncher.java"));
         assertTrue(
@@ -623,8 +626,10 @@ public final class WorldgenAuthorityPolicyTest {
                         && server.contains("new GlobeNet.GlobeStatePayload(isGlobe, loadingBandId)"),
                 "the first Latitude join must snapshot the actual band before it sends the loading state");
         assertTrue(
-                !server.contains("LatitudeStructureLocateService.registerTeleportCommand(dispatcher)"),
-                "structure locate must not add a second shipping command surface");
+                tools.contains("Commands.literal(\"latitude_locate_teleport\")")
+                        && tools.contains("LatitudeStructureLocateService.runPendingTeleport(")
+                        && !server.contains("LatitudeStructureLocateService.registerTeleportCommand(dispatcher)"),
+                "the warning-free locate action must be registered only inside the audited shipping command surface");
         assertTrue(
                 client.contains("LatitudeBands.fromCanonicalId(payload.loadingBandId())")
                         && client.contains("LatitudeClientState.setLoadingZoneLabel(band.displayName())"),

@@ -88,7 +88,7 @@ public abstract class StructureBiomeMatchGuardMixin {
             Identifier biomeId = resolved == null ? null : biomeRegistry.getKey(resolved.value());
             boolean woodlandMansionInCustomBiome = structureId != null
                     && "minecraft".equals(structureId.getNamespace())
-                    && "woodland_mansion".equals(structureId.getPath())
+                    && "mansion".equals(structureId.getPath())
                     && biomeId != null
                     && !"minecraft".equals(biomeId.getNamespace());
             if (resolved == null || !validBiome.test(resolved) || woodlandMansionInCustomBiome) {
