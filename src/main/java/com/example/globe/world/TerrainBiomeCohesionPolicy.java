@@ -46,6 +46,23 @@ public final class TerrainBiomeCohesionPolicy {
             int surfaceY,
             int robustRelief,
             int seaLevel) {
+        return isPhysicalUpland(
+                terrainEvidenceAvailable,
+                surfaceY,
+                robustRelief,
+                seaLevel);
+    }
+
+    /**
+     * Final physical terrain class shared by warm and temperate selection. This deliberately uses
+     * measured terrain only; biome namespace, name fragments, and provider presence are not terrain
+     * evidence.
+     */
+    static boolean isPhysicalUpland(
+            boolean terrainEvidenceAvailable,
+            int surfaceY,
+            int robustRelief,
+            int seaLevel) {
         return shouldApplyLandGate(
                 true,
                 false,
@@ -83,6 +100,22 @@ public final class TerrainBiomeCohesionPolicy {
             boolean forceTemperateUpland,
             boolean finalBiomeInTemperateMountainTag) {
         return forceTemperateUpland && !finalBiomeInTemperateMountainTag;
+    }
+
+    /**
+     * Arid identities must agree with the final physical terrain class declared by their ledger
+     * routes. A descriptorless biome is outside this rule: admission remains the provider-ticket
+     * ledger's responsibility, and this policy must not promote it merely because its name sounds
+     * arid.
+     */
+    static boolean isAridBiomeCompatibleWithTerrain(
+            boolean physicalUpland,
+            boolean ownsAridLowlandRoute,
+            boolean ownsAridUplandRoute) {
+        if (!ownsAridLowlandRoute && !ownsAridUplandRoute) {
+            return true;
+        }
+        return physicalUpland ? ownsAridUplandRoute : ownsAridLowlandRoute;
     }
 
     static boolean shouldReplaceRiverWithLand(
