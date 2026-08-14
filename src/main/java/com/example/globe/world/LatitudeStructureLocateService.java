@@ -5,9 +5,12 @@ import com.example.globe.util.LatitudeBands;
 import com.mojang.datafixers.util.Pair;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -35,7 +38,9 @@ import net.minecraft.tags.StructureTags;
 import net.minecraft.util.Mth;
 import net.minecraft.util.Util;
 import net.minecraft.world.BossEvent;
+import net.minecraft.world.entity.Relative;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
@@ -52,17 +57,89 @@ import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemp
 /** Runs supported Latitude structure searches without blocking the server tick thread. */
 public final class LatitudeStructureLocateService {
     private static final int VANILLA_MAX_RINGS = 100;
+    private static final long TELEPORT_TOKEN_TTL_MS = 5 * 60 * 1_000L;
     private static final Map<MinecraftServer, StructureLocateJob> ACTIVE_JOBS =
+            new IdentityHashMap<>();
+    private static final Map<MinecraftServer, Map<UUID, PendingTeleport>> PENDING_TELEPORTS =
             new IdentityHashMap<>();
 
     static {
         ServerTickEvents.END_SERVER_TICK.register(LatitudeStructureLocateService::tick);
-        ServerLifecycleEvents.SERVER_STOPPED.register(server -> cancel(server, null));
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
-                cancel(server, handler.player));
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+            cancel(server, null);
+            PENDING_TELEPORTS.remove(server);
+        });
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            cancel(server, handler.player);
+            clearPendingTeleport(server, handler.player);
+        });
     }
 
     private LatitudeStructureLocateService() {
+    }
+
+    /** Executes the player-bound, one-time action behind a clickable locate coordinate. */
+    public static int runPendingTeleport(CommandSourceStack source, String tokenValue) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("This locate teleport belongs to a player."));
+            return 0;
+        }
+
+        UUID token;
+        try {
+            token = UUID.fromString(tokenValue);
+        } catch (IllegalArgumentException invalidToken) {
+            source.sendFailure(Component.literal("That locate teleport is no longer available."));
+            return 0;
+        }
+
+        MinecraftServer server = source.getServer();
+        Map<UUID, PendingTeleport> serverTeleports = PENDING_TELEPORTS.get(server);
+        PendingTeleport pending = serverTeleports == null
+                ? null
+                : serverTeleports.get(player.getUUID());
+        if (pending == null || !pending.token().equals(token)) {
+            source.sendFailure(Component.literal("That locate teleport is no longer available."));
+            return 0;
+        }
+        serverTeleports.remove(player.getUUID());
+        if (serverTeleports.isEmpty()) {
+            PENDING_TELEPORTS.remove(server);
+        }
+        if (Util.getMillis() > pending.expiresAtMs()) {
+            source.sendFailure(Component.literal("That locate teleport has expired."));
+            return 0;
+        }
+
+        ServerLevel targetLevel = server.getLevel(pending.level());
+        if (targetLevel == null) {
+            source.sendFailure(Component.literal("That locate destination is no longer available."));
+            return 0;
+        }
+        player.teleportTo(
+                targetLevel,
+                pending.x() + 0.5,
+                player.getY(),
+                pending.z() + 0.5,
+                EnumSet.noneOf(Relative.class),
+                player.getYRot(),
+                player.getXRot(),
+                true);
+        player.setDeltaMovement(0.0, 0.0, 0.0);
+        player.fallDistance = 0.0F;
+        return 1;
+    }
+
+    private static void clearPendingTeleport(MinecraftServer server, ServerPlayer player) {
+        Map<UUID, PendingTeleport> serverTeleports = PENDING_TELEPORTS.get(server);
+        if (serverTeleports == null) {
+            return;
+        }
+        serverTeleports.remove(player.getUUID());
+        if (serverTeleports.isEmpty()) {
+            PENDING_TELEPORTS.remove(server);
+        }
     }
 
     /**
@@ -336,13 +413,27 @@ public final class LatitudeStructureLocateService {
         double dx = origin.getX() - location.getX();
         double dz = origin.getZ() - location.getZ();
         int distance = Mth.floor((float) Math.sqrt(dx * dx + dz * dz));
-        ClickEvent clickEvent = new ClickEvent.RunCommand(
-                "/tp " + location.getX() + " ~ " + location.getZ());
+        ClickEvent clickEvent = new ClickEvent.SuggestCommand(
+                "tp " + location.getX() + " ~ " + location.getZ());
+        ServerPlayer requester = source.getPlayer();
+        if (requester != null) {
+            UUID token = UUID.randomUUID();
+            PENDING_TELEPORTS
+                    .computeIfAbsent(source.getServer(), ignored -> new HashMap<>())
+                    .put(requester.getUUID(), new PendingTeleport(
+                            token,
+                            source.getLevel().dimension(),
+                            location.getX(),
+                            location.getZ(),
+                            Util.getMillis() + TELEPORT_TOKEN_TTL_MS));
+            clickEvent = new ClickEvent.RunCommand("/latitude_locate_teleport " + token);
+        }
+        ClickEvent finalClickEvent = clickEvent;
         Component coordinates = ComponentUtils.wrapInSquareBrackets(
                         Component.translatable("chat.coordinates", location.getX(), "~", location.getZ()))
                 .withStyle(style -> style
                         .withColor(ChatFormatting.GREEN)
-                        .withClickEvent(clickEvent)
+                        .withClickEvent(finalClickEvent)
                         .withHoverEvent(new HoverEvent.ShowText(
                                 Component.translatable("chat.coordinates.tooltip"))));
         source.sendSuccess(
@@ -549,6 +640,14 @@ public final class LatitudeStructureLocateService {
         Structure structure() {
             return holder.value();
         }
+    }
+
+    private record PendingTeleport(
+            UUID token,
+            net.minecraft.resources.ResourceKey<Level> level,
+            int x,
+            int z,
+            long expiresAtMs) {
     }
 
     private static final class Tally {
