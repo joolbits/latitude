@@ -22,14 +22,14 @@ public final class SpawnSafetyPolicyTest {
 
     private static void initialSpawnStaysInRequestedLatitudeWithBoundedFallback() throws IOException {
         assertEquals(
-                1,
+                0,
                 SpawnSafetyPolicy.INITIAL_SPAWN_TERRAIN_VALIDATION_BUDGET,
-                "initial creation begins with one normal terrain-column validation");
+                "initial creation performs no speculative FULL-chunk terrain validation");
         assertEquals(
-                1,
+                0,
                 SpawnSafetyPolicy.maximumInitialSpawnChunkLoadCalls(
                         SpawnSafetyPolicy.INITIAL_SPAWN_TERRAIN_VALIDATION_BUDGET),
-                "the normal initial attempt has a one-FULL-chunk validation bound");
+                "the initial biome-targeted choice cannot synchronously generate a remote chunk");
 
         List<SpawnSafetyPolicy.FallbackCandidate> initialFallback =
                 SpawnSafetyPolicy.safeFallbackCandidates(
@@ -42,9 +42,9 @@ public final class SpawnSafetyPolicyTest {
                         SpawnSafetyPolicy.FALLBACK_MAX_RINGS);
         assertEquals(9, initialFallback.size(),
                 "initial fallback remains the bounded center plus one eight-point ring");
-        assertEquals(10, SpawnSafetyPolicy.INITIAL_SPAWN_TERRAIN_VALIDATION_BUDGET
+        assertEquals(9, SpawnSafetyPolicy.INITIAL_SPAWN_TERRAIN_VALIDATION_BUDGET
                         + initialFallback.size(),
-                "a failed initial candidate costs at most ten target-chunk loads, never a globe scan");
+                "initial creation generates only the bounded fallback destination candidates");
         for (SpawnSafetyPolicy.FallbackCandidate candidate : initialFallback) {
             double degrees = Math.abs(candidate.z()) * 90.0 / 10_000.0;
             assertTrue(degrees >= 35.0 && degrees < 50.0,
@@ -60,6 +60,15 @@ public final class SpawnSafetyPolicyTest {
                 source.contains(
                         "SpawnSafetyPolicy.INITIAL_SPAWN_TERRAIN_VALIDATION_BUDGET, false, true"),
                 "initial creation retains the selected latitude through its bounded safe fallback without teleport-neighbor preload");
+        int initialBudgetGuard = source.indexOf(
+                "if (terrainValidationAttempts >= Math.max(0, terrainValidationBudget)) { return null; }");
+        int speculativeTerrainLoad = source.indexOf(
+                "BlockPos candidate = placeSafeY(world, x, z, prepareTeleportNeighbors);");
+        assertTrue(
+                initialBudgetGuard >= 0
+                        && speculativeTerrainLoad >= 0
+                        && initialBudgetGuard < speculativeTerrainLoad,
+                "the zero initial budget returns before the first FULL-chunk terrain validation");
         assertTrue(
                 source.contains("findSafeFallbackSpawn(world, radius, targetZ, prepareTeleportNeighbors)"),
                 "an exhausted initial candidate uses only the terrain-validated fallback at the requested latitude");

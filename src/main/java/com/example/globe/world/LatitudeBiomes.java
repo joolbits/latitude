@@ -407,8 +407,6 @@ public final class LatitudeBiomes {
             Boolean.getBoolean("latitude.disableRadiusOverride");
     private static final boolean SKIP_PREVIEW_HEIGHT_FOR_BIOME_PNG =
             Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForBiomePng", "true"));
-    private static final boolean SKIP_PREVIEW_HEIGHT_FOR_WORLDGEN =
-            Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForWorldgen", "true"));
     private static volatile long WORLD_SEED = 0L;
     private static volatile WorldgenPolicyVersion ACTIVE_WORLDGEN_POLICY = WorldgenPolicyVersion.MODERN_1_3;
     /** Birth-locked V1 roster. Null means a legacy world or a deliberately fail-closed V1 load. */
@@ -1859,8 +1857,11 @@ public final class LatitudeBiomes {
                 || "ATLAS_SAMPLER".equals(normalized)) {
             return SKIP_PREVIEW_HEIGHT_FOR_BIOME_PNG;
         }
+        // Biome population is already inside the chunk generator. Re-entering it through a
+        // terrain preview can block the integrated server, so this is an invariant rather than a
+        // launch-time tuning flag.
         if ("MIXIN".equals(normalized) || "CAVE_CLAMP".equals(normalized)) {
-            return SKIP_PREVIEW_HEIGHT_FOR_WORLDGEN;
+            return true;
         }
         return false;
     }
@@ -3579,7 +3580,7 @@ public final class LatitudeBiomes {
         }
         PreviewTerrain gateProbe = onDemandGateTerrain(
                 skipPreview, hasPreviewTerrainInputs, landBandIndex, chosen,
-                generator, noiseConfig, heightView, blockX, blockZ);
+                columnDecisionY, mountainNoiseLike);
         int gateHeight = gateProbe != null ? gateProbe.centerHeight : terrainGateHeight;
         int gateDelta = gateProbe != null ? gateProbe.robustDelta : terrainGateDelta;
         boolean gateEvidence = gateProbe != null || terrainEvidenceAvailable;
@@ -4058,11 +4059,8 @@ public final class LatitudeBiomes {
                 hasPreviewTerrainInputs,
                 finalPhysicalUpland,
                 out,
-                generator,
-                noiseConfig,
-                heightView,
-                blockX,
-                blockZ);
+                columnDecisionY,
+                polarMountainNoiseLike);
         boolean finalAridPhysicalUpland = finalPhysicalUpland
                 || finalAridProbe != null && TerrainBiomeCohesionPolicy.isPhysicalUpland(
                         true,
@@ -4356,7 +4354,7 @@ public final class LatitudeBiomes {
         }
         PreviewTerrain gateProbe = onDemandGateTerrain(
                 skipPreview, hasPreviewTerrainInputs, landBandIndex, chosen,
-                generator, noiseConfig, heightView, blockX, blockZ);
+                columnDecisionY, mountainNoiseLike);
         int gateHeight = gateProbe != null ? gateProbe.centerHeight : terrainGateHeight;
         int gateDelta = gateProbe != null ? gateProbe.robustDelta : terrainGateDelta;
         boolean gateEvidence = gateProbe != null || terrainEvidenceAvailable;
@@ -4802,11 +4800,8 @@ public final class LatitudeBiomes {
                 hasPreviewTerrainInputs,
                 finalPhysicalUpland,
                 out,
-                generator,
-                noiseConfig,
-                heightView,
-                blockX,
-                blockZ);
+                columnDecisionY,
+                polarMountainNoiseLike);
         boolean finalAridPhysicalUpland = finalPhysicalUpland
                 || finalAridProbe != null && TerrainBiomeCohesionPolicy.isPhysicalUpland(
                         true,
@@ -8092,48 +8087,38 @@ public final class LatitudeBiomes {
     }
 
     /**
-     * Real terrain relief for a column the fast path skipped, computed only when it can actually
-     * change the answer. Worldgen runs with {@code latitude.skipPreviewHeightForWorldgen} on, which
-     * substitutes a synthetic {@code robustDelta} of 0 for every non-mountain column and therefore
-     * makes the land-cohesion gates inert — flat biomes end up draped over measured ridges. Probing
-     * every column is the cost that flag exists to avoid, so probe only when a flat-family candidate
-     * has landed in a gated band, which is the sole case where the gate can reject anything.
+     * Non-reentrant terrain evidence for a flat-family candidate in a gated band. Live biome
+     * population already computed the column height once; the climate sampler supplies the rugged
+     * shoulder signal without asking the chunk generator for a nine-column terrain preview.
      */
     private static PreviewTerrain onDemandGateTerrain(
             boolean skipPreview,
             boolean hasPreviewTerrainInputs,
             int landBandIndex,
             Holder<Biome> candidate,
-            NoiseBasedChunkGenerator generator,
-            RandomState noiseConfig,
-            LevelHeightAccessor heightView,
-            int blockX,
-            int blockZ) {
+            int columnDecisionY,
+            boolean ruggedNoiseLike) {
         if (!skipPreview || !hasPreviewTerrainInputs || !isLandGateBand(landBandIndex)) {
             return null;
         }
         if (!isPlainsFamily(candidate) && !isTemperateForestFamily(candidate)) {
             return null;
         }
-        return previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+        return nonReentrantTerrainEvidence(columnDecisionY, ruggedNoiseLike);
     }
 
     /**
-     * Live worldgen skips broad relief previews, but a final lowland-only arid identity needs real
-     * relief before it can be allowed to survive. Probe only that exact candidate class; clearly
-     * high columns were already classified from the cached surface height, and descriptors that
-     * own ARID_UPLAND are valid on either side of this decision.
+     * Live worldgen skips broad relief previews, but a final lowland-only arid identity still needs
+     * the physical class before it can survive. Reuse the cached column height and climate-sampler
+     * shoulder signal; descriptors that own ARID_UPLAND remain valid on either side.
      */
     private static PreviewTerrain onDemandFinalAridTerrain(
             boolean skipPreview,
             boolean hasPreviewTerrainInputs,
             boolean alreadyPhysicalUpland,
             Holder<Biome> candidate,
-            NoiseBasedChunkGenerator generator,
-            RandomState noiseConfig,
-            LevelHeightAccessor heightView,
-            int blockX,
-            int blockZ) {
+            int columnDecisionY,
+            boolean ruggedNoiseLike) {
         if (!skipPreview || !hasPreviewTerrainInputs || alreadyPhysicalUpland || candidate == null) {
             return null;
         }
@@ -8144,7 +8129,15 @@ public final class LatitudeBiomes {
                 || descriptor.routes().contains(BiomeRoute.ARID_UPLAND)) {
             return null;
         }
-        return previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+        return nonReentrantTerrainEvidence(columnDecisionY, ruggedNoiseLike);
+    }
+
+    private static PreviewTerrain nonReentrantTerrainEvidence(
+            int columnDecisionY,
+            boolean ruggedNoiseLike) {
+        return new PreviewTerrain(
+                columnDecisionY,
+                ruggedNoiseLike ? TerrainBiomeCohesionPolicy.RUGGED_RELIEF_BLOCKS : 0);
     }
 
     /**
