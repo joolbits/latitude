@@ -99,8 +99,8 @@ public final class SpawnSafetyPolicy {
     }
 
     /**
-     * Initial creation validates at most one candidate chunk and deliberately does not preload a
-     * teleport ring. Vanilla prepares the actual initial-spawn area after this hook returns.
+     * Initial creation makes no speculative candidate-chunk request before the deterministic
+     * terrain-safe fallback. Vanilla prepares the actual initial-spawn area after this hook returns.
      */
     public static int maximumInitialSpawnChunkLoadCalls(int terrainValidationBudget) {
         return Math.max(0, terrainValidationBudget);

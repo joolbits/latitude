@@ -1153,7 +1153,14 @@ public final class LatitudeBiomes {
         return plan != null && plan.isMushroomSolid(blockX, blockY, blockZ);
     }
 
-    /** Constant-cost locate fallback for exact identities reserved by the fresh-world V2 plan. */
+    /** Constant-cost locate fallback for exact land identities reserved by the fresh-world plan. */
+    public static VanillaBiomeCoveragePlan.Anchor nearestPlannedLandCoverageAnchor(
+            Collection<String> biomeIds, int originX, int originZ) {
+        VanillaBiomeCoveragePlan plan = ACTIVE_VANILLA_COVERAGE_PLAN;
+        return plan != null ? plan.nearestAnchorFor(biomeIds, originX, originZ) : null;
+    }
+
+    /** Constant-cost locate fallback for exact identities reserved by the surface/water plan. */
     public static VanillaSurfaceWaterCoveragePlan.Anchor nearestPlannedSurfaceWaterCoverageAnchor(
             Collection<String> biomeIds, int originX, int originZ) {
         VanillaSurfaceWaterCoveragePlan plan = ACTIVE_SURFACE_WATER_COVERAGE_PLAN;
