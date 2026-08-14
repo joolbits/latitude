@@ -27,11 +27,62 @@ public final class WorldgenAuthorityPolicyTest {
         coastalSwampUsesMangroveIdentity();
         wetlandLocateFilterMatchesFinalIdentityLaw();
         biomeLocateServiceClaimsAllSupportedTargets();
+        structureLocateServiceIsBoundedAndTickDelivered();
         customSurfaceLocatePreviewUsesRegistryAuthority();
         LatitudeLocateBudgetPolicyTest.main(new String[0]);
         BiomeProviderSelectionPolicyTest.run();
         registeredHookIntegrationIsClosed();
+        structureAdmissionUsesResolvedLatitudeBiomeSource();
         System.out.println("WORLDGEN_AUTHORITY_POLICY_TEST_PASS");
+    }
+
+    private static void structureAdmissionUsesResolvedLatitudeBiomeSource() throws Exception {
+        String mixin = normalize(read(
+                "src/main/java/com/example/globe/mixin/StructureBiomeMatchGuardMixin.java"));
+        String config = normalize(read("src/main/resources/globe.mixins.json"));
+
+        assertTrue(
+                mixin.contains("@Mixin(Structure.class)"),
+                "the admission redirect must target Minecraft's actual structure biome predicate");
+        assertTrue(
+                mixin.contains("method = \"isValidBiome\"")
+                        && mixin.contains("ChunkGenerator;getBiomeSource()")
+                        && mixin.contains("Structure.GenerationStub ignoredStub")
+                        && mixin.contains("Structure.GenerationContext context"),
+                "the redirect must match the exact 26.2 biome-validation frame and raw-generator lookup");
+        assertTrue(
+                mixin.contains("BiomeSource contextSource = context.biomeSource()")
+                        && mixin.contains("contextSource instanceof LatitudeBiomeSource"),
+                "Latitude structure starts must validate against their resolved context biome source");
+        assertTrue(
+                mixin.contains("? contextSource")
+                        && mixin.contains(": generator.getBiomeSource()"),
+                "non-Latitude worlds must retain Minecraft's original biome-source behavior");
+        assertTrue(
+                mixin.contains("@Inject(method = \"generate\", at = @At(\"RETURN\"), cancellable = true)")
+                        && mixin.contains("BlockPos center = start.getBoundingBox().getCenter()")
+                        && mixin.contains("Holder<Biome> resolved = latitudeSource.getNoiseBiome(")
+                        && mixin.contains("if (resolved == null || !validBiome.test(resolved) || woodlandMansionInCustomBiome)"),
+                "a completed Latitude structure must keep its visible center in a legal biome");
+        assertTrue(
+                mixin.contains("boolean woodlandMansionInCustomBiome = structureId != null")
+                        && mixin.contains("\"minecraft\".equals(structureId.getNamespace())")
+                        && mixin.contains("\"woodland_mansion\".equals(structureId.getPath())")
+                        && mixin.contains("!\"minecraft\".equals(biomeId.getNamespace())")
+                        && mixin.contains("|| woodlandMansionInCustomBiome"),
+                "a woodland mansion must not treat a third-party biome tag as Latitude admission");
+        assertFalse(
+                mixin.contains("int[][] samples = {")
+                        || mixin.contains("legalSamples")
+                        || mixin.contains("box.minX()"),
+                "fresh-world structure admission must not multiply terrain-aware probes across every footprint corner");
+        assertTrue(
+                mixin.contains("if (!(biomeSource instanceof LatitudeBiomeSource latitudeSource))")
+                        && mixin.contains("cir.setReturnValue(StructureStart.INVALID_START)"),
+                "footprint admission must fail closed only for the Latitude-resolved structure source");
+        assertTrue(
+                config.contains("\"StructureBiomeMatchGuardMixin\""),
+                "the structure admission redirect must be registered at runtime");
     }
 
     private static void terrainBiomeCohesionUsesRealSurfaceEvidence() throws Exception {
@@ -476,6 +527,111 @@ public final class WorldgenAuthorityPolicyTest {
                 service.contains("LatitudeLocateBudgetPolicy.fullWorldSearchRadius(")
                         && service.contains("isWithinLatitudeWorld(blockX, blockZ)"),
                 "a boss-bar locate must cover the playable Latitude world without reporting outside it");
+    }
+
+    private static void structureLocateServiceIsBoundedAndTickDelivered() throws Exception {
+        String service = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeStructureLocateService.java"));
+        String mixin = normalize(read(
+                "src/main/java/com/example/globe/mixin/LocateCommandMixin.java"));
+
+        assertTrue(
+                mixin.contains("@Inject(method = \"locateStructure\", at = @At(\"HEAD\"), cancellable = true, require = 1)")
+                        && mixin.contains("LatitudeStructureLocateService.beginIfApplicable(source, target)")
+                        && mixin.contains("cir.setReturnValue(1);"),
+                "the exact 26.2 structure command must return immediately through the Latitude service");
+        assertTrue(
+                service.contains("CompletableFuture.supplyAsync(")
+                        && service.contains("Util.backgroundExecutor()")
+                        && !service.contains("whenCompleteAsync("),
+                "heavy structure candidate evaluation must leave the server thread without delivering UI off-thread");
+        assertTrue(
+                service.contains("ServerTickEvents.END_SERVER_TICK.register(LatitudeStructureLocateService::tick)")
+                        && service.contains("if (job.isDone()) { ACTIVE_JOBS.remove(server); job.complete(); }"),
+                "normal server ticks must poll and deliver the completed result");
+        assertTrue(
+                service.contains("new ServerBossEvent(")
+                        && service.contains("BossEvent.BossBarColor.BLUE")
+                        && service.contains("bossBar.setProgress(percent / 100.0F)")
+                        && service.contains("bossBar.setName(Component.literal("),
+                "the player must receive one blue progress bar updated in place");
+        assertTrue(
+                service.contains("private void finishWithResult(SearchOutcome outcome)")
+                        && service.contains("private void finishWithFailure(Throwable failure)")
+                        && service.contains("private void cancel()")
+                        && occurrences(service, "clearBossBar();") >= 3
+                        && service.contains("bossBar.removeAllPlayers();"),
+                "success, failure, and cancellation must all clear the structure progress bar");
+        assertTrue(
+                service.contains("ServerPlayConnectionEvents.DISCONNECT.register(")
+                        && service.contains("ServerLifecycleEvents.SERVER_STOPPED.register(server -> cancel(server, null))")
+                        && service.contains("cancel(server, handler.player)"),
+                "disconnect and server stop must cancel the owned structure search");
+        assertTrue(
+                service.contains("private static final Map<MinecraftServer, StructureLocateJob> ACTIVE_JOBS")
+                        && service.contains("if (ACTIVE_JOBS.containsKey(server))"),
+                "one server may own only one active Latitude structure search");
+        assertTrue(
+                service.contains("if (!(placement instanceof RandomSpreadStructurePlacement spread)) { return false; }")
+                        && service.contains("placement().isStructureChunk("),
+                "unsupported placements must defer wholly to vanilla and supported candidates must pass Minecraft's full placement predicate");
+        assertTrue(
+                service.contains("structureState.possibleStructureSets()")
+                        && service.contains("structureSet.structures().stream()")
+                        && service.contains("StructurePlacement placement = structureSet.placement();")
+                        && !service.contains("structureState.getPlacementsForStructure(")
+                        && !service.contains("structureState.ensureStructuresGenerated();"),
+                "command admission must inspect the existing structure-set roster without triggering lazy structure generation on the server thread");
+        assertTrue(
+                service.contains("SearchBounds bounds = new SearchBounds(")
+                        && service.contains("if (!context.bounds().contains(locatePos))"),
+                "the custom search must stay inside the playable Latitude border snapshot");
+        assertTrue(
+                service.contains("LatitudeBiomeSource finalBiomeSource = LatitudeBiomeSource.forStructure(")
+                        && service.contains("candidate.structure().generate(")
+                        && service.contains("context.templateManager()")
+                        && service.contains("if (generatedStart == null || !generatedStart.isValid())")
+                        && service.contains("LatitudeBiomes.villageVariantVsBiomeMismatch("),
+                "locate candidates must pass Minecraft's real generation-point, Latitude footprint, and village admission path");
+        assertTrue(
+                service.contains("showTeleportLocateResult(source, target, context.origin(), outcome.result())")
+                        && service.contains("ClickEvent clickEvent = new ClickEvent.RunCommand(")
+                        && service.contains("\"/tp \" + location.getX() + \" ~ \" + location.getZ())")
+                        && !service.contains("latitude_locate_teleport")
+                        && !service.contains("PENDING_TELEPORTS")
+                        && !service.contains("CommandDispatcher<CommandSourceStack>")
+                        && !service.contains("Commands.literal(")
+                        && service.contains("\"commands.locate.structure.not_found\""),
+                "the coordinate click must use vanilla teleport authority without adding a shipping command, or show a clear not-found message");
+        assertTrue(
+                service.contains("try { job.start(); } catch (Throwable failure) { ACTIVE_JOBS.remove(server); job.finishWithFailure(failure); }")
+                        && service.contains("finally { finished = true; clearBossBar(); }")
+                        && service.contains("future.cancel(false);"),
+                "startup, delivery, and worker failures must release the server job slot and clear the boss bar");
+
+        String net = normalize(read("src/main/java/com/example/globe/GlobeNet.java"));
+        String server = normalize(read("src/main/java/com/example/globe/GlobeMod.java"));
+        String client = normalize(read("src/main/java/com/example/globe/GlobeModClient.java"));
+        String launcher = normalize(read(
+                "src/main/java/com/example/globe/client/create/LatitudeWorldLauncher.java"));
+        assertTrue(
+                net.contains("record GlobeStatePayload(boolean isGlobe, String loadingBandId)")
+                        && net.contains("GlobeStatePayload::loadingBandId"),
+                "the existing globe handshake must carry the authoritative loading-band id");
+        assertTrue(
+                server.contains("recordLastKnownBand(overworld, overworld.getWorldBorder(), handler.player);")
+                        && server.contains("new GlobeNet.GlobeStatePayload(isGlobe, loadingBandId)"),
+                "the first Latitude join must snapshot the actual band before it sends the loading state");
+        assertTrue(
+                !server.contains("LatitudeStructureLocateService.registerTeleportCommand(dispatcher)"),
+                "structure locate must not add a second shipping command surface");
+        assertTrue(
+                client.contains("LatitudeBands.fromCanonicalId(payload.loadingBandId())")
+                        && client.contains("LatitudeClientState.setLoadingZoneLabel(band.displayName())"),
+                "the handshake must restore the italic loading label after a new-world disconnect boundary");
+        assertTrue(
+                launcher.contains("LatitudeClientState.setLoadingZoneLabel(randomSpawnZone ? null : spawnZone.displayName())"),
+                "the immediate selected-zone label remains available before the server handshake arrives");
     }
 
     private static void customSurfaceLocatePreviewUsesRegistryAuthority() throws Exception {

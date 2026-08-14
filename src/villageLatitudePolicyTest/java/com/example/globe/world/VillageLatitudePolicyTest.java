@@ -517,16 +517,16 @@ public final class VillageLatitudePolicyTest {
         String mixins = normalize(read("src/main/resources/globe.mixins.json"));
         assertTrue(
                 mixins.contains(
-                        "\"ExtremePolarVillageStartGuardMixin\", \"ExtremePolarVegetationGuardMixin\""),
-                "fresh-start rejection is registered beside the vegetation guard");
+                        "\"ExtremePolarVillageStartGuardMixin\", \"StructureBiomeMatchGuardMixin\", \"ExtremePolarVegetationGuardMixin\""),
+                "fresh-start and final-biome admission guards are registered beside the vegetation guard");
         assertEquals(
                 0,
                 occurrences(mixins, "\"ExtremePolarVillageGuardMixin\""),
                 "the obsolete polar placement guard cannot truncate stored village starts");
         assertEquals(
-                0,
+                1,
                 occurrences(mixins, "\"StructureBiomeMatchGuardMixin\""),
-                "the obsolete climate placement guard cannot truncate stored village starts");
+                "the final-biome admission guard is registered exactly once");
         assertEquals(
                 1,
                 occurrences(mixins, "\"ExtremePolarVillageStartGuardMixin\""),
@@ -534,9 +534,9 @@ public final class VillageLatitudePolicyTest {
         assertTrue(
                 Files.notExists(Path.of(
                         "src/main/java/com/example/globe/mixin/ExtremePolarVillageGuardMixin.java"))
-                        && Files.notExists(Path.of(
+                        && Files.exists(Path.of(
                         "src/main/java/com/example/globe/mixin/StructureBiomeMatchGuardMixin.java")),
-                "obsolete place-time implementations are removed rather than left as stale hooks");
+                "the obsolete place-time guard stays removed while the generation-time admission guard remains active");
 
         String globeMod = normalize(read("src/main/java/com/example/globe/GlobeMod.java"));
         assertTrue(
@@ -547,9 +547,9 @@ public final class VillageLatitudePolicyTest {
                 "new policy retains the current blockZ coordinate convention");
 
         assertEquals(
-                2,
+                3,
                 mainSourceOccurrences("isBlockBeyondPolarVillageLimit"),
-                "village predicate appears only at its declaration and the fresh-start guard");
+                "village predicate appears only at its declaration, the fresh-start guard, and the aligned locator");
 
         String build = normalize(read("build.gradle"));
         assertTrue(

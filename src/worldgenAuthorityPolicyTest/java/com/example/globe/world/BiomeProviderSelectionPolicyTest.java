@@ -57,6 +57,7 @@ final class BiomeProviderSelectionPolicyTest {
         cohesionGatePoolAgreesWithTheLedger();
         vanillaCoverageIsCompleteAndWorldSizeSafe();
         vanillaCoverageFinalOutputHonorsHumidityAndPickerParity();
+        groveLocateFallsBackToExactLandCoverageAnchor();
         erodedBadlandsIsGuaranteedOnTheLowlandAridRoute();
         surfaceWaterCoverageIsCompleteAndWorldSizeSafe();
         sizeAwareVanillaRepresentationIsClosedAndBirthLocked();
@@ -944,6 +945,48 @@ final class BiomeProviderSelectionPolicyTest {
     @FunctionalInterface
     private interface CoordinateValue {
         double at(int blockX, int blockZ);
+    }
+
+    private static void groveLocateFallsBackToExactLandCoverageAnchor() throws Exception {
+        int radius = 10_000;
+        BiomeSelectionProfile vanilla = BiomeSelectionProfile.capture(registryFor(Set.of()));
+        VanillaBiomeCoveragePlan plan = VanillaBiomeCoveragePlan.build(
+                radius,
+                41L,
+                vanilla,
+                Map.of("minecraft:grove", BiomeRoute.TEMPERATE_UPLAND),
+                (id, route, x, z) -> insideSyntheticRoute(route, x, z, radius));
+        assertTrue(plan.complete(), "the focused grove reservation must be available");
+        VanillaBiomeCoveragePlan.Anchor reserved = plan.anchors().getFirst();
+        VanillaBiomeCoveragePlan.Anchor located = plan.nearestAnchorFor(
+                Set.of("minecraft:grove"), -reserved.blockX(), -reserved.blockZ());
+        assertEquals(reserved, located,
+                "a missed bounded scan resolves the exact reserved grove anchor");
+        assertEquals(reserved.blockX(), located.blockX(),
+                "planned grove locate keeps the reserved X coordinate");
+        assertEquals(reserved.blockZ(), located.blockZ(),
+                "planned grove locate keeps the reserved Z coordinate");
+        assertTrue(plan.nearestAnchorFor(Set.of("minecraft:the_void"), 0, 0) == null,
+                "land locate cannot invent an unreserved biome identity");
+
+        String locateSource = Files.readString(
+                Path.of("src/main/java/com/example/globe/world/LatitudeBiomeSource.java"));
+        int preview = locateSource.indexOf("for (BlockPos.MutableBlockPos offset : BlockPos.spiralAround");
+        int coarse = locateSource.indexOf("Pair<BlockPos, Holder<Biome>> fallback =");
+        int planned = locateSource.indexOf(
+                "? findPlannedSurfaceCoverage(matching, origin, target, sampler)");
+        assertTrue(preview >= 0 && preview < coarse && coarse < planned,
+                "the land plan is consulted only after preview and coarse exact searches miss");
+        assertTrue(locateSource.contains("nearestPlannedLandCoverageAnchor(")
+                        && locateSource.contains("findPlannedSurfaceWaterCoverage("),
+                "the terminal fallback adds exact land anchors without removing water coverage");
+
+        String serviceSource = Files.readString(
+                Path.of("src/main/java/com/example/globe/world/LatitudeBiomeLocateService.java"));
+        int tickCoarse = serviceSource.indexOf("if (fallbackOffsets.hasNext())");
+        int tickPlanned = serviceSource.indexOf("latitudeSource.findPlannedSurfaceCoverage(");
+        assertTrue(tickCoarse >= 0 && tickCoarse < tickPlanned,
+                "the tick-sliced command reaches the land plan only after its coarse fallback misses");
     }
 
     /**
