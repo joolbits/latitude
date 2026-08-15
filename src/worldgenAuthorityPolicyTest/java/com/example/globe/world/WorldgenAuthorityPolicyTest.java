@@ -15,6 +15,7 @@ public final class WorldgenAuthorityPolicyTest {
         inlineGeneratorAuthorityIsBoundToTheExactOverworld();
         oldWorldStateDefaultsAreConservativeAndVanillaReadsAreNonCreating();
         biomeColumnCacheIsWorldBoundAndAvoidsDuplicateVerticalPicks();
+        sulfurSurfaceExpressionRequiresAridLandAuthority();
         frozenRiverVegetationIsScopedWithoutMutatingVanillaBiomes();
         generationScopeIsDimensionIsolatedAndNestSafe();
         generationScopeCleansUpOnFailureAndAcrossThreads();
@@ -969,6 +970,35 @@ public final class WorldgenAuthorityPolicyTest {
         assertTrue(
                 caveReturn >= 0 && columnCache > caveReturn && pick > columnCache,
                 "every non-cave quart-Y cell reuses one biome pick per column/base while cave cells use their final V4 identity");
+    }
+
+    private static void sulfurSurfaceExpressionRequiresAridLandAuthority() throws Exception {
+        assertTrue(
+                BiomeDescriptorLedger.supportsSulfurSurfaceExpression("minecraft:desert")
+                        && BiomeDescriptorLedger.supportsSulfurSurfaceExpression("minecraft:badlands")
+                        && BiomeDescriptorLedger.supportsSulfurSurfaceExpression("biomesoplenty:dryland"),
+                "descriptor-owned arid land remains eligible for a surface sulfur pool");
+        assertFalse(
+                BiomeDescriptorLedger.supportsSulfurSurfaceExpression("minecraft:jungle")
+                        || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("terralith:tropical_jungle")
+                        || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("terralith:amethyst_rainforest")
+                        || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("minecraft:swamp")
+                        || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("terralith:caldera")
+                        || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("unreviewed:volcanic_name"),
+                "humid, wetland, non-arid upland, and unknown name-alike surfaces fail closed");
+
+        String populate = normalize(read(
+                "src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java"));
+        assertTrue(
+                populate.contains("private static final int SULFUR_SURFACE_REACH_BLOCKS = 32;")
+                        && populate.contains("boolean sulfurMayReachSurface = isSulfurCaves(biomes, current) && blockY >= (surfaceY - SULFUR_SURFACE_REACH_BLOCKS);")
+                        && populate.contains("boolean sulfurSurfaceIncompatible = sulfurMayReachSurface && !BiomeDescriptorLedger.supportsSulfurSurfaceExpression( biomeId(biomes, replacement));")
+                        && populate.contains("if (nearSurface || tooHigh || deepDarkIllegal || sulfurSurfaceIncompatible) { return replacement; }"),
+                "the vanilla sulfur pool's complete upward reach is checked against the final Latitude surface biome");
+        assertTrue(
+                populate.contains("Holder<Biome> replacement = sulfurMayReachSurface ? columnPickCache.get(colKey) : null;")
+                        && populate.contains("if (sulfurMayReachSurface) { columnPickCache.put(colKey, replacement); columnPickBase.put(colKey, base); }"),
+                "the sulfur reach check reuses one final surface decision per column");
     }
 
     private static void frozenRiverVegetationIsScopedWithoutMutatingVanillaBiomes()
