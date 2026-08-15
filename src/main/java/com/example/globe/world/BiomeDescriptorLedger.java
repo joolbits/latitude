@@ -265,6 +265,18 @@ public final class BiomeDescriptorLedger {
         return descriptor != null && descriptor.terrain() == Terrain.CAVE;
     }
 
+    /**
+     * Surface sulfur expression is restricted to Latitude-owned arid land. Unknown or merely
+     * name-alike provider biomes fail closed until the ledger can describe them intentionally.
+     */
+    public static boolean supportsSulfurSurfaceExpression(String id) {
+        Descriptor descriptor = descriptor(id);
+        return descriptor != null
+                && descriptor.terrain() == Terrain.ARID
+                && descriptor.water() == Water.LAND
+                && descriptor.family() == Family.ARID;
+    }
+
     public static List<String> validate(Collection<String> activeIds) {
         List<String> errors = new ArrayList<>();
         Set<String> active = Set.copyOf(activeIds);
