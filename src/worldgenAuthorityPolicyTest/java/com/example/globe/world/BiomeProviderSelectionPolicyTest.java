@@ -602,6 +602,28 @@ final class BiomeProviderSelectionPolicyTest {
                     "minecraft:desert",
                     "lowland desert is rejected by final physical admission on upland terrain");
 
+            int[] wetSubtropical = findUnreservedWarmNonHotspotProvince(
+                    plan, ProvinceAuthority.Province.WARM_WET, radius, 1, false);
+            assertPickerPairReturns(
+                    registry, pool, testBiomeHolder(registry, "minecraft:desert"),
+                    wetSubtropical[0], wetSubtropical[1], radius, sampler,
+                    "minecraft:jungle",
+                    "ordinary desert is rewritten by final admission in non-hotspot WARM_WET at "
+                            + wetSubtropical[0] + "," + wetSubtropical[1]);
+            int[] drySubtropical = findUnreservedWarmNonHotspotProvince(
+                    plan, ProvinceAuthority.Province.WARM_DRY, radius, 1, false);
+            Set<String> aridLowlandIds = Set.of(
+                    "minecraft:desert",
+                    "minecraft:badlands",
+                    "minecraft:wooded_badlands",
+                    "minecraft:eroded_badlands");
+            assertPickerPairEachReturnsOneOf(
+                    registry, pool, testBiomeHolder(registry, "minecraft:desert"),
+                    drySubtropical[0], drySubtropical[1], radius, sampler,
+                    aridLowlandIds,
+                    "ordinary desert remains in the arid lowland family in WARM_DRY terrain at "
+                            + drySubtropical[0] + "," + drySubtropical[1]);
+
             if (radius == 10_000) {
                 int[] temperateLowland = findUnreservedBandCoordinate(plan, radius, 0.43, false);
                 assertPickerPairDoesNotReturn(
@@ -665,6 +687,8 @@ final class BiomeProviderSelectionPolicyTest {
                 "jungle-family coverage cannot be planned in WARM_MEDIUM or WARM_DRY");
         assertTrue(source.contains("mayReplaceWithVanillaLandCoverage(out, anchor.route())"),
                 "both coverage resolvers share the stronger-authority protection predicate");
+        assertTrue(source.contains("&& !aridHotspotHere(WORLD_SEED, blockX, blockZ);"),
+                "the inverse humidity gate preserves explicitly detected arid hotspots");
     }
 
     private static int[] findUnreservedTropicalProvince(
@@ -684,6 +708,34 @@ final class BiomeProviderSelectionPolicyTest {
         }
         throw new AssertionError("no unreserved synthetic " + province
                 + (upland ? " upland" : " lowland") + " coordinate");
+    }
+
+    private static int[] findUnreservedWarmNonHotspotProvince(
+            VanillaBiomeCoveragePlan plan,
+            ProvinceAuthority.Province province,
+            int radius,
+            int bandIndex,
+            boolean upland) {
+        for (int z = -radius; z <= radius; z += 47) {
+            for (int x = -radius / 2; x <= radius / 2; x += 53) {
+                if (syntheticUpland(x) != upland || plan.match(x, z) != null) continue;
+                if ((long) x * x + (long) z * z >= (long) radius * radius) continue;
+                double latitudeDegrees = Math.abs((double) z) * 90.0 / (double) radius;
+                if (latitudeDegrees < 27.0 || latitudeDegrees > 33.0) continue;
+                if (LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, z, radius)
+                        != bandIndex) continue;
+                if (AridLatitudePolicy.replacementFor(true, z, radius, 23.5, 35.5)
+                        != AridLatitudePolicy.Replacement.KEEP) continue;
+                if (LatitudeBiomes.classifyProvince(x, z) != province) continue;
+                if (!LatitudeBiomes.debugAridHotspot(x, z)) {
+                    return new int[]{x, z};
+                }
+            }
+        }
+        throw new AssertionError("no unreserved synthetic " + province
+                + (upland ? " upland" : " lowland")
+                + " coordinate in band " + bandIndex
+                + " outside an arid hotspot");
     }
 
     private static int[] findUnreservedBandCoordinate(
@@ -823,6 +875,26 @@ final class BiomeProviderSelectionPolicyTest {
         assertTrue(expectedIds.contains(registryId), message + " (registry): " + registryId);
         assertTrue(expectedIds.contains(collectionId), message + " (collection): " + collectionId);
         assertEquals(registryId, collectionId, message + " keeps picker parity");
+    }
+
+    private static void assertPickerPairEachReturnsOneOf(
+            MappedRegistry<Biome> registry,
+            List<Holder<Biome>> pool,
+            Holder<Biome> donor,
+            int x,
+            int z,
+            int radius,
+            Climate.Sampler sampler,
+            Set<String> expectedIds,
+            String message) {
+        Holder<Biome> registryOut = LatitudeBiomes.pick(
+                registry, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER");
+        Holder<Biome> collectionOut = LatitudeBiomes.pick(
+                pool, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER");
+        String registryId = LatitudeBiomes.biomeIdPublic(registryOut);
+        String collectionId = LatitudeBiomes.biomeIdPublic(collectionOut);
+        assertTrue(expectedIds.contains(registryId), message + " (registry): " + registryId);
+        assertTrue(expectedIds.contains(collectionId), message + " (collection): " + collectionId);
     }
 
     private static void assertPickerPairDoesNotReturn(

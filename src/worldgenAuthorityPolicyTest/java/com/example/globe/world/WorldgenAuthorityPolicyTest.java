@@ -257,12 +257,16 @@ public final class WorldgenAuthorityPolicyTest {
         int firstPolarClamp = source.indexOf(
                 "out = clampFinalPolarNonMountainAlpineOutput(", firstCoverage);
         int firstJungleGate = source.indexOf("out = gateWarmJungleSurvival(", firstCoverage);
+        int firstWarmWetDesertGate = source.indexOf(
+                "out = gateWarmWetDesertSurvival(", firstJungleGate);
         int firstAridLatitude = source.indexOf("out = applyFinalAridLatitudeLaw(", firstCoverage);
         int firstAridTerrain = source.indexOf("out = enforceFinalAridTerrainAuthority(");
         int secondCoverage = source.indexOf("out = applyVanillaCoverage(", firstCoverage + 1);
         int secondPolarClamp = source.indexOf(
                 "out = clampFinalPolarNonMountainAlpineOutput(", secondCoverage);
         int secondJungleGate = source.indexOf("out = gateWarmJungleSurvival(", secondCoverage);
+        int secondWarmWetDesertGate = source.indexOf(
+                "out = gateWarmWetDesertSurvival(", secondJungleGate);
         int secondAridLatitude = source.indexOf("out = applyFinalAridLatitudeLaw(", secondCoverage);
         int secondAridTerrain = source.indexOf(
                 "out = enforceFinalAridTerrainAuthority(", firstAridTerrain + 1);
@@ -270,15 +274,21 @@ public final class WorldgenAuthorityPolicyTest {
                 firstCoverage >= 0
                         && firstPolarClamp > firstCoverage
                         && firstJungleGate > firstPolarClamp
-                        && firstAridLatitude > firstJungleGate
+                        && firstWarmWetDesertGate > firstJungleGate
+                        && firstAridLatitude > firstWarmWetDesertGate
                         && firstAridTerrain > firstCoverage
                         && secondCoverage > firstAridTerrain
                         && secondPolarClamp > secondCoverage
                         && secondJungleGate > secondPolarClamp
-                        && secondAridLatitude > secondJungleGate
+                        && secondWarmWetDesertGate > secondJungleGate
+                        && secondAridLatitude > secondWarmWetDesertGate
                         && secondAridTerrain > secondCoverage,
-                "both picker paths run polar, humidity, arid-latitude, and physical-terrain "
+                "both picker paths run polar, bidirectional humidity, arid-latitude, and physical-terrain "
                         + "authorities after land coverage");
+        assertEquals(
+                2,
+                occurrences(source, "out = gateWarmWetDesertSurvival("),
+                "each picker path has exactly one final inverse-humidity desert gate");
         assertEquals(
                 2,
                 occurrences(source, "out = applyVanillaCoverage("),
