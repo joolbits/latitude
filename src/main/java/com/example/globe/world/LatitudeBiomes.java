@@ -226,6 +226,21 @@ public final class LatitudeBiomes {
         return latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
     }
 
+    static int finalPickerLandBandIndexForPolicyTest(
+            int blockX, int blockZ, int borderRadiusBlocks) {
+        int activeRadius = ACTIVE_RADIUS_BLOCKS;
+        int effectiveRadius = (!DISABLE_RADIUS_OVERRIDE && activeRadius > 0)
+                ? activeRadius
+                : borderRadiusBlocks;
+        if (effectiveRadius <= 0) {
+            return BAND_TROPICAL;
+        }
+        double tBase = (double) Math.abs(blockZ) / (double) effectiveRadius;
+        double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
+        return latitudeBandIndexWithBlend(
+                blockX, blockZ, effectiveRadius, bandForAbsLatFraction(t), t);
+    }
+
     /**
      * Diagnostic-only accessor for atlas/export tooling: returns the pre-rewrite band choice
      * from the blend comparator (chosenBandIndex) before the subtropical->temperate constitutional
@@ -3938,6 +3953,7 @@ public final class LatitudeBiomes {
         out = gateWarmJungleSurvival(biomeRegistry, out, landBandIndex, blockX, blockZ);
         out = gateWarmWetSparseJungleSurvival(biomeRegistry, base, out, landBandIndex, blockX, blockZ);
         out = gateDryWarmIdentity(biomeRegistry, out, landBandIndex, blockX, blockZ);
+        out = gateWarmWetDesertSurvival(biomeRegistry, out, landBandIndex, blockX, blockZ);
         out = gatePolarTaigaSurvival(biomeRegistry, out, landBandIndex, finalLatDeg, blockX, blockZ);
         out = gateTemperateTaigaInterior(biomeRegistry, base, out, blockX, blockZ, effectiveRadius, bandIndex, landBandIndex, mountainLike);
         Holder<Biome> beforeLateWetlandClamp = out;
@@ -4679,6 +4695,7 @@ public final class LatitudeBiomes {
         out = gateWarmJungleSurvival(biomePool, out, landBandIndex, blockX, blockZ);
         out = gateWarmWetSparseJungleSurvival(biomePool, base, out, landBandIndex, blockX, blockZ);
         out = gateDryWarmIdentity(biomePool, out, landBandIndex, blockX, blockZ);
+        out = gateWarmWetDesertSurvival(biomePool, out, landBandIndex, blockX, blockZ);
         out = gatePolarTaigaSurvival(biomePool, out, landBandIndex, finalLatDeg, blockX, blockZ);
         out = gateTemperateTaigaInterior(biomePool, base, out, blockX, blockZ, effectiveRadius, bandIndex, landBandIndex, mountainLike);
         Holder<Biome> beforeLateWetlandClamp = out;
@@ -8530,6 +8547,48 @@ public final class LatitudeBiomes {
         }
         Holder<Biome> safe = entryById(biomes, "minecraft:savanna");
         return safe != null ? safe : out;
+    }
+
+    private static boolean warmWetDesertNeedsReroute(Holder<Biome> out,
+                                                      int landBandIndex,
+                                                      int blockX,
+                                                      int blockZ) {
+        return landBandIndex <= BAND_SUBTROPICAL
+                && isDesertFamily(out)
+                && classifyProvince(blockX, blockZ) == ProvinceAuthority.Province.WARM_WET
+                && !aridHotspotHere(WORLD_SEED, blockX, blockZ);
+    }
+
+    private static Holder<Biome> gateWarmWetDesertSurvival(Registry<Biome> biomes,
+                                                            Holder<Biome> out,
+                                                            int landBandIndex,
+                                                            int blockX,
+                                                            int blockZ) {
+        if (!warmWetDesertNeedsReroute(out, landBandIndex, blockX, blockZ)) {
+            return out;
+        }
+        Holder<Biome> rerouted = enforceWarmProvinceFamily(
+                biomes, out, ProvinceAuthority.Province.WARM_WET);
+        if (!sameBiomeId(out, rerouted)) {
+            setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "warm_wet_desert_gate", rerouted);
+        }
+        return rerouted;
+    }
+
+    private static Holder<Biome> gateWarmWetDesertSurvival(Collection<Holder<Biome>> biomes,
+                                                            Holder<Biome> out,
+                                                            int landBandIndex,
+                                                            int blockX,
+                                                            int blockZ) {
+        if (!warmWetDesertNeedsReroute(out, landBandIndex, blockX, blockZ)) {
+            return out;
+        }
+        Holder<Biome> rerouted = enforceWarmProvinceFamily(
+                biomes, out, ProvinceAuthority.Province.WARM_WET);
+        if (!sameBiomeId(out, rerouted)) {
+            setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "warm_wet_desert_gate", rerouted);
+        }
+        return rerouted;
     }
 
     private static String bandName(int bandIndex) {
