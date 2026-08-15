@@ -8,7 +8,10 @@ import com.mojang.serialization.DynamicOps;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.MapLike;
 import com.mojang.serialization.RecordBuilder;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -456,19 +459,46 @@ public final class LatitudeBiomeSource extends BiomeSource {
                 LatitudeBiomes.nearestPlannedLandCoverageAnchor(
                         requestedIds, origin.getX(), origin.getZ());
         if (anchor == null) return null;
-        int quartX = QuartPos.fromBlock(anchor.blockX());
-        int quartZ = QuartPos.fromBlock(anchor.blockZ());
-        Holder<Biome> exact = getNoiseBiome(
-                quartX,
-                QuartPos.fromBlock(origin.getY()),
-                quartZ,
-                sampler);
-        if (!target.test(exact)
-                || !anchor.biomeId().equals(LatitudeBiomes.biomeIdPublic(exact))) {
-            return null;
+        for (BlockPos sample : plannedLandCoverageSamplePositions(anchor, origin)) {
+            int quartX = QuartPos.fromBlock(sample.getX());
+            int quartZ = QuartPos.fromBlock(sample.getZ());
+            Holder<Biome> exact = getNoiseBiome(
+                    quartX,
+                    QuartPos.fromBlock(origin.getY()),
+                    quartZ,
+                    sampler);
+            if (target.test(exact)
+                    && anchor.biomeId().equals(LatitudeBiomes.biomeIdPublic(exact))) {
+                return Pair.of(centerQuartPosition(sample), exact);
+            }
         }
-        return Pair.of(centerQuartPosition(
-                new BlockPos(anchor.blockX(), origin.getY(), anchor.blockZ())), exact);
+        GlobeMod.LOGGER.info("[Latitude] planned land locate target={} anchor={} route={} had no final surviving center-or-shoulder sample",
+                requestedIds, anchor.biomeId(), anchor.route());
+        return null;
+    }
+
+    /**
+     * The coverage planner proves an anchor only at its centre and four half-radius shoulders.
+     * Locate must query those same final-output samples: later terrain authority can correctly
+     * rewrite the centre without invalidating a still-visible shoulder in the reserved province.
+     */
+    static List<BlockPos> plannedLandCoverageSamplePositions(
+            VanillaBiomeCoveragePlan.Anchor anchor, BlockPos origin) {
+        int halfRadius = anchor.radiusBlocks() / 2;
+        List<BlockPos> samples = new ArrayList<>(5);
+        samples.add(new BlockPos(anchor.blockX(), origin.getY(), anchor.blockZ()));
+        samples.add(new BlockPos(anchor.blockX() + halfRadius, origin.getY(), anchor.blockZ()));
+        samples.add(new BlockPos(anchor.blockX() - halfRadius, origin.getY(), anchor.blockZ()));
+        samples.add(new BlockPos(anchor.blockX(), origin.getY(), anchor.blockZ() + halfRadius));
+        samples.add(new BlockPos(anchor.blockX(), origin.getY(), anchor.blockZ() - halfRadius));
+        samples.sort(Comparator.comparingLong(sample -> horizontalDistanceSquared(sample, origin)));
+        return List.copyOf(samples);
+    }
+
+    private static long horizontalDistanceSquared(BlockPos left, BlockPos right) {
+        long dx = (long) left.getX() - right.getX();
+        long dz = (long) left.getZ() - right.getZ();
+        return dx * dx + dz * dz;
     }
 
     /**

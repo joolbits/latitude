@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.MappedRegistry;
 import net.minecraft.core.RegistrationInfo;
@@ -1041,6 +1042,19 @@ final class BiomeProviderSelectionPolicyTest {
         assertTrue(plan.nearestAnchorFor(Set.of("minecraft:the_void"), 0, 0) == null,
                 "land locate cannot invent an unreserved biome identity");
 
+        List<BlockPos> samples = LatitudeBiomeSource.plannedLandCoverageSamplePositions(
+                reserved, new BlockPos(reserved.blockX() + reserved.radiusBlocks(), 80, reserved.blockZ()));
+        int half = reserved.radiusBlocks() / 2;
+        assertEquals(5, samples.size(),
+                "planned land locate checks the centre and all four planner-certified shoulders");
+        assertEquals(new BlockPos(reserved.blockX() + half, 80, reserved.blockZ()), samples.getFirst(),
+                "planned land locate returns the nearest final-output sample first");
+        assertTrue(samples.contains(new BlockPos(reserved.blockX(), 80, reserved.blockZ()))
+                        && samples.contains(new BlockPos(reserved.blockX() - half, 80, reserved.blockZ()))
+                        && samples.contains(new BlockPos(reserved.blockX(), 80, reserved.blockZ() + half))
+                        && samples.contains(new BlockPos(reserved.blockX(), 80, reserved.blockZ() - half)),
+                "planned land locate retains every planner-certified center-or-shoulder sample");
+
         String locateSource = Files.readString(
                 Path.of("src/main/java/com/example/globe/world/LatitudeBiomeSource.java"));
         int preview = locateSource.indexOf("for (BlockPos.MutableBlockPos offset : BlockPos.spiralAround");
@@ -1052,6 +1066,9 @@ final class BiomeProviderSelectionPolicyTest {
         assertTrue(locateSource.contains("nearestPlannedLandCoverageAnchor(")
                         && locateSource.contains("findPlannedSurfaceWaterCoverage("),
                 "the terminal fallback adds exact land anchors without removing water coverage");
+        assertTrue(locateSource.contains("plannedLandCoverageSamplePositions(anchor, origin)")
+                        && locateSource.contains("had no final surviving center-or-shoulder sample"),
+                "a saved land anchor is verified at every certified footprint sample and reports a true exhaustion");
 
         String serviceSource = Files.readString(
                 Path.of("src/main/java/com/example/globe/world/LatitudeBiomeLocateService.java"));
