@@ -481,6 +481,38 @@ final class BiomeProviderSelectionPolicyTest {
                 .orElseThrow();
         BiomeSelectionProfile providerProfile = BiomeSelectionProfile.capture(
                 registry.keySet().stream().map(Identifier::toString).toList());
+        long drySwampAuditSeed = 59L;
+        int drySwampAuditRadius = 10_000;
+        Climate.Sampler drySwampAuditSampler = coverageSampler(null);
+        try {
+            LatitudeBiomes.activateWorldgenContext(
+                    drySwampAuditRadius,
+                    drySwampAuditSeed,
+                    LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE,
+                    providerProfile,
+                    VanillaBiomeRepresentationProfile.capture(
+                            drySwampAuditRadius, drySwampAuditSeed, providerProfile),
+                    drySwampAuditSampler,
+                    null,
+                    63);
+            VanillaBiomeCoveragePlan.Anchor swamp =
+                    LatitudeBiomes.activeVanillaCoveragePlanForPolicyTest().anchors().stream()
+                            .filter(anchor -> anchor.route() == BiomeRoute.TEMPERATE_WETLAND)
+                            .findFirst()
+                            .orElseThrow();
+            assertPickerPairReturns(
+                    registry, pool, neutral,
+                    swamp.blockX(), swamp.blockZ(), drySwampAuditRadius, drySwampAuditSampler,
+                    "minecraft:swamp",
+                    "saved swamp remains represented after dry-province replanning");
+            ProvinceAuthority.Province swampProvince =
+                    LatitudeBiomes.classifyProvince(swamp.blockX(), swamp.blockZ());
+            assertTrue(swampProvince != ProvinceAuthority.Province.WARM_DRY
+                            && swampProvince != ProvinceAuthority.Province.COLD_DRY,
+                    "saved swamp coverage must move out of the deterministic COLD_DRY anchor");
+        } finally {
+            LatitudeBiomes.clearWorldgenContext();
+        }
         for (int radius : List.of(10_000, 5_000)) {
             VanillaBiomeRepresentationProfile representation =
                     VanillaBiomeRepresentationProfile.capture(radius, seed, providerProfile);
@@ -543,6 +575,15 @@ final class BiomeProviderSelectionPolicyTest {
                             "registry picker preserves the valid saved land target at final output");
                     assertEquals(anchor.biomeId(), LatitudeBiomes.biomeIdPublic(collectionOut),
                             "collection picker preserves the valid saved land target at final output");
+                    if (anchor.route() == BiomeRoute.TEMPERATE_WETLAND
+                            || anchor.route() == BiomeRoute.SUBPOLAR_WETLAND) {
+                        ProvinceAuthority.Province province =
+                                LatitudeBiomes.classifyProvince(x, z);
+                        assertTrue(province != ProvinceAuthority.Province.WARM_DRY
+                                        && province != ProvinceAuthority.Province.COLD_DRY,
+                                "both public pickers may preserve wetland coverage only outside "
+                                        + "an explicitly dry province");
+                    }
                     samples++;
                 }
             }
@@ -638,6 +679,34 @@ final class BiomeProviderSelectionPolicyTest {
                         "minecraft:swamp",
                         "a wetland target without wetland evidence is rewritten");
 
+                int[] dryTemperateWetland = findUnreservedColdProvince(
+                        plan, ProvinceAuthority.Province.COLD_DRY, radius, 2, false);
+                WetlandFootprint dryEvidence = new WetlandFootprint(
+                        dryTemperateWetland[0], dryTemperateWetland[1], 64);
+                wetland.add(dryEvidence);
+                try {
+                    assertFalse(LatitudeBiomes.isPotentialWetlandLocateCandidate(
+                                    dryTemperateWetland[0], dryTemperateWetland[1], radius,
+                                    sampler, true, false),
+                            "the wetland locator must not spend an exact probe on COLD_DRY swamp");
+                } finally {
+                    wetland.remove(dryEvidence);
+                }
+
+                int[] wetTemperateWetland = findUnreservedColdProvince(
+                        plan, ProvinceAuthority.Province.COLD_WET, radius, 2, false);
+                WetlandFootprint wetEvidence = new WetlandFootprint(
+                        wetTemperateWetland[0], wetTemperateWetland[1], 64);
+                wetland.add(wetEvidence);
+                try {
+                    assertTrue(LatitudeBiomes.isPotentialWetlandLocateCandidate(
+                                    wetTemperateWetland[0], wetTemperateWetland[1], radius,
+                                    sampler, true, false),
+                            "the wetland locator retains a climate-valid COLD_WET swamp");
+                } finally {
+                    wetland.remove(wetEvidence);
+                }
+
                 assertOrdinaryTemperateTaigaStillUsesInteriorGate(registry, pool, neutral, radius);
 
                 int[] subpolarLowland = findUnreservedBandCoordinate(plan, radius, 0.62, false);
@@ -647,10 +716,40 @@ final class BiomeProviderSelectionPolicyTest {
                         "minecraft:windswept_forest",
                         "cold-upland identity is rejected on final lowland terrain");
 
+                // The positive control needs a cell that Latitude's own wetland
+                // preselection genuinely owns once wetland evidence exists. Synthetic
+                // climate evidence alone cannot conjure a wetland on a column whose
+                // patch noise never fires, and an explicitly dry province now refuses
+                // wetlands outright, so probe each non-dry lowland anchor with the
+                // registry picker for real wetland ownership. If none survives, land
+                // coverage is erasing wetland-owned cells and the control fails here.
                 VanillaBiomeCoveragePlan.Anchor unrelated = plan.anchors().stream()
                         .filter(anchor -> anchor.route() == BiomeRoute.TEMPERATE_LOWLAND)
+                        .filter(anchor -> {
+                            ProvinceAuthority.Province province = LatitudeBiomes.classifyProvince(
+                                    anchor.blockX(), anchor.blockZ());
+                            return province != ProvinceAuthority.Province.WARM_DRY
+                                    && province != ProvinceAuthority.Province.COLD_DRY;
+                        })
+                        .filter(anchor -> {
+                            WetlandFootprint probe = new WetlandFootprint(
+                                    anchor.blockX(), anchor.blockZ(), anchor.radiusBlocks());
+                            wetland.add(probe);
+                            try {
+                                return "minecraft:swamp".equals(LatitudeBiomes.biomeIdPublic(
+                                        LatitudeBiomes.pick(
+                                                registry,
+                                                testBiomeHolder(registry, "minecraft:swamp"),
+                                                anchor.blockX(), anchor.blockZ(), 80, radius,
+                                                sampler, "ATLAS_SAMPLER")));
+                            } finally {
+                                wetland.remove(probe);
+                            }
+                        })
                         .findFirst()
-                        .orElseThrow();
+                        .orElseThrow(() -> new AssertionError(
+                                "no non-dry temperate-lowland coverage anchor keeps a validated "
+                                        + "wetland — land coverage is erasing wetland-owned cells"));
                 int[] paleAnchor = LatitudeBiomes.paleGardenAnchorForPolicyTest(sampler);
                 assertPickerPairReturns(
                         registry, pool, testBiomeHolder(registry, "minecraft:pale_garden"),
@@ -690,6 +789,9 @@ final class BiomeProviderSelectionPolicyTest {
                 "both coverage resolvers share the stronger-authority protection predicate");
         assertTrue(source.contains("&& !aridHotspotHere(WORLD_SEED, blockX, blockZ);"),
                 "the inverse humidity gate preserves explicitly detected arid hotspots");
+        assertEquals(5, occurrences(source, "&& wetlandProvinceEligible(blockX, blockZ)"),
+                "coverage planning, both final wetland authorities, and the locator broad phase "
+                        + "must share the dry-province rejection");
     }
 
     private static int[] findUnreservedTropicalProvince(
@@ -752,6 +854,28 @@ final class BiomeProviderSelectionPolicyTest {
             }
         }
         throw new AssertionError("no unreserved synthetic band coordinate at z/radius=" + zFraction);
+    }
+
+    private static int[] findUnreservedColdProvince(
+            VanillaBiomeCoveragePlan plan,
+            ProvinceAuthority.Province province,
+            int radius,
+            int bandIndex,
+            boolean upland) {
+        for (int z = -radius; z <= radius; z += 47) {
+            for (int x = -radius / 2; x <= radius / 2; x += 53) {
+                if (syntheticUpland(x) != upland || plan.match(x, z) != null) continue;
+                if ((long) x * x + (long) z * z >= (long) radius * radius) continue;
+                if (LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, z, radius)
+                        != bandIndex) continue;
+                if (LatitudeBiomes.classifyProvince(x, z) == province) {
+                    return new int[]{x, z};
+                }
+            }
+        }
+        throw new AssertionError("no unreserved synthetic " + province
+                + (upland ? " upland" : " lowland")
+                + " coordinate in band " + bandIndex);
     }
 
     private static Holder<Biome> testBiomeHolder(MappedRegistry<Biome> registry, String id) {
@@ -1878,10 +2002,10 @@ final class BiomeProviderSelectionPolicyTest {
 
         // Both wetland routes must actually be gated on the swamp evaluation.
         String eligible = source.replaceAll("\\s+", " ");
-        assertTrue(eligible.contains("case TEMPERATE_WETLAND -> band == BAND_TEMPERATE && !mountain && evaluateSwamp("),
-                "temperate wetland stays swamp-gated");
-        assertTrue(eligible.contains("case SUBPOLAR_WETLAND -> band == BAND_SUBPOLAR && !mountain && evaluateSwamp("),
-                "subpolar wetland stays swamp-gated");
+        assertTrue(eligible.contains("case TEMPERATE_WETLAND -> band == BAND_TEMPERATE && !mountain && wetlandProvinceEligible(blockX, blockZ) && evaluateSwamp("),
+                "temperate wetland stays province- and terrain-gated");
+        assertTrue(eligible.contains("case SUBPOLAR_WETLAND -> band == BAND_SUBPOLAR && !mountain && wetlandProvinceEligible(blockX, blockZ) && evaluateSwamp("),
+                "subpolar wetland stays province- and terrain-gated");
     }
 
 
