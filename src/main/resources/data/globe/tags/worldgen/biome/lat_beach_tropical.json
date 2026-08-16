@@ -1,0 +1,7 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:beach",
+    { "id": "clifftree:tropical_beach", "required": false }
+  ]
+}

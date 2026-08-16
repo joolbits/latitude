@@ -60,6 +60,10 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
     private static final AtomicBoolean LATITUDE_DEBUG_CUSTOM_INDEX_AUDIT_DONE =
             new AtomicBoolean();
 
+    @Unique
+    private static final AtomicBoolean LATITUDE_CUSTOM_INDEX_FAILURE_WARNED =
+            new AtomicBoolean();
+
     @Shadow
     @Final
     @Mutable
@@ -141,8 +145,14 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
             } catch (Exception e) {
                 this.globe$customBiomeIndexSafe = false;
                 this.globe$customBiomeRetainIds = Set.of();
-                if (LATITUDE_DEBUG_CUSTOM_RETAINALL_GATES) {
-                    GlobeMod.LOGGER.warn("[LAT][CUSTOM_RETAINALL] indexExpansion result=blocked exception={}", e.getMessage());
+                if (LATITUDE_CUSTOM_INDEX_FAILURE_WARNED.compareAndSet(false, true)) {
+                    GlobeMod.LOGGER.warn(
+                            "[LAT][CUSTOM_RETAINALL] indexExpansion result=blocked exceptionType={} exception={} policyBiomes={} featureTotal={} featureInIndex={}",
+                            e.getClass().getName(),
+                            e.getMessage(),
+                            this.globe$customBiomePolicyCount,
+                            this.globe$customBiomeFeatureCount,
+                            this.globe$customBiomeIndexedCount);
                 }
             } finally {
                 this.globe$customBiomeFeaturesIndexed = true;

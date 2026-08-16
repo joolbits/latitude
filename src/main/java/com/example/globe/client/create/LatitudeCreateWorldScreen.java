@@ -13,7 +13,6 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
-import net.minecraft.client.gui.screens.GenericMessageScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.worldselection.DataPackReloadCookie;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationGameRulesScreen;
@@ -253,17 +252,21 @@ public class LatitudeCreateWorldScreen extends Screen {
     // for the title at high GUI scale, where it never comfortably fit anyway. Skippable by any
     // click/key so it never blocks the player. Layout is NOT animated -- panelTop already reflects
     // the collapsed (no-title) header the whole time; only the title overlay's own alpha and the
-    // widgets' visibility change across the intro. See introActive()/introTitleAlpha().
-    private long introStartMs = -1L;
+    // widgets' visibility change across the intro. See introActive()/renderIntroTitle(). The clock
+    // itself lives in CreateWorldIntroClock and the pixels in CreateWorldIntroTitle, so timing and
+    // appearance are shared, frame-driven, and immune to loading stalls -- see those classes.
     private boolean introSkipped;
-    private static final long INTRO_FADE_IN_MS = 450L;
-    private static final long INTRO_HOLD_MS = 750L;
-    private static final long INTRO_FADE_OUT_MS = 400L;
-    private static final long INTRO_TOTAL_MS = INTRO_FADE_IN_MS + INTRO_HOLD_MS + INTRO_FADE_OUT_MS;
+    private boolean introClockClaimed;
+    private final boolean continueIntroFromPreparing;
     private Button createWorldBtn;
     private Button cancelBtn;
 
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
+        this(onClose, parent, holder, false);
+    }
+
+    private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent,
+                                      WorldCreationContext holder, boolean continueIntroFromPreparing) {
         super(Component.literal("New World"));
         LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.<init> parent={} holder={}",
                 parent == null ? "null" : parent.getClass().getName(),
@@ -271,13 +274,20 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.onClose = onClose;
         this.parent = parent;
         this.holder = holder;
+        this.continueIntroFromPreparing = continueIntroFromPreparing;
         this.gameRules = new GameRules(holder.dataConfiguration().enabledFeatures());
     }
 
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent,
                                       WorldCreationUiState initialState, boolean recreated,
                                       @Nullable String recreatedPresetId) {
-        this(onClose, parent, initialState.getSettings());
+        this(onClose, parent, initialState, recreated, recreatedPresetId, false);
+    }
+
+    private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent,
+                                      WorldCreationUiState initialState, boolean recreated,
+                                      @Nullable String recreatedPresetId, boolean continueIntroFromPreparing) {
+        this(onClose, parent, initialState.getSettings(), continueIntroFromPreparing);
         if (recreated) {
             hydrateInitialState(initialState, recreated, recreatedPresetId);
         } else {
@@ -306,7 +316,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 initialState.getSeed() != null && !initialState.getSeed().isBlank(),
                 initialState.getSettings());
         client.gui.setScreen(new LatitudeCreateWorldScreen(
-                onClose, parent, initialState, recreated, recreatedPresetId));
+                onClose, parent, initialState, recreated, recreatedPresetId, true));
     }
 
     public static void openLoaded(Minecraft client, Runnable onClose, @Nullable Screen parent,
@@ -430,14 +440,14 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     /**
-     * Phase 5A: Load datapacks (vanilla "Preparing..." screen), then open the bespoke screen.
+     * Phase 5A: Load datapacks behind the Latitude title, then open the bespoke screen.
      * Replicates CreateWorldScreen.show() lines 166-196.
      */
     public static void open(Minecraft client, Runnable onClose, @Nullable Screen parent) {
         LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.open parent={}",
                 parent == null ? "null" : parent.getClass().getName());
-        // Show "Preparing..." message (vanilla pattern)
-        client.setScreenAndShow(new GenericMessageScreen(Component.translatable("createWorld.preparing")));
+        CreateWorldPreparingScreen preparingScreen = new CreateWorldPreparingScreen();
+        client.setScreenAndShow(preparingScreen);
 
         try {
             // Build datapack configuration (replicates createServerConfig, lines 511-513)
@@ -459,7 +469,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                     new WorldCreationContext(settings.worldGenSettings(), dynamicRegistries, dataPackContents, settings.dataConfiguration());
 
             // Load datapacks asynchronously so the UI stays responsive while the
-            // preparing screen is visible.
+            // title surface is visible.
             CompletableFuture<WorldCreationContext> future = WorldLoader.load(
                     serverConfig,
                     context -> new WorldLoader.DataLoadOutput<>(
@@ -479,21 +489,21 @@ public class LatitudeCreateWorldScreen extends Screen {
                     if (throwable != null) {
                         LOGGER.error("Failed to load datapacks for Latitude create-world screen", throwable);
                         onClose.run();
-                        if (client.gui.screen() == null || client.gui.screen() instanceof GenericMessageScreen) {
+                        if (client.gui.screen() == null || client.gui.screen() == preparingScreen) {
                             client.gui.setScreen(parent);
                         }
                         return;
                     }
 
                     // Open the bespoke screen with the loaded holder.
-                    client.gui.setScreen(new LatitudeCreateWorldScreen(onClose, parent, loadedHolder));
+                    client.gui.setScreen(new LatitudeCreateWorldScreen(onClose, parent, loadedHolder, true));
                 });
             });
         } catch (Exception e) {
             LOGGER.error("Failed to load datapacks for Latitude create-world screen", e);
             // 5A error path: return to caller screen, never show bespoke screen
             onClose.run();
-            if (client.gui.screen() == null || client.gui.screen() instanceof GenericMessageScreen) {
+            if (client.gui.screen() == null || client.gui.screen() == preparingScreen) {
                 client.gui.setScreen(parent);
             }
         }
@@ -507,28 +517,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         return guiScale >= HIGH_GUI_SCALE || viewportWidth < MIN_COMFORTABLE_THREE_COL_WIDTH;
     }
 
-    private long introElapsedMs() {
-        return introStartMs < 0L ? 0L : Util.getMillis() - introStartMs;
-    }
-
     /** Only tabbedMode ever plays the intro -- three-column already fits comfortably. */
     private boolean introActive() {
-        return tabbedMode && !introSkipped && introElapsedMs() < INTRO_TOTAL_MS;
-    }
-
-    private float introTitleAlpha() {
-        long t = introElapsedMs();
-        if (t < INTRO_FADE_IN_MS) {
-            return Math.max(0f, t / (float) INTRO_FADE_IN_MS);
-        }
-        if (t < INTRO_FADE_IN_MS + INTRO_HOLD_MS) {
-            return 1.0f;
-        }
-        long fadeOutT = t - INTRO_FADE_IN_MS - INTRO_HOLD_MS;
-        if (fadeOutT < INTRO_FADE_OUT_MS) {
-            return 1.0f - (fadeOutT / (float) INTRO_FADE_OUT_MS);
-        }
-        return 0f;
+        return tabbedMode && !introSkipped && CreateWorldIntroClock.active();
     }
 
     private void skipIntro() {
@@ -543,10 +534,16 @@ public class LatitudeCreateWorldScreen extends Screen {
         // Screen.rebuildWidgets() clears Screen-owned collections, not this private render registry.
         // Clear it on every init so resize/sub-screen return cannot leave a frozen ghost layer.
         settingsScrollWidgets.clear();
-        if (introStartMs < 0L) {
-            // Set once, on the very first init() -- later resizes/rebuilds (size cycling, window
-            // resize) must not restart the intro.
-            introStartMs = Util.getMillis();
+        // Screen.init() also runs after widget rebuilds. Claim the shared clock only on this screen
+        // instance's first init so ordinary menu interactions can never replay the intro, while a
+        // NEW screen instance always starts a fresh fade instead of inheriting a stale one.
+        if (!introClockClaimed) {
+            introClockClaimed = true;
+            if (continueIntroFromPreparing) {
+                CreateWorldIntroClock.continueForOwner(this, Util.getMillis());
+            } else {
+                CreateWorldIntroClock.beginForOwner(this, Util.getMillis());
+            }
         }
         int headerGap = scaledUi(6);
         int bottomMargin = scaledUi(28);
@@ -1603,6 +1600,11 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        // Advance the intro one rendered frame before anything reads introActive(). Unconditional
+        // (not gated on tabbedMode) so the shared clock can never be left frozen mid-animation by a
+        // three-column run, which would make the NEXT create-world attempt inherit a stale
+        // mid-fade. See CreateWorldIntroClock: the fade is frame-driven, never wall-clock.
+        CreateWorldIntroClock.advance(Util.getMillis());
         // One authoritative layout pass per rendered frame keeps rectangles, culling, focus, and narration
         // synchronized after scroll, resize, tab changes, world-size changes, or sub-screen return.
         updateLeftLayout();
@@ -1804,24 +1806,10 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     /** Full-screen-centered title overlay for the tabbedMode intro -- independent of the (now
      *  collapsed) header strip so it can use as much room as it wants for the brief moment it's
-     *  shown. Pure alpha fade, no motion, kept deliberately simple as a first pass. */
+     *  shown. Delegates to CreateWorldIntroTitle so the pixels live beside the shared clock that
+     *  times them, continuing one fade rather than restarting it. */
     private void renderIntroTitle(GuiGraphicsExtractor context) {
-        float alpha = introTitleAlpha();
-        if (alpha <= 0f) return;
-        int a = Math.round(alpha * 255f) << 24;
-        int goldA = (GOLD & 0x00FFFFFF) | a;
-        int warmA = (WARM_WHITE & 0x00FFFFFF) | a;
-
-        int titleWidth = Math.round(uiTextWidth(CREATE_TITLE_TEXT) * CREATE_TITLE_SCALE);
-        int titleHeight = Math.round(uiFontHeight() * CREATE_TITLE_SCALE);
-        int subtitleGap = scaledUi(10);
-        int blockHeight = titleHeight + subtitleGap + uiFontHeight();
-        int startY = (this.height - blockHeight) / 2;
-        int cx = this.width / 2;
-
-        drawScaledText(context, CREATE_TITLE_TEXT, cx - titleWidth / 2, startY, CREATE_TITLE_SCALE, goldA, true);
-        int subtitleY = startY + titleHeight + subtitleGap;
-        drawCenteredBoundedText(context, "New World", new UiRect(0, subtitleY, this.width, uiFontHeight()), warmA, true, false);
+        CreateWorldIntroTitle.render(context, this.font, this.width, this.height);
     }
 
     private void renderSizeLabel(GuiGraphicsExtractor context, int x, int y, int availW) {

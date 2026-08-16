@@ -46,7 +46,9 @@ public final class BiomeDescriptorLedger {
                 throw new IllegalArgumentException("surface descriptor cannot own underground cave routes: " + biomeId);
             }
             if (water != Water.LAND && water != Water.UNDERGROUND && terrain != Terrain.WETLAND) throw new IllegalArgumentException("water descriptor must be wetland terrain: " + biomeId);
-            if (terrain == Terrain.WETLAND && !routes.contains(BiomeRoute.TEMPERATE_WETLAND)) throw new IllegalArgumentException("wetland needs wetland route: " + biomeId);
+            if (terrain == Terrain.WETLAND
+                    && !routes.contains(BiomeRoute.TEMPERATE_WETLAND)
+                    && !routes.contains(BiomeRoute.SUBPOLAR_WETLAND)) throw new IllegalArgumentException("wetland needs an owned wetland route: " + biomeId);
             if (terrain == Terrain.UPLAND
                     && !routes.contains(BiomeRoute.TEMPERATE_UPLAND)
                     && !routes.contains(BiomeRoute.COLD_UPLAND)) throw new IllegalArgumentException("upland needs an owned upland route: " + biomeId);
@@ -78,7 +80,7 @@ public final class BiomeDescriptorLedger {
             // These are cool/temperate inland wetlands.  Warm bayou and floodplain remain
             // excluded until Latitude owns a separate warm-wetland route.
             d("biomesoplenty:bog", r(BiomeRoute.TEMPERATE_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
-            d("biomesoplenty:muskeg", r(BiomeRoute.TEMPERATE_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
+            d("biomesoplenty:muskeg", r(BiomeRoute.SUBPOLAR_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
             d("biomesoplenty:lush_savanna", r(BiomeRoute.WARM_TRANSITION), Terrain.LOWLAND, Water.LAND, Family.SAVANNA),
             d("biomesoplenty:mediterranean_forest", r(BiomeRoute.WARM_TRANSITION), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("biomesoplenty:scrubland", r(BiomeRoute.WARM_TRANSITION), Terrain.LOWLAND, Water.LAND, Family.ARID),
@@ -113,7 +115,7 @@ public final class BiomeDescriptorLedger {
             d("terralith:moonlight_grove", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("terralith:moonlight_valley", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("terralith:orchid_swamp", r(BiomeRoute.TEMPERATE_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
-            d("terralith:ice_marsh", r(BiomeRoute.TEMPERATE_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
+            d("terralith:ice_marsh", r(BiomeRoute.SUBPOLAR_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
             d("terralith:caldera", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("terralith:brushland", r(BiomeRoute.WARM_TRANSITION), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("terralith:hot_shrubland", r(BiomeRoute.WARM_TRANSITION), Terrain.LOWLAND, Water.LAND, Family.ARID),
@@ -132,6 +134,41 @@ public final class BiomeDescriptorLedger {
             d("terralith:snowy_maple_forest", r(BiomeRoute.SUBPOLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.TAIGA),
             d("terralith:cold_shrubland", r(BiomeRoute.SUBPOLAR_LOWLAND, BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
             d("terralith:snowy_cherry_grove", r(BiomeRoute.SUBPOLAR_LOWLAND, BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
+            // CliffTree: admitted 2026-08-10 at the maintainer's request ("one of my favorite biome
+            // mods"). Before this the mod was entirely inert -- its biomes appeared in five shipped
+            // lat_* tag files but had no descriptor, and the ledger is authoritative on every world
+            // this build creates, so installing CliffTree changed nothing about the land Latitude
+            // painted. Every route below was chosen from the biome's REAL climate in the shipped
+            // datapack JSON, not from its name; two of them contradict the name outright and are
+            // called out where they sit.
+            //
+            // Only surface LAND lives here. CliffTree's oceans use the lat_ocean_* tags, its caves
+            // use the CAVE_* routes below, and its rivers and beaches use the lat_river_* and
+            // lat_beach_* tag authorities. None belongs in the ledger's land routes.
+            // CliffTree's three *_shore biomes are deliberately NOT here. Shores are a hard
+            // authority in Latitude, not ledger land: vanilla minecraft:stony_shore, beach,
+            // snowy_beach, river and frozen_river have no ledger route either, and Latitude's own
+            // isBeachLike() matches any biome whose path contains "shore". Routing them as land
+            // would have put coastal identities inland at random temperate/polar locations. They
+            // are admitted through the lat_beach_* tags instead. (Corrected 2026-08-10: the prior
+            // commit listed all three as LOWLAND land routes.)
+            d("clifftree:bog", r(BiomeRoute.TEMPERATE_WETLAND), Terrain.WETLAND, Water.WETLAND, Family.WETLAND),
+            d("clifftree:sparse_forest", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
+            // temperature 2.0 -- maximum heat, identical to vanilla badlands -- despite the
+            // "coniferous" name. It is a petrified/fossil-forest-in-badlands aesthetic, not a cold
+            // biome, and routing it by name would have put a desert-hot identity in the taiga band.
+            d("clifftree:coniferous_badlands", r(BiomeRoute.ARID_LOWLAND), Terrain.ARID, Water.LAND, Family.ARID),
+            d("clifftree:oasis", r(BiomeRoute.ARID_LOWLAND), Terrain.ARID, Water.LAND, Family.ARID),
+            d("clifftree:shrubland", r(BiomeRoute.ARID_LOWLAND), Terrain.ARID, Water.LAND, Family.ARID),
+            d("clifftree:desert_cliff", r(BiomeRoute.ARID_LOWLAND, BiomeRoute.ARID_UPLAND), Terrain.ARID, Water.LAND, Family.ARID),
+            d("clifftree:glacier_valley", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
+            // Corrected 2026-08-10: COLD_UPLAND already exists (band >= BAND_SUBPOLAR && mountain,
+            // 50-90 degrees) and is already owned by snowy_slopes/frozen_peaks/jagged_peaks -- no
+            // new route was needed. A "cliff" is rugged terrain by name, so the mountain gate this
+            // route already carries is the right fit, not a workaround for it.
+            d("clifftree:glacier_cliff", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
+            d("clifftree:snowy_old_growth_taiga", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.TAIGA),
+            d("clifftree:tundra", r(BiomeRoute.POLAR_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.POLAR),
             // Underground is a separate, donor-cave-gated authority. These entries are never
             // admitted through a surface tag or terrain route.
             d("biomesoplenty:glowing_grotto", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
@@ -142,6 +179,21 @@ public final class BiomeDescriptorLedger {
             d("terralith:cave/granite_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
             d("terralith:cave/infested_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
             d("terralith:cave/thermal_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            // CliffTree caves. Categorized from the mod's own tags/worldgen/biome/caves.json and
+            // deep_caves.json, not guessed: inferno is grouped with minecraft:deep_dark by CliffTree
+            // itself (not with its other caves), matching CAVE_DEEP's real Y<=-16 depth gate despite
+            // inferno's surface-hot temperature (2.0) -- it never reaches the surface, so that
+            // temperature is irrelevant to placement. dirt_caves is absent from CliffTree's own
+            // "caves" tag (an omission in their data, not ours) but is unambiguously a cave by name,
+            // content, and climate profile matching its shallow siblings, so it is included here.
+            d("clifftree:caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("clifftree:warm_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("clifftree:lukewarm_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("clifftree:cold_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("clifftree:frozen_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("clifftree:mushroom_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("clifftree:dirt_caves", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
+            d("clifftree:inferno", r(BiomeRoute.CAVE_DEEP), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
             d("terralith:cave/underground_jungle", r(BiomeRoute.CAVE_SHALLOW), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
             d("terralith:cave/deep_caves", r(BiomeRoute.CAVE_DEEP), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
             d("terralith:cave/frostfire_caves", r(BiomeRoute.CAVE_DEEP), Terrain.CAVE, Water.UNDERGROUND, Family.CAVE),
@@ -165,9 +217,21 @@ public final class BiomeDescriptorLedger {
             d("minecraft:meadow", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("minecraft:cherry_grove", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("minecraft:grove", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
-            d("minecraft:windswept_hills", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
-            d("minecraft:windswept_forest", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
-            d("minecraft:windswept_gravelly_hills", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
+            // Windswept moved TEMPERATE_UPLAND -> COLD_UPLAND (maintainer ruling, 2026-08-10).
+            // These carry vanilla's temperature-0.2 / downfall-0.3 climate, which derives a
+            // desaturated grey-green grass tint. That tint is biome DATA, not a blockstate, so no
+            // code change can make it read as ordinary grass: the only levers are where the biome
+            // sits, or hiding it under snow. Hiding it under snow is what produced the original
+            // white-rimmed-grass defect. At 50-90 degrees the tint reads as correct rather than
+            // washed out, and COLD_UPLAND's mountain gate is exactly the exposed, wind-scoured
+            // terrain these biomes depict. It also fills a real gap: every other COLD_UPLAND member
+            // (snowy_slopes, frozen_peaks, jagged_peaks, glacier_cliff) is bare rock or ice, so cold
+            // mountains had no vegetated identity at all. Above the 72-degree tree line the polar
+            // guard strips their trees, so they degrade correctly toward the pole.
+            // Temperate uplands retain meadow, grove, cherry_grove, stony_peaks and caldera.
+            d("minecraft:windswept_hills", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
+            d("minecraft:windswept_forest", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
+            d("minecraft:windswept_gravelly_hills", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("minecraft:stony_peaks", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("minecraft:snowy_slopes", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("minecraft:frozen_peaks", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
@@ -199,6 +263,18 @@ public final class BiomeDescriptorLedger {
     public static boolean isCaveDescriptor(String id) {
         Descriptor descriptor = descriptor(id);
         return descriptor != null && descriptor.terrain() == Terrain.CAVE;
+    }
+
+    /**
+     * Surface sulfur expression is restricted to Latitude-owned arid land. Unknown or merely
+     * name-alike provider biomes fail closed until the ledger can describe them intentionally.
+     */
+    public static boolean supportsSulfurSurfaceExpression(String id) {
+        Descriptor descriptor = descriptor(id);
+        return descriptor != null
+                && descriptor.terrain() == Terrain.ARID
+                && descriptor.water() == Water.LAND
+                && descriptor.family() == Family.ARID;
     }
 
     public static List<String> validate(Collection<String> activeIds) {

@@ -50,6 +50,15 @@ public final class VanillaSurfaceWaterCoveragePlan {
         public Family family() { return family; }
         public double minimumLatitudeFraction() { return minimumLatitudeFraction; }
         public double maximumLatitudeFraction() { return maximumLatitudeFraction; }
+
+        /** Deep donor identities can form long, narrow corridors rather than round basins. */
+        public boolean isDeepOcean() {
+            return switch (this) {
+                case LUKEWARM_DEEP_OCEAN, TEMPERATE_DEEP_OCEAN,
+                        COLD_DEEP_OCEAN, FROZEN_DEEP_OCEAN -> true;
+                default -> false;
+            };
+        }
     }
 
     private static final int MAX_ATTEMPTS_PER_ID = 4_096;
@@ -275,8 +284,9 @@ public final class VanillaSurfaceWaterCoveragePlan {
                                                    CandidateEvaluator evaluator) {
         int half = Math.max(48, radius / 2);
         if (route.family() == Family.SHORE || route.family() == Family.RIVER
-                || route.family() == Family.MANGROVE) {
-            // Coastlines, tidewaters, and rivers are long narrow features, not circular disks.
+                || route.family() == Family.MANGROVE || route.isDeepOcean()) {
+            // Coastlines, tidewaters, rivers, and deep-ocean donors can be long narrow features,
+            // not circular disks. Keep the same multi-chunk topology proof for each.
             // Sample a dense, orientation-independent local grid and require both enough exact
             // eligible columns and a multi-chunk span. The final picker still rechecks the exact
             // physical predicate at every selected column.

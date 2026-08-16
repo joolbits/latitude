@@ -4,6 +4,7 @@ import com.example.globe.GlobeMod;
 import com.example.globe.tools.RuggednessSensor;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
+import com.example.globe.world.BiomeDescriptorLedger;
 import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
 import com.mojang.brigadier.CommandDispatcher;
@@ -63,6 +64,9 @@ public final class LatitudeDevCommand {
     private static final int WINDSWEPT_RUGGED_HYST = 2;
     private static final int SEAM_AUDIT_DEFAULT_SAMPLES = 300;
     private static final int SEAM_AUDIT_DEFAULT_WAIT_TICKS = 60;
+    private static final int SULFUR_SURFACE_REACH_BLOCKS = 32;
+    private static final int DEFAULT_SULFUR_CANDIDATE_RADIUS_BLOCKS = 256;
+    private static final int MAX_SULFUR_CANDIDATE_RADIUS_BLOCKS = 512;
 
     private LatitudeDevCommand() {
     }
@@ -138,6 +142,12 @@ public final class LatitudeDevCommand {
                                 .then(Commands.argument("radiusBlocks", IntegerArgumentType.integer())
                                         .then(Commands.argument("samples", IntegerArgumentType.integer())
                                                 .executes(LatitudeDevCommand::probe))))
+                        .then(Commands.literal("sulfurCandidate")
+                                .executes(ctx -> sulfurCandidate(ctx, DEFAULT_SULFUR_CANDIDATE_RADIUS_BLOCKS))
+                                .then(Commands.argument("radiusBlocks", IntegerArgumentType.integer(16,
+                                                MAX_SULFUR_CANDIDATE_RADIUS_BLOCKS))
+                                        .executes(ctx -> sulfurCandidate(ctx,
+                                                IntegerArgumentType.getInteger(ctx, "radiusBlocks")))))
                         .then(Commands.literal("seamAudit")
                                 .then(Commands.argument("bandA", StringArgumentType.word())
                                         .suggests((context, builder) -> SharedSuggestionProvider.suggest(TP_BAND_NAMES, builder))
@@ -178,7 +188,7 @@ public final class LatitudeDevCommand {
 
     private static int help(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack source = ctx.getSource();
-        source.sendSuccess(() -> Component.literal("[latdev] commands: flyspeed <1..5> | tpLat <signedDegrees> [x] | case start|mark|capture|finish | presentationTrace start|stop | here | explainHere | tpBand <tropical|subtropical|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | seamAudit <bandA> <bandB> [center|low|high] [samples] [waitTicks] | biomePng [stepBlocks] [y] | biomePngY [y] | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
+        source.sendSuccess(() -> Component.literal("[latdev] commands: flyspeed <1..5> | tpLat <signedDegrees> [x] | case start|mark|capture|finish | presentationTrace start|stop | here | explainHere | tpBand <tropical|subtropical|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | sulfurCandidate [radiusBlocks] | seamAudit <bandA> <bandB> [center|low|high] [samples] [waitTicks] | biomePng [stepBlocks] [y] | biomePngY [y] | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
         return 1;
     }
 
@@ -866,6 +876,78 @@ public final class LatitudeDevCommand {
         } catch (Exception e) {
             ctx.getSource().sendFailure(Component.literal("[latdev] probe error: " + e.getMessage()));
             e.printStackTrace();
+            return 0;
+        }
+    }
+
+    /**
+     * Finds a loaded column where a sulfur-caves cell lies within the vanilla pool's upward reach
+     * and Latitude's final surface biome is descriptor-approved for sulfur expression. This is a
+     * candidate finder only: placed features remain probabilistic and no chunks are generated.
+     */
+    private static int sulfurCandidate(CommandContext<CommandSourceStack> ctx, int requestedRadius) {
+        try {
+            CommandSourceStack source = ctx.getSource();
+            ServerPlayer player = source.getPlayerOrException();
+            ServerLevel world = source.getLevel();
+            int radius = Mth.clamp(requestedRadius, 16, MAX_SULFUR_CANDIDATE_RADIUS_BLOCKS);
+            int centerChunkX = Math.floorDiv(player.getBlockX(), 16);
+            int centerChunkZ = Math.floorDiv(player.getBlockZ(), 16);
+            int chunkRadius = Mth.ceil(radius / 16.0f);
+            int loadedSamples = 0;
+            BlockPos nearest = null;
+            String nearestSurface = null;
+            String nearestCave = null;
+            long nearestDistance = Long.MAX_VALUE;
+
+            for (int chunkZ = centerChunkZ - chunkRadius; chunkZ <= centerChunkZ + chunkRadius; chunkZ++) {
+                for (int chunkX = centerChunkX - chunkRadius; chunkX <= centerChunkX + chunkRadius; chunkX++) {
+                    if (world.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, false) == null) {
+                        continue;
+                    }
+                    int blockX = (chunkX << 4) + 8;
+                    int blockZ = (chunkZ << 4) + 8;
+                    long dx = (long) blockX - player.getBlockX();
+                    long dz = (long) blockZ - player.getBlockZ();
+                    long distance = dx * dx + dz * dz;
+                    if (distance > (long) radius * radius) {
+                        continue;
+                    }
+                    loadedSamples++;
+                    int surfaceY = world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ) - 1;
+                    int caveY = Math.max(world.getMinY() + 1, surfaceY - SULFUR_SURFACE_REACH_BLOCKS);
+                    String surfaceBiome = biomeId(world.getBiome(new BlockPos(blockX, surfaceY, blockZ)));
+                    String caveBiome = biomeId(world.getBiome(new BlockPos(blockX, caveY, blockZ)));
+                    if (!"minecraft:sulfur_caves".equals(caveBiome)
+                            || !BiomeDescriptorLedger.supportsSulfurSurfaceExpression(surfaceBiome)
+                            || distance >= nearestDistance) {
+                        continue;
+                    }
+                    nearestDistance = distance;
+                    nearest = new BlockPos(blockX, surfaceY + 1, blockZ);
+                    nearestSurface = surfaceBiome;
+                    nearestCave = caveBiome;
+                }
+            }
+
+            if (nearest == null) {
+                int sampled = loadedSamples;
+                source.sendFailure(Component.literal(String.format(Locale.ROOT,
+                        "[latdev] sulfurCandidate found none in %d loaded chunk centers within r=%d; this did not generate or search unloaded chunks.",
+                        sampled, radius)));
+                return 0;
+            }
+            BlockPos found = nearest;
+            String surface = nearestSurface;
+            String cave = nearestCave;
+            int sampled = loadedSamples;
+            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    "[latdev] sulfurCandidate x=%d y=%d z=%d surface=%s cave=%s loadedChunkCenters=%d; candidate only, pool placement remains probabilistic.",
+                    found.getX(), found.getY(), found.getZ(), surface, cave, sampled)), false);
+            return 1;
+        } catch (Exception e) {
+            ctx.getSource().sendFailure(Component.literal("[latdev] sulfurCandidate error: " + e.getMessage()));
+            GlobeMod.LOGGER.warn("[latdev] sulfurCandidate failed", e);
             return 0;
         }
     }

@@ -17,6 +17,12 @@ public final class GlobeWarningOverlay {
     private static ClientLevel lastWarningLevel;
     private static long lastWarningWorldTime = Long.MIN_VALUE;
     private static String lastZoneKey;
+    /** Absolute latitude at which the last zone-entry notification fired; NaN = none this session. */
+    private static double lastZoneAnnounceLatDeg = Double.NaN;
+    /** World time of the last zone-entry notification; used only to rate-limit repeats. */
+    private static long lastZoneAnnounceWorldTime = Long.MIN_VALUE;
+    // Zone identity and the zone-entry notification rate limit both live in ZoneTitlePolicy, which
+    // is pure and directly testable. This class only wires it to the client.
 
     private static final String POLE_WARN_1_TEXT =
             "The air is turning bitterly cold. You should consider turning back.";
@@ -175,20 +181,39 @@ public final class GlobeWarningOverlay {
 
             if (eval.surfaceOk()
                     && (lastZoneUpdateWorldTime == Long.MIN_VALUE || movedFar || (worldTime % 10L) == 0L)) {
+                // Captured BEFORE the sample is overwritten: a teleport must never be rate-limited
+                // as if it were someone loitering on a boundary.
+                int previousSampleZ = lastZoneUpdateZ;
                 lastZoneUpdateWorldTime = worldTime;
                 lastZoneUpdateX = px;
                 lastZoneUpdateZ = pz;
 
                 var border = client.level.getWorldBorder();
-                String canonicalZoneKey = canonicalTitleZoneKey(border, client.player.getZ());
+                // Zone identity is the RAW band for this latitude, so the reported zone and the
+                // displayed title change at the exact boundary and always agree with the world.
+                // Repeat NOTIFICATIONS while lingering on that boundary are rate-limited separately,
+                // below -- suppressing the announcement must never mean misreporting the zone.
+                double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, client.player.getZ());
+                String canonicalZoneKey = LatitudeBands.Band.values()[ZoneTitlePolicy.segmentFor(absLatDeg)].name();
                 if (lastZoneKey == null || !lastZoneKey.equals(canonicalZoneKey)) {
+                    boolean firstZoneOfSession = lastZoneKey == null;
                     lastZoneKey = canonicalZoneKey;
-                    if (LatitudeConfig.zoneEnterTitleEnabled) {
+                    boolean teleported = previousSampleZ != Integer.MIN_VALUE
+                            && ZoneTitlePolicy.isTeleportStep(previousSampleZ, pz);
+                    if (LatitudeConfig.zoneEnterTitleEnabled
+                            && ZoneTitlePolicy.shouldAnnounce(absLatDeg, worldTime,
+                                    lastZoneAnnounceLatDeg, lastZoneAnnounceWorldTime,
+                                    firstZoneOfSession, teleported)) {
+                        lastZoneAnnounceLatDeg = absLatDeg;
+                        lastZoneAnnounceWorldTime = worldTime;
                         String titleText = buildZoneEnterTitle(client, canonicalZoneKey);
                         int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
                         double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
                         logEntryTitle("zone_trigger", titleText, client, client.player.getZ(), '\0', 0.0);
                         ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
+                    } else {
+                        logEntryTitle("zone_reannounce_suppressed", canonicalZoneKey,
+                                client, client.player.getZ(), '\0', 0.0);
                     }
                 }
 
@@ -328,6 +353,8 @@ public final class GlobeWarningOverlay {
     private static void resetWorldEntryState(long worldTime) {
         debugStartWorldTime = worldTime;
         lastZoneKey = null;
+        lastZoneAnnounceLatDeg = Double.NaN;
+        lastZoneAnnounceWorldTime = Long.MIN_VALUE;
         lastZoneUpdateWorldTime = Long.MIN_VALUE;
         lastZoneUpdateX = Integer.MIN_VALUE;
         lastZoneUpdateZ = Integer.MIN_VALUE;
@@ -354,6 +381,9 @@ public final class GlobeWarningOverlay {
         }
         if (lastZoneUpdateWorldTime != Long.MIN_VALUE) {
             lastZoneUpdateWorldTime += deltaTicks;
+        }
+        if (lastZoneAnnounceWorldTime != Long.MIN_VALUE) {
+            lastZoneAnnounceWorldTime += deltaTicks;
         }
         if (lastWarningDebugWorldTime != Long.MIN_VALUE) {
             lastWarningDebugWorldTime += deltaTicks;

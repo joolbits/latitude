@@ -12,6 +12,12 @@ public final class PolarFoliagePolicyTest {
         foliageClassificationPreservesBerriesAndFailsOpen();
         snowySubpolarFirefliesAreRejectedWithoutChangingWarmFireflies();
         staticIntegrationProofsHold();
+        treeLineIsStrictAndBelowTheFoliageLimit();
+        woodyCompletionBufferDoesNotMoveTheTreeStartLine();
+        blockLevelGuardClosesTheFeatureClassBypass();
+        theWoodyAndFoliageTagsDoNotOverlap();
+        windsweptSnowLineDescendsPolewardAndCannotOrphanSnowyGrass();
+        windsweptSnowLineThresholdRowDisagreesUnlessNormalizedToTheSnowPosition();
         System.out.println("POLAR_FOLIAGE_POLICY_TEST_PASS");
     }
 
@@ -97,8 +103,11 @@ public final class PolarFoliagePolicyTest {
         String treeGuard = normalize(read(
                 "src/main/java/com/example/globe/mixin/ExtremePolarVegetationGuardMixin.java"));
         assertTrue(
-                treeGuard.contains("LatitudeBiomes.isBlockBeyondPolarFoliageLimit("),
-                "tree generation uses the dedicated strict-80 foliage boundary");
+                treeGuard.contains("LatitudeBiomes.isBlockBeyondPolarWoodyLimit("),
+                "tree generation uses the dedicated 72-degree TREE LINE, not the 80-degree ground"
+                        + " vegetation limit — this assertion previously pinned the strict-80"
+                        + " boundary and was updated deliberately when the two tiers were split"
+                        + " (maintainer ruling, 2026-08-10: earthlike treeline at 70-72)");
         assertGeneratorGatePrecedesSuppression(treeGuard, "tree");
 
         String simpleGuard = normalize(read(
@@ -125,16 +134,22 @@ public final class PolarFoliagePolicyTest {
                 "runtime classification delegates to the extensible custom foliage tag");
         assertGeneratorGatePrecedesSuppression(simpleGuard, "simple foliage");
 
+        // The two tiers PARTITION this content: woody/tree-derived at the 72-degree tree line,
+        // ground vegetation at the 80-degree limit. Assert against the UNION so the split cannot
+        // silently drop an entry — losing one here reopens a leak in the band it belonged to.
         String foliageTag = read(
                 "src/main/resources/data/globe/tags/block/polar_foliage.json");
+        String woodyTag = read(
+                "src/main/resources/data/globe/tags/block/polar_woody.json");
+        String guardedContent = foliageTag + woodyTag;
         for (String nestedTag : new String[]{
                 "#minecraft:flowers",
                 "#minecraft:saplings",
                 "#minecraft:leaves",
                 "#minecraft:logs",
                 "#minecraft:crops"}) {
-            assertTrue(foliageTag.contains("\"" + nestedTag + "\""),
-                    "custom foliage tag nests " + nestedTag);
+            assertTrue(guardedContent.contains("\"" + nestedTag + "\""),
+                    "the guarded-content tiers together must still nest " + nestedTag);
         }
         for (String block : new String[]{
                 "minecraft:short_grass",
@@ -157,7 +172,7 @@ public final class PolarFoliagePolicyTest {
                 "minecraft:leaf_litter",
                 "minecraft:pumpkin",
                 "minecraft:melon"}) {
-            assertTrue(foliageTag.contains("\"" + block + "\""),
+            assertTrue(guardedContent.contains("\"" + block + "\""),
                     "custom foliage tag includes " + block);
         }
         assertTrue(!foliageTag.contains("minecraft:sweet_berry_bush"),
@@ -168,6 +183,256 @@ public final class PolarFoliagePolicyTest {
                 mixins.contains("\"ExtremePolarVegetationGuardMixin\"")
                         && mixins.contains("\"ExtremePolarSimpleFoliageGuardMixin\""),
                 "tree and simple-foliage guards are both registered");
+    }
+
+    /**
+     * The tree line is a SECOND, lower threshold — not a replacement for the foliage limit. A single
+     * cliff for all vegetation would strip grass and flowers from 72 degrees to the pole, which is
+     * the opposite of the earthlike tundra this models (maintainer ruling, 2026-08-10).
+     */
+    private static void treeLineIsStrictAndBelowTheFoliageLimit() {
+        assertTrue(PolarFoliagePolicy.MAX_WOODY_ABSOLUTE_LATITUDE_DEGREES
+                        < PolarFoliagePolicy.MAX_ALLOWED_ABSOLUTE_LATITUDE_DEGREES,
+                "the tree line must sit BELOW the ground-vegetation limit — if they invert, or are "
+                        + "made equal, the polar band silently becomes a single bare cliff again");
+        assertNear(72.0, PolarFoliagePolicy.MAX_WOODY_ABSOLUTE_LATITUDE_DEGREES,
+                "tree line stays at Earth's outer Arctic treeline");
+
+        for (int radius : new int[]{3_750, 7_500, 20_000}) {
+            for (int hemisphere : new int[]{-1, 1}) {
+                double z71Point9 = hemisphere * radius * 71.9 / 90.0;
+                double z72 = hemisphere * radius * 72.0 / 90.0;
+                double z72Point1 = hemisphere * radius * 72.1 / 90.0;
+                assertFalse(PolarFoliagePolicy.isBeyondWoodyLimit(z71Point9, radius, 1),
+                        "71.9 degrees keeps its trees");
+                assertFalse(PolarFoliagePolicy.isBeyondWoodyLimit(z72, radius, 1),
+                        "exactly 72 degrees keeps its trees — the bound is strict, like the 80 one");
+                assertTrue(PolarFoliagePolicy.isBeyondWoodyLimit(z72Point1, radius, 1),
+                        "72.1 degrees rejects trees");
+                // The band between the two limits is the point of the split.
+                assertFalse(PolarFoliagePolicy.isBeyondLimit(z72Point1, radius, 1),
+                        "ground vegetation survives at 72.1 — only woody content stops there");
+            }
+        }
+    }
+
+    private static void woodyCompletionBufferDoesNotMoveTheTreeStartLine() {
+        assertTrue(PolarFoliagePolicy.WOODY_COMPLETION_BUFFER_BLOCKS == 16,
+                "the completion allowance stays a tiny, reviewable canopy-sized band");
+        for (int radius : new int[]{3_750, 7_500, 20_000}) {
+            double treeLineZ = radius * 72.0 / 90.0;
+            for (int hemisphere : new int[]{-1, 1}) {
+                double justPastTreeLine = hemisphere * (treeLineZ + 1.0);
+                double insideCompletionBand = hemisphere * (treeLineZ + 15.9);
+                double outsideCompletionBand = hemisphere * (treeLineZ + 16.1);
+                assertTrue(PolarFoliagePolicy.isBeyondWoodyLimit(justPastTreeLine, radius, 1),
+                        "trees still cannot start one block past 72 degrees");
+                assertFalse(PolarFoliagePolicy.isBeyondWoodyCompletionLimit(
+                                insideCompletionBand, radius, 1),
+                        "a legal tree can finish its canopy across the boundary");
+                assertTrue(PolarFoliagePolicy.isBeyondWoodyCompletionLimit(
+                                outsideCompletionBand, radius, 1),
+                        "the completion band remains finite");
+            }
+        }
+    }
+
+    /**
+     * Guards the fix for the reported defect: trees forbidden at the pole while logs and mushrooms
+     * appeared anyway. The cause was that {@code globe:polar_foliage} had exactly ONE reader, and
+     * that reader only ever sees {@code SimpleBlockFeature} — so {@code minecraft:fallen_tree}
+     * (a sibling of {@code TreeFeature}, not a subclass) and every raw-{@code Feature} pack
+     * equivalent wrote freely. A tag edit alone cannot fix that, which is why this asserts the
+     * block-level reader exists rather than asserting anything about tag contents.
+     */
+    private static void blockLevelGuardClosesTheFeatureClassBypass() throws Exception {
+        String config = read("src/main/resources/globe.mixins.json");
+        assertTrue(config.contains("\"ProtoChunkPolarVegetationGuardMixin\""),
+                "the block-level polar guard must be registered — unregistered, the fallen-log and "
+                        + "modded-shrub bypasses silently reopen");
+
+        String guard = read(
+                "src/main/java/com/example/globe/mixin/ProtoChunkPolarVegetationGuardMixin.java");
+        assertTrue(guard.contains("method = \"setBlockState\""),
+                "the guard must intercept the block WRITE — guarding feature classes is what left "
+                        + "fallen trees, huge mushrooms, glow lichen and block_column cane outside");
+        assertTrue(guard.contains("instanceof VegetationBlock"),
+                "modded ground cover must be caught by inheritance from the vanilla plant base; a "
+                        + "tag-only test fails OPEN on any block a pack never tagged, which left the "
+                        + "polar cap greener than a correctly-guarded biome");
+        assertTrue(guard.contains("LatitudeWorldgenScope.isFeatureActive()"),
+                "the guard is decoration-only — structures, bonemeal, sapling growth and /place stay untouched");
+        assertTrue(guard.contains("polar_woody") && guard.contains("polar_foliage"),
+                "both tiers must be consulted, or the split collapses to one threshold");
+        assertTrue(guard.contains("PolarFoliagePolicy.isBeyondWoodyCompletionLimit("),
+                "the block-write seam permits only the bounded canopy completion band");
+        assertTrue(guard.contains("woody && pos.getY() >= LatitudeBiomes.TREE_LINE_Y"),
+                "raw woody features must obey the same high-alpine tree line as TreeFeature");
+        assertTrue(!guard.contains("vegetation && pos.getY() >= LatitudeBiomes.TREE_LINE_Y")
+                        && !guard.contains("foliage && pos.getY() >= LatitudeBiomes.TREE_LINE_Y"),
+                "the alpine backstop must not invent a bare-alpine rule for grass and flowers");
+
+        // Both tiers, and the berry exemption, at the pure-policy level.
+        assertTrue(PolarFoliagePolicy.shouldSuppressPolarBlock(true, false, true, false, false, false),
+                "woody content is suppressed above the tree line even below the foliage limit");
+        assertFalse(PolarFoliagePolicy.shouldSuppressPolarBlock(true, false, false, true, false, false),
+                "ground vegetation survives between the tree line and the foliage limit");
+        assertTrue(PolarFoliagePolicy.shouldSuppressPolarBlock(true, true, false, true, false, false),
+                "ground vegetation is suppressed above the foliage limit");
+        assertTrue(PolarFoliagePolicy.shouldSuppressPolarBlock(true, true, false, false, true, false),
+                "an UNTAGGED modded plant is still suppressed above the foliage limit — this is the "
+                        + "fail-closed half; tag membership alone let BOP tundra shrubs through");
+        assertFalse(PolarFoliagePolicy.shouldSuppressPolarBlock(true, true, true, true, true, true),
+                "sweet berries keep their exemption at every latitude and against every tier");
+        assertFalse(PolarFoliagePolicy.shouldSuppressPolarBlock(false, false, true, true, true, false),
+                "below the tree line nothing is suppressed");
+    }
+
+    /**
+     * The two tiers must partition, not overlap. An entry in both would be governed by whichever
+     * test runs first, which is exactly the kind of silent precedence this split exists to remove.
+     */
+    private static void theWoodyAndFoliageTagsDoNotOverlap() throws Exception {
+        java.util.Set<String> woody = tagValues("polar_woody");
+        java.util.Set<String> foliage = tagValues("polar_foliage");
+        assertTrue(!woody.isEmpty() && !foliage.isEmpty(), "both tier tags must exist and be populated");
+        java.util.Set<String> both = new java.util.TreeSet<>(woody);
+        both.retainAll(foliage);
+        assertTrue(both.isEmpty(), "a block may belong to exactly one tier, found in both: " + both);
+        assertTrue(woody.contains("#minecraft:logs"),
+                "logs are tree-derived and belong to the tree-line tier");
+        assertFalse(foliage.contains("#minecraft:logs"),
+                "logs must NOT remain in the ground-vegetation tier");
+        assertTrue(foliage.contains("minecraft:short_grass"),
+                "grass is ground vegetation and must survive above the tree line");
+        assertFalse(woody.contains("minecraft:short_grass"),
+                "grass must not be pulled down to the tree line");
+    }
+
+    private static java.util.Set<String> tagValues(String name) throws Exception {
+        String raw = read("src/main/resources/data/globe/tags/block/" + name + ".json");
+        java.util.Set<String> out = new java.util.TreeSet<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\"(#?[a-z0-9_.-]+:[a-z0-9_./-]+)\"").matcher(raw);
+        while (m.find()) {
+            out.add(m.group(1));
+        }
+        return out;
+    }
+
+    /**
+     * Two defects, one root: a flat, latitude-blind windswept snow line.
+     *
+     * <p>At a constant sea+27 it carpeted TEMPERATE windswept in snow that does not belong at
+     * 35-50 degrees. Reverting to vanilla's sea+57 everywhere brings back the older defect — and
+     * that one is a RENDERING desync, not a taste question: {@code grass_block} carries
+     * {@code BlockStateProperties.SNOWY}, which whitens the block's top edges. Worldgen writes
+     * states directly rather than through neighbour updates, so stripping the snow layer above a
+     * {@code SNOWY=true} grass block leaves white-edged grass with nothing on top. Previously
+     * measured at 159 snowy grass blocks against 13 surviving snow layers.
+     *
+     * <p>So the ramp is only safe BECAUSE the guard now also clears SNOWY on the same condition.
+     * Assert both halves; either alone is a regression.
+     */
+    private static void windsweptSnowLineDescendsPolewardAndCannotOrphanSnowyGrass() throws Exception {
+        // Ramp: vanilla's line equatorward of temperate, fully lowered by subpolar, monotonic between.
+        assertNear(WindsweptSnowLinePolicy.VANILLA_SNOW_LINE_OFFSET_ABOVE_SEA,
+                WindsweptSnowLinePolicy.snowLineOffsetForLatitude(20.0),
+                "below the temperate band the line stays at vanilla's");
+        assertNear(WindsweptSnowLinePolicy.VANILLA_SNOW_LINE_OFFSET_ABOVE_SEA,
+                WindsweptSnowLinePolicy.snowLineOffsetForLatitude(35.0),
+                "at the temperate edge the line is still vanilla's");
+        assertNear(WindsweptSnowLinePolicy.SNOW_LINE_OFFSET_ABOVE_SEA,
+                WindsweptSnowLinePolicy.snowLineOffsetForLatitude(50.0),
+                "by the subpolar edge the line is fully lowered");
+        assertNear(WindsweptSnowLinePolicy.SNOW_LINE_OFFSET_ABOVE_SEA,
+                WindsweptSnowLinePolicy.snowLineOffsetForLatitude(80.0),
+                "it stays lowered poleward, never rising again");
+        int previous = Integer.MAX_VALUE;
+        for (int deg = 30; deg <= 60; deg++) {
+            int offset = WindsweptSnowLinePolicy.snowLineOffsetForLatitude(deg);
+            assertTrue(offset <= previous,
+                    "the snow line must descend monotonically toward the pole, as Earth's does; "
+                            + "a non-monotonic ramp puts a snow band above a bare band at " + deg);
+            previous = offset;
+        }
+
+        // A mid-temperate windswept column must NOT be snowed at the old blanket height.
+        assertFalse(WindsweptSnowLinePolicy.appliesTo(
+                        "minecraft:windswept_forest", 63 + 27, 63, 40.0),
+                "at 40 degrees the old blanket sea+27 line must no longer snow windswept");
+        assertTrue(WindsweptSnowLinePolicy.appliesTo(
+                        "minecraft:windswept_forest", 63 + 27, 63, 55.0),
+                "at 55 degrees the lowered line still applies");
+        assertFalse(WindsweptSnowLinePolicy.appliesTo(
+                        "minecraft:windswept_savanna", 63 + 40, 63, 55.0),
+                "windswept_savanna is a warm biome and never snows, at any latitude");
+
+        // The other half: the guard must clear SNOWY, and must decide it with the SAME predicate
+        // that strips the layer. Two copies of that test is how the orphan was produced before.
+        String guard = read(
+                "src/main/java/com/example/globe/mixin/ProtoChunkSnowBlockGuardMixin.java");
+        // Assert the WRITE, not a mention. A contains("...SNOWY") check passed even with the
+        // setValue deleted, because the property is also READ twice just above it — the same
+        // weak-assertion trap that let a 0xBEEFBEEF guard pass with one overload gutted.
+        //
+        // 26.2 declares this property on BlockStateProperties, not on the source line's
+        // SnowyDirtBlock (which does not exist here). The identifier is retargeted; the teeth are
+        // not — the ", Boolean.FALSE" suffix is what distinguishes the write from the two reads.
+        assertTrue(guard.contains("BlockStateProperties.SNOWY, Boolean.FALSE"),
+                "the guard must actually SET BlockStateProperties.SNOWY to false, not merely read "
+                        + "it — otherwise a stripped snow layer leaves white-edged grass with "
+                        + "nothing on top, which is the reported rendering defect");
+        assertTrue(guard.contains("globe$columnKeepsSnow"),
+                "strip and SNOWY-clear must share one predicate");
+
+        // Coordinate fix (maintainer, 2026-08-12): the two call sites must NOT ask about the same
+        // position. grass_block sits one row below the snow it explains, and globe$columnKeepsSnow
+        // is height-dependent (coldEnoughToSnow falls with Y; the windswept ramp is a strict
+        // Y>=threshold test), so asking the grass block's own row can disagree with the row
+        // directly above it -- keeping the snow at Y while clearing SNOWY on the grass at Y-1.
+        // Exactly ONE call site normalizes to the row above (the SNOWY-clear branch); exactly ONE
+        // asks about its own row (the snow/layer strip branch, which IS the position being
+        // decided). Equal counts here would mean the coordinate fix was reverted.
+        assertTrue(occurrences(guard, "globe$columnKeepsSnow(pos.above())") == 1,
+                "the SNOWY-clear branch must ask about the row ABOVE the grass block -- the snow "
+                        + "layer's own row -- not the grass block's own row, or the SNOWY decision "
+                        + "can disagree with the block actually written one row up");
+        assertTrue(occurrences(guard, "globe$columnKeepsSnow(pos)") == 1,
+                "exactly one call site (the snow/layer strip branch) asks about its own row; if "
+                        + "this count is 2, the coordinate normalization above was undone and the "
+                        + "grass branch is back to asking about the wrong row");
+    }
+
+    /**
+     * Pure-math proof of the defect the coordinate fix corrects, independent of the mixin itself:
+     * at the exact windswept snow-line threshold, the snow layer's row and the row directly below
+     * it (where the grass_block sits) give DIFFERENT answers from the shared height-dependent
+     * predicate. A grass decision that queries its own row instead of the row above it will
+     * therefore disagree with the snow actually written above it at precisely this row.
+     */
+    private static void windsweptSnowLineThresholdRowDisagreesUnlessNormalizedToTheSnowPosition() {
+        int seaLevel = 63;
+        double fullyLoweredLatitude = 55.0; // >= 50 deg: offset is fully lowered to +27
+        int snowY = seaLevel + WindsweptSnowLinePolicy.SNOW_LINE_OFFSET_ABOVE_SEA; // 90
+        int grassY = snowY - 1; // 89 -- where grass_block sits beneath that snow layer
+
+        assertTrue(
+                WindsweptSnowLinePolicy.appliesTo(
+                        "minecraft:windswept_forest", snowY, seaLevel, fullyLoweredLatitude),
+                "the snow layer's own row keeps snow at the exact threshold");
+        assertFalse(
+                WindsweptSnowLinePolicy.appliesTo(
+                        "minecraft:windswept_forest", grassY, seaLevel, fullyLoweredLatitude),
+                "one row below the threshold, asked about ITS OWN row, the predicate disagrees -- "
+                        + "this is the exact coordinate mismatch the guard must not use for the "
+                        + "grass block's SNOWY decision");
+        assertTrue(
+                WindsweptSnowLinePolicy.appliesTo(
+                        "minecraft:windswept_forest", grassY + 1, seaLevel, fullyLoweredLatitude),
+                "the grass row's position ABOVE it (pos.above() from the grass block) is exactly "
+                        + "the snow row, and agrees with the snow layer's own answer -- this is "
+                        + "the row the SNOWY decision must be normalized to");
     }
 
     private static String read(String path) throws Exception {
@@ -190,7 +455,12 @@ public final class PolarFoliagePolicyTest {
 
     private static void assertGeneratorGatePrecedesSuppression(String guard, String label) {
         int generatorGate = guard.indexOf("context.chunkGenerator()");
+        // Either tier: the tree guard gates on the 72-degree tree line, the simple-block guard on
+        // the 80-degree ground-vegetation limit. Both must sit behind the generator gate.
         int suppression = guard.indexOf("LatitudeBiomes.isBlockBeyondPolarFoliageLimit(");
+        if (suppression < 0) {
+            suppression = guard.indexOf("LatitudeBiomes.isBlockBeyondPolarWoodyLimit(");
+        }
         assertTrue(
                 generatorGate >= 0
                         && guard.contains("instanceof NoiseBasedChunkGenerator noise")

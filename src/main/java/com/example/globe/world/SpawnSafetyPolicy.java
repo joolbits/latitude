@@ -9,11 +9,11 @@ import java.util.Locale;
  */
 public final class SpawnSafetyPolicy {
     /**
-     * World creation runs on the integrated server's critical loading path. It may make one
-     * terrain-validated Latitude attempt, then must hand control back to vanilla's safe-spawn
-     * routine rather than synchronously scanning a globe while the loading overlay is frozen.
+     * World creation runs on the integrated server's critical loading path. Candidate selection
+     * must not synchronously generate a remote FULL chunk merely to inspect it; the bounded
+     * terrain-safe fallback generates only the destination columns it may actually accept.
      */
-    public static final int INITIAL_SPAWN_TERRAIN_VALIDATION_BUDGET = 1;
+    public static final int INITIAL_SPAWN_TERRAIN_VALIDATION_BUDGET = 0;
     public static final int FALLBACK_STEP_BLOCKS = 256;
     public static final int FALLBACK_MAX_RINGS = 1;
     public static final int SPAWN_PREPARATION_NEIGHBOR_RADIUS_CHUNKS = 1;
@@ -99,8 +99,8 @@ public final class SpawnSafetyPolicy {
     }
 
     /**
-     * Initial creation validates at most one candidate chunk and deliberately does not preload a
-     * teleport ring. Vanilla prepares the actual initial-spawn area after this hook returns.
+     * Initial creation makes no speculative candidate-chunk request before the deterministic
+     * terrain-safe fallback. Vanilla prepares the actual initial-spawn area after this hook returns.
      */
     public static int maximumInitialSpawnChunkLoadCalls(int terrainValidationBudget) {
         return Math.max(0, terrainValidationBudget);

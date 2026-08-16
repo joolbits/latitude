@@ -33,16 +33,69 @@ public final class WindsweptSnowLinePolicy {
             "minecraft:windswept_forest",
             "minecraft:windswept_gravelly_hills");
 
-    /** Vanilla's effective line for these biomes is ~seaLevel + 57; Latitude lowers it to +27. */
+    /** Latitude's fully-lowered line, applied at subpolar and poleward. */
     public static final int SNOW_LINE_OFFSET_ABOVE_SEA = 27;
+
+    /** Vanilla's own effective line for a temperature-0.2 biome (~y120 at sea level 63). */
+    public static final int VANILLA_SNOW_LINE_OFFSET_ABOVE_SEA = 57;
+
+    /** Poleward of this the line is fully lowered; matches the Subpolar band edge. */
+    public static final double FULLY_LOWERED_AT_LATITUDE_DEG = 50.0;
+
+    /** Equatorward of this the line stays at vanilla's; matches the Temperate band edge. */
+    public static final double VANILLA_LINE_UNTIL_LATITUDE_DEG = 35.0;
 
     private WindsweptSnowLinePolicy() {
     }
 
-    /** True when Latitude's lowered windswept snow line covers this biome at this height. */
-    public static boolean appliesTo(String biomeId, int blockY, int seaLevel) {
+    /** Shared latitude derivation, so every consumer asks the question the same way. */
+    public static double absoluteLatitudeDegrees(
+            double blockZ, int activeRadiusBlocks, int borderRadiusFallback) {
+        int radius = activeRadiusBlocks > 0 ? activeRadiusBlocks : borderRadiusFallback;
+        return Math.min(90.0, Math.abs(blockZ) * 90.0 / Math.max(1, radius));
+    }
+
+    /**
+     * The snow line descends toward the poles, as Earth's does.
+     *
+     * <p>A single flat offset was the root of BOTH reported defects. At {@code +27} everywhere it
+     * carpeted temperate windswept in snow that does not belong at 35-50 degrees (maintainer,
+     * 2026-08-10). Reverting to vanilla's {@code +57} everywhere brings back the original
+     * complaint: Latitude paints windswept across temperate uplands from y50 up, so most of the
+     * surface sat below the line as bare desaturated grass with no snow to explain the cold tint.
+     *
+     * <p>Ramping between the two by latitude resolves both, and is coherent by construction —
+     * latitude varies slowly and smoothly across the map, so a whole mountainside lands on one
+     * side of the line rather than breaking into the patchy "grey grass with snow edges" a hard
+     * cutoff produced.
+     */
+    public static int snowLineOffsetForLatitude(double absLatDeg) {
+        if (absLatDeg >= FULLY_LOWERED_AT_LATITUDE_DEG) {
+            return SNOW_LINE_OFFSET_ABOVE_SEA;
+        }
+        if (absLatDeg <= VANILLA_LINE_UNTIL_LATITUDE_DEG) {
+            return VANILLA_SNOW_LINE_OFFSET_ABOVE_SEA;
+        }
+        double t = (absLatDeg - VANILLA_LINE_UNTIL_LATITUDE_DEG)
+                / (FULLY_LOWERED_AT_LATITUDE_DEG - VANILLA_LINE_UNTIL_LATITUDE_DEG);
+        double smooth = t * t * (3.0 - 2.0 * t);
+        return (int) Math.round(VANILLA_SNOW_LINE_OFFSET_ABOVE_SEA
+                + (SNOW_LINE_OFFSET_ABOVE_SEA - VANILLA_SNOW_LINE_OFFSET_ABOVE_SEA) * smooth);
+    }
+
+    /**
+     * True when Latitude's windswept snow line covers this biome at this height and latitude.
+     *
+     * <p>Every consumer must call this exact method. There are THREE — the placer
+     * ({@code SnowAndFreezeWindsweptSnowLineMixin}) and two guards that must not strip what it
+     * places ({@code ProtoChunkSnowBlockGuardMixin}, {@code ChunkRegionWarmSnowTrapMixin}). A
+     * one-sided change recreates the incoherent snowy-grass-without-carpet state this family of
+     * bugs started with. (The class javadoc said "both consumers" and undercounted; corrected
+     * 2026-08-10.)
+     */
+    public static boolean appliesTo(String biomeId, int blockY, int seaLevel, double absLatDeg) {
         return biomeId != null
                 && WINDSWEPT_SNOW_BIOMES.contains(biomeId)
-                && blockY >= seaLevel + SNOW_LINE_OFFSET_ABOVE_SEA;
+                && blockY >= seaLevel + snowLineOffsetForLatitude(absLatDeg);
     }
 }

@@ -15,6 +15,7 @@ public final class WorldgenAuthorityPolicyTest {
         inlineGeneratorAuthorityIsBoundToTheExactOverworld();
         oldWorldStateDefaultsAreConservativeAndVanillaReadsAreNonCreating();
         biomeColumnCacheIsWorldBoundAndAvoidsDuplicateVerticalPicks();
+        sulfurSurfaceExpressionRequiresAridLandAuthority();
         frozenRiverVegetationIsScopedWithoutMutatingVanillaBiomes();
         generationScopeIsDimensionIsolatedAndNestSafe();
         generationScopeCleansUpOnFailureAndAcrossThreads();
@@ -26,10 +27,64 @@ public final class WorldgenAuthorityPolicyTest {
         recreatedLatitudeWorldKeepsItsWorldTypeAndSize();
         coastalSwampUsesMangroveIdentity();
         wetlandLocateFilterMatchesFinalIdentityLaw();
+        biomeLocateServiceClaimsAllSupportedTargets();
+        structureLocateServiceIsBoundedAndTickDelivered();
+        customSurfaceLocatePreviewUsesRegistryAuthority();
         LatitudeLocateBudgetPolicyTest.main(new String[0]);
         BiomeProviderSelectionPolicyTest.run();
         registeredHookIntegrationIsClosed();
+        structureAdmissionUsesResolvedLatitudeBiomeSource();
         System.out.println("WORLDGEN_AUTHORITY_POLICY_TEST_PASS");
+    }
+
+    private static void structureAdmissionUsesResolvedLatitudeBiomeSource() throws Exception {
+        String mixin = normalize(read(
+                "src/main/java/com/example/globe/mixin/StructureBiomeMatchGuardMixin.java"));
+        String config = normalize(read("src/main/resources/globe.mixins.json"));
+
+        assertTrue(
+                mixin.contains("@Mixin(Structure.class)"),
+                "the admission redirect must target Minecraft's actual structure biome predicate");
+        assertTrue(
+                mixin.contains("method = \"isValidBiome\"")
+                        && mixin.contains("ChunkGenerator;getBiomeSource()")
+                        && mixin.contains("Structure.GenerationStub ignoredStub")
+                        && mixin.contains("Structure.GenerationContext context"),
+                "the redirect must match the exact 26.2 biome-validation frame and raw-generator lookup");
+        assertTrue(
+                mixin.contains("BiomeSource contextSource = context.biomeSource()")
+                        && mixin.contains("contextSource instanceof LatitudeBiomeSource"),
+                "Latitude structure starts must validate against their resolved context biome source");
+        assertTrue(
+                mixin.contains("? contextSource")
+                        && mixin.contains(": generator.getBiomeSource()"),
+                "non-Latitude worlds must retain Minecraft's original biome-source behavior");
+        assertTrue(
+                mixin.contains("@Inject(method = \"generate\", at = @At(\"RETURN\"), cancellable = true)")
+                        && mixin.contains("BlockPos center = start.getBoundingBox().getCenter()")
+                        && mixin.contains("Holder<Biome> resolved = latitudeSource.getNoiseBiome(")
+                        && mixin.contains("if (resolved == null || !validBiome.test(resolved) || woodlandMansionInCustomBiome)"),
+                "a completed Latitude structure must keep its visible center in a legal biome");
+        assertTrue(
+                mixin.contains("boolean woodlandMansionInCustomBiome = structureId != null")
+                        && mixin.contains("\"minecraft\".equals(structureId.getNamespace())")
+                        && mixin.contains("\"mansion\".equals(structureId.getPath())")
+                        && !mixin.contains("\"woodland_mansion\".equals(structureId.getPath())")
+                        && mixin.contains("!\"minecraft\".equals(biomeId.getNamespace())")
+                        && mixin.contains("|| woodlandMansionInCustomBiome"),
+                "a woodland mansion must not treat a third-party biome tag as Latitude admission");
+        assertFalse(
+                mixin.contains("int[][] samples = {")
+                        || mixin.contains("legalSamples")
+                        || mixin.contains("box.minX()"),
+                "fresh-world structure admission must not multiply terrain-aware probes across every footprint corner");
+        assertTrue(
+                mixin.contains("if (!(biomeSource instanceof LatitudeBiomeSource latitudeSource))")
+                        && mixin.contains("cir.setReturnValue(StructureStart.INVALID_START)"),
+                "footprint admission must fail closed only for the Latitude-resolved structure source");
+        assertTrue(
+                config.contains("\"StructureBiomeMatchGuardMixin\""),
+                "the structure admission redirect must be registered at runtime");
     }
 
     private static void terrainBiomeCohesionUsesRealSurfaceEvidence() throws Exception {
@@ -71,6 +126,36 @@ public final class WorldgenAuthorityPolicyTest {
         assertFalse(
                 TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland(false, false),
                 "ordinary temperate land is not globally promoted");
+
+        BiomeDescriptorLedger.Descriptor vanillaDesert =
+                BiomeDescriptorLedger.descriptor("minecraft:desert");
+        assertTrue(
+                aridTerrainCompatible(vanillaDesert, false),
+                "minecraft:desert is accepted on lowland arid terrain");
+        assertFalse(
+                aridTerrainCompatible(vanillaDesert, true),
+                "minecraft:desert is rejected when the final physical terrain class is upland");
+
+        BiomeDescriptorLedger.Descriptor highlandArid =
+                BiomeDescriptorLedger.descriptor("clifftree:desert_cliff");
+        assertTrue(
+                aridTerrainCompatible(highlandArid, true),
+                "an explicitly ARID_UPLAND custom descriptor remains eligible on upland arid terrain");
+
+        BiomeDescriptorLedger.Descriptor ordinaryCustomDesert =
+                BiomeDescriptorLedger.descriptor("biomesoplenty:lush_desert");
+        assertFalse(
+                aridTerrainCompatible(ordinaryCustomDesert, true),
+                "an ordinary custom lowland desert is not promoted merely because it is third-party");
+
+        BiomeDescriptorLedger.Descriptor nonAridUpland =
+                BiomeDescriptorLedger.descriptor("minecraft:stony_peaks");
+        assertTrue(
+                aridTerrainCompatible(nonAridUpland, true),
+                "existing non-arid upland behavior is unchanged");
+        assertTrue(
+                aridTerrainCompatible(nonAridUpland, false),
+                "existing non-arid lowland behavior is unchanged");
         assertFalse(
                 TerrainBiomeCohesionPolicy.shouldApplyLandGate(
                         true, false, false, highTerrain + 30, 30, seaLevel),
@@ -112,14 +197,51 @@ public final class WorldgenAuthorityPolicyTest {
         assertEquals(
                 2,
                 occurrences(source, "PreviewTerrain gateProbe = onDemandGateTerrain("),
-                "both picker paths probe real terrain on demand so the gate is not inert under the"
-                        + " worldgen preview fast path");
+                "both picker paths derive non-reentrant terrain evidence under the worldgen fast path");
         assertEquals(
                 2,
                 occurrences(
                         source,
-                        "TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland( forceTemperateUpland, out != null && out.is(LAT_TEMPERATE_MOUNTAIN))"),
-                "both picker paths preserve physical upland authority through the final return");
+                        "TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland( forceTemperateUpland, hasBiomeRoute(out, BiomeRoute.TEMPERATE_UPLAND))"),
+                "both picker paths preserve descriptor-approved physical upland identities "
+                        + "through the final return");
+        assertEquals(
+                2,
+                occurrences(source, "boolean finalPhysicalUpland = TerrainBiomeCohesionPolicy.isPhysicalUpland("),
+                "both picker paths derive the arid elevation gate from final physical terrain evidence");
+        assertEquals(
+                2,
+                occurrences(source, "out = enforceFinalAridTerrainAuthority("),
+                "both picker paths enforce the descriptor-owned arid terrain route at final return");
+        assertEquals(
+                2,
+                occurrences(source, "PreviewTerrain finalAridProbe = onDemandFinalAridTerrain("),
+                "both picker paths classify a final lowland-arid candidate without generator re-entry");
+        assertTrue(
+                source.contains(
+                        "if (\"MIXIN\".equals(normalized) || \"CAVE_CLAMP\".equals(normalized)) { return true; }"),
+                "MIXIN and CAVE_CLAMP unconditionally skip generator-reentrant terrain previews");
+        String onDemandGate = methodBody(source, "private static PreviewTerrain onDemandGateTerrain(");
+        String onDemandArid = methodBody(source, "private static PreviewTerrain onDemandFinalAridTerrain(");
+        String nonReentrantEvidence = methodBody(
+                source, "private static PreviewTerrain nonReentrantTerrainEvidence(");
+        for (String criticalPath : new String[]{onDemandGate, onDemandArid, nonReentrantEvidence}) {
+            assertFalse(
+                    criticalPath.contains("previewTerrain(")
+                            || criticalPath.contains("previewHeight(")
+                            || criticalPath.contains("getBaseHeight("),
+                    "live on-demand terrain classification cannot re-enter the chunk generator");
+        }
+        for (String routedPath : new String[]{onDemandGate, onDemandArid}) {
+            assertTrue(
+                    routedPath.contains("nonReentrantTerrainEvidence("),
+                    "live terrain classification reuses cached height plus sampler relief");
+        }
+        assertTrue(
+                nonReentrantEvidence.contains("new PreviewTerrain(")
+                        && nonReentrantEvidence.contains(
+                                "ruggedNoiseLike ? TerrainBiomeCohesionPolicy.RUGGED_RELIEF_BLOCKS : 0"),
+                "the terminal live evidence contains only cached height and the sampler ruggedness proxy");
         int firstWetlandLaw = source.indexOf("out = applyFinalWetlandIdentityLaw(");
         int firstFinalUpland = source.indexOf(
                 "TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland(");
@@ -132,9 +254,83 @@ public final class WorldgenAuthorityPolicyTest {
                         && secondWetlandLaw > firstFinalUpland
                         && secondFinalUpland > secondWetlandLaw,
                 "the final physical-upland clamp runs after every late arid/wetland rewrite");
+        int firstCoverage = source.indexOf("out = applyVanillaCoverage(");
+        int firstPolarClamp = source.indexOf(
+                "out = clampFinalPolarNonMountainAlpineOutput(", firstCoverage);
+        int firstJungleGate = source.indexOf("out = gateWarmJungleSurvival(", firstCoverage);
+        int firstWarmWetDesertGate = source.indexOf(
+                "out = gateWarmWetDesertSurvival(", firstJungleGate);
+        int firstAridLatitude = source.indexOf("out = applyFinalAridLatitudeLaw(", firstCoverage);
+        int firstAridTerrain = source.indexOf("out = enforceFinalAridTerrainAuthority(");
+        int secondCoverage = source.indexOf("out = applyVanillaCoverage(", firstCoverage + 1);
+        int secondPolarClamp = source.indexOf(
+                "out = clampFinalPolarNonMountainAlpineOutput(", secondCoverage);
+        int secondJungleGate = source.indexOf("out = gateWarmJungleSurvival(", secondCoverage);
+        int secondWarmWetDesertGate = source.indexOf(
+                "out = gateWarmWetDesertSurvival(", secondJungleGate);
+        int secondAridLatitude = source.indexOf("out = applyFinalAridLatitudeLaw(", secondCoverage);
+        int secondAridTerrain = source.indexOf(
+                "out = enforceFinalAridTerrainAuthority(", firstAridTerrain + 1);
+        assertTrue(
+                firstCoverage >= 0
+                        && firstPolarClamp > firstCoverage
+                        && firstJungleGate > firstPolarClamp
+                        && firstWarmWetDesertGate > firstJungleGate
+                        && firstAridLatitude > firstWarmWetDesertGate
+                        && firstAridTerrain > firstCoverage
+                        && secondCoverage > firstAridTerrain
+                        && secondPolarClamp > secondCoverage
+                        && secondJungleGate > secondPolarClamp
+                        && secondWarmWetDesertGate > secondJungleGate
+                        && secondAridLatitude > secondWarmWetDesertGate
+                        && secondAridTerrain > secondCoverage,
+                "both picker paths run polar, bidirectional humidity, arid-latitude, and physical-terrain "
+                        + "authorities after land coverage");
+        assertEquals(
+                2,
+                occurrences(source, "out = gateWarmWetDesertSurvival("),
+                "each picker path has exactly one final inverse-humidity desert gate");
+        assertEquals(
+                2,
+                occurrences(source, "out = applyVanillaCoverage("),
+                "each picker path has exactly one final-admission land coverage point");
+        assertFalse(
+                source.contains(
+                        "if (isBiomeId(chosen, \"minecraft:cherry_grove\") && landBandIndex < BAND_POLAR) { return chosen; }"),
+                "Cherry Grove must pass through the same final land admission sequence");
         assertTrue(
                 source.contains("isBiomeId(candidate, \"minecraft:sunflower_plains\")"),
                 "the exact lowland biome visible in TEST 19 is classified with the plains family");
+    }
+
+    private static boolean aridTerrainCompatible(
+            BiomeDescriptorLedger.Descriptor descriptor,
+            boolean physicalUpland) {
+        assertTrue(descriptor != null, "the discriminator biome has a ledger descriptor");
+        return TerrainBiomeCohesionPolicy.isAridBiomeCompatibleWithTerrain(
+                physicalUpland,
+                descriptor.routes().contains(BiomeRoute.ARID_LOWLAND),
+                descriptor.routes().contains(BiomeRoute.ARID_UPLAND));
+    }
+
+    private static String methodBody(String source, String declaration) {
+        int start = source.indexOf(declaration);
+        assertTrue(start >= 0, "expected method declaration: " + declaration);
+        int brace = source.indexOf('{', start);
+        assertTrue(brace >= 0, "expected method body: " + declaration);
+        int depth = 0;
+        for (int i = brace; i < source.length(); i++) {
+            char c = source.charAt(i);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return source.substring(brace + 1, i);
+                }
+            }
+        }
+        throw new AssertionError("unterminated method body: " + declaration);
     }
 
     private static void recreatedLatitudeWorldKeepsItsWorldTypeAndSize() throws Exception {
@@ -286,8 +482,8 @@ public final class WorldgenAuthorityPolicyTest {
                         && service.contains("BlockPos.spiralAround("),
                 "the optimization must preserve the full-radius nearest-first grid");
         assertTrue(
-                service.contains("latitudeSource, worldRadius, randomState.sampler()"),
-                "the live service must pass the exact world radius into its job");
+                service.contains("latitudeSource, worldRadius, searchRadius, randomState.sampler()"),
+                "the live service must pass the exact world and search radii into its job");
         assertTrue(
                 service.contains("LatitudeBiomes.isPotentialWetlandLocateCandidate( blockX, blockZ, worldRadius, sampler, includesSwamp, includesMangrove)"),
                 "the live service must wire the exact world radius into the cheap filter");
@@ -310,9 +506,186 @@ public final class WorldgenAuthorityPolicyTest {
                 service.contains("latitudeSource.isPotentialWetlandLocateSourceCandidate("),
                 "the live tick job must use the terrain-free registry preview before exact resolution");
         assertTrue(
+                occurrences(source, "LatitudeBiomes.isPotentialDirectMangroveLocateCandidate(") >= 1
+                        && source.contains("isPotentialWetlandLocateSourceCandidate( quartX, quartY, quartZ, sampler)"),
+                "the direct locator must retain the same direct-mangrove and shoreline-promotable candidates as the tick job");
+        int directWetlandCandidate = source.indexOf(
+                "LatitudeBiomes.isPotentialWetlandLocateCandidate( blockX, blockZ, borderRadiusBlocks");
+        int directWetlandExit = source.indexOf("if (wetlandOnlyTarget) {", directWetlandCandidate);
+        assertTrue(
+                directWetlandCandidate >= 0 && directWetlandExit > directWetlandCandidate,
+                "direct wetland locate may stop only after the complete shared broad phase");
+        assertTrue(
                 service.contains("tickExactProbes < LatitudeLocateBudgetPolicy.MAX_WETLAND_EXACT_PROBES_PER_TICK")
                         && service.contains("tickExactProbes++;"),
                 "the live scheduler must enforce and consume the one-exact-probe tick budget");
+    }
+
+    private static void biomeLocateServiceClaimsAllSupportedTargets() throws Exception {
+        String service = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeBiomeLocateService.java"));
+        String mixin = normalize(read(
+                "src/main/java/com/example/globe/mixin/LocateCommandMixin.java"));
+
+        assertTrue(
+                mixin.contains("LatitudeBiomeLocateService.beginIfLatitudeBiome(source, target)"),
+                "the command hook must route all supported Latitude biome requests into the progress worker");
+        assertTrue(
+                service.contains("else if (!includesCave) { job = new SurfaceLocateJob(")
+                        && service.contains("else { job = new ThreeDimensionalLocateJob("),
+                "surface, cave, and mixed biome targets must all receive bounded tick-sliced routes");
+        assertTrue(
+                service.contains("ServerPlayConnectionEvents.DISCONNECT.register(")
+                        && service.contains("ServerLifecycleEvents.SERVER_STOPPED.register(server -> cancel(server, null))"),
+                "disconnect and server-stop cancellation must reach the active locate job");
+        assertTrue(
+                occurrences(service, "bossBar.removeAllPlayers()") >= 3,
+                "success, failure, and cancellation must all clear the locate boss bar");
+        assertTrue(
+                service.contains("LatitudeLocateBudgetPolicy.MAX_SURFACE_PREVIEW_PROBES_PER_TICK")
+                        && service.contains("LatitudeLocateBudgetPolicy.MAX_THREE_DIMENSIONAL_EXACT_PROBES_PER_TICK"),
+                "general biome routes must remain explicitly bounded per tick");
+        assertTrue(
+                service.contains("LatitudeLocateBudgetPolicy.fullWorldSearchRadius(")
+                        && service.contains("isWithinLatitudeWorld(blockX, blockZ)"),
+                "a boss-bar locate must cover the playable Latitude world without reporting outside it");
+        String biomeSource = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeBiomeSource.java"));
+        assertTrue(
+                occurrences(biomeSource, "findPlannedCaveCoverage(") >= 2
+                        && biomeSource.contains("Holder<Biome> exact = getNoiseBiome(quartX, quartY, quartZ, sampler)")
+                        && biomeSource.contains("anchor.biomeId().equals(LatitudeBiomes.biomeIdPublic(exact))"),
+                "a direct cave locate miss may use a planned anchor only after final-output identity verification");
+        assertTrue(
+                service.contains("latitudeSource.findPlannedCaveCoverage( matching, origin, searchRadius, target, sampler)"),
+                "the tick-sliced cave route shares the same verified planned fallback");
+    }
+
+    private static void structureLocateServiceIsBoundedAndTickDelivered() throws Exception {
+        String service = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeStructureLocateService.java"));
+        String mixin = normalize(read(
+                "src/main/java/com/example/globe/mixin/LocateCommandMixin.java"));
+
+        assertTrue(
+                mixin.contains("@Inject(method = \"locateStructure\", at = @At(\"HEAD\"), cancellable = true, require = 1)")
+                        && mixin.contains("LatitudeStructureLocateService.beginIfApplicable(source, target)")
+                        && mixin.contains("cir.setReturnValue(1);"),
+                "the exact 26.2 structure command must return immediately through the Latitude service");
+        assertTrue(
+                service.contains("CompletableFuture.supplyAsync(")
+                        && service.contains("Util.backgroundExecutor()")
+                        && !service.contains("whenCompleteAsync("),
+                "heavy structure candidate evaluation must leave the server thread without delivering UI off-thread");
+        assertTrue(
+                service.contains("ServerTickEvents.END_SERVER_TICK.register(LatitudeStructureLocateService::tick)")
+                        && service.contains("if (job.isDone()) { ACTIVE_JOBS.remove(server); job.complete(); }"),
+                "normal server ticks must poll and deliver the completed result");
+        assertTrue(
+                service.contains("new ServerBossEvent(")
+                        && service.contains("BossEvent.BossBarColor.BLUE")
+                        && service.contains("bossBar.setProgress(percent / 100.0F)")
+                        && service.contains("bossBar.setName(Component.literal("),
+                "the player must receive one blue progress bar updated in place");
+        assertTrue(
+                service.contains("private void finishWithResult(SearchOutcome outcome)")
+                        && service.contains("private void finishWithFailure(Throwable failure)")
+                        && service.contains("private void cancel()")
+                        && occurrences(service, "clearBossBar();") >= 3
+                        && service.contains("bossBar.removeAllPlayers();"),
+                "success, failure, and cancellation must all clear the structure progress bar");
+        assertTrue(
+                service.contains("ServerPlayConnectionEvents.DISCONNECT.register(")
+                        && service.contains("ServerLifecycleEvents.SERVER_STOPPED.register(server -> {")
+                        && service.contains("cancel(server, null);")
+                        && service.contains("PENDING_TELEPORTS.remove(server);")
+                        && service.contains("clearPendingTeleport(server, handler.player);"),
+                "disconnect and server stop must cancel the owned structure search and clear teleport tokens");
+        assertTrue(
+                service.contains("private static final Map<MinecraftServer, StructureLocateJob> ACTIVE_JOBS")
+                        && service.contains("if (ACTIVE_JOBS.containsKey(server))"),
+                "one server may own only one active Latitude structure search");
+        assertTrue(
+                service.contains("if (!(placement instanceof RandomSpreadStructurePlacement spread)) { return false; }")
+                        && service.contains("placement().isStructureChunk("),
+                "unsupported placements must defer wholly to vanilla and supported candidates must pass Minecraft's full placement predicate");
+        assertTrue(
+                service.contains("structureState.possibleStructureSets()")
+                        && service.contains("structureSet.structures().stream()")
+                        && service.contains("StructurePlacement placement = structureSet.placement();")
+                        && !service.contains("structureState.getPlacementsForStructure(")
+                        && !service.contains("structureState.ensureStructuresGenerated();"),
+                "command admission must inspect the existing structure-set roster without triggering lazy structure generation on the server thread");
+        assertTrue(
+                service.contains("SearchBounds bounds = new SearchBounds(")
+                        && service.contains("if (!context.bounds().contains(locatePos))"),
+                "the custom search must stay inside the playable Latitude border snapshot");
+        assertTrue(
+                service.contains("LatitudeBiomeSource finalBiomeSource = LatitudeBiomeSource.forStructure(")
+                        && service.contains("candidate.structure().generate(")
+                        && service.contains("context.templateManager()")
+                        && service.contains("if (generatedStart == null || !generatedStart.isValid())")
+                        && service.contains("LatitudeBiomes.villageVariantVsBiomeMismatch("),
+                "locate candidates must pass Minecraft's real generation-point, Latitude footprint, and village admission path");
+        assertTrue(
+                service.contains("showTeleportLocateResult(source, target, context.origin(), outcome.result())")
+                        && service.contains("new ClickEvent.RunCommand(\"/latitude_locate_teleport \" + token)")
+                        && service.contains("pending == null || !pending.token().equals(token)")
+                        && service.contains("Util.getMillis() > pending.expiresAtMs()")
+                        && service.contains("serverTeleports.remove(player.getUUID())")
+                        && !service.contains("new ClickEvent.RunCommand(\"/tp ")
+                        && service.contains("\"commands.locate.structure.not_found\""),
+                "the coordinate click must use a player-bound, expiring one-time action or show a clear not-found message");
+        assertTrue(
+                service.contains("try { job.start(); } catch (Throwable failure) { ACTIVE_JOBS.remove(server); job.finishWithFailure(failure); }")
+                        && service.contains("finally { finished = true; clearBossBar(); }")
+                        && service.contains("future.cancel(false);"),
+                "startup, delivery, and worker failures must release the server job slot and clear the boss bar");
+
+        String net = normalize(read("src/main/java/com/example/globe/GlobeNet.java"));
+        String server = normalize(read("src/main/java/com/example/globe/GlobeMod.java"));
+        String client = normalize(read("src/main/java/com/example/globe/GlobeModClient.java"));
+        String tools = normalize(read("src/main/java/com/example/globe/tools/LatitudeToolsCommand.java"));
+        String launcher = normalize(read(
+                "src/main/java/com/example/globe/client/create/LatitudeWorldLauncher.java"));
+        assertTrue(
+                net.contains("record GlobeStatePayload(boolean isGlobe, String loadingBandId)")
+                        && net.contains("GlobeStatePayload::loadingBandId"),
+                "the existing globe handshake must carry the authoritative loading-band id");
+        assertTrue(
+                server.contains("recordLastKnownBand(overworld, overworld.getWorldBorder(), handler.player);")
+                        && server.contains("new GlobeNet.GlobeStatePayload(isGlobe, loadingBandId)"),
+                "the first Latitude join must snapshot the actual band before it sends the loading state");
+        assertTrue(
+                tools.contains("Commands.literal(\"latitude_locate_teleport\")")
+                        && tools.contains("LatitudeStructureLocateService.runPendingTeleport(")
+                        && !server.contains("LatitudeStructureLocateService.registerTeleportCommand(dispatcher)"),
+                "the warning-free locate action must be registered only inside the audited shipping command surface");
+        assertTrue(
+                client.contains("LatitudeBands.fromCanonicalId(payload.loadingBandId())")
+                        && client.contains("LatitudeClientState.setLoadingZoneLabel(band.displayName())"),
+                "the handshake must restore the italic loading label after a new-world disconnect boundary");
+        assertTrue(
+                launcher.contains("LatitudeClientState.setLoadingZoneLabel(randomSpawnZone ? null : spawnZone.displayName())"),
+                "the immediate selected-zone label remains available before the server handshake arrives");
+    }
+
+    private static void customSurfaceLocatePreviewUsesRegistryAuthority() throws Exception {
+        String source = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeBiomeSource.java"));
+        int methodStart = source.indexOf("Holder<Biome> getLocatePreviewNoiseBiome(");
+        int methodEnd = source.indexOf("private record SurfaceLocateOutcome", methodStart);
+        assertTrue(methodStart >= 0 && methodEnd > methodStart,
+                "the custom surface locate preview must remain a distinct, reviewable helper");
+        String preview = source.substring(methodStart, methodEnd);
+
+        assertTrue(
+                preview.contains("if (biomeRegistry != null) { return LatitudeBiomes.pick( biomeRegistry, base"),
+                "an admitted custom surface target must preview through Latitude's existing registry authority");
+        assertTrue(
+                preview.indexOf("if (biomeRegistry != null)")
+                        < preview.indexOf("Collection<Holder<Biome>> sourceCandidates"),
+                "the donor-only preview fallback must remain unreachable when the locate registry is available");
     }
 
     private static void raisedTerrainCannotKeepAnOceanBiome() throws Exception {
@@ -619,6 +992,35 @@ public final class WorldgenAuthorityPolicyTest {
                 "every non-cave quart-Y cell reuses one biome pick per column/base while cave cells use their final V4 identity");
     }
 
+    private static void sulfurSurfaceExpressionRequiresAridLandAuthority() throws Exception {
+        assertTrue(
+                BiomeDescriptorLedger.supportsSulfurSurfaceExpression("minecraft:desert")
+                        && BiomeDescriptorLedger.supportsSulfurSurfaceExpression("minecraft:badlands")
+                        && BiomeDescriptorLedger.supportsSulfurSurfaceExpression("biomesoplenty:dryland"),
+                "descriptor-owned arid land remains eligible for a surface sulfur pool");
+        assertFalse(
+                BiomeDescriptorLedger.supportsSulfurSurfaceExpression("minecraft:jungle")
+                        || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("terralith:tropical_jungle")
+                        || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("terralith:amethyst_rainforest")
+                        || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("minecraft:swamp")
+                        || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("terralith:caldera")
+                        || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("unreviewed:volcanic_name"),
+                "humid, wetland, non-arid upland, and unknown name-alike surfaces fail closed");
+
+        String populate = normalize(read(
+                "src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java"));
+        assertTrue(
+                populate.contains("private static final int SULFUR_SURFACE_REACH_BLOCKS = 32;")
+                        && populate.contains("boolean sulfurMayReachSurface = isSulfurCaves(biomes, current) && blockY >= (surfaceY - SULFUR_SURFACE_REACH_BLOCKS);")
+                        && populate.contains("boolean sulfurSurfaceIncompatible = sulfurMayReachSurface && !BiomeDescriptorLedger.supportsSulfurSurfaceExpression( biomeId(biomes, replacement));")
+                        && populate.contains("if (nearSurface || tooHigh || deepDarkIllegal || sulfurSurfaceIncompatible) { return replacement; }"),
+                "the vanilla sulfur pool's complete upward reach is checked against the final Latitude surface biome");
+        assertTrue(
+                populate.contains("Holder<Biome> replacement = sulfurMayReachSurface ? columnPickCache.get(colKey) : null;")
+                        && populate.contains("if (sulfurMayReachSurface) { columnPickCache.put(colKey, replacement); columnPickBase.put(colKey, base); }"),
+                "the sulfur reach check reuses one final surface decision per column");
+    }
+
     private static void frozenRiverVegetationIsScopedWithoutMutatingVanillaBiomes()
             throws Exception {
         String mod = normalize(read("src/main/java/com/example/globe/GlobeMod.java"));
@@ -665,8 +1067,11 @@ public final class WorldgenAuthorityPolicyTest {
 
     private static void generationScopeIsDimensionIsolatedAndNestSafe() {
         assertFalse(LatitudeWorldgenScope.isActive(), "scope starts inactive");
+        assertFalse(LatitudeWorldgenScope.isFeatureActive(), "feature scope starts inactive");
         try (LatitudeWorldgenScope.Scope overworld = LatitudeWorldgenScope.enter(true)) {
             assertTrue(LatitudeWorldgenScope.isActive(), "authorized overworld scope is active");
+            assertFalse(LatitudeWorldgenScope.isFeatureActive(),
+                    "ordinary structure/surface authority does not authorize decoration block filtering");
             try (LatitudeWorldgenScope.Scope nether = LatitudeWorldgenScope.enter(false)) {
                 assertFalse(LatitudeWorldgenScope.isActive(), "nested non-overworld generation cannot inherit authority");
                 try (LatitudeWorldgenScope.Scope nestedNether = LatitudeWorldgenScope.enter(false)) {
@@ -677,6 +1082,23 @@ public final class WorldgenAuthorityPolicyTest {
             assertTrue(LatitudeWorldgenScope.isActive(), "closing non-overworld scope restores authorized outer scope");
         }
         assertFalse(LatitudeWorldgenScope.isActive(), "outer close removes all authority");
+
+        try (LatitudeWorldgenScope.Scope features = LatitudeWorldgenScope.enterFeatures(true)) {
+            assertTrue(LatitudeWorldgenScope.isFeatureActive(),
+                    "the explicit biome-decoration scope authorizes vegetation block filtering");
+            try (LatitudeWorldgenScope.Scope nested = LatitudeWorldgenScope.enter(true)) {
+                assertTrue(LatitudeWorldgenScope.isFeatureActive(),
+                        "nested generator queries inherit the active decoration phase");
+            }
+            try (LatitudeWorldgenScope.Scope inactive = LatitudeWorldgenScope.enter(false)) {
+                assertFalse(LatitudeWorldgenScope.isFeatureActive(),
+                        "an inactive nested dimension cannot inherit decoration authority");
+            }
+            assertTrue(LatitudeWorldgenScope.isFeatureActive(),
+                    "closing an inactive nested frame restores decoration authority");
+        }
+        assertFalse(LatitudeWorldgenScope.isFeatureActive(),
+                "closing the decoration scope clears its phase marker");
     }
 
     private static void generationScopeCleansUpOnFailureAndAcrossThreads() throws Exception {
@@ -731,19 +1153,66 @@ public final class WorldgenAuthorityPolicyTest {
                     file + " requires the current generator-owned scope");
         }
 
+        String protoVegetation = normalize(read(
+                "src/main/java/com/example/globe/mixin/ProtoChunkPolarVegetationGuardMixin.java"));
+        assertTrue(
+                protoVegetation.contains("LatitudeWorldgenScope.isFeatureActive()"),
+                "the block-write foliage backstop is restricted to decoration, not structures");
+
         String features = normalize(read(
                 "src/main/java/com/example/globe/mixin/ChunkGeneratorGenerateFeaturesBiomeSetMixin.java"));
         assertTrue(
                 occurrences(features, "LatitudeWorldgenScope.isActive()") >= 2,
                 "both feature-index and retainAll mutations fail open outside an authorized scope");
+        assertTrue(
+                features.contains("LATITUDE_CUSTOM_INDEX_FAILURE_WARNED.compareAndSet(false, true)")
+                        && features.contains("indexExpansion result=blocked exceptionType={}"),
+                "a custom feature-index failure emits one bounded warning instead of silently disabling retention");
+
+        String populate = normalize(read(
+                "src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java"));
+        String treeLine = normalize(read(
+                "src/main/java/com/example/globe/mixin/TreeLineVegetationGuardMixin.java"));
+        assertTrue(
+                populate.contains("ChunkAccess;fillBiomesFromNoise")
+                        && populate.contains("require = 1")
+                        && !populate.contains("require=0")
+                        && !populate.contains("require = 0"),
+                "the final chunk-biome owner must fail during startup if its exact 26.2 hook drifts");
+        assertTrue(
+                treeLine.contains("@Mixin(TreeFeature.class)")
+                        && treeLine.contains("require = 1")
+                        && !treeLine.contains("require=0")
+                        && !treeLine.contains("require = 0"),
+                "the exact 26.2 TreeFeature tree-line hook must not fail open");
 
         String generatorScope = normalize(read(
                 "src/main/java/com/example/globe/mixin/ChunkGeneratorWorldgenAuthorityMixin.java"));
         String noiseScope = normalize(read(
                 "src/main/java/com/example/globe/mixin/NoiseChunkGeneratorWorldgenAuthorityMixin.java"));
+        int decorationWrapperStart = generatorScope.indexOf("private void globe$withFeatureAuthority(");
+        int placedFeatureWrapperStart = generatorScope.indexOf("private boolean globe$withPlacedFeatureAuthority(");
+        int structureWrapperStart = generatorScope.indexOf("private void globe$withStructureAuthority(");
         assertTrue(
-                occurrences(generatorScope, "try (LatitudeWorldgenScope.Scope") >= 2,
-                "feature and structure paths close authority through try-with-resources");
+                decorationWrapperStart >= 0
+                        && placedFeatureWrapperStart > decorationWrapperStart
+                        && structureWrapperStart > placedFeatureWrapperStart,
+                "feature, placed-feature, and structure authority boundaries stay independently reviewable");
+        String decorationWrapper = generatorScope.substring(
+                decorationWrapperStart, placedFeatureWrapperStart);
+        String placedFeatureWrapper = generatorScope.substring(
+                placedFeatureWrapperStart, structureWrapperStart);
+        assertTrue(
+                decorationWrapper.contains("LatitudeWorldgenScope.enter(active)")
+                        && !decorationWrapper.contains("enterFeatures("),
+                "the whole decoration method must not classify its earlier structure-placement phase as foliage");
+        assertTrue(
+                generatorScope.contains("PlacedFeature;placeWithBiomeCheck")
+                        && placedFeatureWrapper.contains("LatitudeWorldgenScope.enterFeatures(active)"),
+                "only the actual placed-feature invocation may authorize vegetation block filtering");
+        assertTrue(
+                occurrences(generatorScope, "try (LatitudeWorldgenScope.Scope") >= 3,
+                "feature and structure paths use distinct authority phases and both close through try-with-resources");
         assertTrue(
                 occurrences(noiseScope, "try (LatitudeWorldgenScope.Scope") >= 2,
                 "surface and carver paths close authority through try-with-resources");

@@ -1,0 +1,8 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:beach",
+    { "id": "clifftree:gravelly_beach", "required": false },
+    { "id": "clifftree:granite_shore", "required": false }
+  ]
+}

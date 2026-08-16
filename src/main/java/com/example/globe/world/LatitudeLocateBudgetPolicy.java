@@ -9,6 +9,9 @@ public final class LatitudeLocateBudgetPolicy {
     public static final long MAX_WETLAND_LOCATE_TICK_NANOS = 8_000_000L;
     public static final int MAX_WETLAND_GRID_PROBES_PER_TICK = 4_096;
     public static final int MAX_WETLAND_EXACT_PROBES_PER_TICK = 1;
+    public static final long MAX_BIOME_LOCATE_TICK_NANOS = 8_000_000L;
+    public static final int MAX_SURFACE_PREVIEW_PROBES_PER_TICK = 4_096;
+    public static final int MAX_THREE_DIMENSIONAL_EXACT_PROBES_PER_TICK = 8;
 
     private LatitudeLocateBudgetPolicy() {
     }
@@ -42,9 +45,50 @@ public final class LatitudeLocateBudgetPolicy {
         return samples > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) samples;
     }
 
+    /**
+     * Smallest square search radius that covers every playable coordinate in a Latitude world
+     * from the command origin. The caller still rejects probes outside the world border.
+     */
+    public static int fullWorldSearchRadius(int originX, int originZ, int worldRadius) {
+        long safeWorldRadius = Math.max(0L, worldRadius);
+        long xReach = safeWorldRadius + Math.abs((long) originX);
+        long zReach = safeWorldRadius + Math.abs((long) originZ);
+        return (int) Math.min(Integer.MAX_VALUE, Math.max(xReach, zReach));
+    }
+
     /** Exact block coordinate represented by the center of a four-block biome quart cell. */
     public static int quartCenterBlock(int blockCoordinate) {
         return Math.floorDiv(blockCoordinate, 4) * 4 + 2;
+    }
+
+    /**
+     * Ring index a spiral offset belongs to. {@code BlockPos.spiralAround} walks square
+     * (Chebyshev) rings, so this — not the Euclidean distance — is what advances monotonically
+     * as the search widens.
+     */
+    public static int spiralRing(int offsetX, int offsetZ) {
+        return Math.max(Math.abs(offsetX), Math.abs(offsetZ));
+    }
+
+    /**
+     * Last ring worth visiting once a match has been found {@code bestDistanceBlocks} away.
+     *
+     * <p>A square spiral is not ordered by distance: the corner of a ring is up to sqrt(2) times
+     * farther than its edge, so the first match found is not necessarily the nearest one. A
+     * sample in ring r is at least {@code r * stepBlocks} blocks out, so no ring past
+     * {@code best / step} can beat the match already in hand, and completing up to this limit
+     * makes the returned result the nearest sampled candidate. The extra ring absorbs the
+     * quart-center snap each sample receives.
+     */
+    public static int nearestCompletionRingLimit(double bestDistanceBlocks, int stepBlocks) {
+        if (stepBlocks <= 0 || !(bestDistanceBlocks >= 0.0)) {
+            return Integer.MAX_VALUE;
+        }
+        double rings = bestDistanceBlocks / stepBlocks;
+        if (rings >= Integer.MAX_VALUE - 1) {
+            return Integer.MAX_VALUE;
+        }
+        return (int) Math.floor(rings) + 1;
     }
 
     /**

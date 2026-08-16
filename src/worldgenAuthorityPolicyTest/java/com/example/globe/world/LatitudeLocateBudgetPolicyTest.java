@@ -39,6 +39,63 @@ public final class LatitudeLocateBudgetPolicyTest {
         assertEquals(1,
                 LatitudeLocateBudgetPolicy.MAX_WETLAND_EXACT_PROBES_PER_TICK,
                 "wetland terrain-probe tick bound");
+        assertTrue(LatitudeLocateBudgetPolicy.MAX_BIOME_LOCATE_TICK_NANOS == 8_000_000L,
+                "all-biome locate tick-time budget changed unexpectedly");
+        assertEquals(4_096,
+                LatitudeLocateBudgetPolicy.MAX_SURFACE_PREVIEW_PROBES_PER_TICK,
+                "surface preview tick bound");
+        assertEquals(8,
+                LatitudeLocateBudgetPolicy.MAX_THREE_DIMENSIONAL_EXACT_PROBES_PER_TICK,
+                "three-dimensional exact-probe tick bound");
+        assertTrue(
+                LatitudeLocateBudgetPolicy.worstCaseSamples(6_400, 128, 1)
+                        + LatitudeLocateBudgetPolicy.worstCaseSamples(6_400, 400, 1)
+                        == 11_290,
+                "the surface progress route must cover its full finite preview and fallback plan");
+        assertEquals(3_750,
+                LatitudeLocateBudgetPolicy.fullWorldSearchRadius(0, 0, 3_750),
+                "center-origin search reaches the complete playable radius");
+        assertEquals(6_250,
+                LatitudeLocateBudgetPolicy.fullWorldSearchRadius(2_500, -500, 3_750),
+                "off-center search reaches the opposite playable edge");
+        assertEquals(7_500,
+                LatitudeLocateBudgetPolicy.fullWorldSearchRadius(-3_750, 3_750, 3_750),
+                "edge-origin search reaches the far corner without becoming unbounded");
+
+        // Nearest-result completion. A square spiral visits Chebyshev rings, so the first match is
+        // not the nearest one; these pin the bound that turns first-match into nearest-match.
+        assertEquals(0, LatitudeLocateBudgetPolicy.spiralRing(0, 0), "spiral origin is ring 0");
+        assertEquals(3, LatitudeLocateBudgetPolicy.spiralRing(-3, 1), "ring is the Chebyshev radius");
+        assertEquals(3, LatitudeLocateBudgetPolicy.spiralRing(2, -3), "ring ignores the shorter axis");
+
+        // A ring-4 corner sits at 4*sqrt(2) ~= 5.66 rings, so rings 5 and 6 can still beat it and
+        // must be scanned; this is exactly the sqrt(2) overshoot the completion pass removes.
+        assertEquals(6,
+                LatitudeLocateBudgetPolicy.nearestCompletionRingLimit(Math.sqrt(32.0) * 32.0, 32),
+                "a ring-4 diagonal match must keep scanning through ring 6");
+        assertEquals(5,
+                LatitudeLocateBudgetPolicy.nearestCompletionRingLimit(128.0, 32),
+                "an axis match at ring 4 still admits the quart-snap ring beyond it");
+        assertEquals(1,
+                LatitudeLocateBudgetPolicy.nearestCompletionRingLimit(0.0, 32),
+                "a match on the origin ring still completes its own ring");
+        assertTrue(
+                LatitudeLocateBudgetPolicy.nearestCompletionRingLimit(2645.0, 32)
+                        >= (int) Math.floor(2645.0 / 32.0),
+                "the limit can never cut off a ring that could hold a nearer match");
+        assertEquals(Integer.MAX_VALUE,
+                LatitudeLocateBudgetPolicy.nearestCompletionRingLimit(100.0, 0),
+                "a degenerate step must not bound the search");
+
+        // The completion pass must stay finite: the bound is at most sqrt(2) rings beyond the
+        // match, so it can never exceed roughly twice the scanned area.
+        for (int ring : new int[]{1, 4, 37, 314}) {
+            int diagonal = LatitudeLocateBudgetPolicy.nearestCompletionRingLimit(
+                    Math.sqrt(2.0) * ring * 32.0, 32);
+            assertTrue(diagonal <= (int) Math.ceil(ring * Math.sqrt(2.0)) + 1,
+                    "completion limit must stay within sqrt(2) rings for ring " + ring
+                            + " (was " + diagonal + ")");
+        }
 
         assertTrue(
                 LatitudeLocateBudgetPolicy.allowsSwampProxyForTarget(true, false, 2, 1),
@@ -97,7 +154,37 @@ public final class LatitudeLocateBudgetPolicyTest {
                 LatitudeLocateBudgetPolicy.worstCaseSamples(6400, alreadyCoarse, 1),
                 "coarser caller sample count");
 
+        // Every spiral search must actually take part in nearest-result completion. Counting the
+        // operations, not the identifiers, is what keeps a future job from quietly going back to
+        // returning its first match.
+        String locateSource;
+        try {
+            locateSource = java.nio.file.Files.readString(java.nio.file.Path.of(
+                    "src/main/java/com/example/globe/world/LatitudeBiomeLocateService.java"));
+        } catch (Exception failure) {
+            throw new AssertionError("unable to inspect the biome locate service", failure);
+        }
+        int spiralSites = occurrences(locateSource, "BlockPos.spiralAround(");
+        assertEquals(4, spiralSites, "expected one spiral per locate phase");
+        assertEquals(spiralSites + 1,
+                occurrences(locateSource, "ringExceedsCandidateBound("),
+                "every spiral phase must stop only once no nearer ring remains");
+        assertEquals(spiralSites + 1,
+                occurrences(locateSource, "recordCandidate("),
+                "every spiral phase must record its match instead of returning it immediately");
+        assertEquals(0,
+                occurrences(locateSource, "finish(Pair.of("),
+                "a match must never be finished straight from the search loop");
+
         System.out.println("LatitudeLocateBudgetPolicyTest PASS");
+    }
+
+    private static int occurrences(String haystack, String needle) {
+        int count = 0;
+        for (int at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + 1)) {
+            count++;
+        }
+        return count;
     }
 
     private static void assertEquals(int expected, int actual, String message) {

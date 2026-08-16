@@ -153,13 +153,23 @@ public class GlobeMod implements ModInitializer {
 
             boolean isGlobe = isGlobeOverworld(overworld);
             LOGGER.info("JOIN: player={}, isGlobeOverworld={}", handler.player.getName().getString(), isGlobe);
-            ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe));
-
             LatitudeWorldState worldState = isGlobe ? LatitudeWorldState.get(overworld) : null;
+            if (worldState != null) {
+                // A fresh integrated world can cross the client disconnect boundary before its
+                // first regular tick. Snapshot the actual spawn band now so both the initial
+                // loading overlay and the next world-list row have authoritative saved data.
+                recordLastKnownBand(overworld, overworld.getWorldBorder(), handler.player);
+            }
+            String loadingBandId = worldState == null
+                    ? ""
+                    : worldState.getLastKnownBandId().orElse("");
+            ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe, loadingBandId));
             boolean isBrandNewWorld = overworld.getGameTime() < 100L;
             boolean spawnAlreadyChosen = handler.player.entityTags().contains(SPAWN_CHOSEN_TAG);
 
-            String pendingZone = server.isDedicatedServer() ? null : GlobePending.consume();
+            if (!server.isDedicatedServer()) {
+                GlobePending.consume();
+            }
 
             boolean startWithCompass = !server.isDedicatedServer() && GlobePending.startWithCompass;
             if (isGlobe && !server.isDedicatedServer() && !StartCompass.hasReceived(handler.player)) {
@@ -870,7 +880,23 @@ public class GlobeMod implements ModInitializer {
             }
         }
 
+        // A dev run has no packaged manifest, so every field above stays "?" and the marker cannot
+        // name the source it was built from. Loom passes the same identity as system properties;
+        // a release jar carries the manifest and never sees them, so the manifest still wins.
+        commit = devBuildProperty(commit, "latitude.dev.gitCommit");
+        branch = devBuildProperty(branch, "latitude.dev.gitBranch");
+        dirty = devBuildProperty(dirty, "latitude.dev.buildDirty");
+        time = devBuildProperty(time, "latitude.dev.buildTime");
+
         LOGGER.info("[LAT][BUILD] side={} version={} commit={} branch={} dirty={} time={}", side, version, commit, branch, dirty, time);
+    }
+
+    private static String devBuildProperty(String current, String key) {
+        if (!"?".equals(current)) {
+            return current;
+        }
+        String value = System.getProperty(key);
+        return value == null || value.isBlank() ? current : value.trim();
     }
 
     private static BlockPos findLandSpawn(ServerLevel world, SamplerTemplate template,

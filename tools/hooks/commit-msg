@@ -31,4 +31,17 @@ if [ -n "$DISCRETION_HITS" ]; then
 $(echo "$DISCRETION_HITS" | sed 's/^/         /' | head -12)"
 fi
 
+# ── S-6b: discretion — the same rule applied to the COMMIT MESSAGE ──────────────────────────
+# CLAUDE.md rule 3 says personal data is forbidden "in ANY tracked file, source comments and
+# commit messages included", but until 2026-08-10 this hook read $MSG and never tested it, so a
+# message naming the maintainer or carrying a home path passed unchallenged. git log ships with
+# the clone; a message is as public as a file. (Mirrors the Slabbed line's S-6b, added the same day.)
+MSG_HITS="$(printf '%s\n' "$MSG" | grep -E "$DISCRETION_PAT" || true)"
+if [ -n "$MSG_HITS" ]; then
+  fail "S-6b: the commit MESSAGE contains personal or machine-local data (a personal name, a local
+       username, or an absolute home-directory path). git log is public. Cite decisions as
+       'maintainer ruling, <date>' and keep paths repo-relative.
+$(echo "$MSG_HITS" | sed 's/^/         /' | head -12)"
+fi
+
 exit 0

@@ -24,11 +24,16 @@ import net.minecraft.commands.CommandSourceStack;
  * degraded suite that still prints PASS is worse than no suite.</p>
  */
 public final class ShippingToolsPolicyTest {
+    private static final Set<String> PERMITTED_ROOTS = Set.of(
+            "latitude", "latitude_locate_teleport");
+
     private static final Set<String> PERMITTED_SUBCOMMANDS = Set.of(
             "help", "here", "explainHere", "probe", "tpLat", "tpBand", "flyspeed");
 
     private static final Set<String> PERMITTED_ARGUMENTS = Set.of(
             "level", "signedDegrees", "x", "band", "edge", "radiusBlocks", "samples");
+
+    private static final Set<String> PERMITTED_LOCATE_ACTION_ARGUMENTS = Set.of("token");
 
     private static final Set<String> ALLOWED_FIELD_TYPES = Set.of(
             "boolean", "byte", "char", "short", "int", "long", "float", "double",
@@ -61,11 +66,15 @@ public final class ShippingToolsPolicyTest {
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         LatitudeToolsCommand.register(dispatcher);
 
-        // S1: exactly one root literal, named for the shipping verb.
+        // S1: exactly the operator root and its token-bound locate action are shipped.
         List<CommandNode<CommandSourceStack>> roots =
                 new ArrayList<>(dispatcher.getRoot().getChildren());
-        expectEquals(1, roots.size(), "shipping registration adds exactly one root command");
-        CommandNode<CommandSourceStack> root = roots.get(0);
+        Set<String> rootNames = new LinkedHashSet<>();
+        for (CommandNode<CommandSourceStack> candidate : roots) {
+            rootNames.add(candidate.getName());
+        }
+        expectEquals(PERMITTED_ROOTS, rootNames, "shipping roots are exactly the permitted set");
+        CommandNode<CommandSourceStack> root = dispatcher.getRoot().getChild("latitude");
         expectEquals("latitude", root.getName(), "shipping root literal is /latitude");
 
         // S2: the child set is exactly the permitted operator commands - no more, no fewer.
@@ -89,6 +98,17 @@ public final class ShippingToolsPolicyTest {
         // covers the whole tree; a child carrying its own gate would mean the shape changed.
         expectTrue(!isTrivialRequirement(root), "the shipping root carries a real permission gate");
         expectEquals(0, countGatedDescendants(root), "no shipping child carries its own gate");
+
+        // The click action is intentionally non-elevated so Minecraft does not show its command
+        // warning. Its unguessable one-time token remains the authorization boundary.
+        CommandNode<CommandSourceStack> locateAction =
+                dispatcher.getRoot().getChild("latitude_locate_teleport");
+        expectTrue(isTrivialRequirement(locateAction), "locate action has no elevated permission gate");
+        expectEquals(1, countExecutables(locateAction), "locate action exposes one executable token path");
+        Set<String> locateArguments = new LinkedHashSet<>();
+        collectArgumentNames(locateAction, locateArguments);
+        expectEquals(PERMITTED_LOCATE_ACTION_ARGUMENTS, locateArguments,
+                "locate action accepts only its one-time token");
     }
 
     private static void shippingClassCarriesNoExcludedCoupling() throws Exception {

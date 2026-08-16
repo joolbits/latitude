@@ -18,12 +18,14 @@
     "NoiseChunkGeneratorWorldgenAuthorityMixin",
     "NoiseChunkMushroomIslandDensityMixin",
     "MinecraftServerInitialSpawnMixin",
+    "ProtoChunkPolarVegetationGuardMixin",
     "ProtoChunkSnowBlockGuardMixin",
     "ChunkRegionWarmSnowTrapMixin",
     "TreeLineVegetationGuardMixin",
     "AlpineSurfaceMixin",
     "SurfaceDripstoneLawnmowerMixin",
     "ExtremePolarVillageStartGuardMixin",
+    "StructureBiomeMatchGuardMixin",
     "ExtremePolarVegetationGuardMixin",
     "ExtremePolarSimpleFoliageGuardMixin",
     "SnowAndFreezeWindsweptSnowLineMixin"
@@ -39,6 +41,7 @@
     "client.InGameHudMixin",
     "client.LatitudeLoadingClientTickMixin",
     "client.LevelLoadingScreenLatitudeOverlayMixin",
+    "client.GenericMessageScreenLatitudeOverlayMixin",
     "client.FogRendererEwMixin"
   ],
   "injectors": {

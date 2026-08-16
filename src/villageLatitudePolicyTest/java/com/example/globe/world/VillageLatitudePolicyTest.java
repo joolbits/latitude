@@ -19,6 +19,7 @@ public final class VillageLatitudePolicyTest {
         biomeFamilyPolicyRejectsNamedVillageMismatches();
         physicalTerrainPolicyRejectsCliffsideVillageStarts();
         climateMismatchRejectsInvalidStartsBeforeStore();
+        structureAdmissionUsesFinalLatitudeBiomeBeforeStartRegistration();
         staticIntegrationProofsHold();
         System.out.println("VILLAGE_LATITUDE_POLICY_TEST_PASS");
     }
@@ -426,8 +427,11 @@ public final class VillageLatitudePolicyTest {
         String vegetation = normalize(read(
                 "src/main/java/com/example/globe/mixin/ExtremePolarVegetationGuardMixin.java"));
         assertTrue(
-                vegetation.contains("LatitudeBiomes.isBlockBeyondPolarFoliageLimit(origin.getZ(), GlobeMod.BORDER_RADIUS)"),
-                "tree foliage uses its dedicated strict-80 predicate");
+                vegetation.contains("LatitudeBiomes.isBlockBeyondPolarWoodyLimit(origin.getZ(), GlobeMod.BORDER_RADIUS)"),
+                "trees use their own dedicated 72-degree tree-line predicate — the point of this"
+                        + " assertion is that vegetation NEVER borrows the village limit; the tier it"
+                        + " does use moved from strict-80 to the tree line on 2026-08-10 when woody"
+                        + " content and ground vegetation were split");
         assertTrue(
                 !vegetation.contains("isBlockBeyondPolarVillageLimit"),
                 "village limit cannot alter vegetation");
@@ -470,6 +474,11 @@ public final class VillageLatitudePolicyTest {
                         "LatitudeBiomes.villageVariantVsBiomeMismatch( structureId.getPath(), finalBiomeId.toString())"),
                 "generation-time owner compares the named village variant with Latitude's final biome");
         assertTrue(
+                startGuard.contains("BiomeSource structureBiomeSource = biomeSource;")
+                        && startGuard.contains("LatitudeBiomeSource.forStructure( biomeSource, biomeRegistry, radius, noise, randomState, heightAccessor)")
+                        && startGuard.contains("chunkGenerator, structureBiomeSource, randomState,"),
+                "vanilla Structure.generate receives Latitude's final biome source for every new structure start");
+        assertTrue(
                 startGuard.contains("VillageTerrainSuitabilityPolicy.SAMPLE_COUNT")
                         && startGuard.contains(
                         "dz = -VillageTerrainSuitabilityPolicy.SAMPLE_RADIUS_BLOCKS")
@@ -508,16 +517,16 @@ public final class VillageLatitudePolicyTest {
         String mixins = normalize(read("src/main/resources/globe.mixins.json"));
         assertTrue(
                 mixins.contains(
-                        "\"ExtremePolarVillageStartGuardMixin\", \"ExtremePolarVegetationGuardMixin\""),
-                "fresh-start rejection is registered beside the vegetation guard");
+                        "\"ExtremePolarVillageStartGuardMixin\", \"StructureBiomeMatchGuardMixin\", \"ExtremePolarVegetationGuardMixin\""),
+                "fresh-start and final-biome admission guards are registered beside the vegetation guard");
         assertEquals(
                 0,
                 occurrences(mixins, "\"ExtremePolarVillageGuardMixin\""),
                 "the obsolete polar placement guard cannot truncate stored village starts");
         assertEquals(
-                0,
+                1,
                 occurrences(mixins, "\"StructureBiomeMatchGuardMixin\""),
-                "the obsolete climate placement guard cannot truncate stored village starts");
+                "the final-biome admission guard is registered exactly once");
         assertEquals(
                 1,
                 occurrences(mixins, "\"ExtremePolarVillageStartGuardMixin\""),
@@ -525,9 +534,9 @@ public final class VillageLatitudePolicyTest {
         assertTrue(
                 Files.notExists(Path.of(
                         "src/main/java/com/example/globe/mixin/ExtremePolarVillageGuardMixin.java"))
-                        && Files.notExists(Path.of(
+                        && Files.exists(Path.of(
                         "src/main/java/com/example/globe/mixin/StructureBiomeMatchGuardMixin.java")),
-                "obsolete place-time implementations are removed rather than left as stale hooks");
+                "the obsolete place-time guard stays removed while the generation-time admission guard remains active");
 
         String globeMod = normalize(read("src/main/java/com/example/globe/GlobeMod.java"));
         assertTrue(
@@ -538,15 +547,25 @@ public final class VillageLatitudePolicyTest {
                 "new policy retains the current blockZ coordinate convention");
 
         assertEquals(
-                2,
+                3,
                 mainSourceOccurrences("isBlockBeyondPolarVillageLimit"),
-                "village predicate appears only at its declaration and the fresh-start guard");
+                "village predicate appears only at its declaration, the fresh-start guard, and the aligned locator");
 
         String build = normalize(read("build.gradle"));
         assertTrue(
                 build.contains("tasks.register('latitudeVillageLatitudePolicyTest', JavaExec)")
                         && build.contains("dependsOn tasks.named('latitudeVillageLatitudePolicyTest')"),
                 "village latitude proof is automatically wired into Gradle check/build");
+    }
+
+    private static void structureAdmissionUsesFinalLatitudeBiomeBeforeStartRegistration()
+            throws IOException {
+        String biomeSource = normalize(read("src/main/java/com/example/globe/world/LatitudeBiomeSource.java"));
+        assertTrue(
+                biomeSource.contains("static LatitudeBiomeSource forStructure(")
+                        && biomeSource.contains("new LatitudeBiomeSource(base, base.possibleBiomes(), biomeRegistry,")
+                        && biomeSource.contains("heightView, \"MIXIN\")"),
+                "structure starts use the registry and terrain-aware resolver used by Latitude-generated terrain");
     }
 
     private enum SimulatedStart {

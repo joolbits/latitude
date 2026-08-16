@@ -1,6 +1,7 @@
 package com.example.globe.world;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -129,6 +130,24 @@ public final class VanillaBiomeCoveragePlan {
         return List.copyOf(matches);
     }
 
+    /** Returns the nearest birth-plan anchor for an exact requested biome identity. */
+    public Anchor nearestAnchorFor(Collection<String> biomeIds, int originX, int originZ) {
+        if (biomeIds == null || biomeIds.isEmpty()) return null;
+        Anchor nearest = null;
+        long nearestDistanceSquared = Long.MAX_VALUE;
+        for (Anchor anchor : anchors) {
+            if (!biomeIds.contains(anchor.biomeId())) continue;
+            long dx = (long) anchor.blockX() - originX;
+            long dz = (long) anchor.blockZ() - originZ;
+            long distanceSquared = dx * dx + dz * dz;
+            if (nearest == null || distanceSquared < nearestDistanceSquared) {
+                nearest = anchor;
+                nearestDistanceSquared = distanceSquared;
+            }
+        }
+        return nearest;
+    }
+
     public List<Anchor> anchors() { return anchors; }
     public List<String> missingBiomeIds() { return missingBiomeIds; }
     public Map<String, SearchStats> missingDiagnostics() { return missingDiagnostics; }
@@ -193,7 +212,7 @@ public final class VanillaBiomeCoveragePlan {
             case SUBTROPICAL_HUMID_LOWLAND, WARM_TRANSITION, WARM_UPLAND,
                     ARID_LOWLAND, ARID_UPLAND -> new double[]{0.28, 0.38};
             case TEMPERATE_LOWLAND, TEMPERATE_WETLAND, TEMPERATE_UPLAND -> new double[]{0.42, 0.55};
-            case SUBPOLAR_LOWLAND -> new double[]{0.60, 0.72};
+            case SUBPOLAR_LOWLAND, SUBPOLAR_WETLAND -> new double[]{0.60, 0.72};
             case POLAR_LOWLAND -> new double[]{0.78, 0.90};
             case COLD_UPLAND -> new double[]{0.62, 0.88};
             case CAVE_SHALLOW, CAVE_DEEP -> throw new IllegalArgumentException("cave routes use CaveBiomeCoveragePlan");
@@ -231,19 +250,33 @@ public final class VanillaBiomeCoveragePlan {
         add(routes, BiomeRoute.TEMPERATE_WETLAND, "minecraft:swamp");
         add(routes, BiomeRoute.TEMPERATE_UPLAND,
                 "minecraft:cherry_grove", "minecraft:grove", "minecraft:meadow",
-                "minecraft:stony_peaks", "minecraft:windswept_forest",
-                "minecraft:windswept_gravelly_hills", "minecraft:windswept_hills");
+                "minecraft:stony_peaks");
         add(routes, BiomeRoute.WARM_TRANSITION, "minecraft:savanna");
         add(routes, BiomeRoute.WARM_UPLAND,
                 "minecraft:savanna_plateau", "minecraft:windswept_savanna");
+        // eroded_badlands is guaranteed on ARID_LOWLAND, not ARID_UPLAND (maintainer ruling,
+        // 2026-08-12). ARID_UPLAND asks for mountain terrain AND a WARM_DRY province at every
+        // sampled point of the reservation, and those are independent sparse fields: on the live
+        // Regular seed 8507730871486520283 not one of 66 center-eligible candidates kept all four
+        // shoulders eligible, so the guarantee could never be issued. Lowland is what the rest of
+        // the mod already says — VanillaBiomeRepresentationProfile routes BADLANDS_UPLAND_VARIANT
+        // to ARID_LOWLAND, the ledger admits it there, and the picker places eroded_badlands with
+        // no mountain requirement at all. This map guarantees identity availability; it does not
+        // owe every BiomeRoute a reservation, and ARID_UPLAND stays a legal ledger route.
         add(routes, BiomeRoute.ARID_LOWLAND,
-                "minecraft:badlands", "minecraft:desert", "minecraft:wooded_badlands");
-        add(routes, BiomeRoute.ARID_UPLAND, "minecraft:eroded_badlands");
+                "minecraft:badlands", "minecraft:desert", "minecraft:eroded_badlands",
+                "minecraft:wooded_badlands");
         add(routes, BiomeRoute.SUBPOLAR_LOWLAND,
                 "minecraft:old_growth_spruce_taiga", "minecraft:snowy_taiga");
         add(routes, BiomeRoute.POLAR_LOWLAND, "minecraft:ice_spikes", "minecraft:snowy_plains");
+        // windswept_* moved here from TEMPERATE_UPLAND with the ledger (maintainer ruling,
+        // 2026-08-10). This map is the vanilla-coverage guarantee and must name the SAME route the
+        // ledger routes each identity to, or the plan anchors a biome into a band the picker will
+        // never choose it in — the suite asserts that agreement and caught this move.
         add(routes, BiomeRoute.COLD_UPLAND,
-                "minecraft:frozen_peaks", "minecraft:jagged_peaks", "minecraft:snowy_slopes");
+                "minecraft:frozen_peaks", "minecraft:jagged_peaks", "minecraft:snowy_slopes",
+                "minecraft:windswept_forest", "minecraft:windswept_gravelly_hills",
+                "minecraft:windswept_hills");
         return Collections.unmodifiableMap(routes.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .collect(java.util.stream.Collectors.toMap(
