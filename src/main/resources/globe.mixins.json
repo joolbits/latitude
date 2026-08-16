@@ -23,6 +23,7 @@
     "ChunkRegionWarmSnowTrapMixin",
     "TreeLineVegetationGuardMixin",
     "AlpineSurfaceMixin",
+    "AlpineSnowVegetationGuardMixin",
     "SurfaceDripstoneLawnmowerMixin",
     "ExtremePolarVillageStartGuardMixin",
     "StructureBiomeMatchGuardMixin",

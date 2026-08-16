@@ -16,6 +16,7 @@ public final class PolarFoliagePolicyTest {
         woodyCompletionBufferDoesNotMoveTheTreeStartLine();
         blockLevelGuardClosesTheFeatureClassBypass();
         theWoodyAndFoliageTagsDoNotOverlap();
+        alpineSnowLineCutsVegetationAtTheWarpLine();
         windsweptSnowLineDescendsPolewardAndCannotOrphanSnowyGrass();
         windsweptSnowLineThresholdRowDisagreesUnlessNormalizedToTheSnowPosition();
         System.out.println("POLAR_FOLIAGE_POLICY_TEST_PASS");
@@ -318,6 +319,71 @@ public final class PolarFoliagePolicyTest {
             out.add(m.group(1));
         }
         return out;
+    }
+
+    private static void alpineSnowLineCutsVegetationAtTheWarpLine() throws Exception {
+        String config = read("src/main/resources/globe.mixins.json");
+        assertTrue(config.contains("\"AlpineSnowVegetationGuardMixin\""),
+                "the alpine snow vegetation guard must be registered");
+
+        String guard = read(
+                "src/main/java/com/example/globe/mixin/AlpineSnowVegetationGuardMixin.java");
+        assertTrue(guard.contains("method = \"setBlockState\"")
+                        && guard.contains("instanceof VegetationBlock")
+                        && guard.contains("polar_foliage"),
+                "the alpine guard must close the block-write seam for tagged and modded plants");
+        assertTrue(guard.contains("LatitudeWorldgenScope.isFeatureActive()"),
+                "the guard is decoration-only; structures and player planting remain untouched");
+        assertTrue(guard.contains("LatitudeBiomes.alpineSurfaceKind(")
+                        && guard.contains("AlpineVegetationPolicy.footingOffsetBlocks(")
+                        && guard.contains("getBlockState(footing)"),
+                "the guard must use the cap's own snow decision and the plant's actual footing");
+
+        String cap = read("src/main/java/com/example/globe/mixin/AlpineSurfaceMixin.java");
+        assertTrue(cap.contains("case 2 -> GLOBE_ALPINE_SNOW")
+                        && AlpineVegetationPolicy.SNOW_SURFACE_KIND == 2,
+                "surface kind 2 must remain the shared snow-cap identity");
+
+        int snow = AlpineVegetationPolicy.SNOW_SURFACE_KIND;
+        assertTrue(
+                AlpineVegetationPolicy.shouldSuppressAlpineVegetation(
+                        snow, true, true, false),
+                "tagged foliage rooted on snow is refused");
+        assertTrue(
+                AlpineVegetationPolicy.shouldSuppressAlpineVegetation(
+                        snow, true, false, true),
+                "an untagged modded plant rooted on snow is refused by inheritance");
+        assertFalse(
+                AlpineVegetationPolicy.shouldSuppressAlpineVegetation(
+                        snow, true, false, false),
+                "snow, terrain, and other non-plants remain untouched");
+        assertFalse(
+                AlpineVegetationPolicy.shouldSuppressAlpineVegetation(
+                        snow, false, true, true),
+                "plants rooted on legitimate non-snow ground survive at the transition");
+        for (int belowSnow : new int[]{0, 1}) {
+            assertFalse(
+                    AlpineVegetationPolicy.shouldSuppressAlpineVegetation(
+                            belowSnow, true, true, true),
+                    "vegetation below the cap remains unchanged");
+        }
+
+        assertTrue(
+                AlpineVegetationPolicy.footingOffsetBlocks(false) == 1
+                        && AlpineVegetationPolicy.footingOffsetBlocks(true) == 2,
+                "both halves of a double plant must resolve to one footing block");
+        for (int lowerHalfY = 160; lowerHalfY <= 200; lowerHalfY++) {
+            int lowerFooting = lowerHalfY - AlpineVegetationPolicy.footingOffsetBlocks(false);
+            int upperFooting = lowerHalfY + 1
+                    - AlpineVegetationPolicy.footingOffsetBlocks(true);
+            assertTrue(lowerFooting == upperFooting,
+                    "both halves agree at lower-half y=" + lowerHalfY);
+        }
+
+        assertFalse(
+                AlpineVegetationPolicy.shouldSuppressAlpineVegetation(
+                        snow, false, true, false),
+                "crops on farmland survive because their actual footing is not snow");
     }
 
     /**
