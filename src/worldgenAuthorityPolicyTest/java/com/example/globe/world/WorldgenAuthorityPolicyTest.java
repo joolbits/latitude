@@ -63,7 +63,10 @@ public final class WorldgenAuthorityPolicyTest {
                 mixin.contains("@Inject(method = \"generate\", at = @At(\"RETURN\"), cancellable = true)")
                         && mixin.contains("BlockPos center = start.getBoundingBox().getCenter()")
                         && mixin.contains("Holder<Biome> resolved = latitudeSource.getNoiseBiome(")
-                        && mixin.contains("if (resolved == null || !validBiome.test(resolved) || woodlandMansionInCustomBiome)"),
+                        && mixin.contains("if (resolved == null")
+                        && mixin.contains("|| !validBiome.test(resolved)")
+                        && mixin.contains("|| woodlandMansionInCustomBiome")
+                        && mixin.contains("|| badlandsDesolationMismatch"),
                 "a completed Latitude structure must keep its visible center in a legal biome");
         assertTrue(
                 mixin.contains("boolean woodlandMansionInCustomBiome = structureId != null")
@@ -73,6 +76,11 @@ public final class WorldgenAuthorityPolicyTest {
                         && mixin.contains("!\"minecraft\".equals(biomeId.getNamespace())")
                         && mixin.contains("|| woodlandMansionInCustomBiome"),
                 "a woodland mansion must not treat a third-party biome tag as Latitude admission");
+        assertTrue(
+                mixin.contains("boolean badlandsDesolationMismatch = structureId != null")
+                        && mixin.contains(
+                        "VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome("),
+                "badlands must refuse desert-declared surface structures and surface outposts at final admission");
         assertFalse(
                 mixin.contains("int[][] samples = {")
                         || mixin.contains("legalSamples")

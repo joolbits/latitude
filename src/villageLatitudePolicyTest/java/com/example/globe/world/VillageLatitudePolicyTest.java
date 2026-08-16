@@ -17,6 +17,7 @@ public final class VillageLatitudePolicyTest {
         generationGuardRejectsInvalidStartsBeforeStore();
         climatePolicyClassifiesRepresentativeVillageIds();
         biomeFamilyPolicyRejectsNamedVillageMismatches();
+        badlandsAdmissionKeepsDesertStructuresOutWithoutTouchingUndergroundContent();
         physicalTerrainPolicyRejectsCliffsideVillageStarts();
         climateMismatchRejectsInvalidStartsBeforeStore();
         structureAdmissionUsesFinalLatitudeBiomeBeforeStartRegistration();
@@ -243,10 +244,10 @@ public final class VillageLatitudePolicyTest {
                 LatitudeBiomes.villageVariantVsBiomeMismatch(
                         "village_savanna", "minecraft:windswept_savanna"),
                 "savanna village remains compatible with savanna terrain");
-        assertFalse(
+        assertTrue(
                 LatitudeBiomes.villageVariantVsBiomeMismatch(
                         "village_desert", "minecraft:badlands"),
-                "desert village remains compatible with the coherent desert-badlands family");
+                "badlands is village-free even when the village shares its broad arid family");
         assertTrue(
                 LatitudeBiomes.villageVariantVsBiomeMismatch(
                         "village_desert", "minecraft:mangrove_swamp"),
@@ -275,6 +276,54 @@ public final class VillageLatitudePolicyTest {
                 LatitudeBiomes.villageVariantVsBiomeMismatch(
                         "desert_pyramid", "minecraft:bamboo_jungle"),
                 "non-village structure remains fail-open");
+    }
+
+    private static void badlandsAdmissionKeepsDesertStructuresOutWithoutTouchingUndergroundContent() {
+        for (String biomeId : new String[]{
+                "minecraft:badlands",
+                "minecraft:wooded_badlands",
+                "minecraft:eroded_badlands",
+                "example:painted_mesa"}) {
+            assertTrue(
+                    VillageBiomeAdmissionPolicy.isVillageFreeBiome(biomeId),
+                    "badlands and mesa identities are village-free: " + biomeId);
+            assertTrue(
+                    LatitudeBiomes.villageVariantVsBiomeMismatch("village_plains", biomeId),
+                    "no named village variant may begin in badlands country: " + biomeId);
+        }
+
+        assertFalse(
+                VillageBiomeAdmissionPolicy.isVillageFreeBiome("minecraft:desert"),
+                "desert remains distinct from village-free badlands country");
+        assertFalse(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_desert", "minecraft:desert"),
+                "desert villages remain legal in desert");
+
+        assertTrue(
+                VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                        "desert_pyramid", "minecraft:badlands"),
+                "desert-declared surface structures are refused in badlands");
+        assertTrue(
+                VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                        "pillager_outpost", "minecraft:eroded_badlands"),
+                "surface outposts are refused in badlands");
+        assertFalse(
+                VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                        "mining_outpost", "minecraft:badlands"),
+                "underground mining outposts retain their existing placement");
+        assertFalse(
+                VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                        "mineshaft_mesa", "minecraft:badlands"),
+                "mesa underground content remains legal");
+        assertFalse(
+                VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                        "desert_pyramid", "minecraft:desert"),
+                "desert structures remain legal in desert");
+        assertFalse(
+                VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                        "ruined_portal", "minecraft:badlands"),
+                "unqualified structures are not swept into the desolation policy");
     }
 
     private static void physicalTerrainPolicyRejectsCliffsideVillageStarts() {
@@ -474,6 +523,10 @@ public final class VillageLatitudePolicyTest {
                         "LatitudeBiomes.villageVariantVsBiomeMismatch( structureId.getPath(), finalBiomeId.toString())"),
                 "generation-time owner compares the named village variant with Latitude's final biome");
         assertTrue(
+                biomes.contains("VillageBiomeAdmissionPolicy.isVillageFreeBiome(biomeId)")
+                        && startGuard.contains("LatitudeBiomes.villageVariantVsBiomeMismatch("),
+                "the shared village comparison must reject every variant from badlands in the start guard");
+        assertTrue(
                 startGuard.contains("BiomeSource structureBiomeSource = biomeSource;")
                         && startGuard.contains("LatitudeBiomeSource.forStructure( biomeSource, biomeRegistry, radius, noise, randomState, heightAccessor)")
                         && startGuard.contains("chunkGenerator, structureBiomeSource, randomState,"),
@@ -527,6 +580,13 @@ public final class VillageLatitudePolicyTest {
                 1,
                 occurrences(mixins, "\"StructureBiomeMatchGuardMixin\""),
                 "the final-biome admission guard is registered exactly once");
+        String structureGuard = normalize(read(
+                "src/main/java/com/example/globe/mixin/StructureBiomeMatchGuardMixin.java"));
+        assertTrue(
+                structureGuard.contains(
+                        "VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(")
+                        && structureGuard.contains("|| badlandsDesolationMismatch"),
+                "final structure admission must apply the same badlands surface-structure law used by locate generation");
         assertEquals(
                 1,
                 occurrences(mixins, "\"ExtremePolarVillageStartGuardMixin\""),

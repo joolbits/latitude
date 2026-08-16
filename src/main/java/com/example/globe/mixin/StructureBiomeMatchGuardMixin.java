@@ -1,6 +1,7 @@
 package com.example.globe.mixin;
 
 import com.example.globe.world.LatitudeBiomeSource;
+import com.example.globe.world.VillageBiomeAdmissionPolicy;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -91,7 +92,14 @@ public abstract class StructureBiomeMatchGuardMixin {
                     && "mansion".equals(structureId.getPath())
                     && biomeId != null
                     && !"minecraft".equals(biomeId.getNamespace());
-            if (resolved == null || !validBiome.test(resolved) || woodlandMansionInCustomBiome) {
+            boolean badlandsDesolationMismatch = structureId != null
+                    && biomeId != null
+                    && VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                            structureId.getPath(), biomeId.toString());
+            if (resolved == null
+                    || !validBiome.test(resolved)
+                    || woodlandMansionInCustomBiome
+                    || badlandsDesolationMismatch) {
                 cir.setReturnValue(StructureStart.INVALID_START);
             }
         } catch (RuntimeException resolutionFailure) {

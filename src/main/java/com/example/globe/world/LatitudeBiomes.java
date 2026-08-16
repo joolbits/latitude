@@ -7973,6 +7973,9 @@ public final class LatitudeBiomes {
         if (!structure.contains("village")) {
             return false;
         }
+        if (VillageBiomeAdmissionPolicy.isVillageFreeBiome(biomeId)) {
+            return true;
+        }
 
         VillageBiomeFamily declared;
         if (structure.contains("savanna")) {
