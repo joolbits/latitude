@@ -933,6 +933,7 @@ public final class LatitudeBiomes {
                     && province != ProvinceAuthority.Province.WARM_DRY;
             case TEMPERATE_LOWLAND -> band == BAND_TEMPERATE && !mountain;
             case TEMPERATE_WETLAND -> band == BAND_TEMPERATE && !mountain
+                    && wetlandProvinceEligible(blockX, blockZ)
                     && evaluateSwamp(blockX, blockZ, sampler).allow();
             case TEMPERATE_UPLAND -> band == BAND_TEMPERATE && mountain;
             case COLD_UPLAND -> band >= BAND_SUBPOLAR && mountain;
@@ -947,6 +948,7 @@ public final class LatitudeBiomes {
                     && (province == ProvinceAuthority.Province.WARM_DRY
                     || aridHotspotHere(WORLD_SEED, blockX, blockZ));
             case SUBPOLAR_WETLAND -> band == BAND_SUBPOLAR && !mountain
+                    && wetlandProvinceEligible(blockX, blockZ)
                     && evaluateSwamp(blockX, blockZ, sampler).allow();
             case SUBPOLAR_LOWLAND -> band == BAND_SUBPOLAR && !mountain;
             case POLAR_LOWLAND -> band == BAND_POLAR && !mountain;
@@ -5050,6 +5052,7 @@ public final class LatitudeBiomes {
                     && oceanDistance >= 0
                     && (landBandIndex == BAND_TEMPERATE
                         || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE)
+                    && wetlandProvinceEligible(blockX, blockZ)
                     && evaluateSwamp(blockX, blockZ, sampler).allow();
         }
         if (valid) {
@@ -5093,6 +5096,7 @@ public final class LatitudeBiomes {
                     && oceanDistance >= 0
                     && (landBandIndex == BAND_TEMPERATE
                         || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE)
+                    && wetlandProvinceEligible(blockX, blockZ)
                     && evaluateSwamp(blockX, blockZ, sampler).allow();
         }
         if (valid) {
@@ -10783,6 +10787,17 @@ public final class LatitudeBiomes {
     }
 
     /**
+     * Province-level wetland admission. Local terrain may create a wetland in a medium or wet
+     * province, but an explicitly dry province remains authoritative. A missing province
+     * authority preserves legacy/source-only behavior rather than inventing a new rejection.
+     */
+    private static boolean wetlandProvinceEligible(int blockX, int blockZ) {
+        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+        return province != ProvinceAuthority.Province.WARM_DRY
+                && province != ProvinceAuthority.Province.COLD_DRY;
+    }
+
+    /**
      * Cheap necessary-condition filter for the tick-sliced wetland locator.
      *
      * <p>A final swamp must pass {@link #evaluateSwamp}. A final mangrove either passes
@@ -10810,6 +10825,7 @@ public final class LatitudeBiomes {
         double weirdness = Climate.unquantizeCoord(point.weirdness());
         int landBandIndex = authoritativeLandBandIndex(blockX, blockZ, borderRadiusBlocks);
         boolean swampClimate = (includeSwamp || includeMangrove)
+                && wetlandProvinceEligible(blockX, blockZ)
                 && swampOkForSize(cont, erosion, weirdness);
         int radiusHint = ACTIVE_RADIUS_BLOCKS > 0
                 ? ACTIVE_RADIUS_BLOCKS
