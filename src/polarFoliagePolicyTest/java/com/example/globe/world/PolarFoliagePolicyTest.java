@@ -260,12 +260,17 @@ public final class PolarFoliagePolicyTest {
                 "modded ground cover must be caught by inheritance from the vanilla plant base; a "
                         + "tag-only test fails OPEN on any block a pack never tagged, which left the "
                         + "polar cap greener than a correctly-guarded biome");
-        assertTrue(guard.contains("LatitudeWorldgenScope.isActive()"),
-                "the guard is worldgen-only — bonemeal, sapling growth and /place stay the player's");
+        assertTrue(guard.contains("LatitudeWorldgenScope.isFeatureActive()"),
+                "the guard is decoration-only — structures, bonemeal, sapling growth and /place stay untouched");
         assertTrue(guard.contains("polar_woody") && guard.contains("polar_foliage"),
                 "both tiers must be consulted, or the split collapses to one threshold");
         assertTrue(guard.contains("PolarFoliagePolicy.isBeyondWoodyCompletionLimit("),
                 "the block-write seam permits only the bounded canopy completion band");
+        assertTrue(guard.contains("woody && pos.getY() >= LatitudeBiomes.TREE_LINE_Y"),
+                "raw woody features must obey the same high-alpine tree line as TreeFeature");
+        assertTrue(!guard.contains("vegetation && pos.getY() >= LatitudeBiomes.TREE_LINE_Y")
+                        && !guard.contains("foliage && pos.getY() >= LatitudeBiomes.TREE_LINE_Y"),
+                "the alpine backstop must not invent a bare-alpine rule for grass and flowers");
 
         // Both tiers, and the berry exemption, at the pure-policy level.
         assertTrue(PolarFoliagePolicy.shouldSuppressPolarBlock(true, false, true, false, false, false),

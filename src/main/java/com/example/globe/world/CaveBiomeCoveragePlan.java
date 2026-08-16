@@ -71,6 +71,43 @@ public final class CaveBiomeCoveragePlan {
     public List<String> missingBiomeIds() { return missingBiomeIds; }
     public boolean complete() { return missingBiomeIds.isEmpty(); }
 
+    /**
+     * Finds the nearest reserved cave identity within the caller's horizontal locate radius.
+     * The caller must still query final biome output before it reports this coordinate: an anchor
+     * only records where the donor cave was legal when the birth plan was made.
+     */
+    public Anchor nearestAnchorFor(
+            java.util.Collection<String> biomeIds,
+            int originX,
+            int originZ,
+            int maxHorizontalDistance) {
+        if (biomeIds == null || biomeIds.isEmpty() || maxHorizontalDistance < 0) {
+            return null;
+        }
+        long maximumDistanceSquared = (long) maxHorizontalDistance * maxHorizontalDistance;
+        Anchor nearest = null;
+        long nearestDistanceSquared = Long.MAX_VALUE;
+        for (Anchor anchor : anchors) {
+            if (!biomeIds.contains(anchor.biomeId())) {
+                continue;
+            }
+            long dx = (long) anchor.x() - originX;
+            long dz = (long) anchor.z() - originZ;
+            long distanceSquared = dx * dx + dz * dz;
+            if (distanceSquared > maximumDistanceSquared) {
+                continue;
+            }
+            if (distanceSquared < nearestDistanceSquared
+                    || distanceSquared == nearestDistanceSquared
+                    && nearest != null
+                    && anchor.biomeId().compareTo(nearest.biomeId()) < 0) {
+                nearest = anchor;
+                nearestDistanceSquared = distanceSquared;
+            }
+        }
+        return nearest;
+    }
+
     private static Anchor findAnchor(int radius, long seed, int ordinal, String biomeId, BiomeRoute route,
                                      int horizontalRadius, int verticalRadius, List<Anchor> existing,
                                      CandidateEvaluator evaluator) {

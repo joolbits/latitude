@@ -114,7 +114,7 @@ public final class LatitudeBiomeLocateService {
                     searchRadius, randomState.sampler(), matching, includesMangrove);
         } else {
             job = new ThreeDimensionalLocateJob(source, target, origin, latitudeSource, worldRadius,
-                    searchRadius, randomState.sampler(), level);
+                    searchRadius, randomState.sampler(), level, matching);
         }
         ACTIVE_JOBS.put(server, job);
         GlobeMod.LOGGER.info("[Latitude] started tick-sliced biome locate target={} route={} origin={} radius={} worldRadius={}",
@@ -507,6 +507,7 @@ public final class LatitudeBiomeLocateService {
         private final int horizontalStep;
         private final Iterator<BlockPos.MutableBlockPos> offsets;
         private final int totalSamples;
+        private final Set<Holder<Biome>> matching;
         private BlockPos currentOffset;
         private int verticalIndex;
         private int sampled;
@@ -519,7 +520,8 @@ public final class LatitudeBiomeLocateService {
                 int worldRadius,
                 int searchRadius,
                 Climate.Sampler sampler,
-                ServerLevel level) {
+                ServerLevel level,
+                Set<Holder<Biome>> matching) {
             super(source, target, origin, latitudeSource, worldRadius, searchRadius, sampler);
             this.verticalSamples = Mth.outFromOrigin(origin.getY(),
                     level.getMinY() + 1, level.getMaxY() + 1, COMMAND_VERTICAL_STEP).toArray();
@@ -529,6 +531,7 @@ public final class LatitudeBiomeLocateService {
                     searchRadius / horizontalStep, Direction.EAST, Direction.SOUTH).iterator();
             this.totalSamples = LatitudeLocateBudgetPolicy.worstCaseSamples(
                     searchRadius, horizontalStep, Math.max(1, verticalSamples.length));
+            this.matching = matching;
         }
 
         @Override
@@ -544,8 +547,10 @@ public final class LatitudeBiomeLocateService {
                     && !deadlineExceeded(tickStarted)) {
                 if (currentOffset == null) {
                     if (!offsets.hasNext()) {
-                        finish(null);
-                        log(false);
+                        Pair<BlockPos, Holder<Biome>> planned = latitudeSource.findPlannedCaveCoverage(
+                                matching, origin, searchRadius, target, sampler);
+                        finish(planned);
+                        log(planned != null);
                         return true;
                     }
                     BlockPos.MutableBlockPos offset = offsets.next();

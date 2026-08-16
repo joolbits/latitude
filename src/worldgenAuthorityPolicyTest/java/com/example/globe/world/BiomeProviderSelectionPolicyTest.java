@@ -1141,7 +1141,7 @@ final class BiomeProviderSelectionPolicyTest {
                 "the four native cave identities are mandatory, exact, and closed");
 
         BiomeSelectionProfile combined = BiomeSelectionProfile.capture(
-                registryFor(Set.of("biomesoplenty", "terralith")));
+                registryFor(Set.of("biomesoplenty", "terralith", "clifftree")));
         for (String id : required) {
             BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
             assertTrue(descriptor != null && descriptor.terrain() == BiomeDescriptorLedger.Terrain.CAVE
@@ -1152,11 +1152,11 @@ final class BiomeProviderSelectionPolicyTest {
                 "a name-only BOP cave is excluded without verified cave-tag evidence");
         assertTrue(BiomeDescriptorLedger.descriptor("terralith:amethyst_canyon") == null,
                 "a surface Terralith biome cannot enter through cave routing");
-        assertEquals(13L, combined.entries(BiomeRoute.CAVE_SHALLOW).stream()
+        assertEquals(21L, combined.entries(BiomeRoute.CAVE_SHALLOW).stream()
                         .filter(id -> !id.startsWith("minecraft:")).count()
                         + combined.entries(BiomeRoute.CAVE_DEEP).stream()
                         .filter(id -> !id.startsWith("minecraft:")).count(),
-                "only the explicit 2 BOP and 11 Terralith caves are eligible custom candidates");
+                "only the explicit 2 BOP, 11 Terralith, and 8 CliffTree caves are eligible custom candidates");
 
         int[] radii = {3_750, 5_000, 7_500, 10_000, 15_000, 20_000};
         long[] seeds = {3L, 41L, 131L, 461L};
@@ -1182,14 +1182,37 @@ final class BiomeProviderSelectionPolicyTest {
                     assertTrue(anchor.horizontalRadius() >= 80 && anchor.verticalRadius() == 24,
                             "cave coverage is a compact underground region, not a one-cell token");
                 }
+                CaveBiomeCoveragePlan.Anchor locateAnchor = plan.anchors().get(0);
+                assertEquals(locateAnchor, plan.nearestAnchorFor(
+                                Set.of(locateAnchor.biomeId()),
+                                locateAnchor.x(), locateAnchor.z(), 0),
+                        "a cave reservation is directly locatable at its exact planned column");
+                assertTrue(plan.nearestAnchorFor(
+                                Set.of(locateAnchor.biomeId()),
+                                locateAnchor.x() + 100, locateAnchor.z(), 99) == null,
+                        "cave planned locate preserves the caller's horizontal radius");
+                assertEquals(locateAnchor, plan.nearestAnchorFor(
+                                Set.of(locateAnchor.biomeId()),
+                                locateAnchor.x() + 100, locateAnchor.z(), 100),
+                        "the exact cave locate radius boundary is inclusive");
+                assertTrue(plan.nearestAnchorFor(
+                                Set.of("minecraft:the_void"), 0, 0, radius) == null,
+                        "planned cave locate cannot invent an unreserved identity");
                 Map<String, BiomeRoute> showcase = profile.customShowcaseTargets(seed);
-                assertEquals(3, showcase.size(), "combined stack contributes one deterministic BOP shallow and Terralith shallow/deep showcase each");
+                assertEquals(5, showcase.size(),
+                        "combined stack contributes one deterministic showcase per provider and cave-depth route");
                 assertTrue(showcase.entrySet().stream().anyMatch(entry -> entry.getKey().startsWith("biomesoplenty:")
                                 && entry.getValue() == BiomeRoute.CAVE_SHALLOW),
                         "BOP cave selection remains shallow-only");
                 assertTrue(showcase.entrySet().stream().anyMatch(entry -> entry.getKey().startsWith("terralith:")
                                 && entry.getValue() == BiomeRoute.CAVE_DEEP),
                         "Terralith deep cave selection remains below the deep threshold");
+                assertTrue(showcase.entrySet().stream().anyMatch(entry -> entry.getKey().startsWith("clifftree:")
+                                && entry.getValue() == BiomeRoute.CAVE_SHALLOW),
+                        "CliffTree contributes exactly one deterministic shallow showcase");
+                assertTrue(showcase.entrySet().stream().anyMatch(entry -> entry.getKey().startsWith("clifftree:")
+                                && entry.getValue() == BiomeRoute.CAVE_DEEP),
+                        "CliffTree inferno keeps its deep showcase without promoting all seven shallow caves");
             }
         }
 
@@ -1562,6 +1585,28 @@ final class BiomeProviderSelectionPolicyTest {
                 impossibleWater.missingDiagnostics().get("minecraft:stony_shore");
         assertTrue(shoreStats != null && shoreStats.centerEligible() == 0,
                 "surface-plan diagnostics distinguish absent eligible terrain from topology/capacity");
+
+        VanillaSurfaceWaterCoveragePlan.Route deepFrozen =
+                VanillaSurfaceWaterCoveragePlan.Route.FROZEN_DEEP_OCEAN;
+        VanillaSurfaceWaterCoveragePlan.Route frozen =
+                VanillaSurfaceWaterCoveragePlan.Route.FROZEN_SHALLOW_OCEAN;
+        VanillaSurfaceWaterCoveragePlan.CandidateEvaluator narrowDeepCorridor =
+                (id, route, x, z) -> insideSyntheticSurfaceWaterRoute(route, x, z, 10_000)
+                        && Math.floorMod(x, 640) < 96;
+        VanillaSurfaceWaterCoveragePlan deepCorridor = VanillaSurfaceWaterCoveragePlan.build(
+                10_000, 41L, 63, Map.of("minecraft:deep_frozen_ocean", deepFrozen),
+                narrowDeepCorridor);
+        assertTrue(deepCorridor.complete(),
+                "a deep-ocean corridor with a multi-chunk span is a substantial province, even when "
+                        + "its fixed cardinal shoulders are not all deep");
+
+        VanillaSurfaceWaterCoveragePlan shallowCorridor = VanillaSurfaceWaterCoveragePlan.build(
+                10_000, 41L, 63, Map.of("minecraft:frozen_ocean", frozen), narrowDeepCorridor);
+        VanillaSurfaceWaterCoveragePlan.SearchStats shallowStats =
+                shallowCorridor.missingDiagnostics().get("minecraft:frozen_ocean");
+        assertTrue(shallowStats != null && shallowStats.centerEligible() > 0
+                        && shallowStats.topologyEligible() == 0,
+                "shallow-ocean routes retain the existing four-cardinal-shoulder topology rule");
 
     }
 

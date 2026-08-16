@@ -281,6 +281,8 @@ public final class LatitudeBiomeSource extends BiomeSource {
             long started = System.nanoTime();
             boolean targetIncludesMangrove = matching.stream().anyMatch(candidate ->
                     LatitudeBiomes.isBiomeIdPublic(candidate, "minecraft:mangrove_swamp"));
+            boolean targetIncludesSwamp = matching.stream().anyMatch(candidate ->
+                    LatitudeBiomes.isBiomeIdPublic(candidate, "minecraft:swamp"));
             boolean wetlandOnlyTarget = matching.stream().allMatch(candidate ->
                     LatitudeBiomes.isBiomeIdPublic(candidate, "minecraft:mangrove_swamp")
                             || LatitudeBiomes.isBiomeIdPublic(candidate, "minecraft:swamp"));
@@ -292,6 +294,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
                     boundedVerticalStep,
                     matching,
                     target,
+                    targetIncludesSwamp,
                     targetIncludesMangrove,
                     wetlandOnlyTarget,
                     sampler,
@@ -335,6 +338,9 @@ public final class LatitudeBiomeSource extends BiomeSource {
                 target,
                 sampler,
                 level);
+        if (result == null && hasCaveTarget) {
+            result = findPlannedCaveCoverage(matching, origin, safeRadius, target, sampler);
+        }
         long elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
         GlobeMod.LOGGER.info(
                 "[Latitude] bounded biome locate surfaceOnly={} radius={} horizontalStep={} verticalSamples={} worstCaseSamples={} elapsedMs={} found={}",
@@ -356,6 +362,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
             int oneLayerVerticalStep,
             Set<Holder<Biome>> matching,
             Predicate<Holder<Biome>> target,
+            boolean targetIncludesSwamp,
             boolean targetIncludesMangrove,
             boolean wetlandOnlyTarget,
             Climate.Sampler sampler,
@@ -374,11 +381,32 @@ public final class LatitudeBiomeSource extends BiomeSource {
             Holder<Biome> preview = getLocatePreviewNoiseBiome(quartX, quartY, quartZ, sampler);
             previewProbes++;
 
+            int blockX = QuartPos.toBlock(quartX) + 2;
+            int blockZ = QuartPos.toBlock(quartZ) + 2;
+
             // Live mangroves are the terrain-validated coastal form of a SOURCE swamp,
             // so swamp is a necessary broad-phase proxy for a mangrove request.
             boolean plausible = target.test(preview)
                     || (targetIncludesMangrove
                     && LatitudeBiomes.isBiomeIdPublic(preview, "minecraft:swamp"));
+            if (!plausible && wetlandOnlyTarget
+                    && LatitudeBiomes.isPotentialWetlandLocateCandidate(
+                    blockX,
+                    blockZ,
+                    borderRadiusBlocks,
+                    sampler,
+                    targetIncludesSwamp,
+                    targetIncludesMangrove)) {
+                // Match the tick-sliced command route: a terrain-free SOURCE preview can say
+                // ocean, river, or beach while the final terrain-aware resolver legally returns
+                // swamp or mangrove at the same cell.
+                boolean directMangroveCandidate = targetIncludesMangrove
+                        && LatitudeBiomes.isPotentialDirectMangroveLocateCandidate(
+                        blockX, blockZ, sampler);
+                plausible = directMangroveCandidate
+                        || isPotentialWetlandLocateSourceCandidate(
+                        quartX, quartY, quartZ, sampler);
+            }
             if (!plausible) {
                 continue;
             }
@@ -400,9 +428,9 @@ public final class LatitudeBiomeSource extends BiomeSource {
         }
 
         if (wetlandOnlyTarget) {
-            // SOURCE swamp/mangrove output is a superset of the live terrain-validated
-            // wetlands. If every broad-phase candidate failed the exact check, a second
-            // terrain sweep cannot reveal another wetland family and only adds a stall.
+            // The complete shared climate-plus-shoreline broad phase already retained every
+            // terrain-promotable wetland candidate. If each exact check failed, another terrain
+            // sweep cannot reveal a new wetland family and only adds a stall.
             return new SurfaceLocateOutcome(
                     null, previewProbes, exactCandidateChecks, false, false, 0);
         }
@@ -531,6 +559,39 @@ public final class LatitudeBiomeSource extends BiomeSource {
         }
         return Pair.of(centerQuartPosition(
                 new BlockPos(anchor.blockX(), origin.getY(), anchor.blockZ())), exact);
+    }
+
+    /**
+     * Resolves a V4 cave reservation only after the bounded three-dimensional search misses.
+     * The final picker remains authoritative, so a stale/unreachable reservation is never
+     * reported as a locate result.
+     */
+    Pair<BlockPos, Holder<Biome>> findPlannedCaveCoverage(
+            Set<Holder<Biome>> matching,
+            BlockPos origin,
+            int radius,
+            Predicate<Holder<Biome>> target,
+            Climate.Sampler sampler) {
+        Set<String> requestedIds = matching.stream()
+                .filter(LatitudeBiomeSource::isCaveBiome)
+                .map(LatitudeBiomes::biomeIdPublic)
+                .filter(id -> id != null && !id.isBlank())
+                .collect(Collectors.toUnmodifiableSet());
+        CaveBiomeCoveragePlan.Anchor anchor = LatitudeBiomes.nearestPlannedCaveCoverageAnchor(
+                requestedIds, origin.getX(), origin.getZ(), radius);
+        if (anchor == null) {
+            return null;
+        }
+        int quartX = QuartPos.fromBlock(anchor.x());
+        int quartY = QuartPos.fromBlock(anchor.y());
+        int quartZ = QuartPos.fromBlock(anchor.z());
+        Holder<Biome> exact = getNoiseBiome(quartX, quartY, quartZ, sampler);
+        if (!target.test(exact)
+                || !anchor.biomeId().equals(LatitudeBiomes.biomeIdPublic(exact))) {
+            return null;
+        }
+        return Pair.of(centerQuartPosition(new BlockPos(
+                QuartPos.toBlock(quartX), QuartPos.toBlock(quartY), QuartPos.toBlock(quartZ))), exact);
     }
 
     static BlockPos centerQuartPosition(BlockPos position) {
