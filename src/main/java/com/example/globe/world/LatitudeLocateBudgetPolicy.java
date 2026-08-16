@@ -62,6 +62,36 @@ public final class LatitudeLocateBudgetPolicy {
     }
 
     /**
+     * Ring index a spiral offset belongs to. {@code BlockPos.spiralAround} walks square
+     * (Chebyshev) rings, so this — not the Euclidean distance — is what advances monotonically
+     * as the search widens.
+     */
+    public static int spiralRing(int offsetX, int offsetZ) {
+        return Math.max(Math.abs(offsetX), Math.abs(offsetZ));
+    }
+
+    /**
+     * Last ring worth visiting once a match has been found {@code bestDistanceBlocks} away.
+     *
+     * <p>A square spiral is not ordered by distance: the corner of a ring is up to sqrt(2) times
+     * farther than its edge, so the first match found is not necessarily the nearest one. A
+     * sample in ring r is at least {@code r * stepBlocks} blocks out, so no ring past
+     * {@code best / step} can beat the match already in hand, and completing up to this limit
+     * makes the returned result the nearest sampled candidate. The extra ring absorbs the
+     * quart-center snap each sample receives.
+     */
+    public static int nearestCompletionRingLimit(double bestDistanceBlocks, int stepBlocks) {
+        if (stepBlocks <= 0 || !(bestDistanceBlocks >= 0.0)) {
+            return Integer.MAX_VALUE;
+        }
+        double rings = bestDistanceBlocks / stepBlocks;
+        if (rings >= Integer.MAX_VALUE - 1) {
+            return Integer.MAX_VALUE;
+        }
+        return (int) Math.floor(rings) + 1;
+    }
+
+    /**
      * Whether a climate-valid swamp point can still satisfy the requested wetland identity.
      *
      * <p>Swamp searches keep every swamp proxy. Mangrove-only searches keep swamp proxies only
