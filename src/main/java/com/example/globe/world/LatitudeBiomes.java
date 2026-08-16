@@ -3074,6 +3074,7 @@ public final class LatitudeBiomes {
     private static final TagKey<Biome> LAT_BEACH_COLD_SNOWY = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_beach_cold_snowy"));
     private static final TagKey<Biome> LAT_BEACH_COLD_ROCKY = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_beach_cold_rocky"));
     private static final TagKey<Biome> LAT_RIVER_WARM = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_river_warm"));
+    private static final TagKey<Biome> LAT_RIVER_SUBTROPICAL = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_river_subtropical"));
     private static final TagKey<Biome> LAT_RIVER_TEMPERATE = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_river_temperate"));
     private static final TagKey<Biome> LAT_RIVER_FROZEN = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_river_frozen"));
     private static final TagKey<Biome> LAT_OCEAN_TEMPERATE = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_ocean_temperate"));
@@ -3476,7 +3477,11 @@ public final class LatitudeBiomes {
                 Holder<Biome> out = shouldFreezeRiver(blockX, blockZ)
                         ? pickFromTagNoiseOrFallback(biomeRegistry, LAT_RIVER_FROZEN, blockX, blockZ, 36, "minecraft:frozen_river")
                         : pickFromTagNoiseOrFallback(biomeRegistry,
-                                blendedBandIndex <= BAND_SUBTROPICAL ? LAT_RIVER_WARM : LAT_RIVER_TEMPERATE,
+                                blendedBandIndex == BAND_TROPICAL
+                                        ? LAT_RIVER_WARM
+                                        : blendedBandIndex == BAND_SUBTROPICAL
+                                                ? LAT_RIVER_SUBTROPICAL
+                                                : LAT_RIVER_TEMPERATE,
                                 blockX, blockZ, blendedBandIndex <= BAND_SUBTROPICAL ? 34 : 35, "minecraft:river");
                 out = applyV2SurfaceWaterCoverage(
                         biomeRegistry, VanillaSurfaceWaterCoveragePlan.Family.RIVER,
@@ -4273,7 +4278,11 @@ public final class LatitudeBiomes {
             Holder<Biome> out = shouldFreezeRiver(blockX, blockZ)
                     ? pickFromTagNoiseOrFallback(biomePool, base, LAT_RIVER_FROZEN, blockX, blockZ, 36, "minecraft:frozen_river")
                     : pickFromTagNoiseOrFallback(biomePool, base,
-                            blendedBandIndex <= BAND_SUBTROPICAL ? LAT_RIVER_WARM : LAT_RIVER_TEMPERATE,
+                            blendedBandIndex == BAND_TROPICAL
+                                    ? LAT_RIVER_WARM
+                                    : blendedBandIndex == BAND_SUBTROPICAL
+                                            ? LAT_RIVER_SUBTROPICAL
+                                            : LAT_RIVER_TEMPERATE,
                             blockX, blockZ, blendedBandIndex <= BAND_SUBTROPICAL ? 34 : 35, "minecraft:river");
             out = applyV2SurfaceWaterCoverage(
                     biomePool, VanillaSurfaceWaterCoveragePlan.Family.RIVER,

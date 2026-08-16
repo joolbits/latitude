@@ -2078,6 +2078,7 @@ final class BiomeProviderSelectionPolicyTest {
                 {"lat_beach_cold_snowy", "minecraft:snowy_beach"},
                 {"lat_beach_cold_rocky", "minecraft:stony_shore"},
                 {"lat_river_warm", "minecraft:river"},
+                {"lat_river_subtropical", "minecraft:river"},
                 {"lat_river_temperate", "minecraft:river"},
                 {"lat_river_frozen", "minecraft:frozen_river"},
         };
@@ -2120,13 +2121,37 @@ final class BiomeProviderSelectionPolicyTest {
         String collectionPick = method(source,
                 "public static Holder<Biome> pick(Collection<Holder<Biome>> biomePool,");
         for (String authority : new String[]{
-                "LAT_RIVER_WARM", "LAT_RIVER_TEMPERATE", "LAT_RIVER_FROZEN"}) {
+                "LAT_RIVER_WARM", "LAT_RIVER_SUBTROPICAL",
+                "LAT_RIVER_TEMPERATE", "LAT_RIVER_FROZEN"}) {
             assertTrue(registryPick.contains(authority) && collectionPick.contains(authority),
                     "both river-pick paths must wire the tag authority: " + authority);
+        }
+        for (String pick : new String[]{registryPick, collectionPick}) {
+            assertTrue(pick.contains("blendedBandIndex == BAND_TROPICAL")
+                            && pick.contains("? LAT_RIVER_WARM")
+                            && pick.contains("blendedBandIndex == BAND_SUBTROPICAL")
+                            && pick.contains("? LAT_RIVER_SUBTROPICAL")
+                            && pick.contains(": LAT_RIVER_TEMPERATE"),
+                    "each river picker must keep tropical, subtropical, and temperate identities "
+                            + "as separate latitude authorities");
+            assertFalse(pick.contains(
+                            "blendedBandIndex <= BAND_SUBTROPICAL ? LAT_RIVER_WARM"),
+                    "subtropical rivers must no longer inherit the tropical river pool");
         }
         assertTrue(registryPick.contains("shouldFreezeRiver(blockX, blockZ)")
                         && collectionPick.contains("shouldFreezeRiver(blockX, blockZ)"),
                 "both river-pick paths must preserve shouldFreezeRiver as the frozen/liquid verdict");
+
+        String tropicalRiver = read(
+                "src/main/resources/data/globe/tags/worldgen/biome/lat_river_warm.json");
+        String subtropicalRiver = read(
+                "src/main/resources/data/globe/tags/worldgen/biome/lat_river_subtropical.json");
+        assertTrue(tropicalRiver.contains("clifftree:tropical_river"),
+                "the tropical band must retain CliffTree's explicitly tropical river");
+        assertTrue(subtropicalRiver.contains("clifftree:warm_river"),
+                "the subtropical band may retain CliffTree's warm river");
+        assertFalse(subtropicalRiver.contains("clifftree:tropical_river"),
+                "the subtropical band must not admit an explicitly tropical river");
 
         // Shores are a beach authority, never ledger land. Latitude's own isBeachLike() matches any
         // path containing "shore", so routing one as land would place a coastal identity inland.
