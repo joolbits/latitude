@@ -83,7 +83,7 @@ public class ProtoChunkPolarVegetationGuardMixin {
         }
         // Worldgen only, and only in a world Latitude actually generates. Outside the scope this
         // must be inert: bonemeal, sapling growth and /place are the player's business.
-        if (!LatitudeWorldgenScope.isActive()) {
+        if (!LatitudeWorldgenScope.isFeatureActive()) {
             return;
         }
 
@@ -91,6 +91,14 @@ public class ProtoChunkPolarVegetationGuardMixin {
         boolean foliage = state.is(POLAR_FOLIAGE);
         boolean vegetation = state.getBlock() instanceof VegetationBlock;
         if (!woody && !foliage && !vegetation) {
+            return;
+        }
+
+        // TreeFeature already rejects new trees at this height. This block-write backstop closes
+        // the same alpine line for raw Feature siblings such as fallen trees and modded log
+        // features, while deliberately leaving grass, flowers and other alpine ground cover alone.
+        if (woody && pos.getY() >= LatitudeBiomes.TREE_LINE_Y) {
+            cir.setReturnValue(AIR_STATE);
             return;
         }
 

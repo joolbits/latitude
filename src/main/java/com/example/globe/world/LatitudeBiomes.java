@@ -1182,6 +1182,18 @@ public final class LatitudeBiomes {
         return plan != null ? plan.nearestAnchorFor(biomeIds, originX, originZ) : null;
     }
 
+    /** Constant-cost locate fallback for exact cave identities reserved by the V4 plan. */
+    public static CaveBiomeCoveragePlan.Anchor nearestPlannedCaveCoverageAnchor(
+            Collection<String> biomeIds,
+            int originX,
+            int originZ,
+            int maxHorizontalDistance) {
+        CaveBiomeCoveragePlan plan = ACTIVE_CAVE_COVERAGE_PLAN;
+        return plan != null
+                ? plan.nearestAnchorFor(biomeIds, originX, originZ, maxHorizontalDistance)
+                : null;
+    }
+
     static VanillaBiomeCoveragePlan activeVanillaCoveragePlanForPolicyTest() {
         return ACTIVE_VANILLA_COVERAGE_PLAN;
     }

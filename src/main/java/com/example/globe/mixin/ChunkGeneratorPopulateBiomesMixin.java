@@ -216,8 +216,8 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
     /**
      * Wrap the BiomeSupplier used by vanilla chunk biome population.
-     * NOTE: require=0 so the game DOES NOT crash if mixin remapping/refmap is broken.
-     * If this Redirect doesn’t apply, Latitude won’t affect worldgen — but you’ll boot and can fix refmap next.
+     * This is Latitude's final chunk-biome owner, so a mapping mismatch must fail during startup
+     * instead of silently generating a fresh world without Latitude geography.
      */
     @Redirect(
             method = "doCreateBiomes(Lnet/minecraft/world/level/levelgen/blending/Blender;Lnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/chunk/ChunkAccess;)V",
@@ -225,7 +225,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                     value = "INVOKE",
                     target = "Lnet/minecraft/world/level/chunk/ChunkAccess;fillBiomesFromNoise(Lnet/minecraft/world/level/biome/BiomeResolver;Lnet/minecraft/world/level/biome/Climate$Sampler;)V"
             ),
-            require = 0
+            require = 1
     )
     private void globe$wrapBiomeSupplier(ChunkAccess chunk, BiomeResolver originalSupplier, Climate.Sampler sampler) {
         var pos = chunk.getPos();

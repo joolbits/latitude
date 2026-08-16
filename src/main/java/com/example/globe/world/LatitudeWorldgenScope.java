@@ -14,12 +14,22 @@ public final class LatitudeWorldgenScope {
     }
 
     public static Scope enter(boolean active) {
+        return enter(active, false);
+    }
+
+    /** Marks the biome-decoration phase, where vegetation block-write guards are authoritative. */
+    public static Scope enterFeatures(boolean active) {
+        return enter(active, true);
+    }
+
+    private static Scope enter(boolean active, boolean featureRoot) {
         Deque<Frame> frames = FRAMES.get();
         if (frames == null) {
             frames = new ArrayDeque<>();
             FRAMES.set(frames);
         }
-        Frame frame = new Frame(active);
+        boolean inheritedFeature = !frames.isEmpty() && frames.peek().features;
+        Frame frame = new Frame(active, active && (featureRoot || inheritedFeature));
         frames.push(frame);
         return new Scope(frame);
     }
@@ -29,7 +39,12 @@ public final class LatitudeWorldgenScope {
         return frames != null && !frames.isEmpty() && frames.peek().active;
     }
 
-    private record Frame(boolean active) {
+    public static boolean isFeatureActive() {
+        Deque<Frame> frames = FRAMES.get();
+        return frames != null && !frames.isEmpty() && frames.peek().features;
+    }
+
+    private record Frame(boolean active, boolean features) {
     }
 
     public static final class Scope implements AutoCloseable {

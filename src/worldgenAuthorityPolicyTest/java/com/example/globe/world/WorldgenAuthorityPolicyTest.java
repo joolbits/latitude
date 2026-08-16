@@ -506,6 +506,16 @@ public final class WorldgenAuthorityPolicyTest {
                 service.contains("latitudeSource.isPotentialWetlandLocateSourceCandidate("),
                 "the live tick job must use the terrain-free registry preview before exact resolution");
         assertTrue(
+                occurrences(source, "LatitudeBiomes.isPotentialDirectMangroveLocateCandidate(") >= 1
+                        && source.contains("isPotentialWetlandLocateSourceCandidate( quartX, quartY, quartZ, sampler)"),
+                "the direct locator must retain the same direct-mangrove and shoreline-promotable candidates as the tick job");
+        int directWetlandCandidate = source.indexOf(
+                "LatitudeBiomes.isPotentialWetlandLocateCandidate( blockX, blockZ, borderRadiusBlocks");
+        int directWetlandExit = source.indexOf("if (wetlandOnlyTarget) {", directWetlandCandidate);
+        assertTrue(
+                directWetlandCandidate >= 0 && directWetlandExit > directWetlandCandidate,
+                "direct wetland locate may stop only after the complete shared broad phase");
+        assertTrue(
                 service.contains("tickExactProbes < LatitudeLocateBudgetPolicy.MAX_WETLAND_EXACT_PROBES_PER_TICK")
                         && service.contains("tickExactProbes++;"),
                 "the live scheduler must enforce and consume the one-exact-probe tick budget");
@@ -539,6 +549,16 @@ public final class WorldgenAuthorityPolicyTest {
                 service.contains("LatitudeLocateBudgetPolicy.fullWorldSearchRadius(")
                         && service.contains("isWithinLatitudeWorld(blockX, blockZ)"),
                 "a boss-bar locate must cover the playable Latitude world without reporting outside it");
+        String biomeSource = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeBiomeSource.java"));
+        assertTrue(
+                occurrences(biomeSource, "findPlannedCaveCoverage(") >= 2
+                        && biomeSource.contains("Holder<Biome> exact = getNoiseBiome(quartX, quartY, quartZ, sampler)")
+                        && biomeSource.contains("anchor.biomeId().equals(LatitudeBiomes.biomeIdPublic(exact))"),
+                "a direct cave locate miss may use a planned anchor only after final-output identity verification");
+        assertTrue(
+                service.contains("latitudeSource.findPlannedCaveCoverage( matching, origin, searchRadius, target, sampler)"),
+                "the tick-sliced cave route shares the same verified planned fallback");
     }
 
     private static void structureLocateServiceIsBoundedAndTickDelivered() throws Exception {
@@ -1047,8 +1067,11 @@ public final class WorldgenAuthorityPolicyTest {
 
     private static void generationScopeIsDimensionIsolatedAndNestSafe() {
         assertFalse(LatitudeWorldgenScope.isActive(), "scope starts inactive");
+        assertFalse(LatitudeWorldgenScope.isFeatureActive(), "feature scope starts inactive");
         try (LatitudeWorldgenScope.Scope overworld = LatitudeWorldgenScope.enter(true)) {
             assertTrue(LatitudeWorldgenScope.isActive(), "authorized overworld scope is active");
+            assertFalse(LatitudeWorldgenScope.isFeatureActive(),
+                    "ordinary structure/surface authority does not authorize decoration block filtering");
             try (LatitudeWorldgenScope.Scope nether = LatitudeWorldgenScope.enter(false)) {
                 assertFalse(LatitudeWorldgenScope.isActive(), "nested non-overworld generation cannot inherit authority");
                 try (LatitudeWorldgenScope.Scope nestedNether = LatitudeWorldgenScope.enter(false)) {
@@ -1059,6 +1082,23 @@ public final class WorldgenAuthorityPolicyTest {
             assertTrue(LatitudeWorldgenScope.isActive(), "closing non-overworld scope restores authorized outer scope");
         }
         assertFalse(LatitudeWorldgenScope.isActive(), "outer close removes all authority");
+
+        try (LatitudeWorldgenScope.Scope features = LatitudeWorldgenScope.enterFeatures(true)) {
+            assertTrue(LatitudeWorldgenScope.isFeatureActive(),
+                    "the explicit biome-decoration scope authorizes vegetation block filtering");
+            try (LatitudeWorldgenScope.Scope nested = LatitudeWorldgenScope.enter(true)) {
+                assertTrue(LatitudeWorldgenScope.isFeatureActive(),
+                        "nested generator queries inherit the active decoration phase");
+            }
+            try (LatitudeWorldgenScope.Scope inactive = LatitudeWorldgenScope.enter(false)) {
+                assertFalse(LatitudeWorldgenScope.isFeatureActive(),
+                        "an inactive nested dimension cannot inherit decoration authority");
+            }
+            assertTrue(LatitudeWorldgenScope.isFeatureActive(),
+                    "closing an inactive nested frame restores decoration authority");
+        }
+        assertFalse(LatitudeWorldgenScope.isFeatureActive(),
+                "closing the decoration scope clears its phase marker");
     }
 
     private static void generationScopeCleansUpOnFailureAndAcrossThreads() throws Exception {
@@ -1113,19 +1153,66 @@ public final class WorldgenAuthorityPolicyTest {
                     file + " requires the current generator-owned scope");
         }
 
+        String protoVegetation = normalize(read(
+                "src/main/java/com/example/globe/mixin/ProtoChunkPolarVegetationGuardMixin.java"));
+        assertTrue(
+                protoVegetation.contains("LatitudeWorldgenScope.isFeatureActive()"),
+                "the block-write foliage backstop is restricted to decoration, not structures");
+
         String features = normalize(read(
                 "src/main/java/com/example/globe/mixin/ChunkGeneratorGenerateFeaturesBiomeSetMixin.java"));
         assertTrue(
                 occurrences(features, "LatitudeWorldgenScope.isActive()") >= 2,
                 "both feature-index and retainAll mutations fail open outside an authorized scope");
+        assertTrue(
+                features.contains("LATITUDE_CUSTOM_INDEX_FAILURE_WARNED.compareAndSet(false, true)")
+                        && features.contains("indexExpansion result=blocked exceptionType={}"),
+                "a custom feature-index failure emits one bounded warning instead of silently disabling retention");
+
+        String populate = normalize(read(
+                "src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java"));
+        String treeLine = normalize(read(
+                "src/main/java/com/example/globe/mixin/TreeLineVegetationGuardMixin.java"));
+        assertTrue(
+                populate.contains("ChunkAccess;fillBiomesFromNoise")
+                        && populate.contains("require = 1")
+                        && !populate.contains("require=0")
+                        && !populate.contains("require = 0"),
+                "the final chunk-biome owner must fail during startup if its exact 26.2 hook drifts");
+        assertTrue(
+                treeLine.contains("@Mixin(TreeFeature.class)")
+                        && treeLine.contains("require = 1")
+                        && !treeLine.contains("require=0")
+                        && !treeLine.contains("require = 0"),
+                "the exact 26.2 TreeFeature tree-line hook must not fail open");
 
         String generatorScope = normalize(read(
                 "src/main/java/com/example/globe/mixin/ChunkGeneratorWorldgenAuthorityMixin.java"));
         String noiseScope = normalize(read(
                 "src/main/java/com/example/globe/mixin/NoiseChunkGeneratorWorldgenAuthorityMixin.java"));
+        int decorationWrapperStart = generatorScope.indexOf("private void globe$withFeatureAuthority(");
+        int placedFeatureWrapperStart = generatorScope.indexOf("private boolean globe$withPlacedFeatureAuthority(");
+        int structureWrapperStart = generatorScope.indexOf("private void globe$withStructureAuthority(");
         assertTrue(
-                occurrences(generatorScope, "try (LatitudeWorldgenScope.Scope") >= 2,
-                "feature and structure paths close authority through try-with-resources");
+                decorationWrapperStart >= 0
+                        && placedFeatureWrapperStart > decorationWrapperStart
+                        && structureWrapperStart > placedFeatureWrapperStart,
+                "feature, placed-feature, and structure authority boundaries stay independently reviewable");
+        String decorationWrapper = generatorScope.substring(
+                decorationWrapperStart, placedFeatureWrapperStart);
+        String placedFeatureWrapper = generatorScope.substring(
+                placedFeatureWrapperStart, structureWrapperStart);
+        assertTrue(
+                decorationWrapper.contains("LatitudeWorldgenScope.enter(active)")
+                        && !decorationWrapper.contains("enterFeatures("),
+                "the whole decoration method must not classify its earlier structure-placement phase as foliage");
+        assertTrue(
+                generatorScope.contains("PlacedFeature;placeWithBiomeCheck")
+                        && placedFeatureWrapper.contains("LatitudeWorldgenScope.enterFeatures(active)"),
+                "only the actual placed-feature invocation may authorize vegetation block filtering");
+        assertTrue(
+                occurrences(generatorScope, "try (LatitudeWorldgenScope.Scope") >= 3,
+                "feature and structure paths use distinct authority phases and both close through try-with-resources");
         assertTrue(
                 occurrences(noiseScope, "try (LatitudeWorldgenScope.Scope") >= 2,
                 "surface and carver paths close authority through try-with-resources");

@@ -21,7 +21,7 @@ public class TreeLineVegetationGuardMixin {
             method = "place(Lnet/minecraft/world/level/levelgen/feature/FeaturePlaceContext;)Z",
             at = @At("HEAD"),
             cancellable = true,
-            require = 0
+            require = 1
     )
     private void globe$treeLineGuard(FeaturePlaceContext<?> context,
                                      CallbackInfoReturnable<Boolean> cir) {
