@@ -880,7 +880,23 @@ public class GlobeMod implements ModInitializer {
             }
         }
 
+        // A dev run has no packaged manifest, so every field above stays "?" and the marker cannot
+        // name the source it was built from. Loom passes the same identity as system properties;
+        // a release jar carries the manifest and never sees them, so the manifest still wins.
+        commit = devBuildProperty(commit, "latitude.dev.gitCommit");
+        branch = devBuildProperty(branch, "latitude.dev.gitBranch");
+        dirty = devBuildProperty(dirty, "latitude.dev.buildDirty");
+        time = devBuildProperty(time, "latitude.dev.buildTime");
+
         LOGGER.info("[LAT][BUILD] side={} version={} commit={} branch={} dirty={} time={}", side, version, commit, branch, dirty, time);
+    }
+
+    private static String devBuildProperty(String current, String key) {
+        if (!"?".equals(current)) {
+            return current;
+        }
+        String value = System.getProperty(key);
+        return value == null || value.isBlank() ? current : value.trim();
     }
 
     private static BlockPos findLandSpawn(ServerLevel world, SamplerTemplate template,
