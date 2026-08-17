@@ -6,10 +6,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.Level;
@@ -22,20 +19,11 @@ import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.placement.PlacedFeature;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 
 /** Establishes dimension-scoped authority around base chunk-generator paths. */
 @Mixin(ChunkGenerator.class)
 public abstract class ChunkGeneratorWorldgenAuthorityMixin {
-    @Unique
-    private static final Identifier SULFUR_POOL_ID =
-            Identifier.fromNamespaceAndPath("minecraft", "sulfur_pool");
-
-    @Unique
-    private static final boolean DEBUG_SULFUR_SURFACE_GUARD =
-            Boolean.getBoolean("latitude.debugSulfurSurfaceGuard");
-
     @WrapMethod(
             method = "applyBiomeDecoration(Lnet/minecraft/world/level/WorldGenLevel;Lnet/minecraft/world/level/chunk/ChunkAccess;Lnet/minecraft/world/level/StructureManager;)V")
     private void globe$withFeatureAuthority(
@@ -66,21 +54,7 @@ public abstract class ChunkGeneratorWorldgenAuthorityMixin {
         boolean active = world != null
                 && Level.OVERWORLD.equals(world.getLevel().dimension())
                 && globe$isAuthorizedGenerator();
-        Identifier placedFeatureId = null;
-        if (active) {
-            Registry<PlacedFeature> placedFeatures =
-                    world.registryAccess().lookupOrThrow(Registries.PLACED_FEATURE);
-            placedFeatureId = placedFeatures.getKey(feature);
-            if (DEBUG_SULFUR_SURFACE_GUARD && SULFUR_POOL_ID.equals(placedFeatureId)) {
-                GlobeMod.LOGGER.info(
-                        "[LAT][SULFUR_SURFACE_GUARD] stage=placed-feature originX={} originY={} originZ={}",
-                        origin.getX(),
-                        origin.getY(),
-                        origin.getZ());
-            }
-        }
-        try (LatitudeWorldgenScope.Scope ignored =
-                     LatitudeWorldgenScope.enterFeatures(active, placedFeatureId)) {
+        try (LatitudeWorldgenScope.Scope ignored = LatitudeWorldgenScope.enterFeatures(active)) {
             return original.call(feature, world, generator, random, origin);
         }
     }

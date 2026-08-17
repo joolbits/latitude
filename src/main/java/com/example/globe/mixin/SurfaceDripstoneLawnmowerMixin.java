@@ -1,21 +1,18 @@
 package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
-import com.example.globe.world.BiomeDescriptorLedger;
 import com.example.globe.world.LatitudeWorldgenScope;
-import com.example.globe.world.SulfurSurfaceExpressionPolicy;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Registry;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
-import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
 import net.minecraft.world.level.levelgen.feature.LargeDripstoneFeature;
 import net.minecraft.world.level.levelgen.feature.SpeleothemClusterFeature;
 import net.minecraft.world.level.levelgen.feature.SpeleothemFeature;
+import net.minecraft.world.level.levelgen.feature.configurations.SpeleothemClusterConfiguration;
+import net.minecraft.world.level.levelgen.feature.configurations.SpeleothemConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
@@ -41,14 +38,6 @@ public class SurfaceDripstoneLawnmowerMixin {
             Integer.getInteger("latitude.dripstoneSurfaceBuffer", 32);
 
     @Unique
-    private static final Identifier SULFUR_SPIKE_ID =
-            Identifier.fromNamespaceAndPath("minecraft", "sulfur_spike");
-
-    @Unique
-    private static final Identifier SULFUR_SPIKE_CLUSTER_ID =
-            Identifier.fromNamespaceAndPath("minecraft", "sulfur_spike_cluster");
-
-    @Unique
     private static final Logger LOGGER = LoggerFactory.getLogger("LatitudeBiomes");
 
     @Unique
@@ -68,55 +57,34 @@ public class SurfaceDripstoneLawnmowerMixin {
                 || !GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
             return;
         }
+        if (latitude$isSulfurSpeleothem(context.config())) {
+            return;
+        }
 
         BlockPos origin = context.origin();
         int seaLevel = context.level().getSeaLevel();
         int surfaceY = context.level().getHeight(Heightmap.Types.WORLD_SURFACE_WG, origin.getX(), origin.getZ());
         boolean nearSurfaceByHeightmap = origin.getY() >= surfaceY - DRIPSTONE_SURFACE_BUFFER;
-        boolean openToSky = context.level().canSeeSky(origin)
-                || context.level().canSeeSky(origin.above(2));
-        boolean skyVisible = origin.getY() > seaLevel && openToSky;
-        Identifier placedFeatureId = LatitudeWorldgenScope.currentPlacedFeatureId();
-        boolean sulfurSpike = SULFUR_SPIKE_ID.equals(placedFeatureId)
-                || SULFUR_SPIKE_CLUSTER_ID.equals(placedFeatureId);
-        boolean cancel;
-        if (sulfurSpike) {
-            boolean surfaceVisible = openToSky || origin.getY() >= surfaceY - 1;
-            BlockPos surfacePos = new BlockPos(origin.getX(), surfaceY, origin.getZ());
-            Registry<Biome> biomes =
-                    context.level().registryAccess().lookupOrThrow(Registries.BIOME);
-            Identifier surfaceBiomeId =
-                    biomes.getKey(context.level().getBiome(surfacePos).value());
-            boolean surfaceCompatible = surfaceBiomeId != null
-                    && BiomeDescriptorLedger.supportsSulfurSurfaceExpression(
-                            surfaceBiomeId.toString());
-            cancel = SulfurSurfaceExpressionPolicy.shouldSuppressSpike(
-                    true,
-                    surfaceVisible,
-                    surfaceCompatible);
-            if (DEBUG_DRIPSTONE_MOW) {
-                LOGGER.info(
-                        "[LAT][SULFUR_SPIKE_GUARD] placedFeature={} originX={} originY={} originZ={} worldSurfaceWgY={} surfaceDelta={} surfaceBiome={} surfaceVisible={} surfaceCompatible={} decision={}",
-                        placedFeatureId,
-                        origin.getX(),
-                        origin.getY(),
-                        origin.getZ(),
-                        surfaceY,
-                        surfaceY - origin.getY(),
-                        surfaceBiomeId,
-                        surfaceVisible,
-                        surfaceCompatible,
-                        cancel ? "CANCEL" : "ALLOW");
-            }
-        } else {
-            cancel = nearSurfaceByHeightmap || skyVisible;
-        }
-        if (cancel) {
+        boolean skyVisible = origin.getY() > seaLevel
+                && (context.level().canSeeSky(origin)
+                || context.level().canSeeSky(origin.above(2)));
+        if (nearSurfaceByHeightmap || skyVisible) {
             if (DEBUG_DRIPSTONE_MOW) {
                 logOncePerChunk(origin);
             }
             cir.setReturnValue(false);
         }
+    }
+
+    @Unique
+    private static boolean latitude$isSulfurSpeleothem(Object config) {
+        if (config instanceof SpeleothemConfiguration speleothem) {
+            return speleothem.pointedBlock().is(Blocks.SULFUR_SPIKE);
+        }
+        if (config instanceof SpeleothemClusterConfiguration cluster) {
+            return cluster.pointedBlock().is(Blocks.SULFUR_SPIKE);
+        }
+        return false;
     }
 
     @Unique
