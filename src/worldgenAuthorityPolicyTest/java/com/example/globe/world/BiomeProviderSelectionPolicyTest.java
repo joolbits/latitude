@@ -528,6 +528,52 @@ final class BiomeProviderSelectionPolicyTest {
         } finally {
             LatitudeBiomes.clearWorldgenContext();
         }
+        // The wet-province wetland law narrows the swamp funnel: minecraft:swamp is a REQUIRED
+        // coverage identity on TEMPERATE_WETLAND, and its anchor needs a centre plus four
+        // shoulders that are all route-eligible. Prove the guarantee is still issuable across
+        // every shipped world size and a spread of seeds rather than assuming it.
+        for (int coverageRadius : new int[] {7_500, 10_000, 15_000}) {
+            for (long coverageSeed : new long[] {seed, 7L, 12_345L, 99L, 2_026L, 555_555L}) {
+                VanillaBiomeRepresentationProfile coverageRepresentation =
+                        VanillaBiomeRepresentationProfile.capture(
+                                coverageRadius, coverageSeed, providerProfile);
+                LatitudeBiomes.activateWorldgenContext(
+                        coverageRadius,
+                        coverageSeed,
+                        LatitudeWorldState.WorldgenPolicyVersion
+                                .PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE,
+                        providerProfile,
+                        coverageRepresentation,
+                        coverageSampler(null),
+                        null,
+                        63);
+                try {
+                    VanillaBiomeCoveragePlan coveragePlan =
+                            LatitudeBiomes.activeVanillaCoveragePlanForPolicyTest();
+                    assertTrue(coveragePlan != null && coveragePlan.complete(),
+                            "the wet-province wetland law keeps every guaranteed identity "
+                                    + "issuable at radius=" + coverageRadius
+                                    + " seed=" + coverageSeed
+                                    + " missing=" + (coveragePlan == null
+                                            ? "<no plan>" : coveragePlan.missingBiomeIds()));
+                    VanillaBiomeCoveragePlan.Anchor swampAnchor = coveragePlan.anchors().stream()
+                            .filter(anchor -> "minecraft:swamp".equals(anchor.biomeId()))
+                            .findFirst()
+                            .orElseThrow(() -> new AssertionError(
+                                    "the swamp coverage guarantee vanished at radius="
+                                            + coverageRadius + " seed=" + coverageSeed));
+                    ProvinceAuthority.Province swampProvince = LatitudeBiomes.classifyProvince(
+                            swampAnchor.blockX(), swampAnchor.blockZ());
+                    assertTrue(swampProvince == ProvinceAuthority.Province.WARM_WET
+                                    || swampProvince == ProvinceAuthority.Province.COLD_WET,
+                            "the swamp anchor sits in a genuinely wet province at radius="
+                                    + coverageRadius + " seed=" + coverageSeed
+                                    + " (got " + swampProvince + ")");
+                } finally {
+                    LatitudeBiomes.clearWorldgenContext();
+                }
+            }
+        }
         for (int radius : List.of(10_000, 5_000)) {
             VanillaBiomeRepresentationProfile representation =
                     VanillaBiomeRepresentationProfile.capture(radius, seed, providerProfile);
@@ -747,37 +793,54 @@ final class BiomeProviderSelectionPolicyTest {
                 // The positive control needs a cell that Latitude's own wetland
                 // preselection genuinely owns once wetland evidence exists. Synthetic
                 // climate evidence alone cannot conjure a wetland on a column whose
-                // patch noise never fires, and an explicitly dry province now refuses
-                // wetlands outright, so probe each non-dry lowland anchor with the
-                // registry picker for real wetland ownership. If none survives, land
-                // coverage is erasing wetland-owned cells and the control fails here.
-                VanillaBiomeCoveragePlan.Anchor unrelated = plan.anchors().stream()
-                        .filter(anchor -> anchor.route() == BiomeRoute.TEMPERATE_LOWLAND)
-                        .filter(anchor -> {
-                            ProvinceAuthority.Province province = LatitudeBiomes.classifyProvince(
-                                    anchor.blockX(), anchor.blockZ());
-                            return province != ProvinceAuthority.Province.WARM_DRY
-                                    && province != ProvinceAuthority.Province.COLD_DRY;
-                        })
-                        .filter(anchor -> {
-                            WetlandFootprint probe = new WetlandFootprint(
-                                    anchor.blockX(), anchor.blockZ(), anchor.radiusBlocks());
+                // patch noise never fires, and only a genuinely wet province admits a
+                // wetland at all, so sweep the columns each land-coverage anchor actually
+                // reserves — not just its centre, which is a candidate pool far too small
+                // to expect a wet province and firing swamp terrain to coincide — and keep
+                // the first column the registry picker really owns as a wetland. If none
+                // survives, land coverage is erasing wetland-owned cells.
+                int[] unrelated = null;
+                sweep:
+                for (VanillaBiomeCoveragePlan.Anchor anchor : plan.anchors()) {
+                    if (anchor.route() != BiomeRoute.TEMPERATE_LOWLAND) {
+                        continue;
+                    }
+                    int reach = anchor.radiusBlocks();
+                    int step = Math.max(16, reach / 8);
+                    for (int dz = -reach; dz <= reach; dz += step) {
+                        for (int dx = -reach; dx <= reach; dx += step) {
+                            if (dx * dx + dz * dz > reach * reach) {
+                                continue;
+                            }
+                            int probeX = anchor.blockX() + dx;
+                            int probeZ = anchor.blockZ() + dz;
+                            ProvinceAuthority.Province province =
+                                    LatitudeBiomes.classifyProvince(probeX, probeZ);
+                            if (province != ProvinceAuthority.Province.WARM_WET
+                                    && province != ProvinceAuthority.Province.COLD_WET) {
+                                continue;
+                            }
+                            WetlandFootprint probe = new WetlandFootprint(probeX, probeZ, reach);
                             wetland.add(probe);
                             try {
-                                return "minecraft:swamp".equals(LatitudeBiomes.biomeIdPublic(
+                                if ("minecraft:swamp".equals(LatitudeBiomes.biomeIdPublic(
                                         LatitudeBiomes.pick(
                                                 registry,
                                                 testBiomeHolder(registry, "minecraft:swamp"),
-                                                anchor.blockX(), anchor.blockZ(), 80, radius,
-                                                sampler, "ATLAS_SAMPLER")));
+                                                probeX, probeZ, 80, radius,
+                                                sampler, "ATLAS_SAMPLER")))) {
+                                    unrelated = new int[] {probeX, probeZ, reach};
+                                    break sweep;
+                                }
                             } finally {
                                 wetland.remove(probe);
                             }
-                        })
-                        .findFirst()
-                        .orElseThrow(() -> new AssertionError(
-                                "no non-dry temperate-lowland coverage anchor keeps a validated "
-                                        + "wetland — land coverage is erasing wetland-owned cells"));
+                        }
+                    }
+                }
+                assertTrue(unrelated != null,
+                        "no wet temperate-lowland coverage column keeps a validated wetland — "
+                                + "land coverage is erasing wetland-owned cells");
                 int[] paleAnchor = LatitudeBiomes.paleGardenAnchorForPolicyTest(sampler);
                 assertPickerPairReturns(
                         registry, pool, testBiomeHolder(registry, "minecraft:pale_garden"),
@@ -785,12 +848,12 @@ final class BiomeProviderSelectionPolicyTest {
                         "minecraft:pale_garden",
                         "the real Pale Garden authority survives final selection");
                 WetlandFootprint added = new WetlandFootprint(
-                        unrelated.blockX(), unrelated.blockZ(), unrelated.radiusBlocks());
+                        unrelated[0], unrelated[1], unrelated[2]);
                 wetland.add(added);
                 try {
                     assertPickerPairReturns(
                             registry, pool, testBiomeHolder(registry, "minecraft:swamp"),
-                            unrelated.blockX(), unrelated.blockZ(), radius, sampler,
+                            unrelated[0], unrelated[1], radius, sampler,
                             "minecraft:swamp",
                             "unrelated land coverage does not erase a validated wetland");
                 } finally {
@@ -819,7 +882,7 @@ final class BiomeProviderSelectionPolicyTest {
                 "the inverse humidity gate preserves explicitly detected arid hotspots");
         assertEquals(5, occurrences(source, "&& wetlandProvinceEligible(blockX, blockZ)"),
                 "coverage planning, both final wetland authorities, and the locator broad phase "
-                        + "must share the dry-province rejection");
+                        + "must share the wet-province admission law");
     }
 
     private static int[] findUnreservedTropicalProvince(

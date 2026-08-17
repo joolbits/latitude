@@ -1423,6 +1423,18 @@ public final class LatitudeBiomes {
         return PROVINCE_AUTHORITY;
     }
 
+    /** Test-only seam for varying humidity authority without mutating the active world context. */
+    static ProvinceAuthority swapProvinceAuthorityForTest(ProvinceAuthority replacement) {
+        ProvinceAuthority previous = PROVINCE_AUTHORITY;
+        PROVINCE_AUTHORITY = replacement;
+        return previous;
+    }
+
+    /** Restores the exact province authority captured by {@link #swapProvinceAuthorityForTest}. */
+    static void restoreProvinceAuthorityForTest(ProvinceAuthority previous) {
+        PROVINCE_AUTHORITY = previous;
+    }
+
     /**
      * Classifies the given block position into a coarse humidity/moisture province.
      * Returns null if the province authority has not been initialized.
@@ -11398,15 +11410,12 @@ public final class LatitudeBiomes {
         return new SwampDecision(swampOk, cont, erosion, weirdness, swampOk);
     }
 
-    /**
-     * Province-level wetland admission. Local terrain may create a wetland in a medium or wet
-     * province, but an explicitly dry province remains authoritative. A missing province
-     * authority preserves legacy/source-only behavior rather than inventing a new rejection.
-     */
-    private static boolean wetlandProvinceEligible(int blockX, int blockZ) {
+    /** Wetland admission requires a genuinely wet province; mangrove uses a separate authority. */
+    static boolean wetlandProvinceEligible(int blockX, int blockZ) {
         ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
-        return province != ProvinceAuthority.Province.WARM_DRY
-                && province != ProvinceAuthority.Province.COLD_DRY;
+        return province == null
+                || province == ProvinceAuthority.Province.WARM_WET
+                || province == ProvinceAuthority.Province.COLD_WET;
     }
 
     /**

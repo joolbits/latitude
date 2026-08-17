@@ -38,6 +38,7 @@ public final class WorldgenAuthorityPolicyTest {
         terrainBiomeCohesionUsesRealSurfaceEvidence();
         recreatedLatitudeWorldKeepsItsWorldTypeAndSize();
         coastalSwampUsesMangroveIdentity();
+        onlyWetProvincesAdmitWetlandClaims();
         wetlandLocateFilterMatchesFinalIdentityLaw();
         biomeLocateServiceClaimsAllSupportedTargets();
         structureLocateServiceIsBoundedAndTickDelivered();
@@ -476,6 +477,72 @@ public final class WorldgenAuthorityPolicyTest {
                 0,
                 occurrences(source, "decision.suitable())"),
                 "final coastal swamp identity must use physical lowland terrain rather than the rejecting climate proxy");
+    }
+
+    /** Wetland claims require a genuinely wet province; mangrove remains separately governed. */
+    private static void onlyWetProvincesAdmitWetlandClaims() throws Exception {
+        int radius = 10_000;
+        ProvinceAuthority probe = new ProvinceAuthority(7L, radius);
+        int[] warmDry = findProvinceColumn(probe, ProvinceAuthority.Province.WARM_DRY);
+        int[] coldDry = findProvinceColumn(probe, ProvinceAuthority.Province.COLD_DRY);
+        int[] warmMedium = findProvinceColumn(probe, ProvinceAuthority.Province.WARM_MEDIUM);
+        int[] coldMedium = findProvinceColumn(probe, ProvinceAuthority.Province.COLD_MEDIUM);
+        int[] warmWet = findProvinceColumn(probe, ProvinceAuthority.Province.WARM_WET);
+        int[] coldWet = findProvinceColumn(probe, ProvinceAuthority.Province.COLD_WET);
+
+        ProvinceAuthority original = LatitudeBiomes.swapProvinceAuthorityForTest(probe);
+        try {
+            assertFalse(LatitudeBiomes.wetlandProvinceEligible(warmDry[0], warmDry[1]),
+                    "an explicit WARM_DRY province refuses wetland admission");
+            assertFalse(LatitudeBiomes.wetlandProvinceEligible(coldDry[0], coldDry[1]),
+                    "an explicit COLD_DRY province refuses wetland admission");
+            assertFalse(LatitudeBiomes.wetlandProvinceEligible(warmMedium[0], warmMedium[1]),
+                    "WARM_MEDIUM lacks the moisture required for wetland admission");
+            assertFalse(LatitudeBiomes.wetlandProvinceEligible(coldMedium[0], coldMedium[1]),
+                    "COLD_MEDIUM lacks the moisture required for wetland admission");
+            assertTrue(LatitudeBiomes.wetlandProvinceEligible(warmWet[0], warmWet[1]),
+                    "a WARM_WET province keeps its wetland eligibility");
+            assertTrue(LatitudeBiomes.wetlandProvinceEligible(coldWet[0], coldWet[1]),
+                    "a COLD_WET province keeps its wetland eligibility");
+        } finally {
+            LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+        }
+
+        original = LatitudeBiomes.swapProvinceAuthorityForTest(null);
+        try {
+            assertTrue(LatitudeBiomes.wetlandProvinceEligible(warmDry[0], warmDry[1]),
+                    "a missing/uninitialized authority keeps the intended compatibility behavior");
+        } finally {
+            LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+        }
+
+        String source = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeBiomes.java"));
+        assertEquals(5, occurrences(source, "&& wetlandProvinceEligible(blockX, blockZ)"),
+                "coverage planning, both final wetland authorities, and the locator broad phase "
+                        + "share the wet-province law");
+        assertTrue(source.contains(
+                        "case TEMPERATE_WETLAND -> band == BAND_TEMPERATE && !mountain"
+                                + " && wetlandProvinceEligible(blockX, blockZ)"),
+                "the temperate wetland route arm shares the final wet-province law");
+        assertTrue(source.contains(
+                        "case SUBPOLAR_WETLAND -> band == BAND_SUBPOLAR && !mountain"
+                                + " && wetlandProvinceEligible(blockX, blockZ)"),
+                "the subpolar wetland route arm shares the final wet-province law");
+    }
+
+    /** First column the given authority classifies as the wanted province; deterministic scan. */
+    private static int[] findProvinceColumn(
+            ProvinceAuthority authority,
+            ProvinceAuthority.Province wanted) {
+        for (int blockZ = 2_400; blockZ <= 7_000; blockZ += 200) {
+            for (int blockX = -9_600; blockX <= 9_600; blockX += 400) {
+                if (authority.classify(blockX, blockZ) == wanted) {
+                    return new int[] {blockX, blockZ};
+                }
+            }
+        }
+        throw new AssertionError("no column classifies as " + wanted + " in the probe scan");
     }
 
     private static void wetlandLocateFilterMatchesFinalIdentityLaw() throws Exception {
