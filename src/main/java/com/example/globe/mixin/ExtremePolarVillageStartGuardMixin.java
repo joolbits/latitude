@@ -7,6 +7,7 @@ import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
 import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeWorldgenScope;
+import com.example.globe.world.StructureSitingPolicy;
 import com.example.globe.world.VillageTerrainSuitabilityPolicy;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
@@ -24,12 +25,15 @@ import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Predicate;
 
 /**
@@ -64,9 +68,14 @@ public abstract class ExtremePolarVillageStartGuardMixin {
             Operation<StructureStart> original) {
         int blockZ = chunkPos.getMiddleBlockZ();
         BiomeSource structureBiomeSource = biomeSource;
-        if (LatitudeWorldgenScope.isActive()
+        boolean latitudeOwned = LatitudeWorldgenScope.isActive()
                 && chunkGenerator instanceof NoiseBasedChunkGenerator noise
-                && GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
+                && GlobeMod.shouldApplyLatitudeWorldgen(noise);
+        Identifier generatedStructureId = null;
+        boolean generatedVillage = false;
+        int generatedWorldRadius = 0;
+        Registry<Biome> generatedBiomeRegistry = null;
+        if (latitudeOwned && chunkGenerator instanceof NoiseBasedChunkGenerator noise) {
             try {
                 int radius = GlobeMod.borderRadiusForNoiseGenerator(noise);
                 Registry<Biome> biomeRegistry = registryAccess.lookupOrThrow(Registries.BIOME);
@@ -77,11 +86,17 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                         noise,
                         randomState,
                         heightAccessor);
+                // Only arm the footprint law once Latitude's own biome source is installed, so the
+                // footprint can never be judged against the vanilla source.
+                generatedWorldRadius = radius;
+                generatedBiomeRegistry = biomeRegistry;
                 Registry<Structure> registry =
                         registryAccess.lookupOrThrow(Registries.STRUCTURE);
                 Identifier structureId = registry.getKey(structure);
                 boolean village = structureHolder.is(StructureTags.VILLAGE)
                         || (structureId != null && structureId.getPath().contains("village"));
+                generatedStructureId = structureId;
+                generatedVillage = village;
                 if (structureId != null && village) {
                     int blockX = chunkPos.getMiddleBlockX();
                     double absDeg = Math.abs((double) blockZ) * 90.0 / Math.max(1, radius);
@@ -136,10 +151,14 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                     }
                 }
             } catch (RuntimeException ignored) {
-                // Registry unavailable — fail open (allow generation).
+                // Registry unavailable — fail open (allow generation). Disarm the footprint law
+                // too: without a resolved registry and Latitude biome source there is nothing
+                // trustworthy to judge the footprint against.
+                generatedWorldRadius = 0;
+                generatedBiomeRegistry = null;
             }
         }
-        return original.call(
+        StructureStart generated = original.call(
                 structure,
                 structureHolder,
                 levelKey,
@@ -153,5 +172,51 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                 references,
                 heightAccessor,
                 validBiome);
+        if (generated == null
+                || !latitudeOwned
+                || !generated.isValid()
+                || generatedStructureId == null
+                || generatedBiomeRegistry == null) {
+            // Fail open: another mixin may hand back nothing at all, and the footprint law never
+            // invents a start it was not given.
+            return generated;
+        }
+
+        try {
+            BoundingBox footprint = generated.getBoundingBox();
+            if (StructureSitingPolicy.intersectsEastWestDangerZone(
+                    footprint.minX(), footprint.maxX(), generatedWorldRadius)) {
+                return StructureStart.INVALID_START;
+            }
+            if (!StructureSitingPolicy.requiresBadlandsFreeFootprint(
+                    generatedStructureId.getPath(), generatedVillage)) {
+                return generated;
+            }
+
+            List<String> sampledBiomes = new ArrayList<>();
+            for (StructureSitingPolicy.FootprintSample sample :
+                    StructureSitingPolicy.footprintSamples(
+                            footprint.minX(),
+                            footprint.maxX(),
+                            footprint.minZ(),
+                            footprint.maxZ())) {
+                Holder<Biome> finalBiome = structureBiomeSource.getNoiseBiome(
+                        Math.floorDiv(sample.x(), 4),
+                        Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
+                        Math.floorDiv(sample.z(), 4),
+                        randomState.sampler());
+                Identifier biomeId = generatedBiomeRegistry.getKey(finalBiome.value());
+                if (biomeId != null) {
+                    sampledBiomes.add(biomeId.toString());
+                }
+            }
+            if (StructureSitingPolicy.shouldRejectBadlandsFootprint(
+                    generatedStructureId.getPath(), generatedVillage, sampledBiomes)) {
+                return StructureStart.INVALID_START;
+            }
+        } catch (RuntimeException ignored) {
+            // Post-generation policy could not resolve; preserve the existing fail-open boundary.
+        }
+        return generated;
     }
 }

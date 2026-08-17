@@ -4,6 +4,8 @@ import com.example.globe.util.LatitudeBands;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public final class VillageLatitudePolicyTest {
@@ -18,8 +20,10 @@ public final class VillageLatitudePolicyTest {
         climatePolicyClassifiesRepresentativeVillageIds();
         biomeFamilyPolicyRejectsNamedVillageMismatches();
         badlandsAdmissionKeepsDesertStructuresOutWithoutTouchingUndergroundContent();
+        generatedFootprintsCloseBadlandsAndEwDangerGaps();
         physicalTerrainPolicyRejectsCliffsideVillageStarts();
         climateMismatchRejectsInvalidStartsBeforeStore();
+        locateRejectsInvalidGeneratedStarts();
         structureAdmissionUsesFinalLatitudeBiomeBeforeStartRegistration();
         staticIntegrationProofsHold();
         System.out.println("VILLAGE_LATITUDE_POLICY_TEST_PASS");
@@ -326,6 +330,124 @@ public final class VillageLatitudePolicyTest {
                 "unqualified structures are not swept into the desolation policy");
     }
 
+    private static void generatedFootprintsCloseBadlandsAndEwDangerGaps() throws IOException {
+        assertFalse(
+                StructureSitingPolicy.intersectsEastWestDangerZone(-9899, 9899, 10_000),
+                "a footprint wholly outside the 100-block EW danger zones stays legal");
+        assertTrue(
+                StructureSitingPolicy.intersectsEastWestDangerZone(9899, 9900, 10_000),
+                "the east danger boundary is inclusive");
+        assertTrue(
+                StructureSitingPolicy.intersectsEastWestDangerZone(-9900, -9899, 10_000),
+                "the west danger boundary mirrors east");
+        assertTrue(
+                StructureSitingPolicy.requiresBadlandsFreeFootprint("desert_pyramid", false),
+                "desert pyramids keep their whole generated footprint out of badlands");
+        assertTrue(
+                StructureSitingPolicy.requiresBadlandsFreeFootprint("village_desert", true),
+                "villages keep their whole generated footprint out of badlands");
+        assertFalse(
+                StructureSitingPolicy.requiresBadlandsFreeFootprint("mineshaft_mesa", false),
+                "badlands-native underground structures retain their home");
+
+        assertFalse(
+                StructureSitingPolicy.requiresBadlandsFreeFootprint("mineshaft", false),
+                "a structure outside the badlands ruling is not swept into the footprint sweep");
+        assertTrue(
+                StructureSitingPolicy.intersectsEastWestDangerZone(9950, 9960, 10_000),
+                "the east/west veto is independent of the badlands ruling and covers every "
+                        + "latitude-owned start");
+
+        List<StructureSitingPolicy.FootprintSample> samples =
+                StructureSitingPolicy.footprintSamples(-21, 21, -21, 21);
+        assertTrue(samples.contains(new StructureSitingPolicy.FootprintSample(-21, -21))
+                        && samples.contains(new StructureSitingPolicy.FootprintSample(21, 21))
+                        && samples.contains(new StructureSitingPolicy.FootprintSample(0, 0)),
+                "footprint sampling includes both edges and the center");
+        List<StructureSitingPolicy.FootprintSample> narrow =
+                StructureSitingPolicy.footprintSamples(0, 5, 0, 5);
+        assertTrue(narrow.contains(new StructureSitingPolicy.FootprintSample(0, 0))
+                        && narrow.contains(new StructureSitingPolicy.FootprintSample(2, 2))
+                        && narrow.contains(new StructureSitingPolicy.FootprintSample(5, 5)),
+                "a footprint narrower than one sample step still yields its edges and center");
+
+        assertTrue(
+                StructureSitingPolicy.shouldRejectBadlandsFootprint(
+                        "desert_pyramid",
+                        false,
+                        List.of("minecraft:desert", "minecraft:badlands")),
+                "one badlands sample rejects a desert structure footprint");
+        assertFalse(
+                StructureSitingPolicy.shouldRejectBadlandsFootprint(
+                        "desert_pyramid",
+                        false,
+                        Set.of("minecraft:desert")),
+                "a wholly desert footprint remains legal");
+
+        String startGuard = normalize(read(
+                "src/main/java/com/example/globe/mixin/ExtremePolarVillageStartGuardMixin.java"));
+        String locate = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeStructureLocateService.java"));
+
+        assertTrue(
+                startGuard.contains("StructureSitingPolicy.footprintSamples(")
+                        && startGuard.contains("StructureSitingPolicy.intersectsEastWestDangerZone("),
+                "generation must judge the generated structure footprint for badlands and EW danger");
+        assertTrue(
+                locate.contains("candidate.placement().isStructureChunk( context.structureState()")
+                        && locate.contains("StructureSitingPolicy.footprintSamples(")
+                        && locate.contains("StructureSitingPolicy.intersectsEastWestDangerZone("),
+                "locate must use the full placement rule and the same generated-footprint law");
+        assertFalse(
+                locate.contains("if (!structure.biomes().contains(pickedBiome))"),
+                "non-village locate must not reject shoreline and underground structures from one surface-biome precheck");
+
+        String structureGuard = normalize(read(
+                "src/main/java/com/example/globe/mixin/StructureBiomeMatchGuardMixin.java"));
+        assertFalse(
+                structureGuard.contains("StructureSitingPolicy.footprintSamples(")
+                        || structureGuard.contains("int[][] samples = {")
+                        || structureGuard.contains("legalSamples")
+                        || structureGuard.contains("box.minX()"),
+                "the whole-footprint law lives in the start guard; final admission keeps its single "
+                        + "visible-center probe and never multiplies terrain-aware samples");
+    }
+
+    private static void locateRejectsInvalidGeneratedStarts() throws IOException {
+        String locate = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeStructureLocateService.java"));
+        assertTrue(
+                locate.contains("StructureStart generatedStart = candidate.structure().generate(")
+                        && locate.contains("context.finalBiomeSource()")
+                        && locate.contains("candidate.structure().biomes()::contains")
+                        && locate.contains("if (generatedStart == null || !generatedStart.isValid())"),
+                "structure locate validates candidates through Minecraft's real start generator");
+        assertTrue(
+                locate.indexOf("candidate.placement().isStructureChunk( context.structureState()") >= 0
+                        && locate.indexOf("candidate.placement().isStructureChunk( context.structureState()")
+                                < locate.indexOf("if (!evaluateCandidate(context, candidate, candidateChunk, tally))")
+                        && locate.indexOf("if (!evaluateCandidate(context, candidate, candidateChunk, tally))") >= 0
+                        && locate.indexOf("if (!evaluateCandidate(context, candidate, candidateChunk, tally))")
+                                < locate.indexOf("double distSqr = context.origin().distSqr(locatePos);"),
+                "full placement restrictions, invalid starts, and footprint laws run before result selection");
+        assertTrue(
+                locate.indexOf("return evaluateGeneratedFootprint(context, candidate, generatedStart, tally);")
+                        > locate.indexOf("StructureStart generatedStart = candidate.structure().generate("),
+                "the footprint law judges a real generated start, never a predicted one");
+        assertTrue(
+                locate.contains("tally.rejectedPlacement++")
+                        && locate.contains("tally.rejectedGeneration++")
+                        && locate.contains("tally.rejectedEwDanger++")
+                        && locate.contains("tally.rejectedBadlandsPolicy++")
+                        && locate.contains("tally.resolveFailures++"),
+                "placement, structure-start, EW danger, badlands, and resolution failures remain "
+                        + "visible in one summary log");
+        assertTrue(
+                locate.contains("rejectedEwDanger={} rejectedBadlandsPolicy={}")
+                        && locate.contains("tally.rejectedEwDanger, tally.rejectedBadlandsPolicy,"),
+                "the finish log reports both footprint verdicts so a not-found is explainable");
+    }
+
     private static void physicalTerrainPolicyRejectsCliffsideVillageStarts() {
         assertEquals(
                 25,
@@ -558,8 +680,10 @@ public final class VillageLatitudePolicyTest {
                 "blocked new starts return the singleton invalid start and normal paths call generate once");
         assertTrue(
                 startGuard.indexOf("return StructureStart.INVALID_START;")
-                        < startGuard.indexOf("return original.call("),
-                "new invalid start is returned before the normal generate/store path");
+                                < startGuard.indexOf("StructureStart generated = original.call(")
+                        && startGuard.lastIndexOf("return StructureStart.INVALID_START;")
+                                > startGuard.indexOf("StructureStart generated = original.call("),
+                "cheap start refusals run before generation and footprint refusals run after the generated bounds exist");
         assertTrue(
                 !startGuard.contains("placeInChunk")
                         && !startGuard.contains("@Inject")

@@ -47,6 +47,7 @@ import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureSet;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
@@ -352,10 +353,11 @@ public final class LatitudeStructureLocateService {
                 }
                 Tally tally = outcome.tally();
                 GlobeMod.LOGGER.info(
-                        "[Latitude] finished asynchronous structure locate target={} worldRadius={} candidatesTested={} rejectedPlacement={} rejectedBiome={} rejectedVillage={} rejectedGeneration={} resolveFailures={} outOfBorder={} ringsScanned={} elapsedMs={} found={}",
+                        "[Latitude] finished asynchronous structure locate target={} worldRadius={} candidatesTested={} rejectedPlacement={} rejectedBiome={} rejectedVillage={} rejectedGeneration={} rejectedEwDanger={} rejectedBadlandsPolicy={} resolveFailures={} outOfBorder={} ringsScanned={} elapsedMs={} found={}",
                         target.asPrintable(), context.worldRadius(), tally.tested,
                         tally.rejectedPlacement, tally.rejectedBiome, tally.rejectedVillage,
-                        tally.rejectedGeneration, tally.resolveFailures, tally.outOfBorder, tally.ringsScanned,
+                        tally.rejectedGeneration, tally.rejectedEwDanger, tally.rejectedBadlandsPolicy,
+                        tally.resolveFailures, tally.outOfBorder, tally.ringsScanned,
                         elapsed.toMillis(), outcome.result() != null);
             } catch (Throwable failure) {
                 finishWithFailure(failure);
@@ -558,11 +560,58 @@ public final class LatitudeStructureLocateService {
                 tally.rejectedGeneration++;
                 return false;
             }
-            return true;
+            return evaluateGeneratedFootprint(context, candidate, generatedStart, tally);
         } catch (RuntimeException generationFailure) {
             tally.resolveFailures++;
             return false;
         }
+    }
+
+    /**
+     * Applies the shared whole-footprint law to a real generated start, so locate can never
+     * report a site the generation guard would veto: no structure may reach into the east/west
+     * danger band, and structures covered by the badlands-desolation ruling must keep their
+     * entire footprint out of badlands country.
+     */
+    private static boolean evaluateGeneratedFootprint(
+            SearchContext context,
+            Candidate candidate,
+            StructureStart generatedStart,
+            Tally tally) {
+        BoundingBox footprint = generatedStart.getBoundingBox();
+        if (StructureSitingPolicy.intersectsEastWestDangerZone(
+                footprint.minX(), footprint.maxX(), context.worldRadius())) {
+            tally.rejectedEwDanger++;
+            return false;
+        }
+        String structurePath = candidate.structureId() != null
+                ? candidate.structureId().getPath()
+                : null;
+        if (!StructureSitingPolicy.requiresBadlandsFreeFootprint(
+                structurePath, candidate.village())) {
+            return true;
+        }
+
+        List<String> sampledBiomes = new ArrayList<>();
+        for (StructureSitingPolicy.FootprintSample sample :
+                StructureSitingPolicy.footprintSamples(
+                        footprint.minX(), footprint.maxX(), footprint.minZ(), footprint.maxZ())) {
+            Holder<Biome> finalBiome = context.finalBiomeSource().getNoiseBiome(
+                    Math.floorDiv(sample.x(), 4),
+                    Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
+                    Math.floorDiv(sample.z(), 4),
+                    context.randomState().sampler());
+            Identifier biomeId = context.biomeRegistry().getKey(finalBiome.value());
+            if (biomeId != null) {
+                sampledBiomes.add(biomeId.toString());
+            }
+        }
+        if (StructureSitingPolicy.shouldRejectBadlandsFootprint(
+                structurePath, candidate.village(), sampledBiomes)) {
+            tally.rejectedBadlandsPolicy++;
+            return false;
+        }
+        return true;
     }
 
     private static boolean evaluateVillagePolicy(
@@ -656,6 +705,8 @@ public final class LatitudeStructureLocateService {
         private int rejectedBiome;
         private int rejectedVillage;
         private int rejectedGeneration;
+        private int rejectedEwDanger;
+        private int rejectedBadlandsPolicy;
         private int resolveFailures;
         private int outOfBorder;
         private int ringsScanned;
