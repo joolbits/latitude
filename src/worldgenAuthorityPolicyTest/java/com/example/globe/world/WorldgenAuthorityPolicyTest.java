@@ -27,6 +27,7 @@ public final class WorldgenAuthorityPolicyTest {
         biomeColumnCacheIsWorldBoundAndAvoidsDuplicateVerticalPicks();
         sulfurCaveDecorationIsUnrestricted();
         globeSurfaceRulesKeepEveryVanillaBiomeSubstrate();
+        terraBlenderBridgeRestoresSulfurSubstrate();
         frozenRiverVegetationIsScopedWithoutMutatingVanillaBiomes();
         generationScopeIsDimensionIsolatedAndNestSafe();
         generationScopeCleansUpOnFailureAndAcrossThreads();
@@ -1038,6 +1039,39 @@ public final class WorldgenAuthorityPolicyTest {
                         && speleothemGuard.contains("cluster.pointedBlock().is(Blocks.SULFUR_SPIKE)")
                         && speleothemGuard.contains("if (nearSurfaceByHeightmap || skyVisible)"),
                 "sulfur speleothems fail open before the ordinary dripstone surface guard");
+    }
+
+    /**
+     * TerraBlender swaps the surface rules of every overworld noise settings for its own bundled
+     * pre-sulfur copy of the vanilla rules, whose deepslate catch-all answers for everything below
+     * roughly y=0 — precisely the stratum sulfur caves occupy. Measured on one seed with the live
+     * modset: 3 substrate blocks below y=0 before the bridge, 76,071 after. The bridge must stay
+     * wired, fail-open, reflection-only, and sourced from the shipped noise settings.
+     */
+    private static void terraBlenderBridgeRestoresSulfurSubstrate() throws Exception {
+        String mod = normalize(read("src/main/java/com/example/globe/GlobeMod.java"));
+        assertTrue(mod.contains("LatitudeTerraBlenderBridge.install()"),
+                "the TerraBlender surface bridge must be installed during common mod init");
+
+        String bridge = normalize(read(
+                "src/main/java/com/example/globe/compat/LatitudeTerraBlenderBridge.java"));
+        assertTrue(bridge.contains("isModLoaded(\"terrablender\")"),
+                "the bridge must only engage when TerraBlender is actually present");
+        assertTrue(bridge.contains("latitude.terrablenderBridge.disable"),
+                "the bridge must keep its kill switch for live diagnosis");
+        assertTrue(bridge.contains("catch (Throwable t)")
+                        && bridge.contains("failed to install"),
+                "a bridge failure must degrade to bare caves with a warning, never a crash");
+        assertTrue(bridge.contains("/data/globe/worldgen/noise_settings/overworld.json"),
+                "the bridged rule must be read from the shipped noise settings, not duplicated");
+        assertTrue(bridge.contains("\"BEFORE_BEDROCK\""),
+                "only the BEFORE_BEDROCK stage runs ahead of TerraBlender's deepslate catch-all");
+        assertTrue(bridge.contains("SurfaceRules.not(SurfaceRules.verticalGradient(")
+                        && bridge.contains("minecraft:bedrock_floor"),
+                "the injected rule must not paint over the bedrock floor it now precedes");
+        assertTrue(bridge.contains("Class.forName(\"terrablender.api.SurfaceRuleManager\"")
+                        && !bridge.contains("import terrablender"),
+                "TerraBlender must stay a reflective soft dependency, never a compile-time one");
     }
 
     private static final String[] GLOBE_NOISE_SETTINGS = {

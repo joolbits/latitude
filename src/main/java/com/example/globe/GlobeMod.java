@@ -127,6 +127,8 @@ public class GlobeMod implements ModInitializer {
 
         logBuildMetadata("server");
 
+        com.example.globe.compat.LatitudeTerraBlenderBridge.install();
+
         GlobeNet.registerPayloads();
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             // Shipping operator commands: unconditional and directly linked. Unlike the dev tree,
