@@ -163,9 +163,10 @@ final class BiomeProviderSelectionPolicyTest {
         assertClimateLowland(BiomeRoute.TROPICAL_HUMID_LOWLAND, BiomeDescriptorLedger.Family.JUNGLE,
                 "biomesoplenty:fungal_jungle");
         assertClimateLowland(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND, BiomeDescriptorLedger.Family.FOREST,
-                "biomesoplenty:redwood_forest", "biomesoplenty:mystic_grove");
+                "biomesoplenty:mystic_grove");
         assertClimateLowland(BiomeRoute.TEMPERATE_LOWLAND, BiomeDescriptorLedger.Family.FOREST,
-                "biomesoplenty:lavender_field", "biomesoplenty:overgrown_greens",
+                "biomesoplenty:redwood_forest", "biomesoplenty:lavender_field",
+                "biomesoplenty:overgrown_greens",
                 "terralith:moonlight_grove", "terralith:moonlight_valley");
         assertClimateLowland(BiomeRoute.WARM_TRANSITION, BiomeDescriptorLedger.Family.FOREST,
                 "biomesoplenty:mediterranean_forest", "terralith:brushland");

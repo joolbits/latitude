@@ -62,9 +62,9 @@ public final class BiomeDescriptorLedger {
             d("biomesoplenty:tropics", r(BiomeRoute.TROPICAL_HUMID_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.JUNGLE),
             d("biomesoplenty:fungal_jungle", r(BiomeRoute.TROPICAL_HUMID_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.JUNGLE),
             d("biomesoplenty:subtropics", r(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
-            d("biomesoplenty:redwood_forest", r(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("biomesoplenty:mystic_grove", r(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             // BOP: temperate land and verified flat wetlands
+            d("biomesoplenty:redwood_forest", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("biomesoplenty:seasonal_forest", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("biomesoplenty:maple_woods", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("biomesoplenty:woodland", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
