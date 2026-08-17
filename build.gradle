@@ -775,6 +775,12 @@ tasks.named('runBiomePreview').configure {
             logger.lifecycle("[runBiomePreview] forwarding latdev.sulfurScan to the preview JVM: {}", sulfurScan)
         }
 
+        def badlandsScan = (findProperty('latdev.badlandsScan') ?: System.getProperty('latdev.badlandsScan') ?: '').toString()
+        if (badlandsScan) {
+            jvmArgs "-Dlatdev.badlandsScan=${badlandsScan}"
+            logger.lifecycle("[runBiomePreview] forwarding latdev.badlandsScan to the preview JVM: {}", badlandsScan)
+        }
+
         def rawArgs = new ArrayList(args ?: [])
         def latdevOptions = [:]
         def passthrough = []

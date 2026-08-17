@@ -61,6 +61,7 @@ public final class BiomePreviewHeadlessRunner {
     private static final String LOCATE_BOUNDARY_PROP_KEY = "latdev.locateBoundary";
     private static final String EMIT_HEIGHT_PROP_KEY = "latitude.emitHeight";
     private static final String SULFUR_SCAN_PROP_KEY = "latdev.sulfurScan";
+    private static final String BADLANDS_SCAN_PROP_KEY = "latdev.badlandsScan";
     private static final String SULFUR_CAVES_ID = "minecraft:sulfur_caves";
     private static final List<String> SULFUR_SUBSTRATE_BLOCKS =
             List.of("minecraft:sulfur", "minecraft:cinnabar", "minecraft:potent_sulfur");
@@ -116,6 +117,12 @@ public final class BiomePreviewHeadlessRunner {
             return;
         }
 
+        SulfurScanConfig badlandsScanConfig = parseScanConfig(BADLANDS_SCAN_PROP_KEY);
+        if (badlandsScanConfig.enabled) {
+            server.execute(() -> runBadlandsScanAndStop(server, badlandsScanConfig));
+            return;
+        }
+
         Config config = parseConfig();
         if (!config.enabled) {
             return;
@@ -128,8 +135,12 @@ public final class BiomePreviewHeadlessRunner {
     }
 
     private static SulfurScanConfig parseSulfurScanConfig() {
+        return parseScanConfig(SULFUR_SCAN_PROP_KEY);
+    }
+
+    private static SulfurScanConfig parseScanConfig(String propKey) {
         Map<String, String> kv = new HashMap<>();
-        String prop = System.getProperty(SULFUR_SCAN_PROP_KEY, "");
+        String prop = System.getProperty(propKey, "");
         boolean enabled = !prop.isBlank();
         if (enabled) {
             parsePropertyOptions(prop, kv);
@@ -141,6 +152,179 @@ public final class BiomePreviewHeadlessRunner {
                 Math.max(1, parseInt(kv.get("maxchunks"), 9)),
                 parseInt(kv.get("cx"), 0),
                 parseInt(kv.get("cz"), 0));
+    }
+
+    private static final List<String> BADLANDS_BAND_BLOCKS = List.of(
+            "minecraft:terracotta", "minecraft:white_terracotta", "minecraft:yellow_terracotta",
+            "minecraft:brown_terracotta", "minecraft:red_terracotta", "minecraft:light_gray_terracotta");
+
+    /**
+     * Measures whether Latitude's badlands tuning is actually reaching the world. Latitude's
+     * shipped rule starts terracotta banding at y>=84 (vanilla and TerraBlender's bundled copy
+     * use 74), so badlands columns whose surface sits in 74..83 are the discriminator: under
+     * Latitude's rule they carry no band terracotta, under an override they band. Columns at
+     * 90..110 are the control - they band under both rules, proving banding works at all.
+     * Only the TOP FLOOR BLOCK decides: the clause's second, anchor-free bandlands paints the
+     * subsurface from y=63 either way, so deeper blocks cannot discriminate. At the floor the
+     * stone depth is zero, making the anchor check exact: Latitude paints red sand below 84,
+     * the vanilla-era rule paints band terracotta from 74. Orange terracotta stays uncounted
+     * on both sides (reachable through other badlands rules and through bandlands alike).
+     */
+    private static void runBadlandsScanAndStop(MinecraftServer server, SulfurScanConfig config) {
+        ServerLevel world = server.overworld();
+        try {
+            if (world == null) {
+                GlobeMod.LOGGER.error("[latdev][badlands-scan] no overworld available");
+                return;
+            }
+            ChunkGenerator generator = world.getChunkSource().getGenerator();
+            if (!(generator instanceof NoiseBasedChunkGenerator noiseGen)) {
+                GlobeMod.LOGGER.error("[latdev][badlands-scan] generator is not noise based: {}",
+                        generator.getClass().getName());
+                return;
+            }
+            String settingsId = noiseGen.generatorSettings().unwrapKey()
+                    .map(key -> key.identifier().toString())
+                    .orElse("<inline>");
+            BiomeSource activeSource = generator.getBiomeSource();
+            GlobeMod.LOGGER.info("[latdev][badlands-scan] seed={} noise_settings={} center={},{} "
+                            + "radius={} step={} latitude_worldgen={} biome_source={}",
+                    world.getSeed(), settingsId, config.centerX(), config.centerZ(),
+                    config.radius(), config.step(),
+                    GlobeMod.shouldApplyLatitudeWorldgen(noiseGen),
+                    activeSource instanceof LatitudeBiomeSource ? "LatitudeBiomeSource"
+                            : activeSource.getClass().getSimpleName());
+
+            try {
+                net.minecraft.world.level.levelgen.SurfaceRules.RuleSource active =
+                        noiseGen.generatorSettings().value().surfaceRule();
+                Path dump = server.getServerDirectory().resolve("latdev").resolve("surface-rule-active.txt");
+                Files.createDirectories(dump.getParent());
+                StringBuilder text = new StringBuilder();
+                text.append("class=").append(active.getClass().getName()).append('\n');
+                for (java.lang.reflect.Field field : active.getClass().getDeclaredFields()) {
+                    if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                        continue;
+                    }
+                    field.setAccessible(true);
+                    text.append("FIELD ").append(field.getName()).append(" = ")
+                            .append(field.get(active)).append('\n');
+                }
+                text.append("TOSTRING ").append(active).append('\n');
+                Files.writeString(dump, text.toString(), StandardCharsets.UTF_8);
+                GlobeMod.LOGGER.info("[latdev][badlands-scan] active rule dumped to {}", dump);
+            } catch (Exception e) {
+                GlobeMod.LOGGER.warn("[latdev][badlands-scan] rule dump failed", e);
+            }
+
+            Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
+            int generated = 0;
+            long badlandsColumns = 0;
+            long windowColumns = 0;
+            long windowBanded = 0;
+            long windowBandBlocks = 0;
+            long controlColumns = 0;
+            long controlBanded = 0;
+            Map<Integer, int[]> perHeight = new HashMap<>();
+            int hMin = Integer.MAX_VALUE;
+            int hMax = Integer.MIN_VALUE;
+            long below74 = 0;
+            long h84to89 = 0;
+            long above110 = 0;
+            LinkedHashSet<Long> visited = new LinkedHashSet<>();
+            BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+
+            outer:
+            for (int z = config.centerZ() - config.radius(); z <= config.centerZ() + config.radius(); z += config.step()) {
+                for (int x = config.centerX() - config.radius(); x <= config.centerX() + config.radius(); x += config.step()) {
+                    ChunkPos chunkPos = new ChunkPos(x >> 4, z >> 4);
+                    if (!visited.add(chunkPos.pack())) {
+                        continue;
+                    }
+                    ChunkAccess chunk = world.getChunkSource().getChunk(chunkPos.x(), chunkPos.z(), ChunkStatus.FULL, true);
+                    if (chunk == null) {
+                        continue;
+                    }
+                    generated++;
+                    for (int localX = 0; localX < 16; localX++) {
+                        for (int localZ = 0; localZ < 16; localZ++) {
+                            int worldX = chunkPos.getMinBlockX() + localX;
+                            int worldZ = chunkPos.getMinBlockZ() + localZ;
+                            int h = chunk.getHeight(Heightmap.Types.WORLD_SURFACE, localX, localZ) - 1;
+                            String biome = biomeId(biomeRegistry,
+                                    world.getBiome(cursor.set(worldX, h, worldZ)));
+                            if (!biome.endsWith("badlands")) {
+                                continue;
+                            }
+                            badlandsColumns++;
+                            hMin = Math.min(hMin, h);
+                            hMax = Math.max(hMax, h);
+                            if (h < 74) {
+                                below74++;
+                            } else if (h >= 84 && h <= 89) {
+                                h84to89++;
+                            } else if (h > 110) {
+                                above110++;
+                            }
+                            boolean window = h >= 74 && h <= 83;
+                            boolean control = h >= 90 && h <= 110;
+                            if (!window && !control) {
+                                continue;
+                            }
+                            String floorBlock = BuiltInRegistries.BLOCK
+                                    .getKey(chunk.getBlockState(cursor.set(worldX, h, worldZ)).getBlock())
+                                    .toString();
+                            boolean floorBanded = BADLANDS_BAND_BLOCKS.contains(floorBlock);
+                            int[] tally = perHeight.computeIfAbsent(h, unused -> new int[2]);
+                            tally[1]++;
+                            if (floorBanded) {
+                                tally[0]++;
+                            }
+                            if (window) {
+                                windowColumns++;
+                                if (floorBanded) {
+                                    windowBanded++;
+                                } else if ("minecraft:red_sand".equals(floorBlock)) {
+                                    windowBandBlocks++;
+                                }
+                            } else {
+                                controlColumns++;
+                                if (floorBanded) {
+                                    controlBanded++;
+                                }
+                            }
+                        }
+                    }
+                    if (generated >= config.maxChunks()) {
+                        break outer;
+                    }
+                }
+            }
+
+            GlobeMod.LOGGER.info("[latdev][badlands-scan] RESULT settings={} chunks={} "
+                            + "badlands_columns={} window74_83_columns={} window74_83_banded={} "
+                            + "window74_83_red_sand={} control90_110_columns={} control90_110_banded={}",
+                    settingsId, generated, badlandsColumns, windowColumns, windowBanded,
+                    windowBandBlocks, controlColumns, controlBanded);
+            GlobeMod.LOGGER.info("[latdev][badlands-scan] HEIGHTS min={} max={} below74={} "
+                            + "window74_83={} h84_89={} control90_110={} above110={}",
+                    badlandsColumns == 0 ? "n/a" : hMin, badlandsColumns == 0 ? "n/a" : hMax,
+                    below74, windowColumns, h84to89, controlColumns, above110);
+            StringBuilder heights = new StringBuilder();
+            perHeight.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach(e -> heights.append(e.getKey()).append(':').append(e.getValue()[0])
+                            .append('/').append(e.getValue()[1]).append(' '));
+            GlobeMod.LOGGER.info("[latdev][badlands-scan] FLOOR_BANDED_BY_HEIGHT {}", heights);
+            GlobeMod.LOGGER.info("[latdev][badlands-scan] VERDICT {}",
+                    windowColumns == 0 ? "NO_WINDOW_COLUMNS_WIDEN_SEARCH"
+                            : windowBanded == 0 ? "LATITUDE_ANCHOR_RESPECTED"
+                                    : "BANDING_BELOW_LATITUDE_ANCHOR");
+        } catch (Exception e) {
+            GlobeMod.LOGGER.error("[latdev][badlands-scan] failed", e);
+        } finally {
+            server.halt(false);
+        }
     }
 
     /**
