@@ -89,7 +89,7 @@ public final class BiomeSelectionProfile {
             if (parts.length != 2) throw new IllegalArgumentException("malformed provider ticket row");
             BiomeRoute route = BiomeRoute.valueOf(parts[0]);
             BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(parts[1]);
-            if (descriptor == null || !descriptor.routes().contains(route) || !seen.add(lines[i])) throw new IllegalArgumentException("invalid provider ticket row: " + lines[i]);
+            if (descriptor == null || !savedRouteRemainsValid(route, descriptor) || !seen.add(lines[i])) throw new IllegalArgumentException("invalid provider ticket row: " + lines[i]);
             raw.get(route).add(parts[1]);
             providers.add(descriptor.provider());
         }
@@ -100,5 +100,16 @@ public final class BiomeSelectionProfile {
             sorted.put(route, List.copyOf(ids));
         }
         return new BiomeSelectionProfile(List.copyOf(providers), sorted);
+    }
+
+    private static boolean savedRouteRemainsValid(
+            BiomeRoute route,
+            BiomeDescriptorLedger.Descriptor descriptor) {
+        if (descriptor.routes().contains(route)) return true;
+        // Provider profiles are birth-locked. Keep the one pre-correction redwood route readable
+        // for existing worlds; capture() only emits the current temperate route for new worlds.
+        return descriptor.biomeId().equals("biomesoplenty:redwood_forest")
+                && route == BiomeRoute.SUBTROPICAL_HUMID_LOWLAND
+                && descriptor.routes().contains(BiomeRoute.TEMPERATE_LOWLAND);
     }
 }

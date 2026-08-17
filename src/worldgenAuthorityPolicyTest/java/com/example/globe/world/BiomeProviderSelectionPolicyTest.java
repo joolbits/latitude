@@ -94,6 +94,16 @@ final class BiomeProviderSelectionPolicyTest {
         }
         assertEquals(normal.encode(), BiomeSelectionProfile.decode(normal.encode()).encode(),
                 "profile serialization is canonical");
+        assertTrue(normal.contains(BiomeRoute.TEMPERATE_LOWLAND, "biomesoplenty:redwood_forest"),
+                "new profiles route redwood forest through temperate lowlands");
+        assertFalse(normal.contains(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND, "biomesoplenty:redwood_forest"),
+                "new profiles do not retain the corrected subtropical redwood route");
+        BiomeSelectionProfile legacyRedwood = BiomeSelectionProfile.decode(
+                "provider_ticket_v1\nSUBTROPICAL_HUMID_LOWLAND|biomesoplenty:redwood_forest");
+        assertTrue(legacyRedwood.contains(
+                        BiomeRoute.SUBTROPICAL_HUMID_LOWLAND,
+                        "biomesoplenty:redwood_forest"),
+                "an existing world's birth-locked redwood route remains readable without migration");
         assertThrows(() -> BiomeSelectionProfile.decode("provider_ticket_v1\nTEMPERATE_LOWLAND|terralith:amethyst_canyon"),
                 "a descriptorless saved row is rejected");
         assertThrows(() -> BiomeSelectionProfile.decode("provider_ticket_v1\nTEMPERATE_LOWLAND|minecraft:forest\nTEMPERATE_LOWLAND|minecraft:forest"),
