@@ -2,8 +2,18 @@ package com.example.globe.world;
 
 import com.example.globe.client.create.RecreatedWorldTypePolicy;
 import com.example.globe.client.create.RecreatedWorldMetadata;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
@@ -16,6 +26,7 @@ public final class WorldgenAuthorityPolicyTest {
         oldWorldStateDefaultsAreConservativeAndVanillaReadsAreNonCreating();
         biomeColumnCacheIsWorldBoundAndAvoidsDuplicateVerticalPicks();
         sulfurCaveDecorationIsUnrestricted();
+        globeSurfaceRulesKeepEveryVanillaBiomeSubstrate();
         frozenRiverVegetationIsScopedWithoutMutatingVanillaBiomes();
         generationScopeIsDimensionIsolatedAndNestSafe();
         generationScopeCleansUpOnFailureAndAcrossThreads();
@@ -1027,6 +1038,182 @@ public final class WorldgenAuthorityPolicyTest {
                         && speleothemGuard.contains("cluster.pointedBlock().is(Blocks.SULFUR_SPIKE)")
                         && speleothemGuard.contains("if (nearSurfaceByHeightmap || skyVisible)"),
                 "sulfur speleothems fail open before the ordinary dripstone surface guard");
+    }
+
+    private static final String[] GLOBE_NOISE_SETTINGS = {
+        "overworld", "overworld_large", "overworld_massive",
+        "overworld_regular", "overworld_small", "overworld_xsmall"
+    };
+
+    /**
+     * Latitude serves its own overworld noise settings, so per-biome substrate painting is never
+     * inherited from a new Minecraft version automatically. When 26.2 added sulfur caves, the fork
+     * kept 27 of 28 clauses and dropped that one: the biome still generated, but nothing painted
+     * sulfur or cinnabar, so every substrate-gated feature no-opped with no error anywhere. This
+     * fails the build if a version bump ever drops another biome's substrate the same way.
+     */
+    private static void globeSurfaceRulesKeepEveryVanillaBiomeSubstrate() throws Exception {
+        Set<String> vanillaBiomes = paintedBiomes(vanillaOverworldSurfaceRule());
+        assertTrue(vanillaBiomes.contains("minecraft:sulfur_caves"),
+                "the vanilla overworld surface rules on the test classpath must paint sulfur caves");
+
+        String shared = null;
+        for (String name : GLOBE_NOISE_SETTINGS) {
+            String body = read("src/main/resources/data/globe/worldgen/noise_settings/"
+                    + name + ".json");
+            if (shared == null) {
+                shared = body;
+            }
+            assertTrue(body.equals(shared),
+                    "every world size must share one set of surface rules; " + name + " diverged");
+
+            JsonObject surfaceRule = JsonParser.parseString(body).getAsJsonObject()
+                    .getAsJsonObject("surface_rule");
+
+            Set<String> dropped = new LinkedHashSet<>(vanillaBiomes);
+            dropped.removeAll(paintedBiomes(surfaceRule));
+            assertTrue(dropped.isEmpty(),
+                    "globe surface rules drop substrate that Minecraft paints " + dropped + " in "
+                            + name + "; port those clauses when moving Minecraft versions");
+
+            List<JsonObject> sulfurClauses = biomeClauses(surfaceRule, "minecraft:sulfur_caves");
+            assertTrue(sulfurClauses.size() == 3,
+                    "sulfur caves need their deep clause and both floor clauses in " + name
+                            + "; found " + sulfurClauses.size());
+            for (JsonObject clause : sulfurClauses) {
+                Set<String> painted = paintedBlocks(clause);
+                assertTrue(painted.contains("minecraft:sulfur")
+                                && painted.contains("minecraft:cinnabar"),
+                        "each sulfur clause must paint sulfur and cinnabar in " + name);
+                assertTrue(referencedNoises(clause).contains("minecraft:sulfur_cave_gradient"),
+                        "sulfur substrate must band on the vanilla gradient noise in " + name);
+            }
+
+            JsonArray topLevel = surfaceRule.getAsJsonArray("sequence");
+            int sulfurIndex = -1;
+            boolean gradientFollowsSulfur = false;
+            for (int i = 0; i < topLevel.size(); i++) {
+                JsonObject entry = topLevel.get(i).getAsJsonObject();
+                if (!entry.has("if_true") || !entry.get("if_true").isJsonObject()) {
+                    continue;
+                }
+                JsonObject condition = entry.getAsJsonObject("if_true");
+                if (isType(condition, "minecraft:biome")
+                        && biomeIds(condition).contains("minecraft:sulfur_caves")) {
+                    sulfurIndex = i;
+                } else if (sulfurIndex >= 0 && isType(condition, "minecraft:vertical_gradient")) {
+                    gradientFollowsSulfur = true;
+                }
+            }
+            assertTrue(sulfurIndex >= 0,
+                    "the deep sulfur clause must sit in the top-level rule sequence in " + name);
+            assertTrue(gradientFollowsSulfur,
+                    "the deep sulfur clause must be evaluated before the deepslate gradient in "
+                            + name + ", or deepslate wins underground and no substrate is painted");
+        }
+    }
+
+    private static JsonObject vanillaOverworldSurfaceRule() throws Exception {
+        String resource = "/data/minecraft/worldgen/noise_settings/overworld.json";
+        try (InputStream stream =
+                     WorldgenAuthorityPolicyTest.class.getResourceAsStream(resource)) {
+            assertTrue(stream != null,
+                    "the vanilla overworld noise settings must be readable from the Minecraft jar "
+                            + "on the test classpath (" + resource + ")");
+            return JsonParser.parseString(new String(stream.readAllBytes(), StandardCharsets.UTF_8))
+                    .getAsJsonObject().getAsJsonObject("surface_rule");
+        }
+    }
+
+    private static boolean isType(JsonObject object, String type) {
+        return object.has("type") && type.equals(object.get("type").getAsString());
+    }
+
+    private static Set<String> biomeIds(JsonObject condition) {
+        Set<String> ids = new LinkedHashSet<>();
+        JsonElement value = condition.get("biome_is");
+        if (value == null) {
+            return ids;
+        }
+        if (value.isJsonArray()) {
+            for (JsonElement entry : value.getAsJsonArray()) {
+                ids.add(entry.getAsString());
+            }
+        } else {
+            ids.add(value.getAsString());
+        }
+        return ids;
+    }
+
+    private static List<JsonObject> objectsIn(JsonElement root) {
+        List<JsonObject> objects = new ArrayList<>();
+        collectObjects(root, objects);
+        return objects;
+    }
+
+    private static void collectObjects(JsonElement node, List<JsonObject> objects) {
+        if (node == null) {
+            return;
+        }
+        if (node.isJsonObject()) {
+            JsonObject object = node.getAsJsonObject();
+            objects.add(object);
+            for (String key : object.keySet()) {
+                collectObjects(object.get(key), objects);
+            }
+        } else if (node.isJsonArray()) {
+            for (JsonElement entry : node.getAsJsonArray()) {
+                collectObjects(entry, objects);
+            }
+        }
+    }
+
+    private static Set<String> paintedBiomes(JsonElement root) {
+        Set<String> biomes = new LinkedHashSet<>();
+        for (JsonObject object : objectsIn(root)) {
+            if (isType(object, "minecraft:biome")) {
+                biomes.addAll(biomeIds(object));
+            }
+        }
+        return biomes;
+    }
+
+    private static List<JsonObject> biomeClauses(JsonElement root, String biome) {
+        List<JsonObject> clauses = new ArrayList<>();
+        for (JsonObject object : objectsIn(root)) {
+            if (!isType(object, "minecraft:condition") || !object.has("if_true")
+                    || !object.get("if_true").isJsonObject()) {
+                continue;
+            }
+            JsonObject condition = object.getAsJsonObject("if_true");
+            if (isType(condition, "minecraft:biome") && biomeIds(condition).contains(biome)) {
+                clauses.add(object);
+            }
+        }
+        return clauses;
+    }
+
+    private static Set<String> paintedBlocks(JsonElement root) {
+        Set<String> blocks = new LinkedHashSet<>();
+        for (JsonObject object : objectsIn(root)) {
+            if (isType(object, "minecraft:block") && object.has("result_state")) {
+                JsonObject state = object.getAsJsonObject("result_state");
+                if (state.has("Name")) {
+                    blocks.add(state.get("Name").getAsString());
+                }
+            }
+        }
+        return blocks;
+    }
+
+    private static Set<String> referencedNoises(JsonElement root) {
+        Set<String> noises = new LinkedHashSet<>();
+        for (JsonObject object : objectsIn(root)) {
+            if (isType(object, "minecraft:noise_threshold") && object.has("noise")) {
+                noises.add(object.get("noise").getAsString());
+            }
+        }
+        return noises;
     }
 
     private static void frozenRiverVegetationIsScopedWithoutMutatingVanillaBiomes()
