@@ -1051,24 +1051,25 @@ public final class WorldgenAuthorityPolicyTest {
     private static void terraBlenderBridgeRestoresSulfurSubstrate() throws Exception {
         String mod = normalize(read("src/main/java/com/example/globe/GlobeMod.java"));
         assertTrue(mod.contains("LatitudeTerraBlenderBridge.install()"),
-                "the TerraBlender surface bridge must be installed during common mod init");
+                "the TerraBlender surface sweep must be installed during common mod init");
 
         String bridge = normalize(read(
                 "src/main/java/com/example/globe/compat/LatitudeTerraBlenderBridge.java"));
         assertTrue(bridge.contains("isModLoaded(\"terrablender\")"),
-                "the bridge must only engage when TerraBlender is actually present");
+                "the sweep must only engage when TerraBlender is actually present");
         assertTrue(bridge.contains("latitude.terrablenderBridge.disable"),
-                "the bridge must keep its kill switch for live diagnosis");
+                "the sweep must keep its kill switch for live diagnosis");
         assertTrue(bridge.contains("catch (Throwable t)")
                         && bridge.contains("failed to install"),
-                "a bridge failure must degrade to bare caves with a warning, never a crash");
-        assertTrue(bridge.contains("/data/globe/worldgen/noise_settings/overworld.json"),
-                "the bridged rule must be read from the shipped noise settings, not duplicated");
-        assertTrue(bridge.contains("\"BEFORE_BEDROCK\""),
-                "only the BEFORE_BEDROCK stage runs ahead of TerraBlender's deepslate catch-all");
-        assertTrue(bridge.contains("SurfaceRules.not(SurfaceRules.verticalGradient(")
-                        && bridge.contains("minecraft:bedrock_floor"),
-                "the injected rule must not paint over the bedrock floor it now precedes");
+                "a sweep failure must degrade to TerraBlender's stock behavior, never a crash");
+        assertTrue(bridge.contains("setDefaultSurfaceRules"),
+                "the sweep must replace TerraBlender's default minecraft-namespace rules");
+        assertTrue(bridge.contains("{\\\"type\\\":\\\"minecraft:sequence\\\",\\\"sequence\\\":[]}"),
+                "the replacement must be the canonical always-null empty sequence, so every "
+                        + "minecraft-namespace biome falls through to the real noise-settings rules");
+        assertTrue(bridge.contains("getDefaultSurfaceRuleAdditionsForStage")
+                        && bridge.contains("\"BEFORE_BEDROCK\"") && bridge.contains("\"AFTER_BEDROCK\""),
+                "stage additions other mods registered must be woven in, not silently dropped");
         assertTrue(bridge.contains("Class.forName(\"terrablender.api.SurfaceRuleManager\"")
                         && !bridge.contains("import terrablender"),
                 "TerraBlender must stay a reflective soft dependency, never a compile-time one");
