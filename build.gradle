@@ -769,6 +769,12 @@ tasks.named('runBiomePreview').configure {
         dependsOn tasks.named('syncBiomePreviewMods')
     }
     doFirst {
+        def sulfurScan = (findProperty('latdev.sulfurScan') ?: System.getProperty('latdev.sulfurScan') ?: '').toString()
+        if (sulfurScan) {
+            jvmArgs "-Dlatdev.sulfurScan=${sulfurScan}"
+            logger.lifecycle("[runBiomePreview] forwarding latdev.sulfurScan to the preview JVM: {}", sulfurScan)
+        }
+
         def rawArgs = new ArrayList(args ?: [])
         def latdevOptions = [:]
         def passthrough = []

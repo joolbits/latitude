@@ -12,6 +12,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -57,6 +60,11 @@ public final class BiomePreviewHeadlessRunner {
     private static final String AUDIT_PROP_KEY = "latdev.bandAudit";
     private static final String LOCATE_BOUNDARY_PROP_KEY = "latdev.locateBoundary";
     private static final String EMIT_HEIGHT_PROP_KEY = "latitude.emitHeight";
+    private static final String SULFUR_SCAN_PROP_KEY = "latdev.sulfurScan";
+    private static final String SULFUR_CAVES_ID = "minecraft:sulfur_caves";
+    private static final List<String> SULFUR_SUBSTRATE_BLOCKS =
+            List.of("minecraft:sulfur", "minecraft:cinnabar", "minecraft:potent_sulfur");
+    private static final List<String> SULFUR_DECORATION_BLOCKS = List.of("minecraft:sulfur_spike");
     private static final Pattern PROP_PAIR = Pattern.compile(
             "(?i)([a-z][a-z0-9_]*)\\s*=\\s*([^;]+?)(?=(?:\\s*[;,]\\s*[a-z][a-z0-9_]*\\s*=)|$)");
     private static final DateTimeFormatter SEARCH_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
@@ -102,12 +110,173 @@ public final class BiomePreviewHeadlessRunner {
             return;
         }
 
+        SulfurScanConfig sulfurScanConfig = parseSulfurScanConfig();
+        if (sulfurScanConfig.enabled) {
+            server.execute(() -> runSulfurScanAndStop(server, sulfurScanConfig));
+            return;
+        }
+
         Config config = parseConfig();
         if (!config.enabled) {
             return;
         }
 
         server.execute(() -> runExportAndStop(server, config));
+    }
+
+    private record SulfurScanConfig(boolean enabled, int radius, int step, int maxChunks) {
+    }
+
+    private static SulfurScanConfig parseSulfurScanConfig() {
+        Map<String, String> kv = new HashMap<>();
+        String prop = System.getProperty(SULFUR_SCAN_PROP_KEY, "");
+        boolean enabled = !prop.isBlank();
+        if (enabled) {
+            parsePropertyOptions(prop, kv);
+        }
+        return new SulfurScanConfig(
+                enabled,
+                Math.max(64, parseInt(kv.get("radius"), 2500)),
+                Math.max(16, parseInt(kv.get("step"), 64)),
+                Math.max(1, parseInt(kv.get("maxchunks"), 9)));
+    }
+
+    /**
+     * Generates real chunks in sulfur-cave cells and counts the blocks that actually landed.
+     * Substrate painting comes from the active noise settings' surface rules, so this is the only
+     * evidence that separates "the biome was admitted" from "the biome was furnished" — the exact
+     * distinction that made the empty-caves defect survive two code-level fixes. Also counts how
+     * much sulfur reaches the visible surface, which is the input to the leakage-policy decision.
+     */
+    private static void runSulfurScanAndStop(MinecraftServer server, SulfurScanConfig config) {
+        ServerLevel world = server.overworld();
+        try {
+            if (world == null) {
+                GlobeMod.LOGGER.error("[latdev][sulfur-scan] no overworld available");
+                return;
+            }
+            ChunkGenerator generator = world.getChunkSource().getGenerator();
+            if (!(generator instanceof NoiseBasedChunkGenerator noiseGen)) {
+                GlobeMod.LOGGER.error("[latdev][sulfur-scan] generator is not noise based: {}",
+                        generator.getClass().getName());
+                return;
+            }
+
+            String settingsId = noiseGen.generatorSettings().unwrapKey()
+                    .map(key -> key.identifier().toString())
+                    .orElse("<inline>");
+            BiomeSource activeSource = generator.getBiomeSource();
+            GlobeMod.LOGGER.info("[latdev][sulfur-scan] seed={} noise_settings={} radius={} step={} "
+                            + "latitude_worldgen={} biome_source={}",
+                    world.getSeed(), settingsId, config.radius, config.step,
+                    GlobeMod.shouldApplyLatitudeWorldgen(noiseGen),
+                    activeSource instanceof LatitudeBiomeSource ? "LatitudeBiomeSource"
+                            : activeSource.getClass().getSimpleName());
+
+            Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
+            RandomState noiseConfig = RandomState.create(
+                    noiseGen.generatorSettings().value(),
+                    world.registryAccess().lookupOrThrow(Registries.NOISE),
+                    world.getSeed());
+            Climate.Sampler sampler = noiseConfig.sampler();
+
+            List<int[]> probes = new ArrayList<>();
+            LinkedHashSet<Long> chunkKeys = new LinkedHashSet<>();
+            int sampled = 0;
+            search:
+            for (int z = -config.radius; z <= config.radius; z += config.step) {
+                for (int x = -config.radius; x <= config.radius; x += config.step) {
+                    for (int y = -48; y <= 64; y += 16) {
+                        sampled++;
+                        Holder<Biome> holder = activeSource.getNoiseBiome(x >> 2, y >> 2, z >> 2, sampler);
+                        if (!SULFUR_CAVES_ID.equals(biomeId(biomeRegistry, holder))) {
+                            continue;
+                        }
+                        if (chunkKeys.add(new ChunkPos(x >> 4, z >> 4).pack())) {
+                            probes.add(new int[] {x, y, z});
+                        }
+                        if (chunkKeys.size() >= config.maxChunks) {
+                            break search;
+                        }
+                        break;
+                    }
+                }
+            }
+
+            GlobeMod.LOGGER.info("[latdev][sulfur-scan] sampled={} sulfur_chunks={}", sampled, chunkKeys.size());
+            if (chunkKeys.isEmpty()) {
+                GlobeMod.LOGGER.warn("[latdev][sulfur-scan] RESULT no sulfur cave cell found within "
+                        + "radius; widen radius or lower step before reading anything into this");
+                return;
+            }
+
+            Map<String, Integer> totals = new HashMap<>();
+            Map<String, Integer> surfaceExposed = new HashMap<>();
+            Map<String, Integer> skyVisible = new HashMap<>();
+            BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+            int generated = 0;
+            for (int[] probe : probes) {
+                ChunkPos chunkPos = new ChunkPos(probe[0] >> 4, probe[2] >> 4);
+                ChunkAccess chunk = world.getChunkSource().getChunk(chunkPos.x(), chunkPos.z(), ChunkStatus.FULL, true);
+                if (chunk == null) {
+                    continue;
+                }
+                generated++;
+                String storedBiome = biomeId(biomeRegistry,
+                        world.getBiome(new BlockPos(probe[0], probe[1], probe[2])));
+                int minY = chunk.getMinY();
+                int maxY = minY + chunk.getHeight() - 1;
+                for (int localX = 0; localX < 16; localX++) {
+                    for (int localZ = 0; localZ < 16; localZ++) {
+                        int worldX = chunkPos.getMinBlockX() + localX;
+                        int worldZ = chunkPos.getMinBlockZ() + localZ;
+                        int topSolidY = chunk.getHeight(Heightmap.Types.WORLD_SURFACE, localX, localZ) - 1;
+                        for (int y = minY; y <= maxY; y++) {
+                            String blockId = BuiltInRegistries.BLOCK
+                                    .getKey(chunk.getBlockState(new BlockPos(worldX, y, worldZ)).getBlock())
+                                    .toString();
+                            if (!SULFUR_SUBSTRATE_BLOCKS.contains(blockId)
+                                    && !SULFUR_DECORATION_BLOCKS.contains(blockId)) {
+                                continue;
+                            }
+                            totals.merge(blockId, 1, Integer::sum);
+                            if (y >= topSolidY) {
+                                surfaceExposed.merge(blockId, 1, Integer::sum);
+                            }
+                            boolean openToSky = true;
+                            for (int above = y + 1; above <= maxY; above++) {
+                                cursor.set(worldX, above, worldZ);
+                                if (!chunk.getBlockState(cursor).isAir()) {
+                                    openToSky = false;
+                                    break;
+                                }
+                            }
+                            if (openToSky) {
+                                skyVisible.merge(blockId, 1, Integer::sum);
+                            }
+                        }
+                    }
+                }
+                GlobeMod.LOGGER.info("[latdev][sulfur-scan] chunk {},{} probe={},{},{} stored_biome={}",
+                        chunkPos.x(), chunkPos.z(), probe[0], probe[1], probe[2], storedBiome);
+            }
+
+            int substrate = SULFUR_SUBSTRATE_BLOCKS.stream().mapToInt(id -> totals.getOrDefault(id, 0)).sum();
+            int decoration = SULFUR_DECORATION_BLOCKS.stream().mapToInt(id -> totals.getOrDefault(id, 0)).sum();
+            int exposed = surfaceExposed.values().stream().mapToInt(Integer::intValue).sum();
+            int sky = skyVisible.values().stream().mapToInt(Integer::intValue).sum();
+            GlobeMod.LOGGER.info("[latdev][sulfur-scan] RESULT settings={} chunks={} substrate={} "
+                            + "decoration={} surface_exposed={} sky_visible={} per_block={} "
+                            + "exposed_per_block={} sky_per_block={}",
+                    settingsId, generated, substrate, decoration, exposed, sky, totals,
+                    surfaceExposed, skyVisible);
+            GlobeMod.LOGGER.info("[latdev][sulfur-scan] VERDICT {}",
+                    substrate > 0 ? "SUBSTRATE_PRESENT" : "SUBSTRATE_ABSENT");
+        } catch (Exception e) {
+            GlobeMod.LOGGER.error("[latdev][sulfur-scan] failed", e);
+        } finally {
+            server.halt(false);
+        }
     }
 
     private static void runExportAndStop(MinecraftServer server, Config config) {
