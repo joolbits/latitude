@@ -124,7 +124,7 @@ public final class BiomePreviewHeadlessRunner {
         server.execute(() -> runExportAndStop(server, config));
     }
 
-    private record SulfurScanConfig(boolean enabled, int radius, int step, int maxChunks) {
+    private record SulfurScanConfig(boolean enabled, int radius, int step, int maxChunks, int centerX, int centerZ) {
     }
 
     private static SulfurScanConfig parseSulfurScanConfig() {
@@ -138,7 +138,9 @@ public final class BiomePreviewHeadlessRunner {
                 enabled,
                 Math.max(64, parseInt(kv.get("radius"), 2500)),
                 Math.max(16, parseInt(kv.get("step"), 64)),
-                Math.max(1, parseInt(kv.get("maxchunks"), 9)));
+                Math.max(1, parseInt(kv.get("maxchunks"), 9)),
+                parseInt(kv.get("cx"), 0),
+                parseInt(kv.get("cz"), 0));
     }
 
     /**
@@ -166,12 +168,19 @@ public final class BiomePreviewHeadlessRunner {
                     .map(key -> key.identifier().toString())
                     .orElse("<inline>");
             BiomeSource activeSource = generator.getBiomeSource();
-            GlobeMod.LOGGER.info("[latdev][sulfur-scan] seed={} noise_settings={} radius={} step={} "
+            GlobeMod.LOGGER.info("[latdev][sulfur-scan] seed={} noise_settings={} radius={} step={} center={},{} "
                             + "latitude_worldgen={} biome_source={}",
                     world.getSeed(), settingsId, config.radius, config.step,
+                    config.centerX, config.centerZ,
                     GlobeMod.shouldApplyLatitudeWorldgen(noiseGen),
                     activeSource instanceof LatitudeBiomeSource ? "LatitudeBiomeSource"
                             : activeSource.getClass().getSimpleName());
+
+            String activeRule = String.valueOf(noiseGen.generatorSettings().value().surfaceRule());
+            int sulfurMentions = activeRule.split("sulfur", -1).length - 1;
+            GlobeMod.LOGGER.info("[latdev][sulfur-scan] active surface rule class={} length={} sulfur_mentions={}",
+                    noiseGen.generatorSettings().value().surfaceRule().getClass().getName(),
+                    activeRule.length(), sulfurMentions);
 
             Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
             RandomState noiseConfig = RandomState.create(
@@ -184,8 +193,8 @@ public final class BiomePreviewHeadlessRunner {
             LinkedHashSet<Long> chunkKeys = new LinkedHashSet<>();
             int sampled = 0;
             search:
-            for (int z = -config.radius; z <= config.radius; z += config.step) {
-                for (int x = -config.radius; x <= config.radius; x += config.step) {
+            for (int z = config.centerZ - config.radius; z <= config.centerZ + config.radius; z += config.step) {
+                for (int x = config.centerX - config.radius; x <= config.centerX + config.radius; x += config.step) {
                     for (int y = -48; y <= 64; y += 16) {
                         sampled++;
                         Holder<Biome> holder = activeSource.getNoiseBiome(x >> 2, y >> 2, z >> 2, sampler);
@@ -213,6 +222,8 @@ public final class BiomePreviewHeadlessRunner {
             Map<String, Integer> totals = new HashMap<>();
             Map<String, Integer> surfaceExposed = new HashMap<>();
             Map<String, Integer> skyVisible = new HashMap<>();
+            int belowY0 = 0;
+            int aboveY8 = 0;
             BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
             int generated = 0;
             for (int[] probe : probes) {
@@ -224,6 +235,7 @@ public final class BiomePreviewHeadlessRunner {
                 generated++;
                 String storedBiome = biomeId(biomeRegistry,
                         world.getBiome(new BlockPos(probe[0], probe[1], probe[2])));
+                int chunkSubstrateBefore = totals.values().stream().mapToInt(Integer::intValue).sum();
                 int minY = chunk.getMinY();
                 int maxY = minY + chunk.getHeight() - 1;
                 for (int localX = 0; localX < 16; localX++) {
@@ -240,6 +252,11 @@ public final class BiomePreviewHeadlessRunner {
                                 continue;
                             }
                             totals.merge(blockId, 1, Integer::sum);
+                            if (y < 0) {
+                                belowY0++;
+                            } else if (y > 8) {
+                                aboveY8++;
+                            }
                             if (y >= topSolidY) {
                                 surfaceExposed.merge(blockId, 1, Integer::sum);
                             }
@@ -257,8 +274,11 @@ public final class BiomePreviewHeadlessRunner {
                         }
                     }
                 }
-                GlobeMod.LOGGER.info("[latdev][sulfur-scan] chunk {},{} probe={},{},{} stored_biome={}",
-                        chunkPos.x(), chunkPos.z(), probe[0], probe[1], probe[2], storedBiome);
+                int chunkBlocks = totals.values().stream().mapToInt(Integer::intValue).sum() - chunkSubstrateBefore;
+                GlobeMod.LOGGER.info("[latdev][sulfur-scan] chunk {},{} probe={},{},{} stored_biome={} "
+                                + "fresh={} sulfur_blocks={}",
+                        chunkPos.x(), chunkPos.z(), probe[0], probe[1], probe[2], storedBiome,
+                        chunk.isUnsaved(), chunkBlocks);
             }
 
             int substrate = SULFUR_SUBSTRATE_BLOCKS.stream().mapToInt(id -> totals.getOrDefault(id, 0)).sum();
@@ -266,9 +286,9 @@ public final class BiomePreviewHeadlessRunner {
             int exposed = surfaceExposed.values().stream().mapToInt(Integer::intValue).sum();
             int sky = skyVisible.values().stream().mapToInt(Integer::intValue).sum();
             GlobeMod.LOGGER.info("[latdev][sulfur-scan] RESULT settings={} chunks={} substrate={} "
-                            + "decoration={} surface_exposed={} sky_visible={} per_block={} "
+                            + "decoration={} below_y0={} above_y8={} surface_exposed={} sky_visible={} per_block={} "
                             + "exposed_per_block={} sky_per_block={}",
-                    settingsId, generated, substrate, decoration, exposed, sky, totals,
+                    settingsId, generated, substrate, decoration, belowY0, aboveY8, exposed, sky, totals,
                     surfaceExposed, skyVisible);
             GlobeMod.LOGGER.info("[latdev][sulfur-scan] VERDICT {}",
                     substrate > 0 ? "SUBSTRATE_PRESENT" : "SUBSTRATE_ABSENT");
