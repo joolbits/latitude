@@ -121,7 +121,7 @@ public final class LatitudeStructureLocateService {
         player.teleportTo(
                 targetLevel,
                 pending.x() + 0.5,
-                player.getY(),
+                Math.max(player.getY(), pending.minimumY()),
                 pending.z() + 0.5,
                 EnumSet.noneOf(Relative.class),
                 player.getYRot(),
@@ -129,6 +129,12 @@ public final class LatitudeStructureLocateService {
                 true);
         player.setDeltaMovement(0.0, 0.0, 0.0);
         player.fallDistance = 0.0F;
+        if (pending.mayBeBuried()) {
+            source.sendSuccess(
+                    () -> Component.translatable(
+                            "globe.locate.buried_structure.teleported", pending.minimumY() - 2),
+                    false);
+        }
         return 1;
     }
 
@@ -415,6 +421,7 @@ public final class LatitudeStructureLocateService {
         double dx = origin.getX() - location.getX();
         double dz = origin.getZ() - location.getZ();
         int distance = Mth.floor((float) Math.sqrt(dx * dx + dz * dz));
+        boolean mayBeBuried = mayBeBuried(result.getSecond());
         ClickEvent clickEvent = new ClickEvent.SuggestCommand(
                 "tp " + location.getX() + " ~ " + location.getZ());
         ServerPlayer requester = source.getPlayer();
@@ -427,6 +434,8 @@ public final class LatitudeStructureLocateService {
                             source.getLevel().dimension(),
                             location.getX(),
                             location.getZ(),
+                            location.getY(),
+                            mayBeBuried,
                             Util.getMillis() + TELEPORT_TOKEN_TTL_MS));
             clickEvent = new ClickEvent.RunCommand("/latitude_locate_teleport " + token);
         }
@@ -438,10 +447,22 @@ public final class LatitudeStructureLocateService {
                         .withClickEvent(finalClickEvent)
                         .withHoverEvent(new HoverEvent.ShowText(
                                 Component.translatable("chat.coordinates.tooltip"))));
-        source.sendSuccess(
-                () -> Component.translatable(
-                        "commands.locate.structure.success", target.asPrintable(), coordinates, distance),
-                false);
+        Component message = Component.translatable(
+                "commands.locate.structure.success", target.asPrintable(), coordinates, distance);
+        if (mayBeBuried) {
+            message = message.copy()
+                    .append(Component.literal(" "))
+                    .append(Component.translatable(
+                            "globe.locate.buried_structure.hint", location.getY() - 2));
+        }
+        Component finalMessage = message;
+        source.sendSuccess(() -> finalMessage, false);
+    }
+
+    private static boolean mayBeBuried(Holder<Structure> structure) {
+        return structure.unwrapKey()
+                .map(key -> key.identifier().getPath().equals("desert_pyramid"))
+                .orElse(false);
     }
 
     private static SearchOutcome search(
@@ -484,13 +505,21 @@ public final class LatitudeStructureLocateService {
                             continue;
                         }
                         tally.tested++;
-                        if (!evaluateCandidate(context, candidate, candidateChunk, tally)) {
+                        BlockPos generatedTarget = evaluateCandidate(
+                                context, candidate, candidateChunk, tally);
+                        if (generatedTarget == null) {
                             continue;
                         }
-                        double distSqr = context.origin().distSqr(locatePos);
+                        if (!context.bounds().contains(generatedTarget)) {
+                            tally.outOfBorder++;
+                            continue;
+                        }
+                        double targetDx = context.origin().getX() - generatedTarget.getX();
+                        double targetDz = context.origin().getZ() - generatedTarget.getZ();
+                        double distSqr = targetDx * targetDx + targetDz * targetDz;
                         if (distSqr < ringBestDistSqr) {
                             ringBestDistSqr = distSqr;
-                            ringBest = Pair.of(locatePos, candidate.holder());
+                            ringBest = Pair.of(generatedTarget, candidate.holder());
                         }
                     }
                 }
@@ -507,7 +536,7 @@ public final class LatitudeStructureLocateService {
         return new SearchOutcome(null, tally);
     }
 
-    private static boolean evaluateCandidate(
+    private static BlockPos evaluateCandidate(
             SearchContext context,
             Candidate candidate,
             ChunkPos candidateChunk,
@@ -516,7 +545,7 @@ public final class LatitudeStructureLocateService {
         int blockZ = candidateChunk.getMiddleBlockZ();
         if (candidate.village()
                 && !evaluateVillagePolicy(context, candidate, blockX, blockZ, tally)) {
-            return false;
+            return null;
         }
         if (candidate.village() && candidate.structureId() != null) {
             Holder<Biome> finalBiome;
@@ -528,18 +557,18 @@ public final class LatitudeStructureLocateService {
                         context.randomState().sampler());
             } catch (RuntimeException resolutionFailure) {
                 tally.resolveFailures++;
-                return false;
+                return null;
             }
             if (finalBiome == null) {
                 tally.rejectedBiome++;
-                return false;
+                return null;
             }
             Identifier finalBiomeId = context.biomeRegistry().getKey(finalBiome.value());
             if (finalBiomeId != null
                     && LatitudeBiomes.villageVariantVsBiomeMismatch(
                             candidate.structureId().getPath(), finalBiomeId.toString())) {
                 tally.rejectedVillage++;
-                return false;
+                return null;
             }
         }
         try {
@@ -558,12 +587,19 @@ public final class LatitudeStructureLocateService {
                     candidate.structure().biomes()::contains);
             if (generatedStart == null || !generatedStart.isValid()) {
                 tally.rejectedGeneration++;
-                return false;
+                return null;
             }
-            return evaluateGeneratedFootprint(context, candidate, generatedStart, tally);
+            if (!evaluateGeneratedFootprint(context, candidate, generatedStart, tally)) {
+                return null;
+            }
+            BlockPos center = generatedStart.getBoundingBox().getCenter();
+            return new BlockPos(
+                    center.getX(),
+                    generatedStart.getBoundingBox().maxY() + 2,
+                    center.getZ());
         } catch (RuntimeException generationFailure) {
             tally.resolveFailures++;
-            return false;
+            return null;
         }
     }
 
@@ -696,6 +732,8 @@ public final class LatitudeStructureLocateService {
             net.minecraft.resources.ResourceKey<Level> level,
             int x,
             int z,
+            int minimumY,
+            boolean mayBeBuried,
             long expiresAtMs) {
     }
 

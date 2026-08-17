@@ -425,15 +425,19 @@ public final class VillageLatitudePolicyTest {
         assertTrue(
                 locate.indexOf("candidate.placement().isStructureChunk( context.structureState()") >= 0
                         && locate.indexOf("candidate.placement().isStructureChunk( context.structureState()")
-                                < locate.indexOf("if (!evaluateCandidate(context, candidate, candidateChunk, tally))")
-                        && locate.indexOf("if (!evaluateCandidate(context, candidate, candidateChunk, tally))") >= 0
-                        && locate.indexOf("if (!evaluateCandidate(context, candidate, candidateChunk, tally))")
-                                < locate.indexOf("double distSqr = context.origin().distSqr(locatePos);"),
+                                < locate.indexOf("BlockPos generatedTarget = evaluateCandidate(")
+                        && locate.indexOf("BlockPos generatedTarget = evaluateCandidate(") >= 0
+                        && locate.indexOf("BlockPos generatedTarget = evaluateCandidate(")
+                                < locate.indexOf("double distSqr = targetDx * targetDx + targetDz * targetDz;"),
                 "full placement restrictions, invalid starts, and footprint laws run before result selection");
         assertTrue(
-                locate.indexOf("return evaluateGeneratedFootprint(context, candidate, generatedStart, tally);")
+                locate.indexOf("if (!evaluateGeneratedFootprint(context, candidate, generatedStart, tally))")
                         > locate.indexOf("StructureStart generatedStart = candidate.structure().generate("),
                 "the footprint law judges a real generated start, never a predicted one");
+        assertTrue(
+                locate.indexOf("if (!evaluateGeneratedFootprint(context, candidate, generatedStart, tally))")
+                        < locate.indexOf("BlockPos center = generatedStart.getBoundingBox().getCenter();"),
+                "a footprint the law vetoes is never centred and offered as a locate result");
         assertTrue(
                 locate.contains("tally.rejectedPlacement++")
                         && locate.contains("tally.rejectedGeneration++")

@@ -645,17 +645,24 @@ public final class WorldgenAuthorityPolicyTest {
                         && service.contains("candidate.structure().generate(")
                         && service.contains("context.templateManager()")
                         && service.contains("if (generatedStart == null || !generatedStart.isValid())")
+                        && service.contains("BlockPos center = generatedStart.getBoundingBox().getCenter()")
+                        && service.contains("generatedStart.getBoundingBox().maxY() + 2")
+                        && service.contains("ringBest = Pair.of(generatedTarget, candidate.holder())")
                         && service.contains("LatitudeBiomes.villageVariantVsBiomeMismatch("),
-                "locate candidates must pass Minecraft's real generation-point, Latitude footprint, and village admission path");
+                "locate candidates must pass Minecraft's real generation-point and return the generated structure center");
         assertTrue(
                 service.contains("showTeleportLocateResult(source, target, context.origin(), outcome.result())")
                         && service.contains("new ClickEvent.RunCommand(\"/latitude_locate_teleport \" + token)")
                         && service.contains("pending == null || !pending.token().equals(token)")
                         && service.contains("Util.getMillis() > pending.expiresAtMs()")
                         && service.contains("serverTeleports.remove(player.getUUID())")
+                        && service.contains("Math.max(player.getY(), pending.minimumY())")
+                        && service.contains("\"globe.locate.buried_structure.teleported\"")
+                        && service.contains("\"globe.locate.buried_structure.hint\"")
+                        && !service.contains("Centered above the generated desert pyramid")
                         && !service.contains("new ClickEvent.RunCommand(\"/tp ")
                         && service.contains("\"commands.locate.structure.not_found\""),
-                "the coordinate click must use a player-bound, expiring one-time action or show a clear not-found message");
+                "the coordinate click must use a player-bound action centered safely above the generated structure");
         assertTrue(
                 service.contains("try { job.start(); } catch (Throwable failure) { ACTIVE_JOBS.remove(server); job.finishWithFailure(failure); }")
                         && service.contains("finally { finished = true; clearBossBar(); }")
