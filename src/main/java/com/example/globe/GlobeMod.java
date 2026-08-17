@@ -88,6 +88,7 @@ public class GlobeMod implements ModInitializer {
     private static final int EW_SPAWN_PADDING_BLOCKS = 64;
     private static final long SPAWN_SALT = 0x7A3E21B5D4C1F7A9L;
     private static final Set<String> PROVIDER_PROFILE_WARNINGS = ConcurrentHashMap.newKeySet();
+    private static volatile boolean pendingInitialBonusChest;
 
     public static final int POLE_START = 12000; // Legacy constant, use activePoleBandStartAbsZ for dynamic logic
 
@@ -142,6 +143,7 @@ public class GlobeMod implements ModInitializer {
         registerDevOnlyHeadlessRunner();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             activeLatitudeOverworldGenerator = null;
+            pendingInitialBonusChest = false;
             LatitudeBiomes.clearWorldgenContext();
         });
 
@@ -166,6 +168,14 @@ public class GlobeMod implements ModInitializer {
             ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe, loadingBandId));
             boolean isBrandNewWorld = overworld.getGameTime() < 100L;
             boolean spawnAlreadyChosen = handler.player.entityTags().contains(SPAWN_CHOSEN_TAG);
+
+            if (isGlobe && pendingInitialBonusChest) {
+                // The biome-correct initial coordinate is only a suggestion. Minecraft 26.2's
+                // PrepareSpawnTask resolves and loads the actual safe player position before JOIN,
+                // so placing the optional chest here avoids a synchronous remote chunk request.
+                pendingInitialBonusChest = false;
+                placeLatitudeBonusChest(overworld, handler.player.blockPosition());
+            }
 
             if (!server.isDedicatedServer()) {
                 GlobePending.consume();
@@ -611,13 +621,18 @@ public class GlobeMod implements ModInitializer {
             }
             levelData.setSpawn(LevelData.RespawnData.of(world.dimension(), spawnPos, 0.0f, 0.0f));
             LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
-            // Bonus chest: vanilla setInitialSpawn places it at the vanilla spawn, but we cancel that
-            // path and set the Latitude zone spawn instead — so place the bonus chest at OUR spawn.
+            pendingInitialBonusChest = false;
             if (generateBonusChest) {
-                placeLatitudeBonusChest(world, spawnPos);
+                if (spawnChoice.terrainValidated()) {
+                    placeLatitudeBonusChest(world, spawnPos);
+                } else {
+                    pendingInitialBonusChest = true;
+                }
             }
-            LOGGER.info("[Latitude] Early initial spawn set before player-spawn pregen: zone={} x={} y={} z={} radius={} bonusChest={}",
-                    spawnChoice.zoneId(), spawnPos.getX(), spawnPos.getY(), spawnPos.getZ(), spawnChoice.radius(), generateBonusChest);
+            LOGGER.info("[Latitude] Early initial spawn set before player-spawn pregen: zone={} x={} y={} z={} radius={} terrainValidated={} bonusChest={} bonusChestDeferred={}",
+                    spawnChoice.zoneId(), spawnPos.getX(), spawnPos.getY(), spawnPos.getZ(),
+                    spawnChoice.radius(), spawnChoice.terrainValidated(), generateBonusChest,
+                    pendingInitialBonusChest);
             if (loadListener != null) {
                 loadListener.finish(LevelLoadListener.Stage.PREPARE_GLOBAL_SPAWN);
             }
@@ -814,13 +829,13 @@ public class GlobeMod implements ModInitializer {
         z = Mth.clamp(z, -maxAbsZ, maxAbsZ);
 
         int targetZ = z;
-        BlockPos spawnPos;
+        ResolvedSpawn resolvedSpawn;
         try {
             SamplerTemplate template = BiomeSamplerTools.createTemplate(world);
             RandomState noiseConfig = RandomState.create(
                     template.settings().value(), template.noiseParameters(), seed);
             Climate.Sampler sampler = noiseConfig.sampler();
-            spawnPos = findLandSpawn(
+            resolvedSpawn = findLandSpawn(
                     world,
                     template,
                     sampler,
@@ -831,17 +846,20 @@ public class GlobeMod implements ModInitializer {
                     prepareTeleportNeighbors);
         } catch (Exception e) {
             LOGGER.warn("[Latitude] Biome probe failed, using fallback spawn", e);
-            spawnPos = null;
+            resolvedSpawn = null;
         }
 
-        if (spawnPos == null && allowTerrainFallback) {
+        if (resolvedSpawn == null && allowTerrainFallback) {
             LOGGER.warn(
                     "[Latitude] Could not find a validated biome-targeted spawn for zone={} targetZ={}; trying bounded terrain-safe fallback columns.",
                     zoneId,
                     targetZ);
-            spawnPos = findSafeFallbackSpawn(world, radius, targetZ, prepareTeleportNeighbors);
+            BlockPos fallback = findSafeFallbackSpawn(world, radius, targetZ, prepareTeleportNeighbors);
+            if (fallback != null) {
+                resolvedSpawn = new ResolvedSpawn(fallback, true);
+            }
         }
-        if (spawnPos == null) {
+        if (resolvedSpawn == null) {
             throw new IllegalStateException(
                     "No terrain-validated Latitude spawn was available for zone="
                             + zoneId
@@ -849,7 +867,11 @@ public class GlobeMod implements ModInitializer {
                             + targetZ);
         }
 
-        return new SpawnChoice(zoneId, spawnPos, radius);
+        return new SpawnChoice(
+                zoneId,
+                resolvedSpawn.pos(),
+                radius,
+                resolvedSpawn.terrainValidated());
     }
 
     public static void logBuildMetadata(String side) {
@@ -899,11 +921,11 @@ public class GlobeMod implements ModInitializer {
         return value == null || value.isBlank() ? current : value.trim();
     }
 
-    private static BlockPos findLandSpawn(ServerLevel world, SamplerTemplate template,
-                                          Climate.Sampler sampler,
-                                          int borderHalf, int targetZ, long seed,
-                                          int terrainValidationBudget,
-                                          boolean prepareTeleportNeighbors) {
+    private static ResolvedSpawn findLandSpawn(ServerLevel world, SamplerTemplate template,
+                                               Climate.Sampler sampler,
+                                               int borderHalf, int targetZ, long seed,
+                                               int terrainValidationBudget,
+                                               boolean prepareTeleportNeighbors) {
         final int margin = 320;
         final int maxAbsX = SpawnSafetyPolicy.safeSearchMaxAbsX(
                 borderHalf,
@@ -939,13 +961,21 @@ public class GlobeMod implements ModInitializer {
                     continue;
                 }
 
+                if (terrainValidationBudget <= 0) {
+                    // This is a biome-correct suggestion, not a claimed safe surface. Minecraft
+                    // 26.2's asynchronous PrepareSpawnTask performs the final collision/liquid
+                    // search around it before the player is created. No remote chunk is loaded here.
+                    return new ResolvedSpawn(
+                            new BlockPos(x, world.getSeaLevel() + 1, z),
+                            false);
+                }
                 if (terrainValidationAttempts >= Math.max(0, terrainValidationBudget)) {
                     return null;
                 }
                 terrainValidationAttempts++;
                 BlockPos candidate = placeSafeY(world, x, z, prepareTeleportNeighbors);
                 if (candidate != null) {
-                    return candidate;
+                    return new ResolvedSpawn(candidate, true);
                 }
             }
         }
@@ -1076,7 +1106,10 @@ public class GlobeMod implements ModInitializer {
         return loadedChunks;
     }
 
-    private record SpawnChoice(String zoneId, BlockPos pos, int radius) {
+    private record ResolvedSpawn(BlockPos pos, boolean terrainValidated) {
+    }
+
+    private record SpawnChoice(String zoneId, BlockPos pos, int radius, boolean terrainValidated) {
     }
 
     private static double lerp(double a, double b, double t) {

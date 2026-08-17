@@ -61,14 +61,30 @@ public final class SpawnSafetyPolicyTest {
                         "SpawnSafetyPolicy.INITIAL_SPAWN_TERRAIN_VALIDATION_BUDGET, false, true"),
                 "initial creation retains the selected latitude through its bounded safe fallback without teleport-neighbor preload");
         int initialBudgetGuard = source.indexOf(
-                "if (terrainValidationAttempts >= Math.max(0, terrainValidationBudget)) { return null; }");
+                "if (terrainValidationBudget <= 0) { // This is a biome-correct suggestion");
         int speculativeTerrainLoad = source.indexOf(
                 "BlockPos candidate = placeSafeY(world, x, z, prepareTeleportNeighbors);");
         assertTrue(
                 initialBudgetGuard >= 0
                         && speculativeTerrainLoad >= 0
                         && initialBudgetGuard < speculativeTerrainLoad,
-                "the zero initial budget returns before the first FULL-chunk terrain validation");
+                "the zero initial budget returns a biome-correct suggestion before the first FULL-chunk terrain validation");
+        assertTrue(
+                source.contains(
+                        "return new ResolvedSpawn( new BlockPos(x, world.getSeaLevel() + 1, z), false);"),
+                "initial creation hands Minecraft a target-band suggestion without claiming that its surface was validated");
+        assertTrue(
+                source.contains(
+                        "spawnChoice.radius(), spawnChoice.terrainValidated(), generateBonusChest, pendingInitialBonusChest"),
+                "initial-spawn logs distinguish a suggestion from a terrain-validated coordinate");
+        assertTrue(
+                source.contains(
+                        "placeLatitudeBonusChest(overworld, handler.player.blockPosition())"),
+                "an optional bonus chest is placed only after Minecraft has resolved and loaded the final player position");
+        assertTrue(
+                source.contains(
+                        "if (isGlobe && pendingInitialBonusChest)"),
+                "the zero-load initial path defers bonus-chest placement to the already-loaded JOIN position");
         assertTrue(
                 source.contains("findSafeFallbackSpawn(world, radius, targetZ, prepareTeleportNeighbors)"),
                 "an exhausted initial candidate uses only the terrain-validated fallback at the requested latitude");
