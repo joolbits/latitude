@@ -39,6 +39,7 @@ public final class WorldgenAuthorityPolicyTest {
         recreatedLatitudeWorldKeepsItsWorldTypeAndSize();
         coastalSwampUsesMangroveIdentity();
         onlyWetProvincesAdmitWetlandClaims();
+        aridHotspotsAreWorldSizeStableAndPresentOnEverySeed();
         wetlandLocateFilterMatchesFinalIdentityLaw();
         biomeLocateServiceClaimsAllSupportedTargets();
         structureLocateServiceIsBoundedAndTickDelivered();
@@ -529,6 +530,55 @@ public final class WorldgenAuthorityPolicyTest {
                         "case SUBPOLAR_WETLAND -> band == BAND_SUBPOLAR && !mountain"
                                 + " && wetlandProvinceEligible(blockX, blockZ)"),
                 "the subpolar wetland route arm shares the final wet-province law");
+    }
+
+    /**
+     * The desert-oasis mechanism must exist on every seed and at every world size (maintainer
+     * ruling, 2026-08-16, desert-abundance lever 1). The census proved the previous behavior:
+     * the hotspot noise scale grew with the radius, so the field always had ~3 cells across the
+     * whole map and two of three measured seeds had literally ZERO hotspot area — the ruled-in
+     * oasis exception never fired. This pins the repaired geometry: the scale is capped, every
+     * seed in a fixed list carries at least one hotspot, and a flood ceiling keeps the tuning
+     * honest in both directions.
+     */
+    private static void aridHotspotsAreWorldSizeStableAndPresentOnEverySeed() {
+        assertEquals(2250, LatitudeBiomes.aridHotspotScaleBlocks(3_750),
+                "small worlds keep their proportional hotspot scale");
+        assertEquals(3000, LatitudeBiomes.aridHotspotScaleBlocks(5_000),
+                "the proportional scale still applies below the cap");
+        assertEquals(3072, LatitudeBiomes.aridHotspotScaleBlocks(10_000),
+                "regular worlds hit the cap, giving a world-size-stable cell count");
+        assertEquals(3072, LatitudeBiomes.aridHotspotScaleBlocks(20_000),
+                "massive worlds hit the same cap instead of scaling the cells up with the map");
+
+        for (int radius : new int[] {10_000, 20_000}) {
+            double aggregate = 0.0;
+            for (long seed = 41L; seed <= 52L; seed++) {
+                int samples = 0;
+                int hits = 0;
+                for (int blockZ = -radius; blockZ < radius; blockZ += 250) {
+                    for (int blockX = -radius; blockX < radius; blockX += 250) {
+                        samples++;
+                        if (LatitudeBiomes.aridHotspotHere(seed, radius, blockX, blockZ)) {
+                            hits++;
+                        }
+                    }
+                }
+                double fraction = (double) hits / samples;
+                aggregate += fraction;
+                assertTrue(hits >= 1,
+                        "seed " + seed + " at radius " + radius + " carries at least one arid "
+                                + "hotspot — a seed with zero oases leaves the desert-oasis "
+                                + "ruling inert");
+                assertTrue(fraction <= 0.08,
+                        "seed " + seed + " at radius " + radius + " stays under the hotspot "
+                                + "flood ceiling (got " + fraction + ")");
+            }
+            double mean = aggregate / 12.0;
+            assertTrue(mean >= 0.004 && mean <= 0.05,
+                    "mean hotspot area at radius " + radius + " stays in the oasis band "
+                            + "(got " + mean + ")");
+        }
     }
 
     /** First column the given authority classifies as the wanted province; deterministic scan. */

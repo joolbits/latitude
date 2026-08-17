@@ -3010,18 +3010,38 @@ public final class LatitudeBiomes {
     }
 
     private static boolean aridHotspotHere(long worldSeed, int blockX, int blockZ) {
-        // Coarse, world-size-aware arid province membership. Restrict to warm/subtropical bands and
-        // demand a low-noise hit so only a few large provinces form instead of thin seams.
         int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : REFERENCE_DIAMETER_BLOCKS / 2;
-        if (radius <= 0) {
+        return aridHotspotHere(worldSeed, radius, blockX, blockZ);
+    }
+
+    /** The hotspot noise scale for a world radius. Package-visible as a focused-test seam. */
+    static int aridHotspotScaleBlocks(int radiusBlocks) {
+        return Math.max(ARID_REGION_MIN_SCALE_BLOCKS,
+                Math.min((int) Math.round(radiusBlocks * 0.60), ARID_REGION_MAX_SCALE_BLOCKS));
+    }
+
+    /**
+     * Coarse arid province membership — the desert-oasis mechanism. Restricted to the
+     * warm/subtropical belt with a low-noise hit so only a few large provinces form instead of
+     * thin seams.
+     *
+     * <p>The noise scale is capped (maintainer ruling, 2026-08-16, desert-abundance lever 1):
+     * the previous {@code radius * 0.60} scale grew WITH the world, so the primary field always
+     * had ~3 cells across the entire map at any size — hotspot presence was near-binary per
+     * seed, and most seeds had literally none, leaving the ruled-in oasis exception inert.
+     * Capping the scale keeps blobs large and coherent while making their count world-size
+     * stable, so every seed carries a few oases.
+     */
+    static boolean aridHotspotHere(long worldSeed, int radiusBlocks, int blockX, int blockZ) {
+        if (radiusBlocks <= 0) {
             return false;
         }
-        double latFrac = Math.abs(blockZ) / (double) radius; // 0 at equator, 1 at pole
+        double latFrac = Math.abs(blockZ) / (double) radiusBlocks; // 0 at equator, 1 at pole
         if (latFrac < 0.18 || latFrac > 0.58) {
             return false; // keep arid provinces in the warm/subtropical belt
         }
 
-        int scale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radius * 0.60));
+        int scale = aridHotspotScaleBlocks(radiusBlocks);
         double primary = ValueNoise2D.sampleBlocks(worldSeed ^ ARID_REGION_SALT, blockX, blockZ, scale);
         if (primary >= 0.18) {
             return false; // only the lowest 18% of the coarse noise become arid members
@@ -3052,6 +3072,9 @@ public final class LatitudeBiomes {
     private static final String BADLANDS_ID = "minecraft:badlands";
     private static final long ARID_REGION_SALT = 0xA11D9110L;
     private static final int ARID_REGION_MIN_SCALE_BLOCKS = 2048;
+    // Cap chosen so a radius-10000 world carries ~6.5 primary cells across its span instead of
+    // 3.3 — enough that the lowest-18% gate lands somewhere on essentially every seed.
+    private static final int ARID_REGION_MAX_SCALE_BLOCKS = 3072;
     private static final int MANGROVE_PATCH_CELL_BLOCKS = 1024;
     private static final int MANGROVE_PATCH_PERCENT = 20;
     private static final int MANGROVE_PATCH_SALT = 0x2F7A3B1C;
