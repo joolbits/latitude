@@ -2,7 +2,6 @@ package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
-import com.example.globe.world.BiomeDescriptorLedger;
 import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
@@ -56,9 +55,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     @Unique
     private static final int CAVE_SURFACE_MARGIN_BLOCKS =
             Integer.getInteger("latitude.caveSurfaceMarginBlocks", 8);
-
-    @Unique
-    private static final int SULFUR_SURFACE_REACH_BLOCKS = 32;
 
     @Unique
     private static final boolean DEBUG_CAVE_CLAMP =
@@ -304,34 +300,17 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 nearSurface = blockY >= (surfaceY - CAVE_SURFACE_MARGIN_BLOCKS);
                 tooHigh = blockY > MAX_CAVE_BIOME_Y;
                 deepDarkIllegal = isDeepDark(biomes, current) && blockY > -16;
-                boolean sulfurMayReachSurface = isSulfurCaves(biomes, current)
-                        && blockY >= (surfaceY - SULFUR_SURFACE_REACH_BLOCKS);
-                if (nearSurface || tooHigh || deepDarkIllegal || sulfurMayReachSurface) {
-                    Holder<Biome> replacement = sulfurMayReachSurface
-                            ? columnPickCache.get(colKey)
-                            : null;
-                    if (replacement == null || columnPickBase.get(colKey) != base) {
-                        replacement = pickSurfaceReplacement(
-                                biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler,
-                                generator, noiseConfig, chunk);
-                        if (sulfurMayReachSurface) {
-                            columnPickCache.put(colKey, replacement);
-                            columnPickBase.put(colKey, base);
-                        }
-                    }
-                    boolean sulfurSurfaceIncompatible = sulfurMayReachSurface
-                            && !BiomeDescriptorLedger.supportsSulfurSurfaceExpression(
-                                    biomeId(biomes, replacement));
+                if (nearSurface || tooHigh || deepDarkIllegal) {
+                    Holder<Biome> replacement = pickSurfaceReplacement(
+                            biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler,
+                            generator, noiseConfig, chunk);
                     if (DEBUG_CAVE_CLAMP) {
-                        LOGGER.info("[Latitude] Evaluated cave clamp {} at x={} y={} z={} (surfaceY={} margin={} sulfurReach={} maxY={} deepDarkIllegal={} sulfurSurfaceIncompatible={}) -> {}",
+                        LOGGER.info("[Latitude] Clamped {} at x={} y={} z={} (surfaceY={} margin={} maxY={} deepDarkIllegal={}) -> {}",
                                 biomeId(biomes, current), blockX, blockY, blockZ,
-                                surfaceY, CAVE_SURFACE_MARGIN_BLOCKS, SULFUR_SURFACE_REACH_BLOCKS,
-                                MAX_CAVE_BIOME_Y, deepDarkIllegal, sulfurSurfaceIncompatible,
-                                biomeId(biomes, replacement));
+                                surfaceY, CAVE_SURFACE_MARGIN_BLOCKS, MAX_CAVE_BIOME_Y,
+                                deepDarkIllegal, biomeId(biomes, replacement));
                     }
-                    if (nearSurface || tooHigh || deepDarkIllegal || sulfurSurfaceIncompatible) {
-                        return replacement;
-                    }
+                    return replacement;
                 }
             }
             if (caveCurrent) {
@@ -493,15 +472,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             actual = entry.unwrapKey().map(key -> key.identifier()).orElse(null);
         }
         return DEEP_DARK_ID.equals(actual);
-    }
-
-    @Unique
-    private static boolean isSulfurCaves(Registry<Biome> biomes, Holder<Biome> entry) {
-        Identifier actual = biomes.getKey(entry.value());
-        if (actual == null) {
-            actual = entry.unwrapKey().map(key -> key.identifier()).orElse(null);
-        }
-        return SULFUR_CAVES_ID.equals(actual);
     }
 
     @Unique

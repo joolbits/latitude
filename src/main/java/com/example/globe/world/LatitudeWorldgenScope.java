@@ -2,6 +2,7 @@ package com.example.globe.world;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import net.minecraft.resources.Identifier;
 
 /**
  * Thread-local authority for globally registered worldgen hooks that cannot see their owning
@@ -14,22 +15,40 @@ public final class LatitudeWorldgenScope {
     }
 
     public static Scope enter(boolean active) {
-        return enter(active, false);
+        return enter(active, false, null);
     }
 
     /** Marks the biome-decoration phase, where vegetation block-write guards are authoritative. */
     public static Scope enterFeatures(boolean active) {
-        return enter(active, true);
+        return enterFeatures(active, null);
     }
 
-    private static Scope enter(boolean active, boolean featureRoot) {
+    /**
+     * Marks one top-level placed-feature invocation and carries its registry id
+     * through nested configured features on the same worldgen thread.
+     */
+    public static Scope enterFeatures(boolean active, Identifier placedFeatureId) {
+        return enter(active, true, placedFeatureId);
+    }
+
+    private static Scope enter(boolean active,
+                               boolean featureRoot,
+                               Identifier placedFeatureId) {
         Deque<Frame> frames = FRAMES.get();
         if (frames == null) {
             frames = new ArrayDeque<>();
             FRAMES.set(frames);
         }
-        boolean inheritedFeature = !frames.isEmpty() && frames.peek().features;
-        Frame frame = new Frame(active, active && (featureRoot || inheritedFeature));
+        Frame parent = frames.peek();
+        boolean inheritedFeature = parent != null && parent.features;
+        Identifier inheritedPlacedFeatureId = parent != null ? parent.placedFeatureId : null;
+        Identifier activePlacedFeatureId = active
+                ? (featureRoot ? placedFeatureId : inheritedPlacedFeatureId)
+                : null;
+        Frame frame = new Frame(
+                active,
+                active && (featureRoot || inheritedFeature),
+                activePlacedFeatureId);
         frames.push(frame);
         return new Scope(frame);
     }
@@ -44,7 +63,14 @@ public final class LatitudeWorldgenScope {
         return frames != null && !frames.isEmpty() && frames.peek().features;
     }
 
-    private record Frame(boolean active, boolean features) {
+    public static Identifier currentPlacedFeatureId() {
+        Deque<Frame> frames = FRAMES.get();
+        return frames != null && !frames.isEmpty()
+                ? frames.peek().placedFeatureId
+                : null;
+    }
+
+    private record Frame(boolean active, boolean features, Identifier placedFeatureId) {
     }
 
     public static final class Scope implements AutoCloseable {

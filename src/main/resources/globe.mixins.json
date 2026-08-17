@@ -25,6 +25,7 @@
     "AlpineSurfaceMixin",
     "AlpineSnowVegetationGuardMixin",
     "SurfaceDripstoneLawnmowerMixin",
+    "SulfurPoolSurfaceGuardMixin",
     "ExtremePolarVillageStartGuardMixin",
     "StructureBiomeMatchGuardMixin",
     "ExtremePolarVegetationGuardMixin",

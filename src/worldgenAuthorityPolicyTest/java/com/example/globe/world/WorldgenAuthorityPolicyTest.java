@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
+import net.minecraft.resources.Identifier;
 
 public final class WorldgenAuthorityPolicyTest {
     public static void main(String[] args) throws Exception {
@@ -1008,6 +1009,7 @@ public final class WorldgenAuthorityPolicyTest {
                 "descriptor-owned arid land remains eligible for a surface sulfur pool");
         assertFalse(
                 BiomeDescriptorLedger.supportsSulfurSurfaceExpression("minecraft:jungle")
+                        || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("minecraft:meadow")
                         || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("terralith:tropical_jungle")
                         || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("terralith:amethyst_rainforest")
                         || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("minecraft:swamp")
@@ -1015,18 +1017,59 @@ public final class WorldgenAuthorityPolicyTest {
                         || BiomeDescriptorLedger.supportsSulfurSurfaceExpression("unreviewed:volcanic_name"),
                 "humid, wetland, non-arid upland, and unknown name-alike surfaces fail closed");
 
+        assertTrue(
+                SulfurSurfaceExpressionPolicy.shouldSuppressPool(true, 32, 64, false)
+                        && SulfurSurfaceExpressionPolicy.shouldSuppressPool(true, 33, 64, false),
+                "a sulfur pool at or inside its 32-block surface reach is suppressed under incompatible land");
+        assertFalse(
+                SulfurSurfaceExpressionPolicy.shouldSuppressPool(true, 31, 64, false)
+                        || SulfurSurfaceExpressionPolicy.shouldSuppressPool(true, 64, 64, true)
+                        || SulfurSurfaceExpressionPolicy.shouldSuppressPool(false, 64, 64, false),
+                "deep sulfur pools, compatible arid surfaces, and unrelated sequences fail open");
+        assertTrue(
+                SulfurSurfaceExpressionPolicy.shouldSuppressSpike(true, true, false),
+                "a surface-visible sulfur spike is suppressed under incompatible land");
+        assertFalse(
+                SulfurSurfaceExpressionPolicy.shouldSuppressSpike(true, false, false)
+                        || SulfurSurfaceExpressionPolicy.shouldSuppressSpike(true, true, true)
+                        || SulfurSurfaceExpressionPolicy.shouldSuppressSpike(false, true, false),
+                "underground sulfur spikes, compatible arid surfaces, and ordinary dripstone fail open");
+
         String populate = normalize(read(
                 "src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java"));
+        assertFalse(
+                populate.contains("SULFUR_SURFACE_REACH_BLOCKS")
+                        || populate.contains("sulfurMayReachSurface")
+                        || populate.contains("sulfurSurfaceIncompatible")
+                        || populate.contains("isSulfurCaves"),
+                "surface policy no longer erases the shallow sulfur-cave biome before decoration");
+
+        String guard = normalize(read(
+                "src/main/java/com/example/globe/mixin/SulfurPoolSurfaceGuardMixin.java"));
         assertTrue(
-                populate.contains("private static final int SULFUR_SURFACE_REACH_BLOCKS = 32;")
-                        && populate.contains("boolean sulfurMayReachSurface = isSulfurCaves(biomes, current) && blockY >= (surfaceY - SULFUR_SURFACE_REACH_BLOCKS);")
-                        && populate.contains("boolean sulfurSurfaceIncompatible = sulfurMayReachSurface && !BiomeDescriptorLedger.supportsSulfurSurfaceExpression( biomeId(biomes, replacement));")
-                        && populate.contains("if (nearSurface || tooHigh || deepDarkIllegal || sulfurSurfaceIncompatible) { return replacement; }"),
-                "the vanilla sulfur pool's complete upward reach is checked against the final Latitude surface biome");
+                guard.contains("@Mixin(SequenceFeature.class)")
+                        && guard.contains("LatitudeWorldgenScope.isFeatureActive()")
+                        && guard.contains("LatitudeWorldgenScope.currentPlacedFeatureId()")
+                        && guard.contains("SULFUR_POOL_ID.equals(topFeatureId)")
+                        && guard.contains("Heightmap.Types.WORLD_SURFACE_WG")
+                        && guard.contains("SulfurSurfaceExpressionPolicy.shouldSuppressPool(")
+                        && guard.contains("cir.setReturnValue(false);"),
+                "only the sulfur-pool sequence is vetoed at its final surface-aware feature origin");
+        String mixins = normalize(read("src/main/resources/globe.mixins.json"));
         assertTrue(
-                populate.contains("Holder<Biome> replacement = sulfurMayReachSurface ? columnPickCache.get(colKey) : null;")
-                        && populate.contains("if (sulfurMayReachSurface) { columnPickCache.put(colKey, replacement); columnPickBase.put(colKey, base); }"),
-                "the sulfur reach check reuses one final surface decision per column");
+                mixins.contains("SulfurPoolSurfaceGuardMixin"),
+                "the feature-specific sulfur surface guard is registered");
+
+        String speleothemGuard = normalize(read(
+                "src/main/java/com/example/globe/mixin/SurfaceDripstoneLawnmowerMixin.java"));
+        assertTrue(
+                speleothemGuard.contains("LatitudeWorldgenScope.currentPlacedFeatureId()")
+                        && speleothemGuard.contains("SULFUR_SPIKE_ID.equals(placedFeatureId)")
+                        && speleothemGuard.contains("SULFUR_SPIKE_CLUSTER_ID.equals(placedFeatureId)")
+                        && speleothemGuard.contains("boolean surfaceVisible = openToSky || origin.getY() >= surfaceY - 1;")
+                        && speleothemGuard.contains("SulfurSurfaceExpressionPolicy.shouldSuppressSpike(")
+                        && speleothemGuard.contains("cancel = nearSurfaceByHeightmap || skyVisible;"),
+                "sulfur speleothems use surface visibility and descriptor authority while ordinary dripstone keeps the existing buffer");
     }
 
     private static void frozenRiverVegetationIsScopedWithoutMutatingVanillaBiomes()
@@ -1074,8 +1117,11 @@ public final class WorldgenAuthorityPolicyTest {
     }
 
     private static void generationScopeIsDimensionIsolatedAndNestSafe() {
+        Identifier sulfurPool = Identifier.fromNamespaceAndPath("minecraft", "sulfur_pool");
         assertFalse(LatitudeWorldgenScope.isActive(), "scope starts inactive");
         assertFalse(LatitudeWorldgenScope.isFeatureActive(), "feature scope starts inactive");
+        assertSame(null, LatitudeWorldgenScope.currentPlacedFeatureId(),
+                "placed-feature scope starts empty");
         try (LatitudeWorldgenScope.Scope overworld = LatitudeWorldgenScope.enter(true)) {
             assertTrue(LatitudeWorldgenScope.isActive(), "authorized overworld scope is active");
             assertFalse(LatitudeWorldgenScope.isFeatureActive(),
@@ -1091,22 +1137,33 @@ public final class WorldgenAuthorityPolicyTest {
         }
         assertFalse(LatitudeWorldgenScope.isActive(), "outer close removes all authority");
 
-        try (LatitudeWorldgenScope.Scope features = LatitudeWorldgenScope.enterFeatures(true)) {
+        try (LatitudeWorldgenScope.Scope features =
+                     LatitudeWorldgenScope.enterFeatures(true, sulfurPool)) {
             assertTrue(LatitudeWorldgenScope.isFeatureActive(),
                     "the explicit biome-decoration scope authorizes vegetation block filtering");
+            assertSame(sulfurPool, LatitudeWorldgenScope.currentPlacedFeatureId(),
+                    "the top placed-feature id is available to nested configured features");
             try (LatitudeWorldgenScope.Scope nested = LatitudeWorldgenScope.enter(true)) {
                 assertTrue(LatitudeWorldgenScope.isFeatureActive(),
                         "nested generator queries inherit the active decoration phase");
+                assertSame(sulfurPool, LatitudeWorldgenScope.currentPlacedFeatureId(),
+                        "nested active frames inherit the placed-feature id");
             }
             try (LatitudeWorldgenScope.Scope inactive = LatitudeWorldgenScope.enter(false)) {
                 assertFalse(LatitudeWorldgenScope.isFeatureActive(),
                         "an inactive nested dimension cannot inherit decoration authority");
+                assertSame(null, LatitudeWorldgenScope.currentPlacedFeatureId(),
+                        "inactive nested frames clear the placed-feature id");
             }
             assertTrue(LatitudeWorldgenScope.isFeatureActive(),
                     "closing an inactive nested frame restores decoration authority");
+            assertSame(sulfurPool, LatitudeWorldgenScope.currentPlacedFeatureId(),
+                    "closing an inactive frame restores the placed-feature id");
         }
         assertFalse(LatitudeWorldgenScope.isFeatureActive(),
                 "closing the decoration scope clears its phase marker");
+        assertSame(null, LatitudeWorldgenScope.currentPlacedFeatureId(),
+                "closing the decoration scope clears the placed-feature id");
     }
 
     private static void generationScopeCleansUpOnFailureAndAcrossThreads() throws Exception {
@@ -1216,7 +1273,10 @@ public final class WorldgenAuthorityPolicyTest {
                 "the whole decoration method must not classify its earlier structure-placement phase as foliage");
         assertTrue(
                 generatorScope.contains("PlacedFeature;placeWithBiomeCheck")
-                        && placedFeatureWrapper.contains("LatitudeWorldgenScope.enterFeatures(active)"),
+                        && placedFeatureWrapper.contains("Registries.PLACED_FEATURE")
+                        && placedFeatureWrapper.contains("placedFeatures.getKey(feature)")
+                        && placedFeatureWrapper.contains(
+                                "LatitudeWorldgenScope.enterFeatures(active, placedFeatureId)"),
                 "only the actual placed-feature invocation may authorize vegetation block filtering");
         assertTrue(
                 occurrences(generatorScope, "try (LatitudeWorldgenScope.Scope") >= 3,
