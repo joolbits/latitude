@@ -242,6 +242,17 @@ public final class LatitudeBiomes {
     }
 
     /**
+     * Is this column inside a badlands province? Exported for the policy suite, which has to be able
+     * to ask WHERE badlands is supposed to live before it can assert that badlands lives there and
+     * desert lives everywhere else in the arid belt (maintainer ruling, 2026-08-18). Reads the active
+     * world seed, so it only answers meaningfully inside an activated worldgen context.
+     */
+    static boolean badlandsProvinceHitForPolicyTest(int blockX, int blockZ, int borderRadiusBlocks) {
+        int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : borderRadiusBlocks;
+        return badlandsProvinceAuthorityHit(WORLD_SEED, blockX, blockZ, Math.max(1, radius));
+    }
+
+    /**
      * Diagnostic-only accessor for atlas/export tooling: returns the pre-rewrite band choice
      * from the blend comparator (chosenBandIndex) before the subtropical->temperate constitutional
      * rewrite is applied.
@@ -2974,7 +2985,16 @@ public final class LatitudeBiomes {
     private static final long BADLANDS_PROVINCE_WOBBLE_SALT = 0x6261_646C_5F70_776FL; // "badl_pwo"
     private static final long BADLANDS_REGION_CORE_SHAPE_SALT = 0x6261_646C_5F636F72L; // "badl_cor"
     private static final long BADLANDS_OUTSIDE_PROVINCE_SALT = 0x6261_646C_5F6F7574L; // "badl_out"
-    private static final double BADLANDS_OUTSIDE_PROVINCE_THRESHOLD = 0.34;
+    // Outlier-mesa allowance: the fraction of dry columns OUTSIDE a badlands province that may still
+    // come up badlands. 0.34 -> 0.06 (maintainer ruling, 2026-08-18). At 0.34 this was not an outlier
+    // allowance at all, it was a second badlands province covering a third of everything outside the
+    // first one, and it was one of the two reasons a vanilla-only arid belt generated roughly 33
+    // badlands for every desert. Narrowed rather than deleted on purpose: at exactly zero the province
+    // edge becomes a crisp geometric line, and a lone mesa standing a few thousand blocks out from the
+    // main badlands country is exactly what the American southwest looks like. The field is sampled at
+    // ~0.45 * world radius, so 6% of a smooth field reads as a handful of small, coherent outliers
+    // rather than pepper (Art VI: block-space continuous, never a per-block hash).
+    private static final double BADLANDS_OUTSIDE_PROVINCE_THRESHOLD = 0.06;
     // Earth-analog latitude gate for badlands. MC badlands/mesa is an American-SW
     // (~35deg N) subtropical landform; Earth's deep equator has ZERO badlands. WARM_DRY
     // dry pockets are latitude-independent, so on some seeds badlands leaks to 0-5deg
@@ -10181,6 +10201,18 @@ public final class LatitudeBiomes {
                     return outsideVariant;
                 }
             }
+            // Outside the badlands province the arid belt is DESERT (maintainer ruling, 2026-08-18).
+            // badlandsProvinceAuthorityHit already says where badlands country IS; this line is what
+            // makes that the actual authority instead of a decoration. Resolved to desert DIRECTLY
+            // rather than by handing `base` to enforceWarmProvinceFamily, because that helper returns
+            // any badlands-family pick untouched -- so a column where vanilla had already placed
+            // badlands re-admitted badlands outside its own province, no matter what the province
+            // said. Badlands is the regional accent here; desert is the staple.
+            try {
+                return biome(biomes, "minecraft:desert");
+            } catch (Throwable ignored) {
+            }
+            // Reachable only for a pack that removed minecraft:desert.
             return enforceWarmProvinceFamily(biomes, base, warmProvince);
         }
         Holder<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
@@ -10228,10 +10260,26 @@ public final class LatitudeBiomes {
         return savanna != null ? savanna : pick;
     }
 
-    /** Shared latitude/noise predicate for {@link #demoteEquatorialBadlands}. Matches the whole arid family
-     *  (vanilla badlands/desert + modded arid variants) so the tropical-no-arid law covers them all. */
+    /** Shared latitude/noise predicate for {@link #demoteEquatorialBadlands}. Matches the badlands family
+     *  plus modded arid variants, so the tropical-no-arid law covers every arid identity a pack can add.
+     *  Vanilla {@code minecraft:desert} is deliberately NOT matched here: it is handled by the paired
+     *  {@link #shouldDemoteEquatorialDesert}, which enforces the same law over the same ramp, and being
+     *  gated by both cost desert the 23.5-27deg phase-in (maintainer ruling, 2026-08-18). */
     private static boolean shouldDemoteEquatorialBadlands(Holder<Biome> pick, int blockX, int blockZ) {
         if (pick == null || !isAridFamily(pick)) {
+            return false;
+        }
+        // Vanilla desert has its OWN gate, running immediately after this one, with the same law, the
+        // same ramp edges and the same tropical ban (maintainer ruling, 2026-08-18). Matching desert
+        // here TOO made a desert pick clear two independent noise fields where badlands cleared one,
+        // so across the 23.5-27deg phase-in desert survived ~latGate^2 against badlands' ~latGate.
+        // That cost nothing while the belt was badlands anyway; now that desert is the belt's staple
+        // it would quietly hand the lower subtropics to savanna instead. This does NOT loosen the
+        // tropical law: shouldDemoteEquatorialDesert reads the same authoritativeTropicalAridBan and
+        // the same 23.5deg low edge, where smoothstep clamps latGate to exactly 0 and therefore
+        // demotes EVERY desert pick. Modded arid variants deliberately stay in this predicate -- the
+        // desert gate matches the literal vanilla id and would never catch them.
+        if (isBiomeId(pick, "minecraft:desert")) {
             return false;
         }
         int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
@@ -10414,6 +10462,15 @@ public final class LatitudeBiomes {
                     return outsideVariant;
                 }
             }
+            // Same ruling as the Registry twin above: outside the province the belt is desert, and it
+            // is resolved directly so an already-badlands `base` cannot re-admit badlands out here.
+            // These two overloads must keep returning the same identity for the same column -- when
+            // they diverge, live chunk generation stops matching what the atlas draws.
+            Holder<Biome> outsideDesert = entryById(biomes, "minecraft:desert");
+            if (outsideDesert != null) {
+                return outsideDesert;
+            }
+            // Reachable only for a pack that removed minecraft:desert.
             return enforceWarmProvinceFamily(biomes, base, warmProvince);
         }
         Holder<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
@@ -11196,16 +11253,31 @@ public final class LatitudeBiomes {
             }
             case WARM_DRY -> {
                 if (isDesertFamily(pick) || isBadlandsFamily(pick)) return pick;
+                // Desert FIRST (maintainer ruling, 2026-08-18). This chain is the default identity of
+                // a dry warm province, and it used to name badlands first -- so every column that
+                // reached here with an out-of-place pick became mesa, which is half of why a
+                // vanilla-only arid belt read as badlands with desert as the curiosity. Badlands is
+                // regional: it is placed by badlandsProvinceAuthorityHit in pickAridRegionFallback,
+                // not by being the fallback for everything dry.
+                //
+                // MUST STAY IDENTICAL to the Collection overload below, id for id and in this order.
+                // The two overloads had disagreed here since they were written (this one badlands ->
+                // savanna -> desert, that one desert -> badlands), and the picker pair really does
+                // reach both: the policy sweep measured columns where the registry path returned
+                // badlands and the collection path returned desert for the same x/z. Divergence here
+                // means the world a player walks around in stops matching the map the atlas drew.
+                try {
+                    return biome(biomes, "minecraft:desert");
+                } catch (Throwable ignored) {
+                }
                 try {
                     return biome(biomes, "minecraft:badlands");
                 } catch (Throwable ignored) {
                 }
+                // Last resort, and unreachable in vanilla: only a pack that removed BOTH desert and
+                // the badlands family gets here. Not part of the savanna override layer.
                 try {
                     return biome(biomes, "minecraft:savanna");
-                } catch (Throwable ignored) {
-                }
-                try {
-                    return biome(biomes, "minecraft:desert");
                 } catch (Throwable ignored) {
                     return pick;
                 }
@@ -11255,10 +11327,16 @@ public final class LatitudeBiomes {
             }
             case WARM_DRY -> {
                 if (isDesertFamily(pick) || isBadlandsFamily(pick)) return pick;
+                // MUST STAY IDENTICAL to the Registry overload above -- see the note there for why a
+                // disagreement between these two is a live-vs-atlas divergence, not a style nit.
                 Holder<Biome> desert = entryById(biomes, "minecraft:desert");
                 if (desert != null) return desert;
                 Holder<Biome> badlands = entryById(biomes, "minecraft:badlands");
-                return badlands != null ? badlands : pick;
+                if (badlands != null) return badlands;
+                // Last resort, and unreachable in vanilla: only a pack that removed BOTH desert and
+                // the badlands family gets here. Not part of the savanna override layer.
+                Holder<Biome> savanna = entryById(biomes, "minecraft:savanna");
+                return savanna != null ? savanna : pick;
             }
             default -> {
                 return pick;
@@ -11954,13 +12032,16 @@ public final class LatitudeBiomes {
         if (allowProvinceFamilyRewrite) {
             out = enforceWarmProvinceFamily(biomes, out, warmProvince);
         }
-        // Earth-analog latitude gate: enforceWarmProvinceFamily defaults WARM_DRY to badlands,
-        // which leaks mesa to the deep equator on some seeds. Demote badlands -> savanna below
-        // the equator ramp here (the final warm clamp, after the province rewrite) so the savanna
-        // tier pass below still applies; badlands survives only in the subtropical arid belt.
+        // Earth-analog latitude gate. Arid picks reach the deep equator on some seeds (WARM_DRY
+        // pockets are latitude-independent), so demote them -> savanna below the equator ramp here,
+        // at the final warm clamp after the province rewrite, where the savanna tier pass below still
+        // applies. The two gates are a PAIR and both must run: this one owns the badlands family and
+        // every modded arid variant, the next owns vanilla desert (maintainer ruling, 2026-08-18 --
+        // desert was in both, and being gated twice cost it the 23.5-27deg phase-in). Arid of any
+        // kind survives only in the subtropical belt.
         out = demoteEquatorialBadlands(biomes, out, blockX, blockZ);
-        // Partial deep-equator desert thinning (Earth keeps rare equatorial desert): coherent
-        // fraction demoted to savanna below the ramp; subtropical desert belt untouched.
+        // The desert half of that pair: no vanilla desert in the tropics, phased back in across the
+        // lower subtropics on its own coherent field; the subtropical desert belt is untouched.
         out = demoteEquatorialDesert(biomes, out, blockX, blockZ);
         // Poleward partner: keep badlands/desert out of the TEMPERATE band (the band-blend leak past 35deg).
         out = demotePolewardArid(biomes, out, blockX, blockZ);
@@ -12113,13 +12194,16 @@ public final class LatitudeBiomes {
         if (allowProvinceFamilyRewrite) {
             out = enforceWarmProvinceFamily(biomes, out, warmProvince);
         }
-        // Earth-analog latitude gate: enforceWarmProvinceFamily defaults WARM_DRY to badlands,
-        // which leaks mesa to the deep equator on some seeds. Demote badlands -> savanna below
-        // the equator ramp here (the final warm clamp, after the province rewrite) so the savanna
-        // tier pass below still applies; badlands survives only in the subtropical arid belt.
+        // Earth-analog latitude gate. Arid picks reach the deep equator on some seeds (WARM_DRY
+        // pockets are latitude-independent), so demote them -> savanna below the equator ramp here,
+        // at the final warm clamp after the province rewrite, where the savanna tier pass below still
+        // applies. The two gates are a PAIR and both must run: this one owns the badlands family and
+        // every modded arid variant, the next owns vanilla desert (maintainer ruling, 2026-08-18 --
+        // desert was in both, and being gated twice cost it the 23.5-27deg phase-in). Arid of any
+        // kind survives only in the subtropical belt.
         out = demoteEquatorialBadlands(biomes, out, blockX, blockZ);
-        // Partial deep-equator desert thinning (Earth keeps rare equatorial desert): coherent
-        // fraction demoted to savanna below the ramp; subtropical desert belt untouched.
+        // The desert half of that pair: no vanilla desert in the tropics, phased back in across the
+        // lower subtropics on its own coherent field; the subtropical desert belt is untouched.
         out = demoteEquatorialDesert(biomes, out, blockX, blockZ);
         // Poleward partner: keep badlands/desert out of the TEMPERATE band (the band-blend leak past 35deg).
         out = demotePolewardArid(biomes, out, blockX, blockZ);

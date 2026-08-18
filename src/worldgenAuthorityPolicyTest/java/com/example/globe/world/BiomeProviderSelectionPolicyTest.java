@@ -52,6 +52,7 @@ final class BiomeProviderSelectionPolicyTest {
         polarIceSpikeAccentStaysAMinorityInEveryPoolSize();
         polarExtremeCapCatchesNameAlikeModdedBiomesConsistently();
         windsweptFamilyIsSubpolarMountainOnly();
+        desertIsTheStapleOfTheSubtropicalAridBelt();
         cliffTreeLandAndOceanAreActuallyReachable();
         riverAndBeachAdmissionIsTagDrivenAndVanillaSafe();
         everyLedgerLandRouteSurvivesTheBandPoolGate();
@@ -2665,6 +2666,271 @@ final class BiomeProviderSelectionPolicyTest {
         } finally {
             LatitudeBiomes.clearWorldgenContext();
         }
+    }
+
+    /**
+     * Desert is the staple of the subtropical arid belt, and badlands is the regional accent that
+     * lives inside its own province (maintainer ruling, 2026-08-18).
+     *
+     * <p>The reported defect: a vanilla-only world generated almost no desert. A three-seed atlas at
+     * radius 10,000 step 32 measured minecraft:desert at 182/765/785 samples against
+     * minecraft:badlands at 6012/4822/4474 — badlands outnumbering desert 33:1, 6.3:1 and 5.7:1, and
+     * desert appearing in no other band either. The two arid identities share one route pool,
+     * {@code lat_arid_primary}, which lists exactly badlands and desert 1:1, so every table in the
+     * mod said the split was even while the generator produced almost none of one of them. Three
+     * things did that, none of them visible from a route table: every subtropical WARM_DRY column
+     * short-circuits into pickAridRegionFallback before the fair pool is ever consulted; that
+     * fallback smeared badlands over a third of the ground OUTSIDE the badlands province and then
+     * defaulted the remainder to badlands as well; and enforceWarmProvinceFamily's WARM_DRY chain
+     * named badlands first, so anything that reached it became mesa. The desert branch at the bottom
+     * of pickAridRegionFallback was literally unreachable in a vanilla registry.
+     *
+     * <p>Which is why this is a PRODUCTION sweep and not an admission check. Every admission,
+     * descriptor and route assertion in this file passed for the whole life of the defect. Only
+     * LatitudeBiomes.pick can answer "does this world actually contain desert".
+     *
+     * <p>Latitudes sampled are 27, 30.6 and 34.2 degrees: past DESERT_LAT_RAMP_HIGH_DEG, so this
+     * measures the settled arid belt rather than the 23.5-27 degree phase-in. The equator guard
+     * below covers the other side of that ramp.
+     */
+    private static void desertIsTheStapleOfTheSubtropicalAridBelt() throws Exception {
+        net.minecraft.SharedConstants.tryDetectVersion();
+        net.minecraft.server.Bootstrap.bootStrap();
+        MappedRegistry<Biome> registry = testBiomeRegistry();
+        List<Holder<Biome>> pool = registry.listElements()
+                .map(entry -> (Holder<Biome>) entry)
+                .toList();
+        int radius = 10_000;
+        Climate.Sampler sampler = coverageSampler(null);
+        List<String> ids = registry.keySet().stream().map(Identifier::toString).toList();
+
+        for (long seed : new long[]{3L, 131L, 461L}) {
+            BiomeSelectionProfile profile = BiomeSelectionProfile.capture(ids);
+            try {
+                LatitudeBiomes.activateWorldgenContext(
+                        radius,
+                        seed,
+                        LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE,
+                        profile,
+                        VanillaBiomeRepresentationProfile.capture(radius, seed, profile),
+                        sampler,
+                        null,
+                        63);
+                VanillaBiomeCoveragePlan plan = LatitudeBiomes.activeVanillaCoveragePlanForPolicyTest();
+                assertTrue(plan != null && plan.complete(),
+                        "the arid-belt proof needs a complete birth-locked land plan (seed=" + seed + ")");
+
+                // A neutral donor asks what the picker chooses on its own. A badlands donor asks
+                // whether an incoming vanilla mesa can talk it out of that — which is exactly how
+                // desert used to survive at all: only where vanilla had ALREADY put desert there.
+                AridBeltCensus neutral = censusSubtropicalDryProvince(
+                        registry, pool, testBiomeHolder(registry, "minecraft:plains"),
+                        radius, sampler, plan);
+                AridBeltCensus donated = censusSubtropicalDryProvince(
+                        registry, pool, testBiomeHolder(registry, "minecraft:badlands"),
+                        radius, sampler, plan);
+
+                assertTrue(neutral.dryColumns >= 50,
+                        "the arid sweep must actually land in the subtropical dry province, or it "
+                                + "proves nothing: seed=" + seed + " columns=" + neutral.dryColumns);
+
+                // 1. THE REGRESSION TEST. Desert must be PRODUCED, in quantity, in the belt that is
+                // named after it. Measured on these three seeds after the fix: 38%, 45% and 23% of
+                // dry-province columns. Before it: zero on every one of them.
+                double desertShare = neutral.dryDesert / (double) neutral.dryColumns;
+                assertGreaterThan(0.15, desertShare,
+                        "desert must be a staple of the subtropical dry province, not a curiosity: "
+                                + "seed=" + seed + " desert=" + neutral.dryDesert
+                                + " badlands=" + neutral.dryBadlands
+                                + " of " + neutral.dryColumns + " dry columns");
+
+                // 2. The province is the authority. Outside a badlands province the belt is desert,
+                // give or take the deliberate outlier-mesa allowance
+                // (BADLANDS_OUTSIDE_PROVINCE_THRESHOLD, narrowed 0.34 -> 0.06 by the same ruling).
+                // Measured: 84%, 100%, 100% desert outside the province.
+                assertTrue(neutral.outsideProvince >= 20,
+                        "the sweep must reach dry ground outside the badlands province: seed=" + seed
+                                + " outside=" + neutral.outsideProvince);
+                double outsideDesertShare =
+                        neutral.outsideProvinceDesert / (double) neutral.outsideProvince;
+                assertGreaterThan(0.70, outsideDesertShare,
+                        "outside its own province the arid belt must read as desert, with badlands "
+                                + "left as a rare outlier mesa: seed=" + seed
+                                + " desert=" + neutral.outsideProvinceDesert
+                                + " badlands=" + neutral.outsideProvinceBadlands
+                                + " of " + neutral.outsideProvince + " columns outside the province");
+
+                // 3. POSITIVE CONTROL. Badlands is demoted from default to regional, never deleted.
+                // A fix that inverted into "desert everywhere" would satisfy 1 and 2 and quietly
+                // remove a biome the maintainer loves. Measured: 100% badlands inside the province
+                // on all three seeds.
+                assertTrue(neutral.insideProvince >= 20,
+                        "the sweep must reach inside a badlands province, or the positive control "
+                                + "proves nothing: seed=" + seed + " inside=" + neutral.insideProvince);
+                double insideBadlandsShare =
+                        neutral.insideProvinceBadlands / (double) neutral.insideProvince;
+                assertGreaterThan(0.90, insideBadlandsShare,
+                        "badlands must still own its province — it is regional now, not gone: seed="
+                                + seed + " badlands=" + neutral.insideProvinceBadlands
+                                + " of " + neutral.insideProvince + " columns inside the province");
+
+                // 4. The province decides, not the donor. Identical census from a plains donor and a
+                // badlands donor is the whole point of resolving desert directly in
+                // pickAridRegionFallback instead of handing `base` to enforceWarmProvinceFamily,
+                // which returns any badlands-family pick untouched.
+                assertEquals(neutral.dryDesert, donated.dryDesert,
+                        "an incoming vanilla badlands must not change how much desert the dry "
+                                + "province generates (seed=" + seed + ")");
+                assertEquals(neutral.dryBadlands, donated.dryBadlands,
+                        "an incoming vanilla badlands must not change how much badlands the dry "
+                                + "province generates (seed=" + seed + ")");
+
+                // 5. The two picker overloads must agree on the FAMILY. They are allowed to disagree
+                // about which badlands variant a column gets — chooseBadlandsVariant is written
+                // differently in the two overloads, a pre-existing divergence this ruling did not
+                // touch — but desert-versus-badlands is a different world, not a different texture.
+                // Before the WARM_DRY chains were reconciled this sweep measured columns where the
+                // registry path returned badlands and the collection path returned desert.
+                assertEquals(0, neutral.familyDisagreements,
+                        "the registry and collection pickers must never disagree about desert vs "
+                                + "badlands at the same column — that is live generation diverging "
+                                + "from the map the atlas drew (seed=" + seed + ")");
+                assertEquals(0, donated.familyDisagreements,
+                        "the registry and collection pickers must agree about desert vs badlands "
+                                + "from a badlands donor too (seed=" + seed + ")");
+
+                // 6. EQUATOR GUARD. The 2026-06-06 tropical dry-biome overhaul drove tropical
+                // badlands and tropical desert to zero and they must stay there: Earth has neither
+                // at the equator, and the demote pair that enforces it was edited by this same
+                // ruling (desert now leaves the badlands gate to the desert gate rather than being
+                // gated by both). Donors include desert and badlands themselves, so the tropics are
+                // asked to reject arid even when handed it.
+                int tropicalColumns = 0;
+                for (String donorId : new String[]{
+                        "minecraft:plains", "minecraft:desert", "minecraft:badlands"}) {
+                    Holder<Biome> donor = testBiomeHolder(registry, donorId);
+                    for (double fraction : new double[]{0.04, 0.10, 0.16, 0.22}) {
+                        for (int sign : new int[]{1, -1}) {
+                            int z = sign * (int) Math.round(radius * fraction);
+                            for (int x = -8_192; x <= 8_192; x += 512) {
+                                if ((long) x * x + (long) z * z >= (long) radius * radius) continue;
+                                // 0 == BAND_TROPICAL.
+                                if (LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, z, radius) != 0) {
+                                    continue;
+                                }
+                                tropicalColumns++;
+                                for (String aridId : ARID_IDS) {
+                                    assertNeitherPickerReturns(
+                                            registry, pool, donor, x, z, radius, sampler, aridId,
+                                            "the tropical band must never return " + aridId
+                                                    + " — even from a " + donorId + " donor — at x="
+                                                    + x + " z=" + z + " (lat=" + (fraction * 90.0)
+                                                    + " degrees, seed=" + seed + ")");
+                                }
+                            }
+                        }
+                    }
+                }
+                assertTrue(tropicalColumns >= 300,
+                        "the equator guard must actually reach the tropical band: seed=" + seed
+                                + " columns=" + tropicalColumns);
+            } finally {
+                LatitudeBiomes.clearWorldgenContext();
+            }
+        }
+    }
+
+    private static final String[] ARID_IDS = {
+            "minecraft:desert",
+            "minecraft:badlands",
+            "minecraft:wooded_badlands",
+            "minecraft:eroded_badlands"};
+
+    private static final String[] BADLANDS_IDS = {
+            "minecraft:badlands",
+            "minecraft:wooded_badlands",
+            "minecraft:eroded_badlands"};
+
+    private static boolean isBadlandsId(String id) {
+        for (String badlands : BADLANDS_IDS) {
+            if (badlands.equals(id)) return true;
+        }
+        return false;
+    }
+
+    /** desert / badlands / neither, for comparing the two picker overloads at one column. */
+    private static String aridFamilyOf(String id) {
+        if ("minecraft:desert".equals(id)) return "desert";
+        return isBadlandsId(id) ? "badlands" : "other";
+    }
+
+    /** What one seed's subtropical WARM_DRY province actually generates, through the real picker. */
+    private static final class AridBeltCensus {
+        int dryColumns;
+        int dryDesert;
+        int dryBadlands;
+        int insideProvince;
+        int insideProvinceBadlands;
+        int outsideProvince;
+        int outsideProvinceDesert;
+        int outsideProvinceBadlands;
+        int familyDisagreements;
+    }
+
+    private static AridBeltCensus censusSubtropicalDryProvince(
+            MappedRegistry<Biome> registry,
+            List<Holder<Biome>> pool,
+            Holder<Biome> donor,
+            int radius,
+            Climate.Sampler sampler,
+            VanillaBiomeCoveragePlan plan) {
+        AridBeltCensus census = new AridBeltCensus();
+        for (double fraction : new double[]{0.30, 0.34, 0.38}) {
+            for (int sign : new int[]{1, -1}) {
+                int z = sign * (int) Math.round(radius * fraction);
+                for (int x = -8_192; x <= 8_192; x += 128) {
+                    if ((long) x * x + (long) z * z >= (long) radius * radius) continue;
+                    // 1 == BAND_SUBTROPICAL. The band constants are private to LatitudeBiomes, so
+                    // the suite reads the picker's own final band decision rather than re-deriving
+                    // it and hoping the two agree.
+                    if (LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, z, radius) != 1) {
+                        continue;
+                    }
+                    // The arid belt proper. WARM_MEDIUM (savanna) and WARM_WET (jungle) columns sit
+                    // in this band too and are a different question; badlands squatting in a savanna
+                    // province is an explicitly deferred slice, not this one.
+                    if (LatitudeBiomes.classifyProvince(x, z) != ProvinceAuthority.Province.WARM_DRY) {
+                        continue;
+                    }
+                    // Guaranteed coverage provinces are placed by the birth plan, not chosen by the
+                    // picker; counting them would measure the plan.
+                    if (plan != null && plan.match(x, z) != null) continue;
+
+                    String registryId = LatitudeBiomes.biomeIdPublic(LatitudeBiomes.pick(
+                            registry, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER"));
+                    String collectionId = LatitudeBiomes.biomeIdPublic(LatitudeBiomes.pick(
+                            pool, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER"));
+                    if (!aridFamilyOf(registryId).equals(aridFamilyOf(collectionId))) {
+                        census.familyDisagreements++;
+                    }
+
+                    boolean desert = "minecraft:desert".equals(registryId);
+                    boolean badlands = isBadlandsId(registryId);
+                    census.dryColumns++;
+                    if (desert) census.dryDesert++;
+                    if (badlands) census.dryBadlands++;
+                    if (LatitudeBiomes.badlandsProvinceHitForPolicyTest(x, z, radius)) {
+                        census.insideProvince++;
+                        if (badlands) census.insideProvinceBadlands++;
+                    } else {
+                        census.outsideProvince++;
+                        if (desert) census.outsideProvinceDesert++;
+                        if (badlands) census.outsideProvinceBadlands++;
+                    }
+                }
+            }
+        }
+        return census;
     }
 
     private static void assertWithinFourSigma(Map<String, Integer> counts, String key, int samples, double expected, String message) {
