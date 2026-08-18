@@ -633,10 +633,12 @@ final class BiomeProviderSelectionPolicyTest {
             // WARM_MEDIUM has two answers now, not one (maintainer approval, 2026-08-18). This
             // assertion used to demand EXACTLY minecraft:savanna here, which is the disease written
             // down as a test: a whole province with a single identity, no roll and no geography.
-            // Savanna is a country inside the belt; outside it the belt is forest. The country
-            // predicate decides which, so the suite asks it the same question the picker does.
+            // Savanna is a country inside the belt AND the dry fringe hugging an arid province;
+            // everywhere else the belt is forest. Both predicates decide, so the suite asks them the
+            // same pair of questions the picker does.
             String mediumExpected = LatitudeBiomes.savannaCountryHitForPolicyTest(
                     medium[0], medium[1], radius)
+                    || LatitudeBiomes.savannaDryFringeHitForPolicyTest(medium[0], medium[1])
                     ? "minecraft:savanna"
                     : "minecraft:forest";
             for (String jungleId : List.of(
@@ -3263,7 +3265,15 @@ final class BiomeProviderSelectionPolicyTest {
         }
     }
 
-    /** What one seed's tropical WARM_MEDIUM belt actually generates, through the real picker. */
+    /**
+     * What one seed's tropical WARM_MEDIUM belt actually generates, through the real picker.
+     *
+     * <p>THREE buckets, not two (maintainer ruling, 2026-08-18). Savanna has two homes in this belt
+     * — its countries, and the dry fringe hugging an arid province — so a column is inside a
+     * country, in the fringe, or in neither. The {@code outsideCountry*} counters mean "outside
+     * BOTH", which is what keeps the outside-country forest floor an honest 100% instead of a
+     * weakened one: a fringe column that reads savanna is not a leak, it is the fix.
+     */
     private static final class SavannaBeltCensus {
         int columns;
         int savanna;
@@ -3271,6 +3281,9 @@ final class BiomeProviderSelectionPolicyTest {
         int jungle;
         int insideCountry;
         int insideCountrySavanna;
+        int fringe;
+        int fringeSavanna;
+        int fringeForest;
         int outsideCountry;
         int outsideCountryForest;
         int outsideCountrySavanna;
@@ -3372,6 +3385,13 @@ final class BiomeProviderSelectionPolicyTest {
                     if (LatitudeBiomes.savannaCountryHitForPolicyTest(x, z, radius)) {
                         census.insideCountry++;
                         if (isSavannaId(registryId)) census.insideCountrySavanna++;
+                    } else if (LatitudeBiomes.savannaDryFringeHitForPolicyTest(x, z)) {
+                        // Savanna's second home. Counted apart from the outside-country bucket so
+                        // the forest floor below keeps measuring what it was written to measure:
+                        // the belt outside EVERY savanna home reading as forest.
+                        census.fringe++;
+                        if (isSavannaId(registryId)) census.fringeSavanna++;
+                        if ("minecraft:forest".equals(registryId)) census.fringeForest++;
                     } else {
                         census.outsideCountry++;
                         if ("minecraft:forest".equals(registryId)) census.outsideCountryForest++;
@@ -3425,6 +3445,26 @@ final class BiomeProviderSelectionPolicyTest {
      * slice had to hold: it is WARM_MEDIUM-scoped, and the equatorial jungle core is not its
      * business. The savanna that leaves becomes forest almost exactly one for one.</p>
      *
+     * <p>THE DRY FRINGE, added 2026-08-18 by the same maintainer ruling, is savanna's second home
+     * and is proved by sections 1b and 2b. Making the belt forest outside a country took savanna
+     * off the one border it most belongs on: measured over three vanilla seeds, lush neighbours of
+     * the badlands family rose 156-&gt;350 / 189-&gt;288 / 33-&gt;131 while dry-transition neighbours fell
+     * 894-&gt;658 / 788-&gt;454 / 619-&gt;343. A WARM_MEDIUM column whose effective moisture sits within
+     * {@code WARM_DRY_FRINGE_WIDTH} of the dry threshold is now savanna whatever country it is or
+     * is not in, which restores the buffer without a neighbour query or a new noise field. What it
+     * adds to the belt, measured through {@code pick} from a jungle donor on this suite's roster:
+     *
+     * <pre>
+     *   seed   tropical WARM_MEDIUM savanna    subtropical WARM_MEDIUM savanna
+     *      3   36.2% -> 44.6%                  55.6% -> 62.9%
+     *    131   47.0% -> 49.7%                  62.0% -> 65.4%
+     *    461   60.8% -> 65.0%                  49.5% -> 58.9%
+     * </pre>
+     *
+     * <p>Not one column outside BOTH homes came back savanna on any seed, and the jungle family is
+     * untouched by construction — the fringe is additive on the MEDIUM side only and section 3
+     * re-asserts that WARM_WET never answers true.
+     *
      * <p>HONEST SCOPE, two limits. Section 1 is a source-text pin, not a world measurement — it
      * proves the country is CONSULTED where it has to be, and sections 2 through 7 prove what that
      * consult does. And nothing here touches {@code minecraft:windswept_savanna}: this suite's test
@@ -3467,12 +3507,19 @@ final class BiomeProviderSelectionPolicyTest {
         for (String enforcer : List.of(registryEnforcer, collectionEnforcer)) {
             String arm = normalize(switchArm(enforcer, "case WARM_MEDIUM ->"));
             int country = arm.indexOf("savannaCountryHere(blockX, blockZ)");
+            int fringe = arm.indexOf("savannaDryFringeHere(blockX, blockZ)");
             int forest = arm.indexOf("warmMediumForestStaple(biomes)");
             int savanna = arm.indexOf("minecraft:savanna\"");
             assertTrue(country >= 0,
                     "the warm-medium arm must ask the savanna country where it is — a province that "
                             + "answers one literal id everywhere is the monoculture this slice "
                             + "exists to remove: " + arm);
+            assertTrue(fringe > country && fringe < forest,
+                    "the warm-medium arm must ALSO ask the dry fringe, in the same breath as the "
+                            + "country and before the forest staple — savanna is the transition "
+                            + "between arid and forest, and a belt that consults only the country "
+                            + "presses lush forest straight against badlands "
+                            + "(maintainer ruling, 2026-08-18): " + arm);
             assertTrue(forest >= 0 && forest < savanna,
                     "outside a savanna country the warm-medium staple is forest, and it must be "
                             + "reached BEFORE the savanna chain or the chain wins every column: "
@@ -3491,11 +3538,12 @@ final class BiomeProviderSelectionPolicyTest {
                 "private static Holder<Biome> gateWarmJungleSurvival(Collection<Holder<Biome>> biomes,");
         for (String gate : List.of(registryGate, collectionGate)) {
             String body = normalize(gate);
-            assertTrue(body.contains("savannaCountryHere(blockX, blockZ) ? enforceWarmProvinceFamily("),
+            assertTrue(body.contains("(savannaCountryHere(blockX, blockZ) "
+                            + "|| savannaDryFringeHere(blockX, blockZ)) ? enforceWarmProvinceFamily("),
                     "the warm-jungle gate is the LAST stage that can turn a jungle identity into a "
                             + "warm-belt one and it runs after enforceLandBandPool, so it must "
-                            + "consult the savanna country itself rather than inherit an answer: "
-                            + body);
+                            + "consult BOTH of savanna's homes itself — its countries and the dry "
+                            + "fringe — rather than inherit an answer: " + body);
             assertTrue(body.contains("warmMediumOutsideCountryStaple("),
                     "the warm-jungle gate must resolve outside-country columns to the shared forest "
                             + "staple: " + body);
@@ -3592,6 +3640,11 @@ final class BiomeProviderSelectionPolicyTest {
                         "the savanna-country proof needs a complete birth-locked land plan (seed="
                                 + seed + ")");
 
+                // 1b. THE FRINGE TRUTH TABLE, driven off the authority's own moisture field rather
+                //     than through the picker: this is a statement about the PREDICATE, and the
+                //     behavioural half lives in 2b below.
+                assertDryFringeTruthTable(seed, radius);
+
                 // 2. THE REGRESSION TEST. A jungle donor is what the warm-jungle gate exists to
                 //    catch, and every tropical column starts jungle-family, so this is the belt's
                 //    real input. Inside a country it must still come out savanna; outside one it
@@ -3619,17 +3672,53 @@ final class BiomeProviderSelectionPolicyTest {
                         "savanna must still own its country — it is regional now, not gone: seed="
                                 + seed + " savanna=" + jungleDonor.insideCountrySavanna
                                 + " of " + jungleDonor.insideCountry + " columns inside a country");
-                // Measured: 100% forest outside a country on all three seeds, 518/518, 381/381,
-                // 213/213.
+                // 100% forest outside EVERY savanna home on all three seeds. Re-measured after the
+                // dry fringe joined the belt (2026-08-18), which moved fringe columns into their
+                // own bucket rather than weakening this floor: 344/344, 260/260, 118/118.
                 assertGreaterThan(0.95,
                         jungleDonor.outsideCountryForest / (double) jungleDonor.outsideCountry,
-                        "outside a savanna country the warm belt must read as forest: seed=" + seed
+                        "outside every savanna home the warm belt must read as forest: seed=" + seed
                                 + " forest=" + jungleDonor.outsideCountryForest
                                 + " savanna=" + jungleDonor.outsideCountrySavanna
                                 + " of " + jungleDonor.outsideCountry + " columns outside a country");
                 assertEquals(0, jungleDonor.outsideCountrySavanna,
-                        "no savanna may stand outside a savanna country from a jungle donor — that "
-                                + "is the monoculture leaking back in (seed=" + seed + ")");
+                        "no savanna may stand outside BOTH of savanna's homes from a jungle donor — "
+                                + "that is the monoculture leaking back in (seed=" + seed + ")");
+                // 2b. THE DRY FRINGE, savanna's second home (maintainer ruling, 2026-08-18). These
+                //     columns are outside every country and would have read forest before this
+                //     slice; they are the buffer that used to stand between arid country and the
+                //     lush belt, and they have to come out savanna or the fix is inert.
+                // Measured 83 / 24 / 20 fringe columns outside every country on these seeds; the
+                // floor is set below the smallest of them because the fringe is a shell around the
+                // arid provinces a seed happens to place, not a fixed share of the belt.
+                assertTrue(jungleDonor.fringe >= 15,
+                        "the sweep must actually reach the dry fringe, or the fringe assertions "
+                                + "below prove nothing: seed=" + seed + " fringe="
+                                + jungleDonor.fringe + " of " + jungleDonor.columns);
+                // Measured 2026-08-18 at width 0.06: 60/83, 17/24, 20/20 savanna. The shortfall is
+                // the same band-blend fringe that keeps inside-country savanna at 85-93% rather
+                // than 100% — columns where the picker's own band decision and the authority's
+                // disagree, so the province enforcer is never reached at all. It predates this
+                // slice and is not what this floor is measuring.
+                assertGreaterThan(0.65,
+                        jungleDonor.fringeSavanna / (double) jungleDonor.fringe,
+                        "the dry fringe must read as savanna — it is the transition between arid "
+                                + "and forest, and leaving it forest is what pressed lush forest "
+                                + "against badlands: seed=" + seed + " savanna="
+                                + jungleDonor.fringeSavanna + " forest=" + jungleDonor.fringeForest
+                                + " of " + jungleDonor.fringe + " fringe columns");
+                // The differential is the assertion with real teeth: it fails the moment the OR is
+                // dropped, whatever the absolute levels are.
+                assertGreaterThan(0.60,
+                        (jungleDonor.fringeSavanna / (double) jungleDonor.fringe)
+                                - (jungleDonor.outsideCountrySavanna
+                                        / (double) jungleDonor.outsideCountry),
+                        "the fringe must MOVE the answer relative to the rest of the outside-country "
+                                + "belt — equal shares mean the fringe consult is not happening: "
+                                + "seed=" + seed + " fringeSavanna=" + jungleDonor.fringeSavanna
+                                + "/" + jungleDonor.fringe + " outsideSavanna="
+                                + jungleDonor.outsideCountrySavanna + "/"
+                                + jungleDonor.outsideCountry);
                 assertEquals(0, jungleDonor.parityDisagreements,
                         "the registry and collection pickers must never disagree about savanna vs "
                                 + "forest at the same column — that is live generation diverging "
@@ -3642,11 +3731,11 @@ final class BiomeProviderSelectionPolicyTest {
                         registry, pool, testBiomeHolder(registry, "minecraft:savanna"),
                         radius, sampler, plan);
                 assertEquals(0, savannaDonor.outsideCountrySavanna,
-                        "an incoming vanilla savanna must not talk the belt out of forest outside a "
-                                + "savanna country (seed=" + seed + ")");
+                        "an incoming vanilla savanna must not talk the belt out of forest outside "
+                                + "both of savanna's homes (seed=" + seed + ")");
                 assertEquals(jungleDonor.savanna, savannaDonor.savanna,
-                        "the country decides how much savanna the belt generates, not what came in "
-                                + "(seed=" + seed + ")");
+                        "the geography decides how much savanna the belt generates, not what came "
+                                + "in (seed=" + seed + ")");
 
                 // 3. WARM_WET IS UNTOUCHED. This slice is WARM_MEDIUM-scoped; the jungle core is a
                 //    release constraint and must not move.
@@ -3672,6 +3761,11 @@ final class BiomeProviderSelectionPolicyTest {
                             assertTrue(LatitudeBiomes.savannaCountryHitForPolicyTest(x, z, radius) == false,
                                     "the country predicate must answer false outside WARM_MEDIUM at "
                                             + "x=" + x + " z=" + z + " (seed=" + seed + ")");
+                            assertFalse(LatitudeBiomes.savannaDryFringeHitForPolicyTest(x, z),
+                                    "the dry-fringe predicate must answer false in WARM_WET — the "
+                                            + "fringe is additive on the MEDIUM side only and the "
+                                            + "jungle core is not its business — at x=" + x
+                                            + " z=" + z + " (seed=" + seed + ")");
                         }
                     }
                 }
@@ -3887,6 +3981,85 @@ final class BiomeProviderSelectionPolicyTest {
     }
 
     /**
+     * The dry-fringe predicate's truth table, stated in the authority's own numbers.
+     *
+     * <p>Savanna has two homes in the warm-medium belt: its countries, and the DRY FRINGE — the
+     * shell of WARM_MEDIUM whose effective moisture sits within {@code WARM_DRY_FRINGE_WIDTH} of
+     * {@code WARM_DRY_THRESHOLD} (maintainer ruling, 2026-08-18). The four rows that matter:
+     * a near-threshold WARM_MEDIUM column is in the fringe; a mid-moisture WARM_MEDIUM column is
+     * not; a WARM_DRY column is not (it is not MEDIUM at all); a WARM_WET column is not.
+     *
+     * <p>The moisture read here is the SAME value {@code classifyWarm} thresholds against —
+     * {@code ProvinceAuthority.warmMoisture} is one method with two callers precisely so a province
+     * map and a fringe map cannot drift — which is why this can assert exact agreement rather than
+     * a statistical shape. It also pins the width itself: every fringe column is below
+     * {@code WARM_DRY_THRESHOLD + WARM_DRY_FRINGE_WIDTH} and every near-miss column above it is not.
+     */
+    private static void assertDryFringeTruthTable(long seed, int radius) {
+        ProvinceAuthority authority = LatitudeBiomes.getProvinceAuthority();
+        assertTrue(authority != null,
+                "the fringe truth table needs a live province authority (seed=" + seed + ")");
+        double edge = ProvinceAuthority.WARM_DRY_THRESHOLD + ProvinceAuthority.WARM_DRY_FRINGE_WIDTH;
+        assertTrue(edge < ProvinceAuthority.WARM_WET_THRESHOLD,
+                "the fringe must stay inside WARM_MEDIUM — a width that reaches the wet threshold "
+                        + "would make the whole belt savanna again: edge=" + edge);
+
+        int nearThresholdMedium = 0;
+        int midMedium = 0;
+        int dry = 0;
+        int wet = 0;
+        for (double fraction : new double[]{0.04, 0.10, 0.16, 0.22, 0.28, 0.32, 0.36}) {
+            for (int sign : new int[]{1, -1}) {
+                int z = sign * (int) Math.round(radius * fraction);
+                for (int x = -8_192; x <= 8_192; x += 128) {
+                    if ((long) x * x + (long) z * z >= (long) radius * radius) continue;
+                    ProvinceAuthority.Province province = authority.classify(x, z);
+                    double moisture = authority.warmMoisture(x, z);
+                    boolean fringe = LatitudeBiomes.savannaDryFringeHitForPolicyTest(x, z);
+                    String where = " at x=" + x + " z=" + z + " (seed=" + seed
+                            + ", province=" + province + ", moisture=" + moisture + ")";
+                    switch (province) {
+                        case WARM_DRY -> {
+                            dry++;
+                            assertFalse(fringe,
+                                    "a WARM_DRY column is not in the warm-medium fringe — the "
+                                            + "fringe is additive on the MEDIUM side only" + where);
+                        }
+                        case WARM_WET -> {
+                            wet++;
+                            assertFalse(fringe,
+                                    "a WARM_WET column is not in the warm-medium fringe — the "
+                                            + "jungle core must not move" + where);
+                        }
+                        case WARM_MEDIUM -> {
+                            if (moisture < edge) {
+                                nearThresholdMedium++;
+                                assertTrue(fringe,
+                                        "a WARM_MEDIUM column within WARM_DRY_FRINGE_WIDTH of the "
+                                                + "dry threshold IS the fringe" + where);
+                            } else {
+                                midMedium++;
+                                assertFalse(fringe,
+                                        "a WARM_MEDIUM column further than WARM_DRY_FRINGE_WIDTH "
+                                                + "from the dry threshold is not the fringe — it is "
+                                                + "the forest belt" + where);
+                            }
+                        }
+                        default -> {
+                            assertFalse(fringe,
+                                    "a cold-side column has no warm province and no fringe" + where);
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(nearThresholdMedium >= 50 && midMedium >= 50 && dry >= 50 && wet >= 50,
+                "the truth table must reach all four of its rows, or it is asserting nothing: "
+                        + "seed=" + seed + " nearThresholdMedium=" + nearThresholdMedium
+                        + " midMedium=" + midMedium + " dry=" + dry + " wet=" + wet);
+    }
+
+    /**
      * The inside/outside split one subtropical WARM_MEDIUM sweep has to show.
      *
      * <p>FLOORS ARE DESK-DERIVED, not measured, and are deliberately loose (the tropical floors in
@@ -3905,6 +4078,19 @@ final class BiomeProviderSelectionPolicyTest {
                 "the subtropical sweep must reach BOTH sides of the country boundary" + where
                         + ": inside=" + sub.insideCountry + " outside=" + sub.outsideCountry
                         + " of " + sub.columns);
+        // The dry fringe matters MOST here: the arid belt lives in the subtropics, so this is the
+        // half of the belt where savanna's job is to stand between mesa/desert country and the
+        // forest (maintainer ruling, 2026-08-18).
+        assertTrue(sub.fringe >= 20,
+                "the subtropical sweep must reach the dry fringe — this is the band where the arid "
+                        + "belt lives and the buffer matters most" + where + ": fringe="
+                        + sub.fringe + " of " + sub.columns);
+        // Measured at width 0.06, jungle donor / savanna donor: 57-58 of 60, 23-25 of 34, 68-71 of
+        // 73. Not one fringe column in the subtropics came back forest on any seed.
+        assertGreaterThan(0.60, sub.fringeSavanna / (double) sub.fringe,
+                "the subtropical dry fringe must read as savanna" + where + ": savanna="
+                        + sub.fringeSavanna + " forest=" + sub.fringeForest + " of " + sub.fringe
+                        + " fringe columns");
         double insideSavanna = sub.insideCountrySavanna / (double) sub.insideCountry;
         double outsideSavanna = sub.outsideCountrySavanna / (double) sub.outsideCountry;
         double outsideForest = sub.outsideCountryForest / (double) sub.outsideCountry;
@@ -3940,6 +4126,7 @@ final class BiomeProviderSelectionPolicyTest {
         String stripped = normalize(methodBody.replaceAll("(?m)^\\s*//.*$", ""));
         List<String> markers = List.of(
                 "savannaCountryHere(",
+                "savannaDryFringeHere(",
                 "warmMediumOutsideCountryStaple(",
                 "warmMediumForestStaple(",
                 "enforceWarmProvinceFamily(",

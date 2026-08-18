@@ -266,6 +266,17 @@ public final class LatitudeBiomes {
     }
 
     /**
+     * Is this column in savanna's OTHER home, the dry fringe hugging an arid province? Exported for
+     * the same reason as the two predicates above: the suite has to be able to ask where savanna is
+     * supposed to live before it can assert that it lives there and forest lives elsewhere
+     * (maintainer ruling, 2026-08-18). Takes no radius because the fringe reads the active province
+     * authority, which was built with the world's own radius.
+     */
+    static boolean savannaDryFringeHitForPolicyTest(int blockX, int blockZ) {
+        return savannaDryFringeHere(blockX, blockZ);
+    }
+
+    /**
      * Diagnostic-only accessor for atlas/export tooling: returns the pre-rewrite band choice
      * from the blend comparator (chosenBandIndex) before the subtropical->temperate constitutional
      * rewrite is applied.
@@ -2934,6 +2945,32 @@ public final class LatitudeBiomes {
     private static boolean savannaCountryHere(int blockX, int blockZ) {
         int radiusHint = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
         return savannaProvinceAuthorityHit(WORLD_SEED, blockX, blockZ, radiusHint);
+    }
+
+    /**
+     * The SECOND home of savanna: the dry fringe of the warm-medium belt, the shell of WARM_MEDIUM
+     * that hugs an arid province (maintainer ruling, 2026-08-18 — savanna is both COUNTRIES and the
+     * ARID FRINGE).
+     *
+     * <p>Savanna is the real world's transition between arid and forest, and it was the buffer
+     * standing between mesa/desert country and the lush belt until the country system moved it off
+     * exactly that position. Measured on three vanilla seeds after the country landed, lush
+     * neighbours of the badlands family rose 156-&gt;350 / 189-&gt;288 / 33-&gt;131 while dry-transition
+     * neighbours fell 894-&gt;658 / 788-&gt;454 / 619-&gt;343. This restores the buffer.
+     *
+     * <p>NOT a neighbour query and NOT a new noise field: {@link ProvinceAuthority#warmDryFringe}
+     * asks how close the column's own moisture sits to the dry threshold, and because moisture is a
+     * smooth field that already means "just outside an arid province". Article VI clean, and it
+     * reads the SAME arithmetic {@code classifyWarm} thresholds against, so the province map and the
+     * fringe map cannot disagree.
+     *
+     * <p>Answers false with no authority, which matches {@link #classifyProvince}: every call site
+     * below is reached only after the authority has already returned WARM_MEDIUM, so this branch is
+     * unreachable there and exists only so the policy hook is total.
+     */
+    private static boolean savannaDryFringeHere(int blockX, int blockZ) {
+        ProvinceAuthority authority = PROVINCE_AUTHORITY;
+        return authority != null && authority.warmDryFringe(blockX, blockZ);
     }
 
     private static boolean badlandsProvinceCoreHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
@@ -8781,8 +8818,13 @@ public final class LatitudeBiomes {
             return out;
         }
         if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
+            // Savanna has TWO homes in this belt: its countries, and the dry fringe hugging an arid
+            // province (maintainer ruling, 2026-08-18). Either one hands the column to the province
+            // enforcer exactly as the country case always did; outside both it is forest as before.
+            //
             // MUST STAY IDENTICAL to the Collection overload below, decision for decision.
-            Holder<Biome> rerouted = savannaCountryHere(blockX, blockZ)
+            Holder<Biome> rerouted =
+                    (savannaCountryHere(blockX, blockZ) || savannaDryFringeHere(blockX, blockZ))
                     ? enforceWarmProvinceFamily(biomes, out, province, blockX, blockZ)
                     : warmMediumOutsideCountryStaple(biomes, out);
             if (DEBUG_PROVINCE) {
@@ -8826,9 +8868,10 @@ public final class LatitudeBiomes {
         }
         if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
             // MUST STAY IDENTICAL to the Registry overload above -- see the note there for why the
-            // savanna country is consulted in this gate explicitly rather than inherited from the
-            // province enforcer.
-            Holder<Biome> rerouted = savannaCountryHere(blockX, blockZ)
+            // savanna country AND the dry fringe are consulted in this gate explicitly rather than
+            // inherited from the province enforcer.
+            Holder<Biome> rerouted =
+                    (savannaCountryHere(blockX, blockZ) || savannaDryFringeHere(blockX, blockZ))
                     ? enforceWarmProvinceFamily(biomes, out, province, blockX, blockZ)
                     : warmMediumOutsideCountryStaple(biomes, out);
             if (DEBUG_PROVINCE) {
@@ -11623,15 +11666,27 @@ public final class LatitudeBiomes {
                 //       savanna is 85-93% across the policy suite's seeds, not 100%, and that
                 //       remainder is what it is.
                 //
+                // SAVANNA'S SECOND HOME, added the same day and by the same ruling: the DRY FRINGE.
+                // Savanna is the real world's transition between arid and forest, and it was the
+                // buffer between mesa/desert country and the lush belt until the country above took
+                // it off that border -- measured, lush neighbours of the badlands family rose
+                // 156->350 / 189->288 / 33->131 across three seeds while dry-transition neighbours
+                // fell 894->658 / 788->454 / 619->343. savannaDryFringeHere restores the buffer by
+                // asking how close this column's own moisture sits to the WARM_DRY threshold, which
+                // on a smooth field already means "just outside an arid province" -- no neighbour
+                // sampling, no new field. It reads the bias-inclusive moisture, so the fringe
+                // narrows by itself at the deep equator and the humid-equator directive holds.
+                //
                 // MUST STAY IDENTICAL to the Collection overload below, decision for decision.
-                boolean inSavannaCountry = savannaCountryHere(blockX, blockZ);
+                boolean savannaOwnsColumn = savannaCountryHere(blockX, blockZ)
+                        || savannaDryFringeHere(blockX, blockZ);
                 if (isSavannaFamily(pick)) {
                     // windswept_savanna is exempt from the country rule in both directions. It is
                     // the WARM_UPLAND mountain identity, not the flat staple this country governs,
                     // and it already has exactly one legal home (subtropical + real mountain, see
                     // blockNewSubtropicalNonMountainWindswept). Rewriting it to forest out here
                     // would close that home for the second time in one file's history.
-                    if (inSavannaCountry || isBiomeId(pick, "minecraft:windswept_savanna")) {
+                    if (savannaOwnsColumn || isBiomeId(pick, "minecraft:windswept_savanna")) {
                         return pick;
                     }
                     Holder<Biome> outsideForest = warmMediumForestStaple(biomes);
@@ -11644,7 +11699,7 @@ public final class LatitudeBiomes {
                 // NOTE: WARM_DRY intentionally does NOT preserve custom — the tropical-arid LAW relies
                 // on the downstream demote catching VANILLA badlands/desert, which a custom arid would bypass.
                 if (isCustomBiome(pick) && !isReviewedJungleFamily(pick)) return pick;
-                if (!inSavannaCountry) {
+                if (!savannaOwnsColumn) {
                     Holder<Biome> outsideForest = warmMediumForestStaple(biomes);
                     if (outsideForest != null) {
                         return outsideForest;
@@ -11734,21 +11789,22 @@ public final class LatitudeBiomes {
             }
             case WARM_MEDIUM -> {
                 // MUST STAY IDENTICAL to the Registry overload above -- see the note there for why
-                // savanna is a country inside this belt rather than the belt itself, why
-                // windswept_savanna is exempt in both directions, why minecraft:forest had to be
-                // admitted to the tropical band pool for any of it to survive, and for the two
-                // accepted leaks out of the country system (country-blind demote gates; band-leak
-                // rerolls diluting the inside of a country).
-                boolean inSavannaCountry = savannaCountryHere(blockX, blockZ);
+                // savanna is a country inside this belt rather than the belt itself, why it ALSO
+                // owns the dry fringe hugging every arid province, why windswept_savanna is exempt
+                // in both directions, why minecraft:forest had to be admitted to the tropical band
+                // pool for any of it to survive, and for the two accepted leaks out of the country
+                // system (country-blind demote gates; band-leak rerolls diluting a country).
+                boolean savannaOwnsColumn = savannaCountryHere(blockX, blockZ)
+                        || savannaDryFringeHere(blockX, blockZ);
                 if (isSavannaFamily(pick)) {
-                    if (inSavannaCountry || isBiomeId(pick, "minecraft:windswept_savanna")) {
+                    if (savannaOwnsColumn || isBiomeId(pick, "minecraft:windswept_savanna")) {
                         return pick;
                     }
                     Holder<Biome> outsideForest = warmMediumForestStaple(biomes);
                     return outsideForest != null ? outsideForest : pick;
                 }
                 if (isCustomBiome(pick) && !isReviewedJungleFamily(pick)) return pick;
-                if (!inSavannaCountry) {
+                if (!savannaOwnsColumn) {
                     Holder<Biome> outsideForest = warmMediumForestStaple(biomes);
                     if (outsideForest != null) {
                         return outsideForest;

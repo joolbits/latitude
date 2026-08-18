@@ -47,9 +47,12 @@ public final class ProvinceAuthority {
     static final long COLD_MOISTURE_SALT = 0x636F_6C64_6D6F_6973L;   // "coldmois"
     static final int  COLD_MOISTURE_SCALE_BLOCKS = 1600;
 
-    // Province thresholds (tuned to produce three roughly equal-width bands in noise space)
-    private static final double WARM_DRY_THRESHOLD = 0.38;
-    private static final double WARM_WET_THRESHOLD = 0.62;
+    // Province thresholds (tuned to produce three roughly equal-width bands in noise space).
+    // The two warm thresholds are package-private ONLY so the policy suite can state the dry-fringe
+    // truth table in the code's own numbers instead of copying 0.38 into a test and letting the two
+    // drift. Values unchanged.
+    static final double WARM_DRY_THRESHOLD = 0.38;
+    static final double WARM_WET_THRESHOLD = 0.62;
     private static final double COLD_DRY_THRESHOLD = 0.38;
     private static final double COLD_WET_THRESHOLD = 0.62;
 
@@ -66,6 +69,32 @@ public final class ProvinceAuthority {
     // than a desert-choked equator. Tune TROPICAL_WET_BIAS to trade equatorial arid share.
     static final double TROPICAL_LAT_END_DEG = 23.5; // == LatitudeBands.Band.SUBTROPICAL.lowDeg()
     static final double TROPICAL_WET_BIAS = 0.20;    // moisture units added at the equator
+
+    // The dry fringe of the warm-medium belt (maintainer ruling, 2026-08-18: savanna is both
+    // COUNTRIES and the ARID FRINGE).
+    //
+    // Savanna's real-world identity is the TRANSITION between arid and forest, and until the
+    // savanna-country system landed it was the natural buffer standing between mesa/desert country
+    // and the lush belt. Making WARM_MEDIUM resolve to minecraft:forest outside a country removed
+    // savanna from exactly that position: measured over three vanilla seeds, lush neighbours of the
+    // badlands family rose 156->350 / 189->288 / 33->131 while dry-transition neighbours fell
+    // 894->658 / 788->454 / 619->343. Lush forest pressed straight against badlands.
+    //
+    // This width restores the buffer WITHOUT sampling neighbours and without a new noise field —
+    // Article VI clean. Moisture is a smooth field and a WARM_DRY province is exactly the region
+    // below WARM_DRY_THRESHOLD, so "effective moisture within WARM_DRY_FRINGE_WIDTH of that
+    // threshold" already means "the shell immediately outside an arid province". The bias-inclusive
+    // moisture is deliberately the one measured, so the fringe narrows by itself at the deep
+    // equator and the "mostly humid equator" directive survives untouched.
+    //
+    // ATLAS-TUNED starting value. To retune, measure (a) badlands-family border adjacency and
+    // (b) tropical savanna share, then move this one constant: WIDEN toward 0.10 if lush neighbours
+    // still outnumber dry-transition neighbours at arid borders; NARROW toward 0.03 if tropical
+    // savanna climbs past roughly a third of tropical land. Desk-derived scale at radius 10000:
+    // 0.06 is a savanna belt roughly 300 blocks deep around each arid province, 0.04 roughly 200.
+    // Nothing else moves with it — the fringe is additive on the MEDIUM side only, and WARM_DRY and
+    // WARM_WET are untouched by construction.
+    static final double WARM_DRY_FRINGE_WIDTH = 0.06;
 
     private final long seed;
     private final int effectiveRadius;
@@ -141,6 +170,30 @@ public final class ProvinceAuthority {
     // --- Warm-side province classification ---
 
     private Province classifyWarm(int blockX, int blockZ) {
+        double moisture = warmMoisture(blockX, blockZ);
+
+        if (moisture < WARM_DRY_THRESHOLD) {
+            return Province.WARM_DRY;
+        }
+        if (moisture > WARM_WET_THRESHOLD) {
+            return Province.WARM_WET;
+        }
+        return Province.WARM_MEDIUM;
+    }
+
+    /**
+     * The EFFECTIVE warm-side moisture at a column: the composite noise signal plus the equatorial
+     * wet-bias, i.e. exactly the number {@link #classifyWarm} thresholds against.
+     *
+     * <p>Extracted rather than duplicated on purpose. {@link #warmDryFringeForBand} has to know how
+     * close a column sits to {@link #WARM_DRY_THRESHOLD}, and a second copy of this arithmetic —
+     * even a correct one — is a province classification and a fringe classification that can drift
+     * apart under one careless edit. There is one formula and both callers read it.
+     *
+     * <p>Package-private so the policy suite can build a truth table around the fringe width instead
+     * of guessing where the fringe is.
+     */
+    double warmMoisture(int blockX, int blockZ) {
         // Combine openness and humidity into a single moisture signal.
         // High openness + low humidity → dry; low openness + high humidity → wet.
         double openness = ValueNoise2D.sampleBlocks(seed ^ WARM_OPENNESS_SALT, blockX, blockZ, WARM_OPENNESS_SCALE_BLOCKS);
@@ -157,14 +210,43 @@ public final class ProvinceAuthority {
             double wetFrac = smoothstep(1.0 - latDeg / TROPICAL_LAT_END_DEG);
             moisture += TROPICAL_WET_BIAS * wetFrac;
         }
+        return moisture;
+    }
 
-        if (moisture < WARM_DRY_THRESHOLD) {
-            return Province.WARM_DRY;
+    /**
+     * Is this column in the DRY FRINGE of the warm-medium belt — the shell of WARM_MEDIUM that
+     * hugs an arid province?
+     *
+     * <p>True only for a column this authority would classify {@link Province#WARM_MEDIUM} whose
+     * effective moisture is below {@code WARM_DRY_THRESHOLD + WARM_DRY_FRINGE_WIDTH}. WARM_DRY is
+     * false because it is not MEDIUM; WARM_WET is false for the same reason and is untouched by
+     * this predicate in every direction. See {@link #WARM_DRY_FRINGE_WIDTH} for why savanna claims
+     * this shell regardless of country membership (maintainer ruling, 2026-08-18).
+     *
+     * @param blockX world X (blocks)
+     * @param blockZ world Z (blocks)
+     */
+    public boolean warmDryFringe(int blockX, int blockZ) {
+        int bandIndex = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, effectiveRadius);
+        return warmDryFringeForBand(bandIndex, blockX, blockZ);
+    }
+
+    /**
+     * {@link #warmDryFringe} with a pre-computed band index, mirroring
+     * {@link #classifyForBand(int, int, int)} so a caller that already knows the band never pays
+     * for it twice.
+     *
+     * @param bandIndex 0=tropical, 1=subtropical, 2=temperate, 3=subpolar, 4=polar
+     */
+    public boolean warmDryFringeForBand(int bandIndex, int blockX, int blockZ) {
+        if (bandIndex > BAND_SUBTROPICAL) {
+            return false; // cold side has no warm province at all
         }
-        if (moisture > WARM_WET_THRESHOLD) {
-            return Province.WARM_WET;
+        double moisture = warmMoisture(blockX, blockZ);
+        if (moisture < WARM_DRY_THRESHOLD || moisture > WARM_WET_THRESHOLD) {
+            return false; // WARM_DRY / WARM_WET — the fringe is additive on the MEDIUM side only
         }
-        return Province.WARM_MEDIUM;
+        return moisture < WARM_DRY_THRESHOLD + WARM_DRY_FRINGE_WIDTH;
     }
 
     /** Hermite smoothstep on [0,1]; used for the latitude wet-bias ramp. */
