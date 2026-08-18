@@ -3436,7 +3436,12 @@ public final class LatitudeBiomes {
                 mountainNoiseLike,
                 hasPreviewTerrainInputs,
                 callerContext);
-        boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
+        // Renamed from polarMountainNoiseLike (2026-08-18): this is the raw, ungated mountain-noise
+        // read, and it is no longer polar-only. It still feeds the polar authority chain below, and
+        // it is now ALSO what tells the windswept gate whether a subpolar column is a real mountain
+        // — see the isWindsweptFamilyLegal call in rerollTerrainCompatibleCandidate. Sampled once
+        // per column and reused; isMountainLike costs a climate sample, so do not re-evaluate it.
+        boolean rawMountainTruth = sampler != null && isMountainLike(sampler, blockX, blockZ);
         boolean terrainEvidenceAvailable = hasPreviewTerrainInputs
                 || (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && mountainNoiseLike);
         // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
@@ -3451,14 +3456,14 @@ public final class LatitudeBiomes {
         // columnDecisionY instead of a targeted previewTerrain() probe to avoid generator re-entry.
         int polarProbeHeight = preview.centerHeight;
         int polarProbeDelta  = preview.robustDelta;
-        if (skipPreview && landBandIndex >= BAND_POLAR && polarMountainNoiseLike && hasPreviewTerrainInputs) {
+        if (skipPreview && landBandIndex >= BAND_POLAR && rawMountainTruth && hasPreviewTerrainInputs) {
             polarProbeHeight = columnDecisionY;
             polarProbeDelta  = 0;
         }
-        boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && polarMountainNoiseLike)
+        boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && rawMountainTruth)
                 || (polarProbeDelta >= 12)
                 || (polarProbeHeight >= seaLevel + 20);
-        boolean polarMountainLikeFinal = polarMountainNoiseLike && polarTerrainMountainLike;
+        boolean polarMountainLikeFinal = rawMountainTruth && polarTerrainMountainLike;
         if (landBandIndex >= BAND_POLAR && polarMountainLikeFinal) {
             mountainLike = true;
         }
@@ -3507,7 +3512,7 @@ public final class LatitudeBiomes {
                         hasPreviewTerrainInputs,
                         terrainGateHeight,
                         seaLevel,
-                        polarMountainNoiseLike);
+                        rawMountainTruth);
         if (base.is(BiomeTags.IS_RIVER) && !raisedMountainRiver) {
             // Tag-driven since 2026-08-10. shouldFreezeRiver's latitude ramp still decides frozen
             // vs liquid exactly as before; only the identity chosen for that verdict is now
@@ -3697,7 +3702,10 @@ public final class LatitudeBiomes {
                     seaLevel,
                     oceanDistance,
                     mountainNoiseLike,
-                    mountainLike);
+                    mountainLike,
+                    // Band-qualified here, not inside the gate, so the raw mountain read can never
+                    // reach any band but the windswept family's one legal home.
+                    landBandIndex == BAND_SUBPOLAR && rawMountainTruth);
         }
         String mangroveDecision = null;
         if (DEBUG_SPARSE_JUNGLE_AUDIT && chosen != null && isBiomeId(chosen, "minecraft:sparse_jungle")
@@ -3962,7 +3970,7 @@ public final class LatitudeBiomes {
         // Double-gated: same conditions as the polarTerrainMountainLike fix above.
         boolean polarAtlasMountainParity = !hasPreviewTerrainInputs
                 && isAtlasHeadlessContext(callerContext)
-                && polarMountainNoiseLike;
+                && rawMountainTruth;
         int effectivePolarHeight = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_HEIGHT : polarProbeHeight;
         int effectivePolarDelta  = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_DELTA  : polarProbeDelta;
         // Capture pre-clamp state so instrumentation comparison is unambiguous.
@@ -3977,7 +3985,7 @@ public final class LatitudeBiomes {
         }
         if (DEBUG_POLAR_ATLAS && landBandIndex == BAND_POLAR && isAtlasHeadlessContext(callerContext)) {
             PAR_SAMPLES.incrementAndGet();
-            if (polarMountainNoiseLike)       PAR_NOISE_MOUNTAIN.incrementAndGet();
+            if (rawMountainTruth)             PAR_NOISE_MOUNTAIN.incrementAndGet();
             if (preview.centerHeight > 0)     PAR_NONZERO_HEIGHT.incrementAndGet();
             if (preview.robustDelta > 0)      PAR_NONZERO_DELTA.incrementAndGet();
             if (polarMountainAuthority(effectivePolarDelta, effectivePolarHeight, landBandIndex))
@@ -4142,7 +4150,7 @@ public final class LatitudeBiomes {
                 finalPhysicalUpland,
                 out,
                 columnDecisionY,
-                polarMountainNoiseLike);
+                rawMountainTruth);
         boolean finalAridPhysicalUpland = finalPhysicalUpland
                 || finalAridProbe != null && TerrainBiomeCohesionPolicy.isPhysicalUpland(
                         true,
@@ -4242,7 +4250,12 @@ public final class LatitudeBiomes {
                 mountainNoiseLike,
                 hasPreviewTerrainInputs,
                 callerContext);
-        boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
+        // Renamed from polarMountainNoiseLike (2026-08-18): this is the raw, ungated mountain-noise
+        // read, and it is no longer polar-only. It still feeds the polar authority chain below, and
+        // it is now ALSO what tells the windswept gate whether a subpolar column is a real mountain
+        // — see the isWindsweptFamilyLegal call in rerollTerrainCompatibleCandidate. Sampled once
+        // per column and reused; isMountainLike costs a climate sample, so do not re-evaluate it.
+        boolean rawMountainTruth = sampler != null && isMountainLike(sampler, blockX, blockZ);
         boolean terrainEvidenceAvailable = hasPreviewTerrainInputs
                 || (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && mountainNoiseLike);
         // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
@@ -4257,14 +4270,14 @@ public final class LatitudeBiomes {
         // columnDecisionY instead of a targeted previewTerrain() probe to avoid generator re-entry.
         int polarProbeHeight = preview.centerHeight;
         int polarProbeDelta  = preview.robustDelta;
-        if (skipPreview && landBandIndex >= BAND_POLAR && polarMountainNoiseLike && hasPreviewTerrainInputs) {
+        if (skipPreview && landBandIndex >= BAND_POLAR && rawMountainTruth && hasPreviewTerrainInputs) {
             polarProbeHeight = columnDecisionY;
             polarProbeDelta  = 0;
         }
-        boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && polarMountainNoiseLike)
+        boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && rawMountainTruth)
                 || (polarProbeDelta >= 12)
                 || (polarProbeHeight >= seaLevel + 20);
-        boolean polarMountainLikeFinal = polarMountainNoiseLike && polarTerrainMountainLike;
+        boolean polarMountainLikeFinal = rawMountainTruth && polarTerrainMountainLike;
         if (landBandIndex >= BAND_POLAR && polarMountainLikeFinal) {
             mountainLike = true;
         }
@@ -4311,7 +4324,7 @@ public final class LatitudeBiomes {
                         hasPreviewTerrainInputs,
                         terrainGateHeight,
                         seaLevel,
-                        polarMountainNoiseLike);
+                        rawMountainTruth);
         if (base.is(BiomeTags.IS_RIVER) && !raisedMountainRiver) {
             // See the registry twin: the frozen/liquid verdict is unchanged, only the identity is
             // now tag-extensible.
@@ -4476,7 +4489,10 @@ public final class LatitudeBiomes {
                     seaLevel,
                     oceanDistance,
                     mountainNoiseLike,
-                    mountainLike);
+                    mountainLike,
+                    // Band-qualified here, not inside the gate, so the raw mountain read can never
+                    // reach any band but the windswept family's one legal home.
+                    landBandIndex == BAND_SUBPOLAR && rawMountainTruth);
         }
         String mangroveDecision = null;
         Holder<Biome> sanitized = chosen;
@@ -4708,7 +4724,7 @@ public final class LatitudeBiomes {
         // Double-gated: same conditions as the polarTerrainMountainLike fix above.
         boolean polarAtlasMountainParity = !hasPreviewTerrainInputs
                 && isAtlasHeadlessContext(callerContext)
-                && polarMountainNoiseLike;
+                && rawMountainTruth;
         int effectivePolarHeight = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_HEIGHT : polarProbeHeight;
         int effectivePolarDelta  = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_DELTA  : polarProbeDelta;
         // Capture pre-clamp state so instrumentation comparison is unambiguous.
@@ -4723,7 +4739,7 @@ public final class LatitudeBiomes {
         }
         if (DEBUG_POLAR_ATLAS && landBandIndex == BAND_POLAR && isAtlasHeadlessContext(callerContext)) {
             PAR_SAMPLES.incrementAndGet();
-            if (polarMountainNoiseLike)       PAR_NOISE_MOUNTAIN.incrementAndGet();
+            if (rawMountainTruth)             PAR_NOISE_MOUNTAIN.incrementAndGet();
             if (preview.centerHeight > 0)     PAR_NONZERO_HEIGHT.incrementAndGet();
             if (preview.robustDelta > 0)      PAR_NONZERO_DELTA.incrementAndGet();
             if (polarMountainAuthority(effectivePolarDelta, effectivePolarHeight, landBandIndex))
@@ -4888,7 +4904,7 @@ public final class LatitudeBiomes {
                 finalPhysicalUpland,
                 out,
                 columnDecisionY,
-                polarMountainNoiseLike);
+                rawMountainTruth);
         boolean finalAridPhysicalUpland = finalPhysicalUpland
                 || finalAridProbe != null && TerrainBiomeCohesionPolicy.isPhysicalUpland(
                         true,
@@ -7648,7 +7664,8 @@ public final class LatitudeBiomes {
                                                                       int seaLevel,
                                                                       int oceanDistance,
                                                                       boolean mountainNoiseLike,
-                                                                      boolean mountainLike) {
+                                                                      boolean mountainLike,
+                                                                      boolean rawMountainTruth) {
         return rerollTerrainCompatibleCandidate(
                 chosen,
                 filteredAllowedLandPool(biomes, bandIndex, mountainLike),
@@ -7660,7 +7677,8 @@ public final class LatitudeBiomes {
                 seaLevel,
                 oceanDistance,
                 mountainNoiseLike,
-                mountainLike);
+                mountainLike,
+                rawMountainTruth);
     }
 
     /** Collection-source twin of the registry gate above; both must use the filtered pool. */
@@ -7674,7 +7692,8 @@ public final class LatitudeBiomes {
                                                                       int seaLevel,
                                                                       int oceanDistance,
                                                                       boolean mountainNoiseLike,
-                                                                      boolean mountainLike) {
+                                                                      boolean mountainLike,
+                                                                      boolean rawMountainTruth) {
         return rerollTerrainCompatibleCandidate(
                 chosen,
                 filteredAllowedLandPool(biomes, bandIndex, mountainLike),
@@ -7686,7 +7705,8 @@ public final class LatitudeBiomes {
                 seaLevel,
                 oceanDistance,
                 mountainNoiseLike,
-                mountainLike);
+                mountainLike,
+                rawMountainTruth);
     }
 
     private static Holder<Biome> rerollTerrainCompatibleCandidate(Holder<Biome> chosen,
@@ -7699,12 +7719,16 @@ public final class LatitudeBiomes {
                                                                          int seaLevel,
                                                                          int oceanDistance,
                                                                          boolean mountainNoiseLike,
-                                                                         boolean mountainLike) {
+                                                                         boolean mountainLike,
+                                                                         boolean rawMountainTruth) {
         if (chosen == null || pool.isEmpty()) {
             return chosen;
         }
         int terrainClass = terrainClassForSelection(centerHeight, robustDelta, seaLevel, oceanDistance, mountainNoiseLike, mountainLike);
-        boolean windsweptLegalHere = isWindsweptFamilyLegal(bandIndex, mountainNoiseLike, mountainLike);
+        // rawMountainTruth only widens the windswept legality test; it is deliberately NOT fed to
+        // terrainClassForSelection or isBiomeCompatibleWithTerrain, which keep their existing
+        // band-scoped inputs so this lever cannot move any non-windswept identity.
+        boolean windsweptLegalHere = isWindsweptFamilyLegal(bandIndex, mountainNoiseLike, mountainLike, rawMountainTruth);
         if (isBiomeCompatibleWithTerrain(chosen, bandIndex, terrainClass, mountainNoiseLike, mountainLike)
                 && (windsweptLegalHere || !isColdWindsweptFamilyBiome(chosen))) {
             return applyColdSiblingCoherence(chosen, pool, bandIndex, blockX, blockZ, terrainClass);
@@ -7781,11 +7805,50 @@ public final class LatitudeBiomes {
      * <p>This is the runtime half of {@code BiomeRoute.SUBPOLAR_UPLAND}. The route keeps windswept
      * out of the polar band pool; this keeps it off flat subpolar ground, which the route alone
      * cannot do because substitution paths never re-evaluate a route's conditions.
+     *
+     * <p>{@code rawMountainTruth} is why the gate can ever open (2026-08-18). The other two signals
+     * are both scoped to other bands and are structurally false here: {@code mountainNoiseLike} is
+     * computed as {@code landBandIndex == BAND_TEMPERATE && ...}, and {@code mountainLike} comes
+     * from {@code temperateMountainTerrainAuthority} and is only force-set true under
+     * {@code landBandIndex >= BAND_POLAR}. The subpolar band sits between the two and got neither,
+     * so this predicate returned false on EVERY subpolar column, mountain or not — the family's
+     * one legal home was locked shut, and the 5.2% of cold-upland terrain it still held was
+     * arriving through coverage anchors and the pool reroll rather than through this gate. Callers
+     * pass the raw {@code isMountainLike} read, already band-qualified to BAND_SUBPOLAR.
+     *
+     * <p>Deliberately the SAME signal the ownership veto uses: {@code pick} hands
+     * {@code isMountainLike} to {@link #clampTemperateWindsweptMountainOwnership} as
+     * {@code mountainLikeAfterFinalTruth}, and that clamp deletes windswept wherever the signal is
+     * false. Gate and veto reading one predicate means every column this admits is a column the
+     * veto passes; if they disagreed, the gate would only be admitting picks for the veto to
+     * silently overwrite. Do not substitute a laxer terrain signal here — {@code terrainClass >=
+     * TERRAIN_CLASS_RAISED_SHOULDER} fires at {@code seaLevel + 4} or a 3-block relief delta, i.e.
+     * ordinary rolling ground, which is the bug the 2026-08-18 re-route closed.
      */
     private static boolean isWindsweptFamilyLegal(int bandIndex,
                                                   boolean mountainNoiseLike,
-                                                  boolean mountainLike) {
-        return bandIndex == BAND_SUBPOLAR && (mountainLike || mountainNoiseLike);
+                                                  boolean mountainLike,
+                                                  boolean rawMountainTruth) {
+        return bandIndex == BAND_SUBPOLAR && (mountainLike || mountainNoiseLike || rawMountainTruth);
+    }
+
+    /**
+     * Exported for the policy suite (2026-08-18). The suite must be able to interrogate this
+     * predicate directly, because it cannot reach it through {@code pick}: the public picker is
+     * called with a null chunk generator, so preview terrain is synthetic (centerHeight sea-1,
+     * robustDelta 0) and every subpolar column classifies FLAT_SHELF or FLAT_LOWLAND — terrain on
+     * which the incoming pick is already compatible, so the gate returns it untouched and its
+     * reroll walk, the branch this predicate actually steers, never runs. Measured: shutting the
+     * gate entirely leaves the suite's subpolar-mountain windswept census bit-identical at 33/27
+     * of 154 columns, because on those columns the family is preserved by the LATE ownership
+     * clamp, not by this gate. A production sweep therefore cannot tell a working gate from a shut
+     * one, and asserting through it would be a test that passes either way.
+     */
+    static boolean windsweptFamilyLegalForPolicyTest(int bandIndex,
+                                                     boolean mountainNoiseLike,
+                                                     boolean mountainLike,
+                                                     boolean rawMountainTruth) {
+        return isWindsweptFamilyLegal(bandIndex, mountainNoiseLike, mountainLike, rawMountainTruth);
     }
 
     private static int continuousSelectionIndex(int size,

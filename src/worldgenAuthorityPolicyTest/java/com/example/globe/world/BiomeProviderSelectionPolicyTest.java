@@ -2499,13 +2499,36 @@ final class BiomeProviderSelectionPolicyTest {
         // called twice and then overwritten would still have satisfied it. Section 6 drives both
         // pick() overloads at the pole instead, which is the property that line was standing in
         // for and cannot be satisfied by naming.
+        // Restated 2026-08-18 when rawMountainTruth was added as a third mountain-evidence term.
+        // This used to pin the exact substring "(mountainLike || mountainNoiseLike)", which named
+        // the two signals rather than the property, and both of those are structurally FALSE in
+        // the subpolar band — mountainNoiseLike is gated on BAND_TEMPERATE and mountainLike is
+        // force-set only under >= BAND_POLAR — so the predicate it was guarding could never return
+        // true anywhere, and the assertion happily certified a gate that was locked shut. What the
+        // law actually says is "the subpolar band AND real mountain evidence", so that is what is
+        // asserted: the band term, ANDed, and a non-empty disjunction of evidence terms that names
+        // all three. The startsWith is the teeth against the failure this section exists for —
+        // a band-only predicate cannot satisfy it. The behavioural half of the same claim, which
+        // no source-text check can substitute for, is section 6b: flat subpolar columns must never
+        // return a windswept id, swept across the band.
         String legality = method(source,
                 "isWindsweptFamilyLegal(int bandIndex,");
-        assertTrue(legality.contains("bandIndex == BAND_SUBPOLAR")
-                        && legality.contains("(mountainLike || mountainNoiseLike)"),
+        // Truncated at the first statement terminator on purpose. method() runs to the next
+        // "private static", so the slice also swallows the package-private
+        // windsweptFamilyLegalForPolicyTest hook that sits directly below — whose parameter list
+        // names all three evidence terms and would satisfy every contains() below on its own.
+        String legalityBody = legality.substring(legality.indexOf("return "));
+        String legalityReturn = legalityBody.substring(0, legalityBody.indexOf(';') + 1);
+        assertTrue(legalityReturn.startsWith("return bandIndex == BAND_SUBPOLAR && (")
+                        && legalityReturn.contains("mountainLike")
+                        && legalityReturn.contains("mountainNoiseLike")
+                        && legalityReturn.contains("rawMountainTruth"),
                 "the reroll's legality predicate must demand BOTH the subpolar band and real "
                         + "mountain evidence — the band alone is what the old COLD_UPLAND route "
-                        + "effectively enforced, and it is how flat polar shelves got windswept");
+                        + "effectively enforced, and it is how flat polar shelves got windswept; "
+                        + "it must also still consult rawMountainTruth, the raw isMountainLike "
+                        + "read, which is the only one of the three terms that can ever be true in "
+                        + "this band: " + legalityReturn.trim());
         String family = method(source, "isColdWindsweptFamilyBiome(Holder<Biome> candidate) {");
         assertFalse(family.contains("contains(\"windswept\")") || family.contains("getPath()"),
                 "the family predicate must match exact ids, never the substring \"windswept\" — "
@@ -2663,6 +2686,129 @@ final class BiomeProviderSelectionPolicyTest {
                         "a guaranteed windswept province must stay below the polar boundary: "
                                 + anchor.biomeId() + " at " + anchorLatDeg + " degrees");
             }
+
+            // 6d. The family must be producible on ORDINARY generated mountains, not only inside
+            // its three reserved provinces. 6c above is satisfied entirely by coverage anchors,
+            // which reach the map through a path that never consults the terrain gate — so 6c
+            // would stay green even if every unreserved column in the band refused the family.
+            // This sweep excludes the anchors precisely so it cannot be satisfied that way, and it
+            // hands each windswept id in as its own donor: the question is whether a genuine
+            // mountain column is allowed to KEEP the identity handed to it. It is the mirror image
+            // of 6b, which asks the same of flat columns and demands the opposite answer, and the
+            // pair is what pins the "subpolar AND mountain" law behaviourally.
+            //
+            // HONEST SCOPE — read before trusting this as proof of the terrain gate. It is NOT.
+            // Measured 2026-08-18: shutting the windswept gate completely (passing false for
+            // rawMountainTruth at both pick() call sites) leaves the counts below bit-identical at
+            // 33/27 of 154 columns. What preserves the family here is the LATE ownership clamp,
+            // clampTemperateWindsweptMountainOwnership, which reads its own isMountainLike and
+            // keeps windswept wherever the descriptor owns the mountain — and what enforces 6b is
+            // the same clamp answering false on flat ground. The gate cannot show through this
+            // harness at all: pick() is called with a null chunk generator, so preview terrain is
+            // synthetic (centerHeight sea-1, robustDelta 0), every subpolar column classifies
+            // FLAT_SHELF or FLAT_LOWLAND, the incoming pick is already terrain-compatible there,
+            // and the gate returns it untouched without ever entering the reroll walk that the
+            // legality predicate steers. Section 6e asserts the predicate directly for that reason.
+            // Do not "strengthen" this sweep into a gate assertion; it passes either way.
+            int mountainSubpolarColumns = 0;
+            int[] registryWindsweptHits = new int[windswept.length];
+            int[] collectionWindsweptHits = new int[windswept.length];
+            for (double fraction : new double[]{0.60, 0.63, 0.66, 0.69, 0.72}) {
+                int z = (int) Math.round(pickerRadius * fraction);
+                for (int x = -4_096; x <= 4_096; x += 97) {
+                    // Mountain per LatitudeBiomes' OWN read, snapped to the quart boundary the
+                    // climate sampler actually reads — see mountainNoiseColumn's note.
+                    if (!mountainNoiseColumn(x)) continue;
+                    if ((long) x * x + (long) z * z >= (long) pickerRadius * pickerRadius) continue;
+                    // Guaranteed provinces are 6c's subject; counting them here would let the
+                    // anchor path satisfy an assertion about the gate.
+                    if (pickerPlan.match(x, z) != null) continue;
+                    // 3 == BAND_SUBPOLAR.
+                    if (LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, z, pickerRadius) != 3) {
+                        continue;
+                    }
+                    mountainSubpolarColumns++;
+                    for (int i = 0; i < windswept.length; i++) {
+                        Holder<Biome> donor = testBiomeHolder(registry, windswept[i]);
+                        if (windswept[i].equals(LatitudeBiomes.biomeIdPublic(LatitudeBiomes.pick(
+                                registry, donor, x, z, 80, pickerRadius, pickerSampler,
+                                "ATLAS_SAMPLER")))) {
+                            registryWindsweptHits[i]++;
+                        }
+                        if (windswept[i].equals(LatitudeBiomes.biomeIdPublic(LatitudeBiomes.pick(
+                                pool, donor, x, z, 80, pickerRadius, pickerSampler,
+                                "ATLAS_SAMPLER")))) {
+                            collectionWindsweptHits[i]++;
+                        }
+                    }
+                }
+            }
+            String windsweptMeasured = "mountain subpolar columns=" + mountainSubpolarColumns
+                    + "; registry/collection hits"
+                    + " hills=" + registryWindsweptHits[0] + "/" + collectionWindsweptHits[0]
+                    + " forest=" + registryWindsweptHits[1] + "/" + collectionWindsweptHits[1]
+                    + " gravelly_hills=" + registryWindsweptHits[2] + "/" + collectionWindsweptHits[2];
+            assertTrue(mountainSubpolarColumns >= 40,
+                    "the mountain-subpolar sweep must actually reach genuine mountain columns in "
+                            + "the band, or it proves nothing: " + windsweptMeasured);
+            // Measured 2026-08-18: 154 mountain subpolar columns, of which 33 (registry) and 27
+            // (collection) keep each windswept identity — roughly a fifth of unreserved cold
+            // mountain ground. The floor sits well under that so ordinary noise movement does not
+            // fail the build, while a regression that re-bans the family outside its provinces
+            // (which produces 0, not a smaller number) still fails hard. Registry and collection
+            // legitimately differ: the two sources carry different pools and so disagree about
+            // which sibling replaces a rejected pick — the suite already documents that divergence
+            // on the polar sweep, which is why they are counted separately, not asserted equal.
+            for (int i = 0; i < windswept.length; i++) {
+                assertTrue(registryWindsweptHits[i] >= 10,
+                        "a genuine subpolar MOUNTAIN column outside the reserved provinces must be "
+                                + "allowed to keep " + windswept[i] + " — the windswept family is "
+                                + "the vegetated identity of cold mountains, and a ban that spread "
+                                + "from the pole into its own band would read as green on every "
+                                + "negative assertion above (registry): " + windsweptMeasured);
+                assertTrue(collectionWindsweptHits[i] >= 10,
+                        "the collection overload must admit " + windswept[i] + " on genuine "
+                                + "subpolar mountain columns exactly as the registry overload does; "
+                                + "the two gate call sites are threaded identically and must not "
+                                + "drift (collection): " + windsweptMeasured);
+            }
+
+            // 6e. THE LEVER ITSELF, asserted directly on the predicate.
+            //
+            // The defect this closes: isWindsweptFamilyLegal could not return true on ANY subpolar
+            // column, mountain or not. It read only mountainNoiseLike — computed at the call site
+            // as landBandIndex == BAND_TEMPERATE && ... — and mountainLike, which comes from
+            // temperateMountainTerrainAuthority and is force-set true only under
+            // landBandIndex >= BAND_POLAR. The subpolar band sits between the two and received
+            // neither, so the family's one legal home was locked shut and the 5.2% of subpolar
+            // cold upland it still held (190 columns against the alpine trio's 3,437, three seeds,
+            // radius 10,000 step 32) was arriving past the gate rather than through it. The fix
+            // adds rawMountainTruth, the raw isMountainLike read — deliberately the SAME signal
+            // the late ownership clamp already uses, so gate and veto agree by construction and
+            // the gate cannot admit a column the veto will then silently overwrite.
+            //
+            // Asserted through a dedicated hook rather than through pick() because, as 6d records,
+            // this harness cannot reach the predicate's effect: the reroll walk it steers never
+            // runs on synthetic flat terrain. These four cases are the whole truth table that
+            // matters, and every one of them fails if the rawMountainTruth term is removed or the
+            // band test is loosened.
+            // 3 == BAND_SUBPOLAR, 4 == BAND_POLAR, 2 == BAND_TEMPERATE.
+            assertTrue(LatitudeBiomes.windsweptFamilyLegalForPolicyTest(3, false, false, true),
+                    "a subpolar column that the raw isMountainLike read calls a mountain must be "
+                            + "legal windswept ground — this is the entire lever, and with the two "
+                            + "band-scoped signals structurally false in this band it is the only "
+                            + "term that can ever open the gate");
+            assertFalse(LatitudeBiomes.windsweptFamilyLegalForPolicyTest(3, false, false, false),
+                    "a subpolar column with NO mountain evidence must stay illegal — the family is "
+                            + "a mountain identity in this band, not merely a subpolar one");
+            assertFalse(LatitudeBiomes.windsweptFamilyLegalForPolicyTest(4, true, true, true),
+                    "the polar band must stay illegal for the windswept family on every terrain, "
+                            + "including a confirmed mountain; the raw mountain read must not have "
+                            + "reopened the pole that the 2026-08-18 re-route closed");
+            assertFalse(LatitudeBiomes.windsweptFamilyLegalForPolicyTest(2, false, false, true),
+                    "the temperate band must not become legal windswept ground — the family's "
+                            + "route is SUBPOLAR_UPLAND, and a raw mountain read is true on plenty "
+                            + "of temperate mountains");
         } finally {
             LatitudeBiomes.clearWorldgenContext();
         }
