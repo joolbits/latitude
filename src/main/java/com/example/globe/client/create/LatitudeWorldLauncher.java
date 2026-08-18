@@ -71,8 +71,10 @@ public final class LatitudeWorldLauncher {
                                        boolean startWithCompass, boolean bonusChest,
                                        boolean generateStructures,
                                        GameRules gameRules, int worldTypeIdx) {
-        LOGGER.info("[LAT][CWPATH] LatitudeWorldLauncher.beginExpedition screen={} worldTypeIdx={} worldName={}",
-                screen.getClass().getName(), worldTypeIdx, worldName);
+        if (LatitudeCreateWorldScreen.DEBUG_CWPATH) {
+            LOGGER.info("[LAT][CWPATH] LatitudeWorldLauncher.beginExpedition screen={} worldTypeIdx={} worldName={}",
+                    screen.getClass().getName(), worldTypeIdx, worldName);
+        }
         // worldTypeIdx: 0=Latitude, 1=Vanilla, 2=Vanilla Superflat
         boolean isLatitude = worldTypeIdx == 0;
         long t0 = System.currentTimeMillis();
@@ -183,8 +185,10 @@ public final class LatitudeWorldLauncher {
             if (isLatitude) {
                 String bakedId = boundGlobeSettingsId(dimensionsConfig);
                 boolean serializable = globeSettingsSerializable(dimensionsConfig, combinedDynamicRegistries);
-                LOGGER.info("[LAT][CWPATH] globe settings binding: forced={} baked={} serializable={}",
-                        noiseSettingsId(launchDimensions.overworld()), bakedId, serializable);
+                if (LatitudeCreateWorldScreen.DEBUG_CWPATH) {
+                    LOGGER.info("[LAT][CWPATH] globe settings binding: forced={} baked={} serializable={}",
+                            noiseSettingsId(launchDimensions.overworld()), bakedId, serializable);
+                }
                 if (bakedId == null || !serializable) {
                     LOGGER.error("[Latitude] Refusing to create world '{}': the Latitude preset's noise "
                                     + "settings would not persist as a registry reference "

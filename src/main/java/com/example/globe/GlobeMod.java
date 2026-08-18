@@ -76,6 +76,8 @@ public class GlobeMod implements ModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     private static final String SPAWN_CHOSEN_TAG = "globe_spawn_chosen";
+    // Duplicates vanilla's own join logging once per player join; opt-in only (maintainer ruling, 2026-08-18).
+    private static final boolean DEBUG_JOIN = Boolean.getBoolean("latitude.debugJoin");
 
     public static final int BORDER_RADIUS = 7500;
     public static final int POLE_BAND_START_ABS_Z = 12000;
@@ -156,7 +158,9 @@ public class GlobeMod implements ModInitializer {
             }
 
             boolean isGlobe = isGlobeOverworld(overworld);
-            LOGGER.info("JOIN: player={}, isGlobeOverworld={}", handler.player.getName().getString(), isGlobe);
+            if (DEBUG_JOIN) {
+                LOGGER.info("JOIN: player={}, isGlobeOverworld={}", handler.player.getName().getString(), isGlobe);
+            }
             LatitudeWorldState worldState = isGlobe ? LatitudeWorldState.get(overworld) : null;
             if (worldState != null) {
                 // A fresh integrated world can cross the client disconnect boundary before its

@@ -30,6 +30,9 @@ public abstract class WorldSelectionListEntryMixin {
     private static final Logger GLOBE_LOGGER = LoggerFactory.getLogger("globe");
     @Unique
     private static final int GLOBE_LAST_ZONE_BADGE_COLOR = 0xFFD4A74A;
+    // [LAT][CWPATH] fires on every ordinary create-screen open; opt-in only (maintainer ruling, 2026-08-18).
+    @Unique
+    private static final boolean DEBUG_CWPATH = Boolean.getBoolean("latitude.debugCwPath");
 
     @Shadow
     @Final
@@ -115,7 +118,9 @@ public abstract class WorldSelectionListEntryMixin {
             try {
                 this.globe$recreatedWorldPresetId = RecreatedWorldMetadata.latitudePresetId(worldRoot);
             } catch (IOException e) {
-                GLOBE_LOGGER.warn("[LAT][CWPATH] could not read saved Latitude Re-Create identity", e);
+                if (DEBUG_CWPATH) {
+                    GLOBE_LOGGER.warn("[LAT][CWPATH] could not read saved Latitude Re-Create identity", e);
+                }
             }
         }
 
@@ -123,10 +128,12 @@ public abstract class WorldSelectionListEntryMixin {
                 client, onClose, levelSettings, context, tempDataPackDir);
         ((RecreatedWorldPresetCarrier) screen)
                 .globe$setRecreatedWorldPresetId(this.globe$recreatedWorldPresetId);
-        GLOBE_LOGGER.info(
-                "[LAT][CWPATH] carried persisted Re-Create preset={} world={}",
-                this.globe$recreatedWorldPresetId,
-                this.summary.getLevelId());
+        if (DEBUG_CWPATH) {
+            GLOBE_LOGGER.info(
+                    "[LAT][CWPATH] carried persisted Re-Create preset={} world={}",
+                    this.globe$recreatedWorldPresetId,
+                    this.summary.getLevelId());
+        }
         return screen;
     }
 }

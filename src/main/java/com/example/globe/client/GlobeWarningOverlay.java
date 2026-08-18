@@ -41,6 +41,10 @@ public final class GlobeWarningOverlay {
     private static final int EW_KEYLINE_RGB = 0x080609;
 
     private static final boolean DEBUG_ENTRY_TITLES = Boolean.getBoolean("latitude.debugEntryTitles");
+    // render() runs every frame; cap the crash log so a persistent fault can't flood at frame rate.
+    private static final int RENDER_CRASH_LOG_LIMIT = 10;
+    private static final java.util.concurrent.atomic.AtomicInteger RENDER_CRASH_LOGS =
+            new java.util.concurrent.atomic.AtomicInteger(0);
     private static final int EQUATOR_STABLE_DIST = 64;
     private static final int HEMISPHERE_TITLE_MAX_STEP_BLOCKS = 256;
     private static final long HEMISPHERE_TITLE_COOLDOWN_MS = 15_000L;
@@ -275,7 +279,9 @@ public final class GlobeWarningOverlay {
                 drawCenteredPolarWarning(ctx, client.font, bestText, warnY, color);
             }
         } catch (Throwable t) {
-            GlobeMod.LOGGER.error("GlobeWarningOverlay.render crashed", t);
+            if (RENDER_CRASH_LOGS.incrementAndGet() <= RENDER_CRASH_LOG_LIMIT) {
+                GlobeMod.LOGGER.error("GlobeWarningOverlay.render crashed", t);
+            }
         }
     }
 

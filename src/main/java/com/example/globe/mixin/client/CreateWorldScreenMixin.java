@@ -16,6 +16,8 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 @Mixin(CreateWorldScreen.class)
 public abstract class CreateWorldScreenMixin implements RecreatedWorldPresetCarrier {
     private static final Logger LOGGER = LoggerFactory.getLogger("globe");
+    // [LAT][CWPATH] fires on every ordinary create-screen open; opt-in only (maintainer ruling, 2026-08-18).
+    private static final boolean DEBUG_CWPATH = Boolean.getBoolean("latitude.debugCwPath");
 
     @Unique
     private String globe$recreatedWorldPresetId;
@@ -38,6 +40,8 @@ public abstract class CreateWorldScreenMixin implements RecreatedWorldPresetCarr
 
     @Inject(method = "init", at = @At("HEAD"))
     private void globe$logCreateWorldInit(CallbackInfo ci) {
-        LOGGER.info("[LAT][CWPATH] CreateWorldScreenMixin.init screen={}", this.getClass().getName());
+        if (DEBUG_CWPATH) {
+            LOGGER.info("[LAT][CWPATH] CreateWorldScreenMixin.init screen={}", this.getClass().getName());
+        }
     }
 }

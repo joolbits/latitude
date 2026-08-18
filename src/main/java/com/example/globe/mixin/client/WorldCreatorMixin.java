@@ -22,6 +22,8 @@ import org.slf4j.LoggerFactory;
 public abstract class WorldCreatorMixin {
     private static final Logger LOGGER = LoggerFactory.getLogger("globe");
     private static final Identifier GLOBE_WORLD_PRESET_ID = Identifier.fromNamespaceAndPath("globe", "globe");
+    // [LAT][CWPATH] fires on every ordinary create-screen open; opt-in only (maintainer ruling, 2026-08-18).
+    private static final boolean DEBUG_CWPATH = Boolean.getBoolean("latitude.debugCwPath");
 
     @Shadow
     private WorldCreationContext settings;
@@ -34,7 +36,9 @@ public abstract class WorldCreatorMixin {
 
     @Inject(method = "updatePresetLists", at = @At("TAIL"))
     private void globe$ensureGlobePresetIsListed(CallbackInfo ci) {
-        LOGGER.info("[LAT][CWPATH] WorldCreatorMixin.updatePresetLists settings={}", this.settings);
+        if (DEBUG_CWPATH) {
+            LOGGER.info("[LAT][CWPATH] WorldCreatorMixin.updatePresetLists settings={}", this.settings);
+        }
         Registry<WorldPreset> presets = this.settings
                 .worldgenLoadContext()
                 .lookupOrThrow(Registries.WORLD_PRESET);

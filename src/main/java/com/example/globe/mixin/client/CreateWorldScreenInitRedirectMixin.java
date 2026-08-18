@@ -19,13 +19,17 @@ import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 @Mixin(CreateWorldScreen.class)
 public abstract class CreateWorldScreenInitRedirectMixin {
     private static final Logger LOGGER = LoggerFactory.getLogger("globe");
+    // [LAT][CWPATH] fires on every ordinary create-screen open; opt-in only (maintainer ruling, 2026-08-18).
+    private static final boolean DEBUG_CWPATH = Boolean.getBoolean("latitude.debugCwPath");
 
     @Shadow
     private boolean recreated;
 
     @Inject(method = "init", at = @At("HEAD"), cancellable = true)
     private void globe$redirectRecreateSafely(CallbackInfo ci) {
-        LOGGER.info("[LAT][CWPATH] CreateWorldScreenInitRedirectMixin.init screen={}", this.getClass().getName());
+        if (DEBUG_CWPATH) {
+            LOGGER.info("[LAT][CWPATH] CreateWorldScreenInitRedirectMixin.init screen={}", this.getClass().getName());
+        }
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.gui.screen() != (Object) this) {
             return;
@@ -37,8 +41,10 @@ public abstract class CreateWorldScreenInitRedirectMixin {
         WorldCreationUiState initialState = ((CreateWorldScreenMixin) (Object) this).getUiState();
         String recreatedPresetId = ((RecreatedWorldPresetCarrier) this).globe$getRecreatedWorldPresetId();
         if (!LatitudeCreateWorldScreen.canRepresent(initialState, this.recreated, recreatedPresetId)) {
-            LOGGER.info("[LAT][CWPATH] leaving unsupported create-world preset on vanilla screen: {}",
-                    initialState.getWorldType());
+            if (DEBUG_CWPATH) {
+                LOGGER.info("[LAT][CWPATH] leaving unsupported create-world preset on vanilla screen: {}",
+                        initialState.getWorldType());
+            }
             return;
         }
 

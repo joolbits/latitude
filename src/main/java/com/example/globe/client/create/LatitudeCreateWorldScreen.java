@@ -130,6 +130,12 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final int[] WORLD_TYPE_COLORS = { GOLD, WARM_WHITE, MUTED };
     private static final int DISABLED_COLOR = 0xFF605850;
     private static final boolean DEBUG_UI_SWITCH_LAG = Boolean.getBoolean("latitude.debug.uiSwitchLag");
+    // [LAT][CWPATH] traces fire on every ordinary create-screen open/resize and interpolate the
+    // WorldCreationContext holder, whose toString() dumps the entire world-creation settings tree —
+    // that flooded INFO at giant size on ordinary use (maintainer ruling, 2026-08-18). Opt-in only.
+    // Package-visible so LatitudeWorldLauncher (same package) can read it; the mixins declare their
+    // own private copies of the same property, per house mixin convention.
+    static final boolean DEBUG_CWPATH = Boolean.getBoolean("latitude.debugCwPath");
 
     private final Runnable onClose;
     @Nullable
@@ -268,9 +274,11 @@ public class LatitudeCreateWorldScreen extends Screen {
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent,
                                       WorldCreationContext holder, boolean continueIntroFromPreparing) {
         super(Component.literal("New World"));
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.<init> parent={} holder={}",
-                parent == null ? "null" : parent.getClass().getName(),
-                holder);
+        if (DEBUG_CWPATH) {
+            LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.<init> parent={} holder={}",
+                    parent == null ? "null" : parent.getClass().getName(),
+                    holder);
+        }
         this.onClose = onClose;
         this.parent = parent;
         this.holder = holder;
@@ -290,7 +298,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         this(onClose, parent, initialState.getSettings(), continueIntroFromPreparing);
         if (recreated) {
             hydrateInitialState(initialState, recreated, recreatedPresetId);
-        } else {
+        } else if (DEBUG_CWPATH) {
             LOGGER.info("[LAT][CWPATH] fresh create state keeps Latitude defaults");
         }
     }
@@ -309,12 +317,14 @@ public class LatitudeCreateWorldScreen extends Screen {
     public static void openLoaded(Minecraft client, Runnable onClose, @Nullable Screen parent,
                                   WorldCreationUiState initialState, boolean recreated,
                                   @Nullable String recreatedPresetId) {
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.openLoaded parent={} recreated={} stateName={} seedSet={} holder={}",
-                parent == null ? "null" : parent.getClass().getName(),
-                recreated,
-                initialState.getName(),
-                initialState.getSeed() != null && !initialState.getSeed().isBlank(),
-                initialState.getSettings());
+        if (DEBUG_CWPATH) {
+            LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.openLoaded parent={} recreated={} stateName={} seedSet={} holder={}",
+                    parent == null ? "null" : parent.getClass().getName(),
+                    recreated,
+                    initialState.getName(),
+                    initialState.getSeed() != null && !initialState.getSeed().isBlank(),
+                    initialState.getSettings());
+        }
         client.gui.setScreen(new LatitudeCreateWorldScreen(
                 onClose, parent, initialState, recreated, recreatedPresetId, true));
     }
@@ -357,17 +367,19 @@ public class LatitudeCreateWorldScreen extends Screen {
             }
         }
 
-        LOGGER.info(
-                "[LAT][CWPATH] hydrated create state name={} seedSet={} mode={} commands={} difficulty={} bonusChest={} structures={} worldType={} size={}",
-                this.worldNameInput,
-                this.seedInput != null && !this.seedInput.isBlank(),
-                MODE_NAMES[this.selectedModeIdx],
-                this.allowCommands,
-                this.selectedDifficulty,
-                this.bonusChest,
-                this.generateStructures,
-                this.worldTypeIdx,
-                this.selectedSize);
+        if (DEBUG_CWPATH) {
+            LOGGER.info(
+                    "[LAT][CWPATH] hydrated create state name={} seedSet={} mode={} commands={} difficulty={} bonusChest={} structures={} worldType={} size={}",
+                    this.worldNameInput,
+                    this.seedInput != null && !this.seedInput.isBlank(),
+                    MODE_NAMES[this.selectedModeIdx],
+                    this.allowCommands,
+                    this.selectedDifficulty,
+                    this.bonusChest,
+                    this.generateStructures,
+                    this.worldTypeIdx,
+                    this.selectedSize);
+        }
     }
 
     @Nullable
@@ -444,8 +456,10 @@ public class LatitudeCreateWorldScreen extends Screen {
      * Replicates CreateWorldScreen.show() lines 166-196.
      */
     public static void open(Minecraft client, Runnable onClose, @Nullable Screen parent) {
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.open parent={}",
-                parent == null ? "null" : parent.getClass().getName());
+        if (DEBUG_CWPATH) {
+            LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.open parent={}",
+                    parent == null ? "null" : parent.getClass().getName());
+        }
         CreateWorldPreparingScreen preparingScreen = new CreateWorldPreparingScreen();
         client.setScreenAndShow(preparingScreen);
 
@@ -528,8 +542,10 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     @Override
     protected void init() {
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.init screen={} holder={}",
-                this.getClass().getName(), this.holder);
+        if (DEBUG_CWPATH) {
+            LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.init screen={} holder={}",
+                    this.getClass().getName(), this.holder);
+        }
         zoneRows.clear();
         // Screen.rebuildWidgets() clears Screen-owned collections, not this private render registry.
         // Clear it on every init so resize/sub-screen return cannot leave a frozen ghost layer.
@@ -1407,8 +1423,10 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     public void probeAutoConfirmWorldCreation() {
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.probeAutoConfirmWorldCreation screen={}",
-                this.getClass().getName());
+        if (DEBUG_CWPATH) {
+            LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.probeAutoConfirmWorldCreation screen={}",
+                    this.getClass().getName());
+        }
         this.beginExpedition();
     }
 
@@ -1426,18 +1444,22 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (size != null) {
             this.selectedSize = size;
         }
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.probeSetWorldInputs screen={} worldName={} seedSet={} size={}",
-                this.getClass().getName(),
-                this.worldNameField != null ? this.worldNameField.getValue() : "<missing>",
-                seed != null && !seed.isBlank(),
-                this.selectedSize);
+        if (DEBUG_CWPATH) {
+            LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.probeSetWorldInputs screen={} worldName={} seedSet={} size={}",
+                    this.getClass().getName(),
+                    this.worldNameField != null ? this.worldNameField.getValue() : "<missing>",
+                    seed != null && !seed.isBlank(),
+                    this.selectedSize);
+        }
     }
 
     public void probeSetCreativeMode() {
         this.selectedModeIdx = 2;
         this.allowCommands = true;
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.probeSetCreativeMode screen={} mode={} allowCommands={}",
-                this.getClass().getName(), MODE_NAMES[this.selectedModeIdx], this.allowCommands);
+        if (DEBUG_CWPATH) {
+            LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.probeSetCreativeMode screen={} mode={} allowCommands={}",
+                    this.getClass().getName(), MODE_NAMES[this.selectedModeIdx], this.allowCommands);
+        }
     }
 
     // ── Close behavior ──
