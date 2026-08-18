@@ -936,6 +936,8 @@ public final class LatitudeBiomes {
                     && wetlandProvinceEligible(blockX, blockZ)
                     && evaluateSwamp(blockX, blockZ, sampler).allow();
             case TEMPERATE_UPLAND -> band == BAND_TEMPERATE && mountain;
+            // Subpolar mountains only: the windswept family is banned at the pole (2026-08-18).
+            case SUBPOLAR_UPLAND -> band == BAND_SUBPOLAR && mountain;
             case COLD_UPLAND -> band >= BAND_SUBPOLAR && mountain;
             case WARM_TRANSITION -> band == BAND_SUBTROPICAL && !mountain
                     && province != ProvinceAuthority.Province.WARM_WET;
@@ -2054,8 +2056,26 @@ public final class LatitudeBiomes {
                 || isBiomeId(biome, "minecraft:windswept_gravelly_hills");
     }
 
+    /**
+     * The windswept identities {@link #clampTemperateWindsweptMountainOwnership} governs: all
+     * three, since 2026-08-18.
+     *
+     * <p>It listed only forest and gravelly_hills, so the mountain-ownership clamp had NEVER
+     * covered {@code minecraft:windswept_hills} — the exact id of the reported bug. Two live paths
+     * put a biome back on a column after the terrain gate has already run and re-check no route
+     * condition: {@code enforceLandBandPool}'s reroll through
+     * {@code pickFromAllowedLandPool(rerollLandPoolForBand(...))}, whose subpolar substitution pool
+     * is not mountain-filtered, and {@code quarantineUnknownCustomLandBiome} on modded worlds,
+     * which runs after every polar clamp. Measured through the policy suite's own picker before
+     * this line was added: windswept_hills came back on flat subpolar ground at x=-3999 z=6000.
+     *
+     * <p>Naming all three also means the clamp reads the same family as
+     * {@link #isColdWindsweptFamilyBiome}; two windswept lists that disagree about their members is
+     * how the first version of this fix left a third of the family unguarded.
+     */
     private static boolean isTemperateWindsweptVariant(Holder<Biome> biome) {
-        return isBiomeId(biome, "minecraft:windswept_forest")
+        return isBiomeId(biome, "minecraft:windswept_hills")
+                || isBiomeId(biome, "minecraft:windswept_forest")
                 || isBiomeId(biome, "minecraft:windswept_gravelly_hills");
     }
 
@@ -6916,7 +6936,11 @@ public final class LatitudeBiomes {
             case BAND_SUBPOLAR -> List.of(
                     BiomeRoute.SUBPOLAR_LOWLAND,
                     BiomeRoute.SUBPOLAR_WETLAND,
+                    BiomeRoute.SUBPOLAR_UPLAND,
                     BiomeRoute.COLD_UPLAND);
+            // SUBPOLAR_UPLAND is deliberately absent from the polar arm: that is what keeps the
+            // windswept family out of the polar band pool entirely (2026-08-18), rather than
+            // relying on a downstream re-check that never fired.
             default -> List.of(
                     BiomeRoute.POLAR_LOWLAND,
                     BiomeRoute.COLD_UPLAND);
@@ -7583,6 +7607,17 @@ public final class LatitudeBiomes {
                 seaLevel);
     }
 
+    /**
+     * The terrain-compatibility reroll substitutes from the BAND-FILTERED pool, never the raw one.
+     *
+     * <p>Same acceptance-vs-substitution rule as {@link #rerollLandPoolForBand}: this method never
+     * asks "was this biome legitimately chosen here?", it drops a replacement in sight unseen, so
+     * it owes the band filters. Feeding it {@code allowedLandPool} raw let it substitute anything
+     * the ledger admitted anywhere in the band's route set, past every filter
+     * {@code filteredAllowedLandPool} exists to apply — that is how taiga could be dropped into the
+     * polar band despite {@code removePolarTaigaFamily}, and how the windswept family reached the
+     * pole before it was re-routed (2026-08-18).
+     */
     private static Holder<Biome> applyTerrainCompatibilityGate(Registry<Biome> biomes,
                                                                       Holder<Biome> chosen,
                                                                       int bandIndex,
@@ -7596,7 +7631,7 @@ public final class LatitudeBiomes {
                                                                       boolean mountainLike) {
         return rerollTerrainCompatibleCandidate(
                 chosen,
-                allowedLandPool(biomes, bandIndex),
+                filteredAllowedLandPool(biomes, bandIndex, mountainLike),
                 bandIndex,
                 blockX,
                 blockZ,
@@ -7608,6 +7643,7 @@ public final class LatitudeBiomes {
                 mountainLike);
     }
 
+    /** Collection-source twin of the registry gate above; both must use the filtered pool. */
     private static Holder<Biome> applyTerrainCompatibilityGate(Collection<Holder<Biome>> biomes,
                                                                       Holder<Biome> chosen,
                                                                       int bandIndex,
@@ -7621,7 +7657,7 @@ public final class LatitudeBiomes {
                                                                       boolean mountainLike) {
         return rerollTerrainCompatibleCandidate(
                 chosen,
-                allowedLandPool(biomes, bandIndex),
+                filteredAllowedLandPool(biomes, bandIndex, mountainLike),
                 bandIndex,
                 blockX,
                 blockZ,
@@ -7648,7 +7684,9 @@ public final class LatitudeBiomes {
             return chosen;
         }
         int terrainClass = terrainClassForSelection(centerHeight, robustDelta, seaLevel, oceanDistance, mountainNoiseLike, mountainLike);
-        if (isBiomeCompatibleWithTerrain(chosen, terrainClass, mountainNoiseLike, mountainLike)) {
+        boolean windsweptLegalHere = isWindsweptFamilyLegal(bandIndex, mountainNoiseLike, mountainLike);
+        if (isBiomeCompatibleWithTerrain(chosen, bandIndex, terrainClass, mountainNoiseLike, mountainLike)
+                && (windsweptLegalHere || !isColdWindsweptFamilyBiome(chosen))) {
             return applyColdSiblingCoherence(chosen, pool, bandIndex, blockX, blockZ, terrainClass);
         }
         int size = pool.size();
@@ -7670,19 +7708,64 @@ public final class LatitudeBiomes {
                         || isBiomeId(candidate, "minecraft:ice_spikes"))) {
                 continue;
             }
-            if (isBiomeCompatibleWithTerrain(candidate, terrainClass, mountainNoiseLike, mountainLike)) {
+            // The windswept family is a mountain identity for the subpolar band alone. Substitution
+            // re-checks no route condition, so the ban has to be stated here as well as in the
+            // ledger route (2026-08-18): this walk is exactly what used to hand windswept_hills to
+            // ordinary polar shelves after snowy_plains was rejected for being 4 blocks above sea.
+            if (!windsweptLegalHere && isColdWindsweptFamilyBiome(candidate)) {
+                continue;
+            }
+            if (isBiomeCompatibleWithTerrain(candidate, bandIndex, terrainClass, mountainNoiseLike, mountainLike)) {
                 return applyColdSiblingCoherence(candidate, pool, bandIndex, blockX, blockZ, terrainClass);
             }
         }
         if (bandIndex >= BAND_POLAR && terrainClass == TERRAIN_CLASS_FLAT_SHELF && isFlatPolarShelfBannedMountainPick(chosen)) {
             for (int i = 0; i < size; i++) {
                 Holder<Biome> fallback = pool.get((start + i) % size);
+                if (!windsweptLegalHere && isColdWindsweptFamilyBiome(fallback)) {
+                    continue;
+                }
                 if (!isFlatPolarShelfBannedMountainPick(fallback)) {
                     return applyColdSiblingCoherence(fallback, pool, bandIndex, blockX, blockZ, terrainClass);
                 }
             }
         }
+        // Falling through returns the original pick unchanged, so an illegal windswept candidate
+        // that reached this method must not simply survive by exhausting the pool.
+        if (!windsweptLegalHere && isColdWindsweptFamilyBiome(chosen)) {
+            for (int i = 0; i < size; i++) {
+                Holder<Biome> fallback = pool.get((start + i) % size);
+                if (!isColdWindsweptFamilyBiome(fallback)) {
+                    return applyColdSiblingCoherence(fallback, pool, bandIndex, blockX, blockZ, terrainClass);
+                }
+            }
+        }
         return chosen;
+    }
+
+    /**
+     * The three cold windswept identities, matched by exact id.
+     *
+     * <p>Deliberately NOT a substring match on "windswept": {@code minecraft:windswept_savanna} is
+     * a hot savanna variant that lives in the warm bands and has nothing to do with this family.
+     */
+    private static boolean isColdWindsweptFamilyBiome(Holder<Biome> candidate) {
+        return isBiomeId(candidate, "minecraft:windswept_hills")
+                || isBiomeId(candidate, "minecraft:windswept_forest")
+                || isBiomeId(candidate, "minecraft:windswept_gravelly_hills");
+    }
+
+    /**
+     * Where the windswept family may legally stand: subpolar band, genuine mountain column.
+     *
+     * <p>This is the runtime half of {@code BiomeRoute.SUBPOLAR_UPLAND}. The route keeps windswept
+     * out of the polar band pool; this keeps it off flat subpolar ground, which the route alone
+     * cannot do because substitution paths never re-evaluate a route's conditions.
+     */
+    private static boolean isWindsweptFamilyLegal(int bandIndex,
+                                                  boolean mountainNoiseLike,
+                                                  boolean mountainLike) {
+        return bandIndex == BAND_SUBPOLAR && (mountainLike || mountainNoiseLike);
     }
 
     private static int continuousSelectionIndex(int size,
@@ -7818,16 +7901,34 @@ public final class LatitudeBiomes {
                 || id.contains("wetland") || id.contains("fen") || id.contains("bayou") || id.contains("mire");
     }
 
+    /**
+     * Whether a candidate suits the physical shape of the column.
+     *
+     * <p>{@code bandIndex} exists for one narrow exemption. Vanilla's snowy_plains is not a
+     * billiard table — it legitimately covers rolling ground — and a polar shelf four blocks above
+     * the sea is not a mountain shoulder. Rejecting it there rejected the polar band's staple on
+     * very nearly every polar column (the shoulder class triggers at {@code sea+4} or a 3-block
+     * relief delta), which forced the reroll band-wide and is what walked the picker into the
+     * windswept family in the first place (2026-08-18). The exemption is deliberately narrow:
+     * polar band, snowy_plains only, raised shoulder only. On a real mountain class it is still
+     * rejected, and plains/sunflower_plains and every other band keep the old behaviour.
+     */
     private static boolean isBiomeCompatibleWithTerrain(Holder<Biome> candidate,
+                                                        int bandIndex,
                                                         int terrainClass,
                                                         boolean mountainNoiseLike,
                                                         boolean mountainLike) {
         boolean mountainPick = isMountainCodedColdPick(candidate);
         boolean plainsPick = isPlainsFamily(candidate) || isFlatWetlandBiome(candidate);
+        boolean polarShelfStaple = bandIndex == BAND_POLAR
+                && terrainClass == TERRAIN_CLASS_RAISED_SHOULDER
+                && isBiomeId(candidate, "minecraft:snowy_plains");
         if (terrainClass == TERRAIN_CLASS_FLAT_SHELF && mountainPick) {
             return false;
         }
-        if ((terrainClass == TERRAIN_CLASS_RAISED_SHOULDER || terrainClass == TERRAIN_CLASS_MOUNTAIN) && plainsPick) {
+        if ((terrainClass == TERRAIN_CLASS_RAISED_SHOULDER || terrainClass == TERRAIN_CLASS_MOUNTAIN)
+                && plainsPick
+                && !polarShelfStaple) {
             return false;
         }
         if (mountainPick && !(mountainLike || mountainNoiseLike || terrainClass >= TERRAIN_CLASS_RAISED_SHOULDER)) {
@@ -8095,6 +8196,13 @@ public final class LatitudeBiomes {
      * ice_spikes) are intentionally NOT listed here — they are preserved or removed by
      * the downstream polarMountainAuthority check in clampFinalPolarNonMountainAlpineOutput.
      *
+     * <p>The explicit list now names all three cold windswept identities (2026-08-18). It listed
+     * only windswept_forest, which read as complete because the path catch-all below matches
+     * "forest" — but windswept_hills and windswept_gravelly_hills match none of "forest", "taiga"
+     * or "grove", so they passed the cap untouched and were measured at 15.6% of the land above it
+     * on a vanilla-only world. Their ledger route now stops them reaching the polar band at all;
+     * this list is the belt to that pair of braces.
+     *
      * Uses explicit isBiomeId() checks (not path-string matching) to avoid silent
      * false-negatives when registry-key resolution returns Optional.empty().
      *
@@ -8126,7 +8234,13 @@ public final class LatitudeBiomes {
                 || isBiomeId(candidate, "minecraft:flower_forest")
                 || isBiomeId(candidate, "minecraft:birch_forest")
                 || isBiomeId(candidate, "minecraft:old_growth_birch_forest")
-                || isBiomeId(candidate, "minecraft:windswept_forest")) {
+                // All three cold windswept identities, not just the one the "forest" catch-all
+                // happened to match (2026-08-18). windswept_hills and windswept_gravelly_hills
+                // carry the same green grass, flowers and passive-mob spawns and were measured at
+                // 15.6% of land above this cap on a vanilla-only world.
+                || isBiomeId(candidate, "minecraft:windswept_forest")
+                || isBiomeId(candidate, "minecraft:windswept_hills")
+                || isBiomeId(candidate, "minecraft:windswept_gravelly_hills")) {
             return true;
         }
         // Path-based catch-all for any unlisted biome whose ID path contains "forest" or "taiga".
@@ -8234,11 +8348,34 @@ public final class LatitudeBiomes {
                                                                                 int centerHeight,
                                                                                 int robustDelta) {
         out = clampExtremePolarCapOutput(biomes, out, landBandIndex, latDeg);
+        out = clampPolarWindsweptOutput(biomes, out, landBandIndex);
         boolean polarAuthority = polarMountainAuthority(robustDelta, centerHeight, landBandIndex);
         if (landBandIndex != BAND_POLAR || polarAuthority) {
             return out;
         }
         if (!isFlatPolarShelfBannedMountainPick(out)) {
+            return out;
+        }
+        try {
+            return biome(biomes, "minecraft:snowy_plains");
+        } catch (Throwable ignored) {
+            return out;
+        }
+    }
+
+    /**
+     * Last line: no cold windswept identity leaves the picker anywhere in the polar band.
+     *
+     * <p>Unlike the alpine clamp above this one has no terrain or latitude escape hatch, because
+     * there is no polar column where the answer is yes. The polar band's mountains belong to the
+     * bare alpine set; the vegetated windswept identity stops at the subpolar boundary
+     * (maintainer ruling, 2026-08-18). Five earlier gates should each have caught this already —
+     * the point of a clamp at the very end is that it does not depend on any of them being right.
+     */
+    private static Holder<Biome> clampPolarWindsweptOutput(Registry<Biome> biomes,
+                                                           Holder<Biome> out,
+                                                           int landBandIndex) {
+        if (landBandIndex != BAND_POLAR || !isColdWindsweptFamilyBiome(out)) {
             return out;
         }
         try {
@@ -8265,11 +8402,23 @@ public final class LatitudeBiomes {
                                                                                 int centerHeight,
                                                                                 int robustDelta) {
         out = clampExtremePolarCapOutput(biomes, out, landBandIndex, latDeg);
+        out = clampPolarWindsweptOutput(biomes, out, landBandIndex);
         boolean polarAuthority = polarMountainAuthority(robustDelta, centerHeight, landBandIndex);
         if (landBandIndex != BAND_POLAR || polarAuthority) {
             return out;
         }
         if (!isFlatPolarShelfBannedMountainPick(out)) {
+            return out;
+        }
+        Holder<Biome> safe = entryById(biomes, "minecraft:snowy_plains");
+        return safe != null ? safe : out;
+    }
+
+    /** Collection-source twin of the polar windswept clamp; see the registry overload. */
+    private static Holder<Biome> clampPolarWindsweptOutput(Collection<Holder<Biome>> biomes,
+                                                           Holder<Biome> out,
+                                                           int landBandIndex) {
+        if (landBandIndex != BAND_POLAR || !isColdWindsweptFamilyBiome(out)) {
             return out;
         }
         Holder<Biome> safe = entryById(biomes, "minecraft:snowy_plains");
@@ -8851,6 +9000,11 @@ public final class LatitudeBiomes {
         return entry;
     }
 
+    // Retargeted COLD_UPLAND -> SUBPOLAR_UPLAND, and ">= BAND_SUBPOLAR" -> "== BAND_SUBPOLAR"
+    // (2026-08-18). This clamp asks whether a windswept variant actually owns the mountain it is
+    // standing on; the windswept family's route moved, so reading COLD_UPLAND here would have
+    // condemned windswept on the subpolar mountains that are now its only legal home, while still
+    // waving it through at the pole.
     private static Holder<Biome> clampTemperateWindsweptMountainOwnership(Registry<Biome> biomes,
                                                                            Holder<Biome> candidate,
                                                                            int bandIndex,
@@ -8858,8 +9012,8 @@ public final class LatitudeBiomes {
         boolean descriptorOwnedMountain = mountainLike
                 && ((bandIndex == BAND_TEMPERATE
                         && hasBiomeRoute(candidate, BiomeRoute.TEMPERATE_UPLAND))
-                    || (bandIndex >= BAND_SUBPOLAR
-                        && hasBiomeRoute(candidate, BiomeRoute.COLD_UPLAND)));
+                    || (bandIndex == BAND_SUBPOLAR
+                        && hasBiomeRoute(candidate, BiomeRoute.SUBPOLAR_UPLAND)));
         if (!isTemperateWindsweptVariant(candidate)
                 || descriptorOwnedMountain) {
             return candidate;
@@ -8868,6 +9022,7 @@ public final class LatitudeBiomes {
         return fallback != null ? fallback : candidate;
     }
 
+    /** Collection-source twin; see the registry overload for the 2026-08-18 route retarget. */
     private static Holder<Biome> clampTemperateWindsweptMountainOwnership(Collection<Holder<Biome>> biomes,
                                                                            Holder<Biome> candidate,
                                                                            int bandIndex,
@@ -8875,8 +9030,8 @@ public final class LatitudeBiomes {
         boolean descriptorOwnedMountain = mountainLike
                 && ((bandIndex == BAND_TEMPERATE
                         && hasBiomeRoute(candidate, BiomeRoute.TEMPERATE_UPLAND))
-                    || (bandIndex >= BAND_SUBPOLAR
-                        && hasBiomeRoute(candidate, BiomeRoute.COLD_UPLAND)));
+                    || (bandIndex == BAND_SUBPOLAR
+                        && hasBiomeRoute(candidate, BiomeRoute.SUBPOLAR_UPLAND)));
         if (!isTemperateWindsweptVariant(candidate)
                 || descriptorOwnedMountain) {
             return candidate;

@@ -52,9 +52,15 @@ final class BiomeBandPolicy {
             entry("minecraft:taiga", LatitudeBands.Band.TEMPERATE, LatitudeBands.Band.SUBPOLAR),
             entry("minecraft:old_growth_pine_taiga", LatitudeBands.Band.TEMPERATE, LatitudeBands.Band.SUBPOLAR),
             entry("minecraft:old_growth_spruce_taiga", LatitudeBands.Band.TEMPERATE, LatitudeBands.Band.SUBPOLAR),
-            entry("minecraft:windswept_hills", LatitudeBands.Band.SUBTROPICAL, LatitudeBands.Band.TEMPERATE, LatitudeBands.Band.SUBPOLAR),
-            entry("minecraft:windswept_forest", LatitudeBands.Band.SUBTROPICAL, LatitudeBands.Band.TEMPERATE, LatitudeBands.Band.SUBPOLAR),
-            entry("minecraft:windswept_gravelly_hills", LatitudeBands.Band.SUBTROPICAL, LatitudeBands.Band.TEMPERATE, LatitudeBands.Band.SUBPOLAR),
+            // Subpolar only (corrected 2026-08-18). This legend was still describing the pre-2026-08-10
+            // world, where windswept lived in TEMPERATE_UPLAND and leaked warm. The three ids now hold
+            // one route, SUBPOLAR_UPLAND, so listing three bands here made the atlas JSON legend claim
+            // a spread the generator will not produce. Metadata only -- nothing places biomes from
+            // this map -- but a legend that disagrees with the generator is how a reader talks
+            // themselves out of a real defect.
+            entry("minecraft:windswept_hills", LatitudeBands.Band.SUBPOLAR),
+            entry("minecraft:windswept_forest", LatitudeBands.Band.SUBPOLAR),
+            entry("minecraft:windswept_gravelly_hills", LatitudeBands.Band.SUBPOLAR),
             entry("minecraft:stony_peaks", LatitudeBands.Band.TEMPERATE, LatitudeBands.Band.SUBPOLAR),
 
             entry("minecraft:snowy_plains", LatitudeBands.Band.SUBPOLAR, LatitudeBands.Band.POLAR),

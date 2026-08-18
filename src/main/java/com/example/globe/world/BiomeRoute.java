@@ -34,6 +34,24 @@ public enum BiomeRoute {
      * empty — the band falls through to its other routes exactly as before.
      */
     SUBPOLAR_WETLAND,
+    /**
+     * Vegetated cold mountains — the windswept family at 50-66.5 degrees, mountain columns only.
+     *
+     * <p>Split out of {@code COLD_UPLAND} on 2026-08-18 (maintainer ruling). COLD_UPLAND spans
+     * subpolar AND polar, and its "mountain" half was enforced nowhere downstream: the
+     * terrain-compatibility reroll drew from the raw band pool, so on a vanilla-only world
+     * {@code minecraft:windswept_hills} became the second most common land biome at the pole —
+     * green grass, flowers and passive animals at 80 degrees north, with no snow. The pole must
+     * read white, so polar mountains keep the bare alpine set (snowy_slopes, frozen_peaks,
+     * jagged_peaks) and the vegetated wind-scoured identity lives only here, in subpolar mountains,
+     * where {@link WindsweptSnowLinePolicy} already lowers its snow line.
+     *
+     * <p>A route rather than an extra condition on COLD_UPLAND because the band pool, the vanilla
+     * coverage plan and the ledger all key off routes: giving the windswept family its own route
+     * makes "not legal at the pole" true by construction in all three at once, instead of three
+     * places that have to remember to agree.
+     */
+    SUBPOLAR_UPLAND,
     SUBPOLAR_LOWLAND,
     POLAR_LOWLAND,
     /** Underground cave climate selected only after the donor source has identified a real cave cell. */

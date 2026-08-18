@@ -296,7 +296,7 @@ public final class VanillaBiomeRepresentationProfile {
             switch (parts[0]) {
                 case "LAND" -> {
                     if (parts.length != 4) throw new IllegalArgumentException("malformed LAND row");
-                    putUnique(land, parts[3], BiomeRoute.valueOf(parts[1]));
+                    putUnique(land, parts[3], migrateSavedLandRoute(BiomeRoute.valueOf(parts[1]), parts[3]));
                     putUnique(tiers, parts[3], Tier.valueOf(parts[2]));
                 }
                 case "WATER" -> {
@@ -312,6 +312,29 @@ public final class VanillaBiomeRepresentationProfile {
             }
         }
         return new VanillaBiomeRepresentationProfile(size, land, water, omitted, tiers);
+    }
+
+    /**
+     * Reads a legacy windswept LAND row at its current route. Twin of
+     * {@code BiomeSelectionProfile.migrateSavedRoute} — see that method for why these three ids
+     * are migrated rather than tolerated, and why BOTH legacy routes are named. Both methods must
+     * accept the same set, or the coverage plan asks the birth roster about a route the roster no
+     * longer lists the biome under and reports it unplaceable.
+     *
+     * <p>{@code TEMPERATE_UPLAND} is the larger legacy population: it is what every jar built
+     * before {@code 3c4c97dcf} (2026-08-12) wrote, against {@code COLD_UPLAND}'s six-day window.
+     * A saved LAND row on either route would otherwise fail {@link #validate()}'s
+     * "the ledger still routes this representative here" check and take the whole representation
+     * profile down with it.
+     */
+    private static BiomeRoute migrateSavedLandRoute(BiomeRoute route, String biomeId) {
+        if (route != BiomeRoute.COLD_UPLAND && route != BiomeRoute.TEMPERATE_UPLAND) return route;
+        return switch (biomeId) {
+            case "minecraft:windswept_hills",
+                 "minecraft:windswept_forest",
+                 "minecraft:windswept_gravelly_hills" -> BiomeRoute.SUBPOLAR_UPLAND;
+            default -> route;
+        };
     }
 
     private void validate() {

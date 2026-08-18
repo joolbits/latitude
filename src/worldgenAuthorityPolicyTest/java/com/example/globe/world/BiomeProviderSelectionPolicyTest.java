@@ -51,6 +51,7 @@ final class BiomeProviderSelectionPolicyTest {
         providerProfileCompatibilityIsBirthLocked();
         polarIceSpikeAccentStaysAMinorityInEveryPoolSize();
         polarExtremeCapCatchesNameAlikeModdedBiomesConsistently();
+        windsweptFamilyIsSubpolarMountainOnly();
         cliffTreeLandAndOceanAreActuallyReachable();
         riverAndBeachAdmissionIsTagDrivenAndVanillaSafe();
         everyLedgerLandRouteSurvivesTheBandPoolGate();
@@ -725,7 +726,7 @@ final class BiomeProviderSelectionPolicyTest {
                         registry, pool, testBiomeHolder(registry, "minecraft:windswept_forest"),
                         subpolarLowland[0], subpolarLowland[1], radius, sampler,
                         "minecraft:windswept_forest",
-                        "cold-upland identity is rejected on final lowland terrain");
+                        "subpolar-upland identity is rejected on final lowland terrain");
 
                 // The positive control needs a cell that Latitude's own wetland
                 // preselection genuinely owns once wetland evidence exists. Synthetic
@@ -1053,6 +1054,34 @@ final class BiomeProviderSelectionPolicyTest {
                 message + " keeps picker parity");
     }
 
+    /**
+     * Both public picker paths reject one identity at one column, without also demanding they
+     * agree on the replacement.
+     *
+     * <p>The pair helper above folds a parity check into every rejection, which is right at a
+     * hand-chosen column and wrong for a sweep: the two sources legitimately disagree about WHICH
+     * alpine sibling replaces a rejected polar pick (measured: registry snowy_slopes vs collection
+     * frozen_peaks at x=-1536 z=7800). A sweep that also asserted parity would fail on that
+     * unrelated divergence and say nothing about the identity actually under test.
+     */
+    private static void assertNeitherPickerReturns(
+            MappedRegistry<Biome> registry,
+            List<Holder<Biome>> pool,
+            Holder<Biome> donor,
+            int x,
+            int z,
+            int radius,
+            Climate.Sampler sampler,
+            String rejectedId,
+            String message) {
+        assertFalse(rejectedId.equals(LatitudeBiomes.biomeIdPublic(LatitudeBiomes.pick(
+                        registry, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER"))),
+                message + " (registry)");
+        assertFalse(rejectedId.equals(LatitudeBiomes.biomeIdPublic(LatitudeBiomes.pick(
+                        pool, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER"))),
+                message + " (collection)");
+    }
+
     private static Climate.Sampler coverageSampler(WetlandEvidence wetland) {
         var zero = DensityFunctions.zero();
         var continentalness = new TestDensityFunction(
@@ -1072,6 +1101,25 @@ final class BiomeProviderSelectionPolicyTest {
     private static boolean syntheticUpland(int blockX) {
         int stripe = Math.floorMod(blockX, 512);
         return stripe <= 96 || stripe >= 416;
+    }
+
+    /**
+     * True when LatitudeBiomes' own mountain-noise read fires on this column under
+     * {@link #coverageSampler}.
+     *
+     * <p>Not the same predicate as {@link #syntheticUpland} applied to the block coordinate, and
+     * the difference is a trap worth naming. {@code isMountainLike} asks the climate sampler at
+     * QUART resolution ({@code blockX >> 2}), and the sampler converts back to block space before
+     * the density function sees it — so the synthetic erosion/weirdness stripe is read at
+     * {@code blockX & ~3}, the column snapped down to a 4-block boundary. Filtering a sweep with
+     * the raw block coordinate quietly admits mountain columns: measured through the picker,
+     * x=-3999 and x=-604 both have {@code syntheticUpland(x) == false} yet are mountains
+     * ({@code -3999 & ~3 == -4000}, stripe 96; {@code -604 & ~3 == -604}, stripe 420), while
+     * x=-701 ({@code & ~3 == -704}, stripe 320) is genuinely flat. Asserting "flat" on the first
+     * two would be asserting that a legal windswept mountain must not exist.
+     */
+    private static boolean mountainNoiseColumn(int blockX) {
+        return syntheticUpland(blockX & ~3);
     }
 
     private record WetlandFootprint(int blockX, int blockZ, int halfWidth) {
@@ -1762,7 +1810,8 @@ final class BiomeProviderSelectionPolicyTest {
                     ARID_LOWLAND, ARID_UPLAND -> latitudeFraction >= 0.27 && latitudeFraction <= 0.39;
             case TEMPERATE_LOWLAND, TEMPERATE_WETLAND, TEMPERATE_UPLAND ->
                     latitudeFraction >= 0.41 && latitudeFraction <= 0.56;
-            case SUBPOLAR_LOWLAND, SUBPOLAR_WETLAND -> latitudeFraction >= 0.59 && latitudeFraction <= 0.73;
+            case SUBPOLAR_LOWLAND, SUBPOLAR_WETLAND, SUBPOLAR_UPLAND ->
+                    latitudeFraction >= 0.59 && latitudeFraction <= 0.73;
             case POLAR_LOWLAND -> latitudeFraction >= 0.77 && latitudeFraction <= 0.91;
             case COLD_UPLAND -> latitudeFraction >= 0.61 && latitudeFraction <= 0.89;
             case CAVE_SHALLOW, CAVE_DEEP -> false;
@@ -1771,6 +1820,7 @@ final class BiomeProviderSelectionPolicyTest {
 
     private static boolean isUplandRoute(BiomeRoute route) {
         return route == BiomeRoute.TEMPERATE_UPLAND
+                || route == BiomeRoute.SUBPOLAR_UPLAND
                 || route == BiomeRoute.COLD_UPLAND
                 || route == BiomeRoute.WARM_UPLAND
                 || route == BiomeRoute.ARID_UPLAND;
@@ -1945,7 +1995,12 @@ final class BiomeProviderSelectionPolicyTest {
                 "case BAND_SUBPOLAR ->", Set.of(
                         BiomeRoute.SUBPOLAR_LOWLAND,
                         BiomeRoute.SUBPOLAR_WETLAND,
+                        BiomeRoute.SUBPOLAR_UPLAND,
                         BiomeRoute.COLD_UPLAND),
+                // SUBPOLAR_UPLAND's absence from the polar arm is the whole windswept fix
+                // (2026-08-18) and is asserted here, not merely implied: adding it back would put
+                // the family in the polar band pool again, where the atlas measured it at 12.8% of
+                // all polar land.
                 "default ->", Set.of(BiomeRoute.POLAR_LOWLAND, BiomeRoute.COLD_UPLAND));
         for (Map.Entry<String, Set<BiomeRoute>> entry : expectedRoutesByArm.entrySet()) {
             assertEquals(entry.getValue(), routesInSwitchArm(routesForBand, entry.getKey()),
@@ -2062,12 +2117,13 @@ final class BiomeProviderSelectionPolicyTest {
             assertTrue(reachesTemperate,
                     "cohesion-gate pool member must hold a temperate-band ledger route — the gate "
                             + "paints AFTER enforceLandBandPool with no re-check, so an entry routed "
-                            + "elsewhere (windswept -> COLD_UPLAND) is smuggled into temperate "
+                            + "elsewhere (windswept -> SUBPOLAR_UPLAND) is smuggled into temperate "
                             + "through the back door: " + id);
         }
         assertFalse(arrayBlock.contains("windswept"),
-                "windswept must not return to the temperate cohesion-gate pool (maintainer ruling, "
-                        + "2026-08-10: the windswept family belongs at 50+ degrees)");
+                "windswept must not return to the temperate cohesion-gate pool (maintainer rulings, "
+                        + "2026-08-10 and 2026-08-18: the windswept family belongs to subpolar "
+                        + "mountains, 50-66.5 degrees)");
     }
 
     /**
@@ -2300,6 +2356,315 @@ final class BiomeProviderSelectionPolicyTest {
                 "the constant this javadoc describes must still be 74.5, or the corrected javadoc "
                         + "(fixed 2026-08-10; previously claimed 85 against this same 74.5 constant) "
                         + "is itself now wrong");
+    }
+
+    /**
+     * The windswept family belongs to subpolar mountains and nowhere else.
+     *
+     * <p>Measured on the shipped build with vanilla biomes only:
+     * {@code minecraft:windswept_hills} was 12.78% of all polar land (66.5-90 degrees) and 15.58%
+     * of land above 74.5 — the second most common land biome at the pole, arriving snowless, with
+     * green grass, flowers and passive animals at 80 north. Its route said "subpolar or polar AND
+     * mountain", but the mountain half was enforced nowhere downstream, so the terrain-compatibility
+     * reroll walked into it on ordinary polar shelves.
+     *
+     * <p>Three independent halves are asserted, because each one alone has already been shown to be
+     * bypassable: the ledger route (which band pool may contain it), the extreme-polar cap's
+     * explicit id list (which named only windswept_forest, and read as complete because the path
+     * catch-all matches "forest"), and the final clamp (which nothing upstream can outvote).
+     */
+    private static void windsweptFamilyIsSubpolarMountainOnly() throws Exception {
+        String[] windswept = {
+                "minecraft:windswept_hills",
+                "minecraft:windswept_forest",
+                "minecraft:windswept_gravelly_hills"};
+
+        // 1. Ledger and coverage plan agree, and both say subpolar.
+        Map<String, BiomeRoute> required = VanillaBiomeCoveragePlan.requiredRoutes();
+        for (String id : windswept) {
+            BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
+            assertTrue(descriptor != null, "windswept identity must stay ledger-admitted: " + id);
+            assertEquals(Set.of(BiomeRoute.SUBPOLAR_UPLAND), descriptor.routes(),
+                    "the windswept family owns SUBPOLAR_UPLAND and only that (2026-08-18): " + id);
+            assertEquals(BiomeRoute.SUBPOLAR_UPLAND, required.get(id),
+                    "the vanilla coverage guarantee must name the SAME route as the ledger, or it "
+                            + "anchors a province in a band the picker will never choose it in: " + id);
+        }
+        // windswept_savanna is a hot savanna variant, not a member of this family. Any fix that
+        // matched on the substring "windswept" would move it too.
+        assertFalse(BiomeDescriptorLedger.descriptor("minecraft:windswept_savanna")
+                        .routes().contains(BiomeRoute.SUBPOLAR_UPLAND),
+                "minecraft:windswept_savanna is a warm biome and must not follow the cold windswept "
+                        + "family into the subpolar uplands");
+
+        // 2. A vanilla-only world still gets every guaranteed identity after the re-route.
+        BiomeSelectionProfile vanilla = BiomeSelectionProfile.capture(registryFor(Set.of()));
+        for (String id : windswept) {
+            assertTrue(vanilla.contains(BiomeRoute.SUBPOLAR_UPLAND, id),
+                    "a vanilla-only birth roster must carry the windswept family on its new route: " + id);
+        }
+        for (int radius : new int[]{3_750, 10_000, 20_000}) {
+            for (long seed : new long[]{3L, 131L, 461L}) {
+                VanillaBiomeCoveragePlan plan = VanillaBiomeCoveragePlan.build(
+                        radius, seed, vanilla,
+                        (id, route, x, z) -> insideSyntheticRoute(route, x, z, radius));
+                assertTrue(plan.missingBiomeIds().isEmpty(),
+                        "the narrower subpolar latitude window must not make any guaranteed identity "
+                                + "unplaceable at radius=" + radius + " seed=" + seed
+                                + " missing=" + plan.missingBiomeIds());
+                for (VanillaBiomeCoveragePlan.Anchor anchor : plan.anchors()) {
+                    if (anchor.route() != BiomeRoute.SUBPOLAR_UPLAND) continue;
+                    double latitudeFraction = Math.abs(anchor.blockZ()) / (double) radius;
+                    assertTrue(latitudeFraction <= 0.73,
+                            "a guaranteed windswept province must stay out of the polar band: "
+                                    + anchor.biomeId() + " at latitudeFraction=" + latitudeFraction);
+                }
+            }
+        }
+
+        // 3. An existing world born under the 2026-08-10 route still loads. The decoder throws on
+        // the first row it cannot explain, so without the migration the whole birth roster — every
+        // provider-ticket decision, not just windswept — would be silently discarded.
+        BiomeSelectionProfile legacy = BiomeSelectionProfile.decode(
+                "provider_ticket_v1\nCOLD_UPLAND|minecraft:windswept_hills");
+        assertTrue(legacy.contains(BiomeRoute.SUBPOLAR_UPLAND, "minecraft:windswept_hills"),
+                "a saved COLD_UPLAND windswept row must be readable, and must be read at the route "
+                        + "the ruling moved it to");
+        assertFalse(legacy.contains(BiomeRoute.COLD_UPLAND, "minecraft:windswept_hills"),
+                "the legacy row must NOT stay eligible on COLD_UPLAND — that route reaches the "
+                        + "polar band, which is exactly what the re-route forbids");
+
+        // 3b. The OTHER legacy route, which is the bigger population. COLD_UPLAND was only ever
+        // written between 2026-08-10 and 2026-08-18; every jar built before 3c4c97dcf (2026-08-12)
+        // wrote TEMPERATE_UPLAND, so those worlds — TEST jars included — are the ones most likely
+        // to exist. They are ALREADY roster-less on this pivot: the re-route made
+        // savedRouteRemainsValid reject their rows the moment the ledger stopped listing
+        // TEMPERATE_UPLAND for these ids. Both saved profiles are exercised whole, built by
+        // rewriting a real capture, because a hand-written two-line profile would not prove the
+        // rest of the roster survives alongside the migrated rows.
+        List<String> vanillaIds = registryFor(Set.of());
+        BiomeSelectionProfile current = BiomeSelectionProfile.capture(vanillaIds);
+        for (BiomeRoute legacyRoute : List.of(BiomeRoute.TEMPERATE_UPLAND, BiomeRoute.COLD_UPLAND)) {
+            String aged = current.encode();
+            for (String id : windswept) {
+                aged = aged.replace(BiomeRoute.SUBPOLAR_UPLAND.name() + "|" + id,
+                        legacyRoute.name() + "|" + id);
+            }
+            BiomeSelectionProfile reopened = BiomeSelectionProfile.decode(aged);
+            for (String id : windswept) {
+                assertTrue(reopened.contains(BiomeRoute.SUBPOLAR_UPLAND, id),
+                        "a world saved with " + legacyRoute + "|" + id + " must still open, and "
+                                + "must read that row at the route the ruling moved it to");
+                assertFalse(reopened.contains(legacyRoute, id),
+                        "the legacy row must not stay eligible on " + legacyRoute + ": " + id);
+            }
+            assertEquals(current.encode(), reopened.encode(),
+                    "migrating the windswept rows must leave the REST of the birth roster byte "
+                            + "identical — the failure this repairs is not losing windswept, it is "
+                            + "losing the whole roster to one unreadable row (legacyRoute="
+                            + legacyRoute + ")");
+
+            // The representation profile decodes its own LAND rows and must accept the same set,
+            // or the coverage plan queries a route the roster no longer lists the biome under.
+            VanillaBiomeRepresentationProfile currentRepresentation =
+                    VanillaBiomeRepresentationProfile.capture(10_000, 131L, current);
+            String agedRepresentation = currentRepresentation.encode();
+            for (String id : windswept) {
+                agedRepresentation = agedRepresentation.replace(
+                        "LAND|" + BiomeRoute.SUBPOLAR_UPLAND.name(),
+                        "LAND|" + legacyRoute.name());
+            }
+            assertEquals(currentRepresentation.encode(),
+                    VanillaBiomeRepresentationProfile.decode(agedRepresentation).encode(),
+                    "the representation profile must migrate the same legacy routes as the "
+                            + "provider ticket, or one of the two rejects a saved world the other "
+                            + "accepts (legacyRoute=" + legacyRoute + ")");
+        }
+
+        // 4. Enforcement in LatitudeBiomes: the extreme-polar cap now names all three ids, and the
+        // final clamp covers both picker paths.
+        String source = read("src/main/java/com/example/globe/world/LatitudeBiomes.java");
+        String leakMethod = method(source, "isExtremePolarSoftColdLeak(Holder<Biome> candidate) {");
+        for (String id : windswept) {
+            assertTrue(leakMethod.contains("\"" + id + "\""),
+                    "the extreme-polar cap must name every windswept identity explicitly — "
+                            + "windswept_hills and windswept_gravelly_hills match none of the "
+                            + "\"forest\"/\"taiga\"/\"grove\" catch-alls and passed straight "
+                            + "through: " + id);
+        }
+        // "both overloads run the clamp" used to be asserted by counting an exact source line.
+        // That count passed only because the two overloads happen to name their parameter
+        // `biomes`, and it said nothing about the clamp being the LAST write to `out` — a clamp
+        // called twice and then overwritten would still have satisfied it. Section 6 drives both
+        // pick() overloads at the pole instead, which is the property that line was standing in
+        // for and cannot be satisfied by naming.
+        String legality = method(source,
+                "isWindsweptFamilyLegal(int bandIndex,");
+        assertTrue(legality.contains("bandIndex == BAND_SUBPOLAR")
+                        && legality.contains("(mountainLike || mountainNoiseLike)"),
+                "the reroll's legality predicate must demand BOTH the subpolar band and real "
+                        + "mountain evidence — the band alone is what the old COLD_UPLAND route "
+                        + "effectively enforced, and it is how flat polar shelves got windswept");
+        String family = method(source, "isColdWindsweptFamilyBiome(Holder<Biome> candidate) {");
+        assertFalse(family.contains("contains(\"windswept\")") || family.contains("getPath()"),
+                "the family predicate must match exact ids, never the substring \"windswept\" — "
+                        + "that would drag minecraft:windswept_savanna out of the warm bands");
+
+        // 5. The polar staple must be allowed on a raised shelf, or the reroll fires band-wide and
+        // this whole failure mode comes back through some other biome.
+        String terrainCompat = method(source,
+                "isBiomeCompatibleWithTerrain(Holder<Biome> candidate,");
+        assertTrue(terrainCompat.contains("bandIndex == BAND_POLAR")
+                        && terrainCompat.contains("TERRAIN_CLASS_RAISED_SHOULDER")
+                        && terrainCompat.contains("minecraft:snowy_plains"),
+                "snowy_plains must be accepted on a polar raised shoulder; rejecting the polar "
+                        + "band's staple on any column 4 blocks above the sea is what forced the "
+                        + "terrain reroll on nearly every polar column");
+
+        // 6. THE ACTUAL BUG, through the actual picker. Everything above is a statement about
+        // tables and source text, and every one of those tables was internally consistent while
+        // the defect was live at 12.78% of polar land — a route ledger that agrees with a coverage
+        // map proves the two agree, not that the generator obeys either. Only LatitudeBiomes.pick
+        // can answer "would this world put green windswept grass at 80 degrees north".
+        //
+        // Terrain reachable from this harness: the policy suite calls pick() with a null generator
+        // and callerContext ATLAS_SAMPLER, which takes the skip-preview path, so preview terrain is
+        // synthetic (centerHeight sea-1, robustDelta 0) and mountainNoiseLike/mountainLike are
+        // hard-false outside the temperate band. Polar columns here therefore classify as
+        // TERRAIN_CLASS_FLAT_SHELF or TERRAIN_CLASS_FLAT_LOWLAND; TERRAIN_CLASS_RAISED_SHOULDER —
+        // the class the census measured at 15.58% — needs a real chunk generator and cannot be
+        // produced through the public picker. That does not soften the assertion, because the
+        // polar ban has no terrain exemption: "never windswept in the polar band" has to hold for
+        // every class, and a shelf a few blocks above the sea is precisely what these two classes
+        // describe.
+        net.minecraft.SharedConstants.tryDetectVersion();
+        net.minecraft.server.Bootstrap.bootStrap();
+        MappedRegistry<Biome> registry = testBiomeRegistry();
+        List<Holder<Biome>> pool = registry.listElements()
+                .map(entry -> (Holder<Biome>) entry)
+                .toList();
+        int pickerRadius = 10_000;
+        long pickerSeed = 131L;
+        BiomeSelectionProfile pickerProfile = BiomeSelectionProfile.capture(
+                registry.keySet().stream().map(Identifier::toString).toList());
+        Climate.Sampler pickerSampler = coverageSampler(null);
+        try {
+            LatitudeBiomes.activateWorldgenContext(
+                    pickerRadius,
+                    pickerSeed,
+                    LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE,
+                    pickerProfile,
+                    VanillaBiomeRepresentationProfile.capture(pickerRadius, pickerSeed, pickerProfile),
+                    pickerSampler,
+                    null,
+                    63);
+            VanillaBiomeCoveragePlan pickerPlan =
+                    LatitudeBiomes.activeVanillaCoveragePlanForPolicyTest();
+            assertTrue(pickerPlan != null && pickerPlan.complete(),
+                    "the picker proof needs a complete birth-locked land plan");
+
+            // 6a. The reported bug, end to end. Both overloads, both windswept-donor and
+            // neutral-donor entries, swept across x so that both halves of the mountain-noise
+            // stripe are covered: the census found windswept on ordinary shelves, not only where
+            // the noise claimed a mountain.
+            int polarSamples = 0;
+            int extremePolarSamples = 0;
+            for (double fraction : new double[]{0.78, 0.82, 0.86, 0.90, 0.94}) {
+                int z = (int) Math.round(pickerRadius * fraction);
+                for (int x = -2_048; x <= 2_048; x += 256) {
+                    if ((long) x * x + (long) z * z >= (long) pickerRadius * pickerRadius) continue;
+                    // 4 == BAND_POLAR. The band constants are private to LatitudeBiomes, so the
+                    // suite reads the picker's own final band decision rather than re-deriving it.
+                    if (LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, z, pickerRadius) != 4) {
+                        continue;
+                    }
+                    polarSamples++;
+                    // EXTREME_POLAR_CAP_MIN_DEG is 74.5, and latitude degrees are the z fraction
+                    // times 90, so this counts the samples that also exercise the extreme cap.
+                    if (fraction * 90.0 >= 74.5) extremePolarSamples++;
+                    for (String id : windswept) {
+                        assertNeitherPickerReturns(
+                                registry, pool, testBiomeHolder(registry, id),
+                                x, z, pickerRadius, pickerSampler, id,
+                                "the polar band must never return " + id + " — even when the donor "
+                                        + "source hands the picker that very identity — at x=" + x
+                                        + " z=" + z + " (lat=" + (fraction * 90.0) + " degrees)");
+                    }
+                }
+            }
+            assertTrue(polarSamples >= 40,
+                    "the polar sweep must actually reach the polar band, or it proves nothing: "
+                            + "samples=" + polarSamples);
+            assertTrue(extremePolarSamples >= 20,
+                    "part of the sweep must sit above the 74.5-degree extreme cap, which is where "
+                            + "the census measured windswept_hills at 15.58%: samples="
+                            + extremePolarSamples);
+
+            // 6b. FLAT subpolar columns. The subpolar band is the family's legal home, so the
+            // route says nothing here and the mountain half of the law is enforced by the
+            // ownership clamp alone — which keyed off a predicate naming only windswept_forest and
+            // windswept_gravelly_hills, never windswept_hills, the id that caused the report.
+            //
+            // Swept rather than probed at one coordinate: the subpolar substitution pool is NOT
+            // mountain-filtered (filteredAllowedLandPool does nothing for this band), so whether a
+            // given flat column lands on windswept is a property of the reroll noise at that x/z.
+            // A single hand-picked coordinate proves only that one column, and would silently stop
+            // meaning anything if the noise moved. Asserting it across every unreserved flat
+            // column in the band is the claim the law actually makes.
+            int flatSubpolarColumns = 0;
+            for (double fraction : new double[]{0.60, 0.63, 0.66, 0.69, 0.72}) {
+                int z = (int) Math.round(pickerRadius * fraction);
+                for (int x = -4_096; x <= 4_096; x += 97) {
+                    if (mountainNoiseColumn(x)) continue;
+                    if ((long) x * x + (long) z * z >= (long) pickerRadius * pickerRadius) continue;
+                    // Guaranteed windswept provinces are a deliberate exception and are asserted
+                    // as the positive control in 6c.
+                    if (pickerPlan.match(x, z) != null) continue;
+                    // 3 == BAND_SUBPOLAR.
+                    if (LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, z, pickerRadius) != 3) {
+                        continue;
+                    }
+                    flatSubpolarColumns++;
+                    for (String id : windswept) {
+                        assertNeitherPickerReturns(
+                                registry, pool, testBiomeHolder(registry, id),
+                                x, z, pickerRadius, pickerSampler, id,
+                                "a FLAT subpolar column must not return " + id + " — the windswept "
+                                        + "family is a MOUNTAIN identity in this band, not merely a "
+                                        + "subpolar one, at x=" + x + " z=" + z);
+                    }
+                }
+            }
+            assertTrue(flatSubpolarColumns >= 100,
+                    "the flat-subpolar sweep must actually cover the band: columns="
+                            + flatSubpolarColumns);
+
+            // 6c. Positive control. A ban that quietly became total would read as "fixed" on every
+            // negative assertion above while deleting the wind-scoured identity from the 50-66.5
+            // degree ridges it was moved to. The guaranteed subpolar-upland provinces are where
+            // the family MUST still appear.
+            List<VanillaBiomeCoveragePlan.Anchor> subpolarUplandAnchors = pickerPlan.anchors().stream()
+                    .filter(anchor -> anchor.route() == BiomeRoute.SUBPOLAR_UPLAND)
+                    .toList();
+            assertEquals(windswept.length, subpolarUplandAnchors.size(),
+                    "a Regular world reserves one guaranteed province per windswept identity");
+            for (VanillaBiomeCoveragePlan.Anchor anchor : subpolarUplandAnchors) {
+                assertPickerPairReturns(
+                        registry, pool, testBiomeHolder(registry, "minecraft:snowy_taiga"),
+                        anchor.blockX(), anchor.blockZ(), pickerRadius, pickerSampler,
+                        anchor.biomeId(),
+                        "the windswept family must remain PRODUCIBLE in the subpolar band, or the "
+                                + "polar fix has silently degraded into banned-everywhere: "
+                                + anchor.biomeId());
+                double anchorLatDeg =
+                        Math.abs(anchor.blockZ()) / (double) pickerRadius * 90.0;
+                assertTrue(anchorLatDeg <= 66.5,
+                        "a guaranteed windswept province must stay below the polar boundary: "
+                                + anchor.biomeId() + " at " + anchorLatDeg + " degrees");
+            }
+        } finally {
+            LatitudeBiomes.clearWorldgenContext();
+        }
     }
 
     private static void assertWithinFourSigma(Map<String, Integer> counts, String key, int samples, double expected, String message) {
