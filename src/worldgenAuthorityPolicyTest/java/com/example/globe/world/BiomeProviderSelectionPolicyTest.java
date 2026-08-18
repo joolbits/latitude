@@ -54,6 +54,7 @@ final class BiomeProviderSelectionPolicyTest {
         windsweptFamilyIsSubpolarMountainOnly();
         desertIsTheStapleOfTheSubtropicalAridBelt();
         dryWarmIdentityGateUsesTheDesertFirstOrder();
+        savannaIsACountryInsideTheWarmBelt();
         cliffTreeLandAndOceanAreActuallyReachable();
         riverAndBeachAdmissionIsTagDrivenAndVanillaSafe();
         everyLedgerLandRouteSurvivesTheBandPoolGate();
@@ -629,14 +630,25 @@ final class BiomeProviderSelectionPolicyTest {
                     plan, ProvinceAuthority.Province.WARM_MEDIUM, radius, false);
             int[] dry = findUnreservedTropicalProvince(
                     plan, ProvinceAuthority.Province.WARM_DRY, radius, false);
+            // WARM_MEDIUM has two answers now, not one (maintainer approval, 2026-08-18). This
+            // assertion used to demand EXACTLY minecraft:savanna here, which is the disease written
+            // down as a test: a whole province with a single identity, no roll and no geography.
+            // Savanna is a country inside the belt; outside it the belt is forest. The country
+            // predicate decides which, so the suite asks it the same question the picker does.
+            String mediumExpected = LatitudeBiomes.savannaCountryHitForPolicyTest(
+                    medium[0], medium[1], radius)
+                    ? "minecraft:savanna"
+                    : "minecraft:forest";
             for (String jungleId : List.of(
                     "minecraft:jungle", "minecraft:bamboo_jungle", "minecraft:sparse_jungle",
                     "terralith:tropical_jungle")) {
                 Holder<Biome> jungle = testBiomeHolder(registry, jungleId);
                 assertPickerPairReturns(
                         registry, pool, jungle, medium[0], medium[1], radius, sampler,
-                        "minecraft:savanna",
-                        jungleId + " is rewritten by final admission in WARM_MEDIUM");
+                        mediumExpected,
+                        jungleId + " is rewritten by final admission in WARM_MEDIUM ("
+                                + (mediumExpected.endsWith("savanna") ? "inside" : "outside")
+                                + " a savanna country at " + medium[0] + "," + medium[1] + ")");
                 assertPickerPairReturnsOneOf(
                         registry, pool, jungle, dry[0], dry[1], radius, sampler,
                         Set.of(
@@ -3128,9 +3140,11 @@ final class BiomeProviderSelectionPolicyTest {
             assertTrue(enforce >= 0,
                     "the dry-warm gate must resolve through the same helper every other dry "
                             + "province column resolves through: " + body);
-            assertTrue(body.contains("out, ProvinceAuthority.Province.WARM_DRY)"),
-                    "the dry-warm gate must ask that helper for the WARM_DRY family explicitly: "
-                            + body);
+            // The coordinate pair joined this call on 2026-08-18: enforceWarmProvinceFamily has to
+            // know WHERE the column is now that its WARM_MEDIUM arm consults the savanna country.
+            assertTrue(body.contains("out, ProvinceAuthority.Province.WARM_DRY, blockX, blockZ)"),
+                    "the dry-warm gate must ask that helper for the WARM_DRY family explicitly, and "
+                            + "at this column: " + body);
             assertTrue(badlands > enforce && desert > badlands && poleward > desert,
                     "this gate runs after applyFinalSavannaClimateClamp, so it must re-apply that "
                             + "clamp's three latitude demotes, in the clamp's order, to whatever it "
@@ -3247,6 +3261,735 @@ final class BiomeProviderSelectionPolicyTest {
                 LatitudeBiomes.clearWorldgenContext();
             }
         }
+    }
+
+    /** What one seed's tropical WARM_MEDIUM belt actually generates, through the real picker. */
+    private static final class SavannaBeltCensus {
+        int columns;
+        int savanna;
+        int forest;
+        int jungle;
+        int insideCountry;
+        int insideCountrySavanna;
+        int outsideCountry;
+        int outsideCountryForest;
+        int outsideCountrySavanna;
+        int parityDisagreements;
+    }
+
+    private static boolean isSavannaId(String id) {
+        return "minecraft:savanna".equals(id)
+                || "minecraft:savanna_plateau".equals(id)
+                || "minecraft:windswept_savanna".equals(id);
+    }
+
+    private static boolean isJungleId(String id) {
+        return "minecraft:jungle".equals(id)
+                || "minecraft:bamboo_jungle".equals(id)
+                || "minecraft:sparse_jungle".equals(id)
+                || "terralith:tropical_jungle".equals(id);
+    }
+
+    /**
+     * Drives both public pickers across the tropical WARM_MEDIUM belt and splits the result by the
+     * savanna country the picker itself consulted.
+     */
+    private static SavannaBeltCensus censusTropicalWarmMediumBelt(
+            MappedRegistry<Biome> registry,
+            List<Holder<Biome>> pool,
+            Holder<Biome> donor,
+            int radius,
+            Climate.Sampler sampler,
+            VanillaBiomeCoveragePlan plan) {
+        // 0 == BAND_TROPICAL. Latitudes 3.6 to 18 degrees.
+        return censusWarmMediumBelt(registry, pool, donor, radius, sampler, plan,
+                0, new double[]{0.04, 0.08, 0.12, 0.16, 0.20});
+    }
+
+    /**
+     * The same sweep across the SUBTROPICAL half of WARM_MEDIUM (2026-08-18).
+     *
+     * <p>WARM_MEDIUM spans tropical and subtropical together, and the enforcer call sites inside
+     * {@code pickTropicalGradient} — two per picker overload — are subtropical-only, so the tropical
+     * sweep above never reaches them. Latitudes 24.3 to 33.3 degrees: above the 23.5-degree band
+     * boundary with room for the band-blend jitter, and below the 35-degree temperate line.
+     */
+    private static SavannaBeltCensus censusSubtropicalWarmMediumBelt(
+            MappedRegistry<Biome> registry,
+            List<Holder<Biome>> pool,
+            Holder<Biome> donor,
+            int radius,
+            Climate.Sampler sampler,
+            VanillaBiomeCoveragePlan plan) {
+        // 1 == BAND_SUBTROPICAL.
+        return censusWarmMediumBelt(registry, pool, donor, radius, sampler, plan,
+                1, new double[]{0.27, 0.29, 0.31, 0.33, 0.35, 0.37});
+    }
+
+    /**
+     * Drives both public pickers across one band's WARM_MEDIUM columns and splits the result by the
+     * savanna country the picker itself consulted.
+     */
+    private static SavannaBeltCensus censusWarmMediumBelt(
+            MappedRegistry<Biome> registry,
+            List<Holder<Biome>> pool,
+            Holder<Biome> donor,
+            int radius,
+            Climate.Sampler sampler,
+            VanillaBiomeCoveragePlan plan,
+            int bandIndex,
+            double[] fractions) {
+        SavannaBeltCensus census = new SavannaBeltCensus();
+        for (double fraction : fractions) {
+            for (int sign : new int[]{1, -1}) {
+                int z = sign * (int) Math.round(radius * fraction);
+                for (int x = -8_192; x <= 8_192; x += 128) {
+                    if ((long) x * x + (long) z * z >= (long) radius * radius) continue;
+                    // Read the picker's own final band decision rather than re-deriving it, exactly
+                    // as the arid-belt census does.
+                    if (LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, z, radius)
+                            != bandIndex) {
+                        continue;
+                    }
+                    if (LatitudeBiomes.classifyProvince(x, z)
+                            != ProvinceAuthority.Province.WARM_MEDIUM) {
+                        continue;
+                    }
+                    // Guaranteed coverage provinces are placed by the birth plan, not chosen by the
+                    // picker; counting them would measure the plan.
+                    if (plan != null && plan.match(x, z) != null) continue;
+
+                    String registryId = LatitudeBiomes.biomeIdPublic(LatitudeBiomes.pick(
+                            registry, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER"));
+                    String collectionId = LatitudeBiomes.biomeIdPublic(LatitudeBiomes.pick(
+                            pool, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER"));
+                    if (!registryId.equals(collectionId)) census.parityDisagreements++;
+
+                    census.columns++;
+                    if (isSavannaId(registryId)) census.savanna++;
+                    if ("minecraft:forest".equals(registryId)) census.forest++;
+                    if (isJungleId(registryId)) census.jungle++;
+                    if (LatitudeBiomes.savannaCountryHitForPolicyTest(x, z, radius)) {
+                        census.insideCountry++;
+                        if (isSavannaId(registryId)) census.insideCountrySavanna++;
+                    } else {
+                        census.outsideCountry++;
+                        if ("minecraft:forest".equals(registryId)) census.outsideCountryForest++;
+                        if (isSavannaId(registryId)) census.outsideCountrySavanna++;
+                    }
+                }
+            }
+        }
+        return census;
+    }
+
+    /**
+     * Savanna is a COUNTRY inside the warm-medium belt, not the belt itself.
+     *
+     * <p>Vanilla-only, the tropical band generated savanna on roughly half of all land. The pools
+     * were never the problem: {@code minecraft:savanna} is not in the tropical allowed pool at all,
+     * and every tropical column starts jungle-family. The problem was that the fair pick was
+     * overwritten by a chain of rewrites that all named one literal id — chiefly
+     * {@code gateWarmJungleSurvival}, which runs AFTER {@code enforceLandBandPool} and therefore
+     * gets the last word, and which handed every WARM_MEDIUM column to
+     * {@code enforceWarmProvinceFamily} whose WARM_MEDIUM arm returned {@code minecraft:savanna}
+     * with no roll, no pool and no geography.
+     *
+     * <p>{@code savannaProvinceAuthorityHit} is now the authority for where savanna lives, in the
+     * same way {@code badlandsProvinceAuthorityHit} became the authority for badlands the same day.
+     * Inside a country, nothing changes. Outside one the belt is {@code minecraft:forest} — which
+     * is why forest had to join the tropical band pool, and why the teeth were checked in three
+     * stages rather than one. Measured 2026-08-18, each stage reverted on its own:
+     * <ul>
+     *   <li>predicate neutered to "the whole province is one country" — the pre-change world —
+     *       fails at 718 inside / 0 outside;</li>
+     *   <li>gate left stamping savanna while everything else stays wired — fails with 220 of 518
+     *       outside-country columns back to savanna, so the gate is independently load-bearing;</li>
+     *   <li>tropical forest pool admission removed — fails from a savanna donor with 150
+     *       outside-country columns back to savanna.</li>
+     * </ul>
+     * "Looks wired, does nothing" is the failure mode all three exist to make impossible.
+     *
+     * <p>What it does to the tropical band, measured through {@code pick} from a plains donor over
+     * the whole band (8 latitudes, 128-block steps, radius 10000, this suite's roster), with the
+     * predicate neutered for the "before" row:
+     *
+     * <pre>
+     *   seed   savanna          forest          jungle family
+     *      3   61.9% -> 30.3%    5.8% -> 38.5%   32.3% -> 31.2%
+     *    131   54.2% -> 26.6%    5.9% -> 33.9%   40.0% -> 39.5%
+     *    461   42.7% -> 28.8%    2.9% -> 17.2%   54.4% -> 54.0%
+     * </pre>
+     *
+     * <p>The jungle family moves by at most 1.1 points on any seed, which is the constraint this
+     * slice had to hold: it is WARM_MEDIUM-scoped, and the equatorial jungle core is not its
+     * business. The savanna that leaves becomes forest almost exactly one for one.</p>
+     *
+     * <p>HONEST SCOPE, two limits. Section 1 is a source-text pin, not a world measurement — it
+     * proves the country is CONSULTED where it has to be, and sections 2 through 7 prove what that
+     * consult does. And nothing here touches {@code minecraft:windswept_savanna}: this suite's test
+     * registry is built with an empty tag map, so the pools that biome is drawn from are empty and
+     * no sweep through {@code pick} could reach it; in live generation it survives only via
+     * {@code savannaTierByY}'s elevation tier, which is downstream of everything this slice edits.
+     *
+     * <p>Section 6's floors are DESK-DERIVED rather than measured — see the note on
+     * {@link #assertSubtropicalCountrySplit}. Section 7 runs at radius 3750 and is the only part of
+     * this method that exercises {@code SAVANNA_PROVINCE_MIN_SCALE_BLOCKS} at all: above radius
+     * 4267 the floor never binds.
+     */
+    private static void savannaIsACountryInsideTheWarmBelt() throws Exception {
+        // 1. STRUCTURAL. The country has to be consulted at the two places that decide, and the two
+        //    overloads of each have to decide the same way. Verified in both directions against the
+        //    pre-change source.
+        String source = read("src/main/java/com/example/globe/world/LatitudeBiomes.java");
+
+        String registryEnforcer = method(source,
+                "private static Holder<Biome> enforceWarmProvinceFamily(Registry<Biome> biomes,");
+        String collectionEnforcer = method(source,
+                "private static Holder<Biome> enforceWarmProvinceFamily(Collection<Holder<Biome>> biomes,");
+        String registryMediumArm = switchArm(registryEnforcer, "case WARM_MEDIUM ->");
+        String collectionMediumArm = switchArm(collectionEnforcer, "case WARM_MEDIUM ->");
+        // The core of this slice, pinned the same way the warm-jungle gate overloads are (below):
+        // the ordered sequence of decisions each arm makes, comments stripped, must be equal. Three
+        // indexOf checks say each arm is individually sane; only this says they are the same world.
+        //
+        // KNOWN, DELIBERATE ASYMMETRY, and this pin is drawn AROUND it: warmMediumForestStaple's two
+        // overloads are not equivalent. The Registry one looks minecraft:forest up in the registry,
+        // so it answers for any world that has the biome at all; the Collection one calls entryById
+        // on the pool it was handed and answers null when that pool lacks forest. Both arms call the
+        // same-named helper in the same order, which is what this sequence compares; the lookup
+        // idiom underneath it is exactly the difference decisionSequence exists to ignore.
+        assertEquals(decisionSequence(registryMediumArm), decisionSequence(collectionMediumArm),
+                "the two warm-medium enforcer arms must decide identically, call for call — this "
+                        + "arm is where the savanna country is consulted, and a divergence here is "
+                        + "live generation parting company with the map the atlas drew");
+
+        for (String enforcer : List.of(registryEnforcer, collectionEnforcer)) {
+            String arm = normalize(switchArm(enforcer, "case WARM_MEDIUM ->"));
+            int country = arm.indexOf("savannaCountryHere(blockX, blockZ)");
+            int forest = arm.indexOf("warmMediumForestStaple(biomes)");
+            int savanna = arm.indexOf("minecraft:savanna\"");
+            assertTrue(country >= 0,
+                    "the warm-medium arm must ask the savanna country where it is — a province that "
+                            + "answers one literal id everywhere is the monoculture this slice "
+                            + "exists to remove: " + arm);
+            assertTrue(forest >= 0 && forest < savanna,
+                    "outside a savanna country the warm-medium staple is forest, and it must be "
+                            + "reached BEFORE the savanna chain or the chain wins every column: "
+                            + arm);
+            assertTrue(arm.contains("minecraft:windswept_savanna\"")
+                            && arm.indexOf("minecraft:windswept_savanna\"") < forest,
+                    "windswept_savanna must be exempted from the country rule before the forest "
+                            + "staple is applied — it is the WARM_UPLAND mountain identity, not the "
+                            + "flat staple this country governs, and it has exactly one legal home: "
+                            + arm);
+        }
+
+        String registryGate = method(source,
+                "private static Holder<Biome> gateWarmJungleSurvival(Registry<Biome> biomes,");
+        String collectionGate = method(source,
+                "private static Holder<Biome> gateWarmJungleSurvival(Collection<Holder<Biome>> biomes,");
+        for (String gate : List.of(registryGate, collectionGate)) {
+            String body = normalize(gate);
+            assertTrue(body.contains("savannaCountryHere(blockX, blockZ) ? enforceWarmProvinceFamily("),
+                    "the warm-jungle gate is the LAST stage that can turn a jungle identity into a "
+                            + "warm-belt one and it runs after enforceLandBandPool, so it must "
+                            + "consult the savanna country itself rather than inherit an answer: "
+                            + body);
+            assertTrue(body.contains("warmMediumOutsideCountryStaple("),
+                    "the warm-jungle gate must resolve outside-country columns to the shared forest "
+                            + "staple: " + body);
+            // The WARM_DRY arm's defect, recorded in the 2026-08-18 dry-warm commit and fixed here:
+            // it returned pickDryWarmFallback desert with no demote chain, on a path that runs
+            // AFTER applyFinalSavannaClimateClamp, which is where the latitude law lives.
+            assertFalse(body.contains("pickDryWarmFallback("),
+                    "the warm-jungle gate's dry arm must ask the province for its own desert-first "
+                            + "order, not a helper that names desert and stops: " + body);
+            int enforce = body.indexOf("out, ProvinceAuthority.Province.WARM_DRY, blockX, blockZ)");
+            int badlands = body.indexOf("demoteEquatorialBadlands(");
+            int desert = body.indexOf("demoteEquatorialDesert(");
+            int poleward = body.indexOf("demotePolewardArid(");
+            assertTrue(enforce >= 0,
+                    "the warm-jungle gate's dry arm must resolve through the shared province "
+                            + "helper: " + body);
+            assertTrue(badlands > enforce && desert > badlands && poleward > desert,
+                    "this gate runs after applyFinalSavannaClimateClamp, so its dry arm must "
+                            + "re-apply that clamp's three latitude demotes in the clamp's order — "
+                            + "without them a gate-made desert stands at the equator with nothing "
+                            + "downstream left to take it back: " + body);
+        }
+        // The two overloads have to be the same world, not merely both correct. Comments and the
+        // Registry/Collection lookup idiom legitimately differ, so the DECISIONS are compared: the
+        // ordered sequence of calls each overload makes.
+        assertEquals(decisionSequence(registryGate), decisionSequence(collectionGate),
+                "the two warm-jungle gate overloads must decide identically, call for call — a "
+                        + "divergence here is live generation parting company with the map the "
+                        + "atlas drew");
+
+        // Without this admission enforceLandBandPool rerolls the forest produced UPSTREAM of it.
+        // Teeth, measured by reverting only this line: from a jungle donor outside-country forest
+        // falls 518/518 -> 486/518, and from a savanna donor 150 outside-country columns come back
+        // savanna. The savanna donor is the live-worldgen shape, so this line is load-bearing even
+        // though the downstream stages carry most of the change.
+        String extras = method(source, "private static List<String> allowedExtraBiomeIdsForBand(int bandIndex) {");
+        assertTrue(normalize(switchArm(extras, "case BAND_TROPICAL ->")).contains("\"minecraft:forest\""),
+                "minecraft:forest must be pool-legal in the tropical band, or the warm-medium "
+                        + "staple is rerolled away the moment it is produced: " + extras);
+
+        // The two sanitize overloads ran on different openness/composition thresholds (0.92/0.20
+        // against 0.76/0.06), which was masked while forest was pool-illegal and load-bearing the
+        // moment it was not. Reconciled to the strict Registry pair.
+        for (String signature : List.of(
+                "private static Holder<Biome> sanitizeLandBiome(Registry<Biome> biomes,",
+                "private static Holder<Biome> sanitizeLandBiome(Collection<Holder<Biome>> biomes,")) {
+            // Comments stripped: the note left in the source names the retired numbers on purpose.
+            String body = normalize(method(source, signature).replaceAll("(?m)^\\s*//.*$", ""));
+            assertTrue(body.contains("openness < 0.92 || compositionBias <= 0.20"),
+                    "both sanitize overloads must use the canonical tropical repaint gate: " + body);
+            assertTrue(body.contains("openness >= 0.96 && compositionBias > 0.28"),
+                    "both sanitize overloads must use the canonical savanna-promotion branch: " + body);
+            assertTrue(body.contains("compositionBias > 0.32"),
+                    "both sanitize overloads must use the canonical swamp-promotion branch: " + body);
+            assertFalse(body.contains("0.76") || body.contains("0.06") || body.contains("0.78"),
+                    "the old Collection-only threshold ladder must be gone: " + body);
+        }
+
+        // NOT ASSERTED HERE, on purpose: pickTropicalGradient's `boolean mountainLike = false`.
+        // Threading the column's real mountain truth into it was tried in this slice and reverted
+        // as INERT — filteredAllowedLandPool has already dropped windswept_savanna from the
+        // subtropical pool on every non-mountain column, so the veto it feeds has nothing to veto
+        // and the output never moved. A structural pin on that parameter would have asserted a
+        // wiring the pipeline overrides three stages later: a test that cannot fail for the reason
+        // it claims to guard. The real repair re-keys landPoolVariantKey and belongs to its own
+        // slice; see the comment at the restored local.
+
+        // 2 through 7 drive the real picker or the real country field, so they need a live worldgen
+        // context. 7 activates its own, at a different radius.
+        net.minecraft.SharedConstants.tryDetectVersion();
+        net.minecraft.server.Bootstrap.bootStrap();
+        MappedRegistry<Biome> registry = testBiomeRegistry();
+        List<Holder<Biome>> pool = registry.listElements()
+                .map(entry -> (Holder<Biome>) entry)
+                .toList();
+        int radius = 10_000;
+        Climate.Sampler sampler = coverageSampler(null);
+        List<String> ids = registry.keySet().stream().map(Identifier::toString).toList();
+
+        for (long seed : new long[]{3L, 131L, 461L}) {
+            BiomeSelectionProfile profile = BiomeSelectionProfile.capture(ids);
+            try {
+                LatitudeBiomes.activateWorldgenContext(
+                        radius,
+                        seed,
+                        LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE,
+                        profile,
+                        VanillaBiomeRepresentationProfile.capture(radius, seed, profile),
+                        sampler,
+                        null,
+                        63);
+                VanillaBiomeCoveragePlan plan = LatitudeBiomes.activeVanillaCoveragePlanForPolicyTest();
+                assertTrue(plan != null && plan.complete(),
+                        "the savanna-country proof needs a complete birth-locked land plan (seed="
+                                + seed + ")");
+
+                // 2. THE REGRESSION TEST. A jungle donor is what the warm-jungle gate exists to
+                //    catch, and every tropical column starts jungle-family, so this is the belt's
+                //    real input. Inside a country it must still come out savanna; outside one it
+                //    must come out forest. Both halves matter: the first is the positive control
+                //    that savanna was regionalised rather than deleted, and the second is the
+                //    change itself.
+                SavannaBeltCensus jungleDonor = censusTropicalWarmMediumBelt(
+                        registry, pool, testBiomeHolder(registry, "minecraft:jungle"),
+                        radius, sampler, plan);
+                assertTrue(jungleDonor.columns >= 200,
+                        "the belt sweep must actually land in the tropical warm-medium province, or "
+                                + "it proves nothing: seed=" + seed + " columns=" + jungleDonor.columns);
+                assertTrue(jungleDonor.insideCountry >= 40 && jungleDonor.outsideCountry >= 40,
+                        "the sweep must reach BOTH sides of the country boundary, or it cannot tell "
+                                + "a country from a field that is on everywhere or off everywhere: "
+                                + "seed=" + seed + " inside=" + jungleDonor.insideCountry
+                                + " outside=" + jungleDonor.outsideCountry
+                                + " of " + jungleDonor.columns);
+                // Measured: 93%, 85%, 85% savanna inside a country. The remainder is the band-blend
+                // fringe, where the picker's own band decision and the authority's disagree and the
+                // province enforcer is never reached at all -- untouched by this slice, and forest
+                // or jungle there both predate it.
+                assertGreaterThan(0.80,
+                        jungleDonor.insideCountrySavanna / (double) jungleDonor.insideCountry,
+                        "savanna must still own its country — it is regional now, not gone: seed="
+                                + seed + " savanna=" + jungleDonor.insideCountrySavanna
+                                + " of " + jungleDonor.insideCountry + " columns inside a country");
+                // Measured: 100% forest outside a country on all three seeds, 518/518, 381/381,
+                // 213/213.
+                assertGreaterThan(0.95,
+                        jungleDonor.outsideCountryForest / (double) jungleDonor.outsideCountry,
+                        "outside a savanna country the warm belt must read as forest: seed=" + seed
+                                + " forest=" + jungleDonor.outsideCountryForest
+                                + " savanna=" + jungleDonor.outsideCountrySavanna
+                                + " of " + jungleDonor.outsideCountry + " columns outside a country");
+                assertEquals(0, jungleDonor.outsideCountrySavanna,
+                        "no savanna may stand outside a savanna country from a jungle donor — that "
+                                + "is the monoculture leaking back in (seed=" + seed + ")");
+                assertEquals(0, jungleDonor.parityDisagreements,
+                        "the registry and collection pickers must never disagree about savanna vs "
+                                + "forest at the same column — that is live generation diverging "
+                                + "from the map the atlas drew (seed=" + seed + ")");
+
+                // The province decides, not the donor. A savanna donor is the sharp case: the
+                // enforcer's savanna-family early return used to hand it straight back untouched,
+                // which is how savanna re-admitted itself outside its own country.
+                SavannaBeltCensus savannaDonor = censusTropicalWarmMediumBelt(
+                        registry, pool, testBiomeHolder(registry, "minecraft:savanna"),
+                        radius, sampler, plan);
+                assertEquals(0, savannaDonor.outsideCountrySavanna,
+                        "an incoming vanilla savanna must not talk the belt out of forest outside a "
+                                + "savanna country (seed=" + seed + ")");
+                assertEquals(jungleDonor.savanna, savannaDonor.savanna,
+                        "the country decides how much savanna the belt generates, not what came in "
+                                + "(seed=" + seed + ")");
+
+                // 3. WARM_WET IS UNTOUCHED. This slice is WARM_MEDIUM-scoped; the jungle core is a
+                //    release constraint and must not move.
+                int wetColumns = 0;
+                int wetJungle = 0;
+                for (double fraction : new double[]{0.04, 0.10, 0.16, 0.22}) {
+                    for (int sign : new int[]{1, -1}) {
+                        int z = sign * (int) Math.round(radius * fraction);
+                        for (int x = -8_192; x <= 8_192; x += 256) {
+                            if ((long) x * x + (long) z * z >= (long) radius * radius) continue;
+                            if (LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, z, radius) != 0) continue;
+                            if (LatitudeBiomes.classifyProvince(x, z)
+                                    != ProvinceAuthority.Province.WARM_WET) continue;
+                            if (plan != null && plan.match(x, z) != null) continue;
+                            wetColumns++;
+                            String id = LatitudeBiomes.biomeIdPublic(LatitudeBiomes.pick(
+                                    registry, testBiomeHolder(registry, "minecraft:jungle"),
+                                    x, z, 80, radius, sampler, "ATLAS_SAMPLER"));
+                            if (isJungleId(id)) wetJungle++;
+                            assertFalse(isSavannaId(id),
+                                    "the savanna country must never claim a WARM_WET column at x="
+                                            + x + " z=" + z + " (seed=" + seed + "): " + id);
+                            assertTrue(LatitudeBiomes.savannaCountryHitForPolicyTest(x, z, radius) == false,
+                                    "the country predicate must answer false outside WARM_MEDIUM at "
+                                            + "x=" + x + " z=" + z + " (seed=" + seed + ")");
+                        }
+                    }
+                }
+                assertTrue(wetColumns >= 50,
+                        "the WARM_WET guard must actually reach the jungle core: seed=" + seed
+                                + " columns=" + wetColumns);
+                assertGreaterThan(0.90, wetJungle / (double) wetColumns,
+                        "a jungle donor in WARM_WET must stay jungle-family: seed=" + seed
+                                + " jungle=" + wetJungle + " of " + wetColumns);
+
+                // 4. EQUATOR ARID GUARD. Tropical desert and badlands are exactly zero and stay
+                //    there. This slice edited a gate (gateWarmJungleSurvival's dry arm) that can
+                //    produce arid downstream of the clamp owning the tropical law, so the guard is
+                //    re-run from the donors that reach that gate.
+                int tropicalColumns = 0;
+                for (String donorId : new String[]{
+                        "minecraft:jungle", "minecraft:forest", "minecraft:savanna"}) {
+                    Holder<Biome> donor = testBiomeHolder(registry, donorId);
+                    for (double fraction : new double[]{0.04, 0.10, 0.16, 0.22}) {
+                        for (int sign : new int[]{1, -1}) {
+                            int z = sign * (int) Math.round(radius * fraction);
+                            for (int x = -8_192; x <= 8_192; x += 512) {
+                                if ((long) x * x + (long) z * z >= (long) radius * radius) continue;
+                                if (LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, z, radius) != 0) continue;
+                                tropicalColumns++;
+                                String where = " — even from a " + donorId + " donor — at x=" + x
+                                        + " z=" + z + " (lat=" + (fraction * 90.0) + " degrees, seed="
+                                        + seed + ")";
+                                assertEquals("other", aridFamilyOf(LatitudeBiomes.biomeIdPublic(
+                                                LatitudeBiomes.pick(registry, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER"))),
+                                        "the tropical band must never return arid" + where + " (registry)");
+                                assertEquals("other", aridFamilyOf(LatitudeBiomes.biomeIdPublic(
+                                                LatitudeBiomes.pick(pool, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER"))),
+                                        "the tropical band must never return arid" + where + " (collection)");
+                            }
+                        }
+                    }
+                }
+                assertTrue(tropicalColumns >= 300,
+                        "the equator guard must actually reach the tropical band: seed=" + seed
+                                + " columns=" + tropicalColumns);
+
+                // 5. THE COUNTRY IS A COUNTRY. Coherent, not confetti (Article VI), and it covers a
+                //    real minority-to-half of its province rather than everything or nothing.
+                int seen = 0;
+                int transitions = 0;
+                for (double fraction : new double[]{0.04, 0.08, 0.12, 0.16, 0.20}) {
+                    for (int sign : new int[]{1, -1}) {
+                        int scanZ = sign * (int) Math.round(radius * fraction);
+                        Boolean previous = null;
+                        for (int x = -8_192; x <= 8_192; x += 128) {
+                            if (LatitudeBiomes.classifyProvince(x, scanZ)
+                                    != ProvinceAuthority.Province.WARM_MEDIUM) {
+                                previous = null;
+                                continue;
+                            }
+                            boolean hit = LatitudeBiomes.savannaCountryHitForPolicyTest(x, scanZ, radius);
+                            assertEquals(hit,
+                                    LatitudeBiomes.savannaCountryHitForPolicyTest(x, scanZ, radius),
+                                    "the country predicate must be deterministic at x=" + x
+                                            + " z=" + scanZ);
+                            seen++;
+                            if (previous != null && previous != hit) transitions++;
+                            previous = hit;
+                        }
+                    }
+                }
+                double countryShare = jungleDonor.insideCountry / (double) jungleDonor.columns;
+                // The tuning target the maintainer approved: savanna countries cover roughly a
+                // third to a half of WARM_MEDIUM, so the belt reads as forest with savanna regions
+                // in it rather than either extreme. Measured on these three seeds: 27.9%, 40.7%,
+                // 55.3%. The bounds are wide on purpose -- this is a coherent noise field sampled
+                // over a belt only a few cells deep, so per-seed spread is expected and is not the
+                // thing under test; "is it a country at all" is.
+                //
+                // THE SCALE IS WHY THESE BOUNDS CAN BE THIS TIGHT. The same field at the badlands
+                // province's scale (frac 0.30) measured 6.3%, 30.8% and 74.0% on these seeds,
+                // because the tropical belt is only ~2600 blocks deep and fits inside a single
+                // 3000-block noise cell. If a future edit widens SAVANNA_PROVINCE_SCALE_FRAC back
+                // toward the badlands value, this assertion is what catches it.
+                assertTrue(countryShare > 0.15 && countryShare < 0.75,
+                        "a country that covers almost all or almost none of its province is not a "
+                                + "country: seed=" + seed + " share=" + countryShare
+                                + " of " + jungleDonor.columns + " warm-medium columns");
+                // 128-block sampling across ~16k blocks per line: a coherent country crosses its
+                // own border a handful of times per line. A per-block hash or a floorDiv cell field
+                // would cross constantly. Article VI.
+                assertTrue(transitions <= seen / 8,
+                        "the savanna country must be coherent, not confetti — Article VI: seed="
+                                + seed + " transitions=" + transitions + " of " + seen
+                                + " scanned columns");
+
+                // 6. THE SUBTROPICAL HALF OF THE BELT. Everything above sweeps BAND_TROPICAL, and
+                //    WARM_MEDIUM spans tropical AND subtropical. The enforcer call sites inside
+                //    pickTropicalGradient — the humid diversion and the ladder tail, in each of the
+                //    two picker overloads, four in total — are reachable only from a subtropical
+                //    column, so nothing above exercises them. They are also where the largest
+                //    movement was measured (subtropical savanna down 15 to 25 points), so leaving
+                //    them unswept would leave the bigger half of the change unproven.
+                //
+                //    The subtropical path is cleaner than the tropical one: pickTropicalGradient
+                //    hands EVERY warm-medium column to enforceWarmProvinceFamily, and both
+                //    minecraft:forest (SUBTROPICAL_HUMID_LOWLAND) and minecraft:savanna
+                //    (WARM_TRANSITION) are ledger-legal in this band, so the pool gate rewrites
+                //    neither answer. Columns whose picker band is subtropical but whose authority
+                //    band is temperate resolve to forest and are counted OUTSIDE, which is what the
+                //    country predicate itself answers for them.
+                assertSubtropicalCountrySplit(seed, "minecraft:jungle",
+                        censusSubtropicalWarmMediumBelt(
+                                registry, pool, testBiomeHolder(registry, "minecraft:jungle"),
+                                radius, sampler, plan));
+                // The province decides, not the donor — the savanna-family early return in the
+                // enforcer is the branch that used to hand an incoming savanna straight back.
+                assertSubtropicalCountrySplit(seed, "minecraft:savanna",
+                        censusSubtropicalWarmMediumBelt(
+                                registry, pool, testBiomeHolder(registry, "minecraft:savanna"),
+                                radius, sampler, plan));
+            } finally {
+                LatitudeBiomes.clearWorldgenContext();
+            }
+        }
+
+        // 7. SMALL-WORLD GEOMETRY. Everything above runs at radius 10000, where
+        //    SAVANNA_PROVINCE_SCALE_FRAC alone decides the noise scale and
+        //    SAVANNA_PROVINCE_MIN_SCALE_BLOCKS never binds. The floor only binds BELOW radius 4267,
+        //    which is precisely the world nobody was measuring: on Itty Bitty (radius 3750) the
+        //    tropical belt is 979 blocks deep, so at the old 1024 floor the whole belt sat inside a
+        //    single noise cell in Z. This pass re-runs the country-share envelope and the coherence
+        //    scan down there so a future edit to either constant cannot quietly restore that.
+        assertSavannaCountryGeometryAtRadius(3_750, ids, sampler);
+    }
+
+    /**
+     * The country-share and coherence envelope at one world radius, driven from the predicate rather
+     * than through the picker: this is a statement about the FIELD's geometry, which is what the
+     * scale constants control.
+     *
+     * <p>The per-seed envelope is deliberately wider than the radius-10000 one and the tight
+     * envelope is applied to the pooled sample. A 979-block-deep belt is a smaller slice of the same
+     * noise field than a 2611-block one, so per-seed spread is expected and is not the thing under
+     * test; "does a small world get countries at all, and are they coherent" is.
+     */
+    private static void assertSavannaCountryGeometryAtRadius(
+            int radius, List<String> ids, Climate.Sampler sampler) throws Exception {
+        int pooledInside = 0;
+        int pooledSeen = 0;
+        for (long seed : new long[]{3L, 131L, 461L}) {
+            BiomeSelectionProfile profile = BiomeSelectionProfile.capture(ids);
+            try {
+                LatitudeBiomes.activateWorldgenContext(
+                        radius,
+                        seed,
+                        LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE,
+                        profile,
+                        VanillaBiomeRepresentationProfile.capture(radius, seed, profile),
+                        sampler,
+                        null,
+                        63);
+                int seen = 0;
+                int inside = 0;
+                int transitions = 0;
+                int limit = radius - 128;
+                for (double fraction : new double[]{0.04, 0.08, 0.12, 0.16, 0.20}) {
+                    for (int sign : new int[]{1, -1}) {
+                        int scanZ = sign * (int) Math.round(radius * fraction);
+                        Boolean previous = null;
+                        for (int x = -limit; x <= limit; x += 64) {
+                            if ((long) x * x + (long) scanZ * scanZ >= (long) radius * radius) {
+                                previous = null;
+                                continue;
+                            }
+                            if (LatitudeBiomes.classifyProvince(x, scanZ)
+                                    != ProvinceAuthority.Province.WARM_MEDIUM) {
+                                previous = null;
+                                continue;
+                            }
+                            boolean hit = LatitudeBiomes.savannaCountryHitForPolicyTest(x, scanZ, radius);
+                            seen++;
+                            if (hit) inside++;
+                            if (previous != null && previous != hit) transitions++;
+                            previous = hit;
+                        }
+                    }
+                }
+                assertTrue(seen >= 200,
+                        "the small-world geometry scan must actually land in the tropical "
+                                + "warm-medium province: radius=" + radius + " seed=" + seed
+                                + " columns=" + seen);
+                double share = inside / (double) seen;
+                assertTrue(share > 0.05 && share < 0.90,
+                        "a savanna country that covers almost all or almost none of its province on "
+                                + "a small world is the single-coin-flip geometry the scale floor "
+                                + "exists to prevent: radius=" + radius + " seed=" + seed
+                                + " share=" + share + " of " + seen + " columns");
+                // 64-block sampling: a coherent country crosses its own border a handful of times
+                // per line at any radius. Article VI.
+                assertTrue(transitions <= seen / 8,
+                        "the savanna country must stay coherent on a small world — Article VI: "
+                                + "radius=" + radius + " seed=" + seed + " transitions="
+                                + transitions + " of " + seen + " scanned columns");
+                pooledInside += inside;
+                pooledSeen += seen;
+            } finally {
+                LatitudeBiomes.clearWorldgenContext();
+            }
+        }
+        double pooledShare = pooledInside / (double) pooledSeen;
+        assertTrue(pooledShare > 0.15 && pooledShare < 0.75,
+                "pooled over its seeds, a small world's savanna countries must cover the same "
+                        + "minority-to-half of WARM_MEDIUM the reference world's do — a belt that "
+                        + "fits inside one noise cell cannot: radius=" + radius + " share="
+                        + pooledShare + " of " + pooledSeen + " columns");
+    }
+
+    /**
+     * The inside/outside split one subtropical WARM_MEDIUM sweep has to show.
+     *
+     * <p>FLOORS ARE DESK-DERIVED, not measured, and are deliberately loose (the tropical floors in
+     * this method were set from three measured seeds; these were not). The traced prediction is
+     * ~100% savanna inside and ~100% forest outside for both donors, because in this band
+     * pickTropicalGradient routes every warm-medium column through the enforcer and the pool gate
+     * accepts both answers. The differential assertion is the one with real teeth: it fails the
+     * moment the enforcer stops consulting the country, whatever the absolute levels are.
+     */
+    private static void assertSubtropicalCountrySplit(long seed, String donorId, SavannaBeltCensus sub) {
+        String where = " (seed=" + seed + ", donor=" + donorId + ", subtropical)";
+        assertTrue(sub.columns >= 100,
+                "the subtropical sweep must actually land in the warm-medium province, or it proves "
+                        + "nothing" + where + ": columns=" + sub.columns);
+        assertTrue(sub.insideCountry >= 30 && sub.outsideCountry >= 30,
+                "the subtropical sweep must reach BOTH sides of the country boundary" + where
+                        + ": inside=" + sub.insideCountry + " outside=" + sub.outsideCountry
+                        + " of " + sub.columns);
+        double insideSavanna = sub.insideCountrySavanna / (double) sub.insideCountry;
+        double outsideSavanna = sub.outsideCountrySavanna / (double) sub.outsideCountry;
+        double outsideForest = sub.outsideCountryForest / (double) sub.outsideCountry;
+        assertGreaterThan(0.60, insideSavanna,
+                "savanna must still own its country in the subtropics — it is regional now, not "
+                        + "gone" + where + ": savanna=" + sub.insideCountrySavanna + " of "
+                        + sub.insideCountry + " columns inside a country");
+        assertGreaterThan(0.60, outsideForest,
+                "outside a savanna country the subtropical warm belt must read as forest" + where
+                        + ": forest=" + sub.outsideCountryForest + " savanna="
+                        + sub.outsideCountrySavanna + " of " + sub.outsideCountry
+                        + " columns outside a country");
+        assertTrue(outsideSavanna < 0.20,
+                "savanna standing outside its own country in the subtropics is the monoculture "
+                        + "leaking back in" + where + ": savanna=" + sub.outsideCountrySavanna
+                        + " of " + sub.outsideCountry + " columns outside a country");
+        assertGreaterThan(0.40, insideSavanna - outsideSavanna,
+                "the country must MOVE the answer at the subtropical enforcer call sites — equal "
+                        + "shares inside and outside mean the consult is not happening" + where
+                        + ": inside=" + insideSavanna + " outside=" + outsideSavanna);
+        assertEquals(0, sub.parityDisagreements,
+                "the registry and collection pickers must never disagree at the same subtropical "
+                        + "column — that is live generation diverging from the map the atlas drew"
+                        + where);
+    }
+
+    /**
+     * The ordered decision markers a method body makes, with comment lines stripped. Comparing this
+     * between two overloads catches a real divergence (one gate consulting the country, its twin
+     * not) without failing on the Registry/Collection lookup idiom or on prose differences.
+     */
+    private static List<String> decisionSequence(String methodBody) {
+        String stripped = normalize(methodBody.replaceAll("(?m)^\\s*//.*$", ""));
+        List<String> markers = List.of(
+                "savannaCountryHere(",
+                "warmMediumOutsideCountryStaple(",
+                "warmMediumForestStaple(",
+                "enforceWarmProvinceFamily(",
+                "ProvinceAuthority.Province.WARM_DRY",
+                "ProvinceAuthority.Province.WARM_MEDIUM",
+                "ProvinceAuthority.Province.WARM_WET",
+                "demoteEquatorialBadlands(",
+                "demoteEquatorialDesert(",
+                "demotePolewardArid(",
+                "pickDryWarmFallback(",
+                "isSavannaFamily(",
+                "isReviewedJungleFamily(",
+                "isCustomBiome(",
+                "minecraft:savanna\"",
+                "minecraft:savanna_plateau\"",
+                "minecraft:windswept_savanna\"",
+                "minecraft:forest\"");
+        List<int[]> found = new ArrayList<>();
+        for (int index = 0; index < markers.size(); index++) {
+            String marker = markers.get(index);
+            for (int at = stripped.indexOf(marker); at >= 0;
+                    at = stripped.indexOf(marker, at + marker.length())) {
+                found.add(new int[]{at, index});
+            }
+        }
+        found.sort((a, b) -> Integer.compare(a[0], b[0]));
+        List<String> sequence = new ArrayList<>(found.size());
+        for (int[] hit : found) sequence.add(markers.get(hit[1]));
+        return sequence;
+    }
+
+    /**
+     * The text of one {@code case X ->} arm of a switch, from the label to the brace that closes it.
+     * Unlike {@link #routesInSwitchArm} this returns the raw text, which is what an arm-scoped
+     * structural assertion needs.
+     */
+    private static String switchArm(String method, String armLabel) {
+        int start = method.indexOf(armLabel);
+        if (start < 0) throw new AssertionError("missing switch arm: " + armLabel);
+        int searchFrom = start + armLabel.length();
+        int depth = 0;
+        for (int at = searchFrom; at < method.length(); at++) {
+            char c = method.charAt(at);
+            if (c == '{') depth++;
+            if (c == '}') {
+                depth--;
+                if (depth <= 0) return method.substring(start, at + 1);
+            }
+        }
+        return method.substring(start);
     }
 
     private static void assertWithinFourSigma(Map<String, Integer> counts, String key, int samples, double expected, String message) {

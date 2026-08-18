@@ -253,6 +253,19 @@ public final class LatitudeBiomes {
     }
 
     /**
+     * Is this column inside a savanna country? The warm-belt twin of
+     * {@link #badlandsProvinceHitForPolicyTest}, and exported for the same reason: the suite has to
+     * be able to ask WHERE savanna is supposed to live before it can assert that savanna lives
+     * there and forest lives everywhere else in the warm-medium belt (maintainer approval,
+     * 2026-08-18). Reads the active world seed, so it only answers meaningfully inside an activated
+     * worldgen context.
+     */
+    static boolean savannaCountryHitForPolicyTest(int blockX, int blockZ, int borderRadiusBlocks) {
+        int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : borderRadiusBlocks;
+        return savannaProvinceAuthorityHit(WORLD_SEED, blockX, blockZ, Math.max(1, radius));
+    }
+
+    /**
      * Diagnostic-only accessor for atlas/export tooling: returns the pre-rewrite band choice
      * from the blend comparator (chosenBandIndex) before the subtropical->temperate constitutional
      * rewrite is applied.
@@ -2847,6 +2860,82 @@ public final class LatitudeBiomes {
         return (dx * dx + dz * dz) <= (regionRadius * regionRadius);
     }
 
+    /**
+     * Is this column inside a savanna COUNTRY?
+     *
+     * <p>Modelled on {@link #badlandsProvinceAuthorityHitModern}, which is the mechanism that
+     * already turned "badlands is everywhere in the arid belt" into "badlands is a country inside
+     * it" (maintainer ruling, 2026-08-18). Same shape, same two layers, same radius-proportional
+     * scale, same equator mirroring, its own salts. The warm belt had the same disease one province
+     * over: every WARM_MEDIUM column resolved to a literal {@code minecraft:savanna} with no roll,
+     * no pool and no geography, so half the tropics was one biome. Savanna is now a region, and the
+     * belt around it is forest grading into the jungles.
+     *
+     * <p>Answers only inside WARM_MEDIUM, exactly as the badlands helper answers only inside
+     * WARM_DRY. That is what makes it safe to call from the shared province enforcer: a WARM_WET or
+     * WARM_DRY column can never be told it is savanna country, so neither the jungle core nor the
+     * accepted tropical-arid savanna floor can be moved by this field.
+     *
+     * <p>The province is re-derived here from {@link #authoritativeLandBandIndex} rather than taken
+     * from the caller, again matching the badlands helper. On a band-blend column whose picker band
+     * says subtropical while the authority says temperate, this returns false and the belt resolves
+     * to forest — which is the lawful answer at a temperate latitude, and the same fringe behaviour
+     * the 2026-08-18 dry-warm reroute measured (568 blend columns resolving to plains rather than
+     * stamping savanna past the band edge).
+     *
+     * <p>Article VI: two continuous {@code ValueNoise2D} fields, no {@code floorDiv}, no per-block
+     * hash, no anchored ellipse.
+     *
+     * <p>NO {@code useLegacyWorldgenPolicy()} BRANCH, deliberately — unlike the badlands template it
+     * is modelled on. That branch exists to preserve badlands geography in worlds born before the
+     * badlands province existed; this field is new in this slice, so no world has legacy savanna
+     * geography to preserve and the answer is policy-independent by design.
+     */
+    private static boolean savannaProvinceAuthorityHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
+        int radius = effectiveRadiusHint > 0 ? effectiveRadiusHint : ACTIVE_RADIUS_BLOCKS;
+        if (radius <= 0) {
+            radius = REFERENCE_DIAMETER_BLOCKS / 2;
+        }
+        radius = Math.max(1, radius);
+
+        ProvinceAuthority.Province province = warmProvinceClass(
+                blockX,
+                blockZ,
+                authoritativeLandBandIndex(blockX, blockZ, radius));
+        if (province != ProvinceAuthority.Province.WARM_MEDIUM) {
+            return false;
+        }
+
+        // Z sampling is mirrored about the equator and shifted to the midpoint of the WHOLE warm
+        // zone (equator to the temperate line), not of one band: WARM_MEDIUM spans tropical and
+        // subtropical together, so anchoring to either band alone would push the noise lattice off
+        // the other one on small worlds, exactly the failure the badlands helper anchors around.
+        int warmZoneHighAbsZ = bandBoundaryBlocks(1, radius);
+        int warmZoneMidZ = warmZoneHighAbsZ / 2;
+        int sampleZ = Math.abs(blockZ) - warmZoneMidZ;
+
+        int primaryScale = Math.max(
+                SAVANNA_PROVINCE_MIN_SCALE_BLOCKS,
+                (int) Math.round(radius * SAVANNA_PROVINCE_SCALE_FRAC));
+        double primary = ValueNoise2D.sampleBlocks(worldSeed ^ SAVANNA_REGION_SHAPE_SALT, blockX, sampleZ, primaryScale);
+        if (primary >= SAVANNA_PROVINCE_PRIMARY_MAX) {
+            return false;
+        }
+        int wobbleScale = Math.max(SAVANNA_PROVINCE_MIN_SCALE_BLOCKS / 2, primaryScale / 2);
+        double wobble = ValueNoise2D.sampleBlocks(worldSeed ^ SAVANNA_PROVINCE_WOBBLE_SALT, blockX, sampleZ, wobbleScale);
+        return wobble < SAVANNA_PROVINCE_WOBBLE_MAX;
+    }
+
+    /**
+     * {@link #savannaProvinceAuthorityHit} at the active world radius. The radius-hint fallback is
+     * the same one {@code chooseBadlandsVariant} uses, so the two country fields agree about what
+     * "this world" means when no context radius is set.
+     */
+    private static boolean savannaCountryHere(int blockX, int blockZ) {
+        int radiusHint = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+        return savannaProvinceAuthorityHit(WORLD_SEED, blockX, blockZ, radiusHint);
+    }
+
     private static boolean badlandsProvinceCoreHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
         int radius = effectiveRadiusHint > 0 ? effectiveRadiusHint : ACTIVE_RADIUS_BLOCKS;
         if (radius <= 0) {
@@ -2985,6 +3074,76 @@ public final class LatitudeBiomes {
     private static final long BADLANDS_PROVINCE_WOBBLE_SALT = 0x6261_646C_5F70_776FL; // "badl_pwo"
     private static final long BADLANDS_REGION_CORE_SHAPE_SALT = 0x6261_646C_5F636F72L; // "badl_cor"
     private static final long BADLANDS_OUTSIDE_PROVINCE_SALT = 0x6261_646C_5F6F7574L; // "badl_out"
+    // Savanna COUNTRY authority (maintainer approval, 2026-08-18: "I like the savanna plan").
+    // Fresh salts, so savanna countries and badlands provinces are independent geographies that
+    // happen to be drawn by the same kind of pen. They cannot overlap in any case: badlands answers
+    // only inside WARM_DRY, this one only inside WARM_MEDIUM.
+    private static final long SAVANNA_REGION_SHAPE_SALT = 0x7361_766E_5F73_6861L; // "savn_sha"
+    private static final long SAVANNA_PROVINCE_WOBBLE_SALT = 0x7361_766E_5F70_776FL; // "savn_pwo"
+    // Country size, as a fraction of the active world radius, with its own floor.
+    //
+    // MUCH finer than the badlands province's 0.28 / 2048, and the reason is geometry, not taste.
+    // The badlands province lives in the subtropical band and is allowed to span it; the savanna
+    // country lives in WARM_MEDIUM, which is dominated by the tropical band -- only ~2600 blocks
+    // deep at radius 10000. At the badlands scale the whole tropical belt fits inside ONE noise
+    // cell in Z, so a seed does not get savanna countries at all, it gets a single coin flip.
+    // Measured through the picker on the policy suite's three seeds at radius 10000 with frac 0.30:
+    // the country covered 6.3%, 30.8% and 74.0% of the tropical warm-medium belt -- the same field,
+    // the same thresholds, and a belt that is nearly all forest on one seed and nearly all savanna
+    // on the next. At 0.12 / 512 the belt spans roughly two cells in Z and sixteen in X, so a
+    // seed draws a handful of countries and the share converges on the field's own marginal.
+    //
+    // A cell is 1200 blocks at radius 10000, so single countries run from several hundred blocks to
+    // a couple of thousand -- the "regions hundreds of blocks across with soft edges" the plan asked
+    // for, and still far coarser than the 38-block variant tier that produces confetti.
+    private static final double SAVANNA_PROVINCE_SCALE_FRAC = 0.12;
+    // THE FLOOR IS THE SMALL-WORLD DIAL, and it is set by the SMALLEST world, not the reference one
+    // (1024 -> 512, 2026-08-18). The tropical band runs 0 to 23.5 degrees, i.e. 23.5/90 = 0.261 of
+    // the radius in Z, and that is the belt this field has to draw countries inside:
+    //
+    //   radius 3750 (Itty Bitty): belt  979 blocks deep. Floor 1024 -> 0.96 cells. Floor 512 -> 1.91
+    //   radius 10000 (Regular):   belt 2611 blocks deep. 0.12 * 10000 = 1200, so NEITHER floor binds
+    //
+    // At 1024 the smallest world's whole tropical belt sat inside ONE noise cell in Z -- the exact
+    // single-coin-flip geometry this constant's own note (three paragraphs up) rejects at the
+    // badlands scale, reintroduced on Itty Bitty by the floor rather than by the fraction. 512
+    // restores roughly two cells there and leaves every world at or above radius 4267 untouched,
+    // because above that 0.12 * radius already exceeds 512.
+    //
+    // Which sizes this moved: Itty Bitty (3750), Tiny (5000) and Small (7500) all had 0.12 * radius
+    // under the old 1024 floor and now use their proportional scale. Regular (10000), Large (15000)
+    // and Ginormous (20000) were never on the floor and are bit-for-bit unchanged.
+    private static final int SAVANNA_PROVINCE_MIN_SCALE_BLOCKS = 512;
+    // The wobble threshold is the badlands province's (0.72); the primary is NOT (0.64 against
+    // 0.52). The pair started out matching badlands and was raised on measurement, because what the
+    // two fields have to deliver is different: badlands wants a country covering about half its
+    // province, and the maintainer asked for tropical savanna at "roughly a third" of the tropical
+    // band. Note the two are not the same quantity -- the country covers a share of WARM_MEDIUM,
+    // and savanna then covers a share of the whole tropical band, which includes WARM_WET jungle
+    // the country never touches.
+    //
+    // Measured through the real picker over the whole tropical band (this file's policy suite,
+    // seeds 3 / 131 / 461, radius 10000, plains donor), tropical savanna share by primary:
+    //
+    //   0.52 -> 20.4% .. 23.2%
+    //   0.60 -> 24.3%
+    //   0.64 -> 26.3% .. 28.7%   <- SHIPPED, the maintainer-approved "roughly a third"
+    //   0.68 -> REJECTED: the coherence guard fails, seed 461 country share 77% (ceiling 0.75)
+    //
+    // RETUNE RULE. Each +0.04 on the primary buys roughly +2 points of tropical savanna. Above
+    // about 0.64 the binding constraint stops being taste and becomes the coherence guard: the
+    // country stops being a country and starts being the province again, which is the monoculture
+    // this whole slice removed. Retune DOWN freely; to go up, the country share assertion in
+    // savannaIsACountryInsideTheWarmBelt has to be re-argued first, not widened.
+    //
+    // The wobble threshold punches forest holes INSIDE the country. It is the texture dial, not the
+    // area one -- move the primary when you want more or less savanna.
+    //
+    // Why the coverage is not the naive product: ValueNoise2D is a bilinear blend of four uniform
+    // lattice values, so it is bell-shaped about 0.5 rather than flat, and the two fields are
+    // sampled at different scales rather than independently.
+    private static final double SAVANNA_PROVINCE_PRIMARY_MAX = 0.64;
+    private static final double SAVANNA_PROVINCE_WOBBLE_MAX = 0.72;
     // Outlier-mesa allowance: the fraction of dry columns OUTSIDE a badlands province that may still
     // come up badlands. 0.34 -> 0.06 (maintainer ruling, 2026-08-18). At 0.34 this was not an outlier
     // allowance at all, it was a second badlands province covering a third of everything outside the
@@ -5235,6 +5394,22 @@ public final class LatitudeBiomes {
     private static Holder<Biome> pickTropicalGradient(Registry<Biome> biomes, Holder<Biome> base, int blockX, int blockZ, double t) {
         int chunkX = blockX >> 4;
         int chunkZ = blockZ >> 4;
+        // DELIBERATELY false, and this is not the dead flag it looks like. Threading the column's
+        // real mountain truth in here was tried on 2026-08-18 and reverted the same day as INERT:
+        // the only consumer, blockNewSubtropicalNonMountainWindswept, can at best let a
+        // minecraft:windswept_savanna through, and filteredAllowedLandPool has already deleted
+        // windswept_savanna from the subtropical allowed pool on every non-mountain column
+        // (removeSubtropicalNonMountainWindsweptFamily, keyed on the pipeline's own mountainLike,
+        // which temperateMountainTerrainAuthority defines as false outside BAND_TEMPERATE). The
+        // pool filter closes the door this veto opens, so opening the veto changed no output.
+        //
+        // Repairing it for real means threading mountain truth into filteredAllowedLandPool, which
+        // changes the pool cache key landPoolVariantKey and therefore every cached band pool —
+        // deliberately deferred to its own slice rather than smuggled into a savanna pass.
+        //
+        // Maintainer-visible consequence in the meantime: minecraft:windswept_savanna is produced
+        // by the elevation tier only (savannaTierByY at blockY >= WINDSWEPT_MIN_Y), which runs
+        // downstream of the pool gate and is untouched by any of this.
         boolean mountainLike = false;
 
         long seed = WORLD_SEED;
@@ -5262,7 +5437,7 @@ public final class LatitudeBiomes {
         if (humidity < humidThreshold) {
             Holder<Biome> humidPick = pickFromWeightedTags(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
                     LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
-            Holder<Biome> humidOut = enforceWarmProvinceFamily(biomes, humidPick, warmProvince);
+            Holder<Biome> humidOut = enforceWarmProvinceFamily(biomes, humidPick, warmProvince, blockX, blockZ);
             return blockNewSubtropicalNonMountainWindswept(base, humidOut, mountainLike, BAND_SUBTROPICAL);
         }
         boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
@@ -5296,7 +5471,7 @@ public final class LatitudeBiomes {
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
         Holder<Biome> softened = softenSubtropicalBadlands(biomes, base, pick);
-        Holder<Biome> out = enforceWarmProvinceFamily(biomes, softened, warmProvince);
+        Holder<Biome> out = enforceWarmProvinceFamily(biomes, softened, warmProvince, blockX, blockZ);
         recordWarmDryPath("TROPICAL_GRADIENT", base, out, blockX, blockZ, BAND_SUBTROPICAL, warmProvince);
         return blockNewSubtropicalNonMountainWindswept(base, out, mountainLike, BAND_SUBTROPICAL);
     }
@@ -5344,6 +5519,10 @@ public final class LatitudeBiomes {
     private static Holder<Biome> pickTropicalGradient(Collection<Holder<Biome>> biomes, Holder<Biome> base, int blockX, int blockZ, double t) {
         int chunkX = blockX >> 4;
         int chunkZ = blockZ >> 4;
+        // DELIBERATELY false; see the Registry overload above for the whole reason (the subtropical
+        // pool filter deletes windswept_savanna before this veto can matter, and repairing that
+        // means re-keying landPoolVariantKey — its own slice). windswept_savanna keeps coming from
+        // savannaTierByY's elevation tier and nowhere else.
         boolean mountainLike = false;
 
         long seed = WORLD_SEED;
@@ -5371,7 +5550,7 @@ public final class LatitudeBiomes {
         if (humidity < humidThreshold) {
             Holder<Biome> humidPick = pickFromWeightedTags(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
                     LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
-            Holder<Biome> humidOut = enforceWarmProvinceFamily(biomes, humidPick, warmProvince);
+            Holder<Biome> humidOut = enforceWarmProvinceFamily(biomes, humidPick, warmProvince, blockX, blockZ);
             return blockNewSubtropicalNonMountainWindswept(base, humidOut, mountainLike, BAND_SUBTROPICAL);
         }
         boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
@@ -5403,7 +5582,7 @@ public final class LatitudeBiomes {
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
         Holder<Biome> softened = softenSubtropicalBadlands(biomes, base, pick);
-        Holder<Biome> out = enforceWarmProvinceFamily(biomes, softened, warmProvince);
+        Holder<Biome> out = enforceWarmProvinceFamily(biomes, softened, warmProvince, blockX, blockZ);
         recordWarmDryPath("TROPICAL_GRADIENT", base, out, blockX, blockZ, BAND_SUBTROPICAL, warmProvince);
         return blockNewSubtropicalNonMountainWindswept(base, out, mountainLike, BAND_SUBTROPICAL);
     }
@@ -7000,7 +7179,27 @@ public final class LatitudeBiomes {
     private static List<String> allowedExtraBiomeIdsForBand(int bandIndex) {
         return switch (bandIndex) {
             case BAND_TROPICAL -> List.of(
-                    SWAMP_ID);
+                    SWAMP_ID,
+                    // The warm belt's staple outside a savanna country (maintainer approval,
+                    // 2026-08-18). minecraft:forest's ledger routes are SUBTROPICAL_HUMID_LOWLAND
+                    // and TEMPERATE_LOWLAND, so it is already pool-legal one band poleward; this
+                    // line is what lets enforceWarmProvinceFamily's new WARM_MEDIUM answer survive
+                    // in the tropics at all.
+                    //
+                    // What it is actually worth, measured by reverting only this line and running
+                    // the policy suite (2026-08-18): from a jungle donor, outside-country forest
+                    // falls from 518/518 to 486/518 — the stages downstream of enforceLandBandPool
+                    // still produce most of it, so this alone is not the whole change. From a
+                    // SAVANNA donor it is decisive: 150 columns outside a savanna country come back
+                    // savanna, because the forest that sanitizeLandBiome produced upstream of the
+                    // pool gate gets rerolled and the belt re-derives its old identity. A donor that
+                    // is already savanna is the live-worldgen case, not a synthetic one.
+                    //
+                    // Admitted as a deliberate per-band seed — the swamp precedent directly above —
+                    // rather than by widening TROPICAL_HUMID_LOWLAND, because the route law
+                    // ("tropical lowland means the jungle family") is still true; forest is here as
+                    // a named exception, not as a humid-tropical identity.
+                    "minecraft:forest");
             case BAND_SUBTROPICAL -> List.of(
                     SWAMP_ID,
                     MANGROVE_ID);
@@ -8551,6 +8750,25 @@ public final class LatitudeBiomes {
         return safe != null ? safe : out;
     }
 
+    /**
+     * The largest single savanna producer in the pipeline, and the last stage that can turn a jungle
+     * identity into a warm-belt one.
+     *
+     * <p>It runs AFTER {@code enforceLandBandPool}, which is what makes it decisive rather than
+     * advisory: in the tropical band {@code minecraft:savanna} is not even pool-legal, so every
+     * tropical savanna reaching the surface from a jungle donor comes through this method. That is
+     * why the savanna country is consulted HERE explicitly instead of being left to arrive via the
+     * province enforcer — a gate that "looks wired and still stamps savanna" is this slice's known
+     * failure mode, and the policy suite reverts this branch on its own and requires the census to
+     * go back.
+     *
+     * <p>The WARM_DRY arm re-applies the three latitude demotes for the same reason
+     * {@code gateDryWarmIdentity} does (2026-08-18): this gate can hand out arid AFTER
+     * {@code applyFinalSavannaClimateClamp} has already run, and that clamp is where the tropical
+     * and poleward arid law lives. Before this, the arm returned {@code pickDryWarmFallback} desert
+     * with nothing downstream able to take it back — the defect recorded in that commit's message
+     * as "the same defect one step worse".
+     */
     private static Holder<Biome> gateWarmJungleSurvival(Registry<Biome> biomes,
                                                                Holder<Biome> out,
                                                                int landBandIndex,
@@ -8563,7 +8781,10 @@ public final class LatitudeBiomes {
             return out;
         }
         if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
-            Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, out, province);
+            // MUST STAY IDENTICAL to the Collection overload below, decision for decision.
+            Holder<Biome> rerouted = savannaCountryHere(blockX, blockZ)
+                    ? enforceWarmProvinceFamily(biomes, out, province, blockX, blockZ)
+                    : warmMediumOutsideCountryStaple(biomes, out);
             if (DEBUG_PROVINCE) {
                 int count = PROVINCE_DEBUG_COUNT.get();
                 if (count <= PROVINCE_DEBUG_LIMIT) {
@@ -8583,7 +8804,13 @@ public final class LatitudeBiomes {
                         blockX, blockZ, province, biomeId(out));
             }
         }
-        return pickDryWarmFallback(biomes, out);
+        // MUST STAY IDENTICAL to the Collection overload below, call for call and in this order.
+        Holder<Biome> dry = enforceWarmProvinceFamily(
+                biomes, out, ProvinceAuthority.Province.WARM_DRY, blockX, blockZ);
+        dry = demoteEquatorialBadlands(biomes, dry, blockX, blockZ);
+        dry = demoteEquatorialDesert(biomes, dry, blockX, blockZ);
+        dry = demotePolewardArid(biomes, dry, blockX, blockZ);
+        return dry;
     }
 
     private static Holder<Biome> gateWarmJungleSurvival(Collection<Holder<Biome>> biomes,
@@ -8598,7 +8825,12 @@ public final class LatitudeBiomes {
             return out;
         }
         if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
-            Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, out, province);
+            // MUST STAY IDENTICAL to the Registry overload above -- see the note there for why the
+            // savanna country is consulted in this gate explicitly rather than inherited from the
+            // province enforcer.
+            Holder<Biome> rerouted = savannaCountryHere(blockX, blockZ)
+                    ? enforceWarmProvinceFamily(biomes, out, province, blockX, blockZ)
+                    : warmMediumOutsideCountryStaple(biomes, out);
             if (DEBUG_PROVINCE) {
                 int count = PROVINCE_DEBUG_COUNT.get();
                 if (count <= PROVINCE_DEBUG_LIMIT) {
@@ -8618,7 +8850,31 @@ public final class LatitudeBiomes {
                         blockX, blockZ, province, biomeId(out));
             }
         }
-        return pickDryWarmFallback(biomes, out);
+        // MUST STAY IDENTICAL to the Registry overload above -- see the note there for why this arm
+        // now asks the province for its own desert-first order instead of pickDryWarmFallback, and
+        // why the three latitude demotes have to be re-applied to whatever it answers.
+        Holder<Biome> dry = enforceWarmProvinceFamily(
+                biomes, out, ProvinceAuthority.Province.WARM_DRY, blockX, blockZ);
+        dry = demoteEquatorialBadlands(biomes, dry, blockX, blockZ);
+        dry = demoteEquatorialDesert(biomes, dry, blockX, blockZ);
+        dry = demotePolewardArid(biomes, dry, blockX, blockZ);
+        return dry;
+    }
+
+    /**
+     * What a warm-medium column outside a savanna country resolves to: the forest staple, or the
+     * incoming identity untouched when the pack has no {@code minecraft:forest}. Shared by both
+     * {@link #gateWarmJungleSurvival} overloads so the two picker paths cannot drift on it.
+     */
+    private static Holder<Biome> warmMediumOutsideCountryStaple(Registry<Biome> biomes, Holder<Biome> fallback) {
+        Holder<Biome> forest = warmMediumForestStaple(biomes);
+        return forest != null ? forest : fallback;
+    }
+
+    /** Collection twin of {@link #warmMediumOutsideCountryStaple(Registry, Holder)}. */
+    private static Holder<Biome> warmMediumOutsideCountryStaple(Collection<Holder<Biome>> biomes, Holder<Biome> fallback) {
+        Holder<Biome> forest = warmMediumForestStaple(biomes);
+        return forest != null ? forest : fallback;
     }
 
     private static Holder<Biome> guardWarmMediumSparseJungleExplicitTag(Registry<Biome> biomes,
@@ -8636,7 +8892,7 @@ public final class LatitudeBiomes {
         if (province != ProvinceAuthority.Province.WARM_MEDIUM) {
             return pick;
         }
-        Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, pick, province);
+        Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, pick, province, blockX, blockZ);
         if (!sameBiomeId(pick, rerouted)) {
             setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "warm_medium_sparse_jungle_explicit_tag_guard", rerouted);
         }
@@ -8658,7 +8914,7 @@ public final class LatitudeBiomes {
         if (province != ProvinceAuthority.Province.WARM_MEDIUM) {
             return pick;
         }
-        Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, pick, province);
+        Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, pick, province, blockX, blockZ);
         if (!sameBiomeId(pick, rerouted)) {
             setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "warm_medium_sparse_jungle_explicit_tag_guard", rerouted);
         }
@@ -8799,7 +9055,7 @@ public final class LatitudeBiomes {
         //
         // MUST STAY IDENTICAL to the Collection overload below, call for call and in this order.
         Holder<Biome> rerouted = enforceWarmProvinceFamily(
-                biomes, out, ProvinceAuthority.Province.WARM_DRY);
+                biomes, out, ProvinceAuthority.Province.WARM_DRY, blockX, blockZ);
         rerouted = demoteEquatorialBadlands(biomes, rerouted, blockX, blockZ);
         rerouted = demoteEquatorialDesert(biomes, rerouted, blockX, blockZ);
         rerouted = demotePolewardArid(biomes, rerouted, blockX, blockZ);
@@ -8828,7 +9084,7 @@ public final class LatitudeBiomes {
         // now asks for the province's own desert-first order instead of naming savanna, and why the
         // three latitude demotes have to be re-applied to whatever it answers.
         Holder<Biome> rerouted = enforceWarmProvinceFamily(
-                biomes, out, ProvinceAuthority.Province.WARM_DRY);
+                biomes, out, ProvinceAuthority.Province.WARM_DRY, blockX, blockZ);
         rerouted = demoteEquatorialBadlands(biomes, rerouted, blockX, blockZ);
         rerouted = demoteEquatorialDesert(biomes, rerouted, blockX, blockZ);
         rerouted = demotePolewardArid(biomes, rerouted, blockX, blockZ);
@@ -8854,7 +9110,7 @@ public final class LatitudeBiomes {
             return out;
         }
         Holder<Biome> rerouted = enforceWarmProvinceFamily(
-                biomes, out, ProvinceAuthority.Province.WARM_WET);
+                biomes, out, ProvinceAuthority.Province.WARM_WET, blockX, blockZ);
         if (!sameBiomeId(out, rerouted)) {
             setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "warm_wet_desert_gate", rerouted);
         }
@@ -8870,7 +9126,7 @@ public final class LatitudeBiomes {
             return out;
         }
         Holder<Biome> rerouted = enforceWarmProvinceFamily(
-                biomes, out, ProvinceAuthority.Province.WARM_WET);
+                biomes, out, ProvinceAuthority.Province.WARM_WET, blockX, blockZ);
         if (!sameBiomeId(out, rerouted)) {
             setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "warm_wet_desert_gate", rerouted);
         }
@@ -10302,19 +10558,19 @@ public final class LatitudeBiomes {
             } catch (Throwable ignored) {
             }
             // Reachable only for a pack that removed minecraft:desert.
-            return enforceWarmProvinceFamily(biomes, base, warmProvince);
+            return enforceWarmProvinceFamily(biomes, base, warmProvince, blockX, blockZ);
         }
         Holder<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
         if (variant != null) {
             return variant;
         }
         if (!aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
-            return enforceWarmProvinceFamily(biomes, base, warmProvince);
+            return enforceWarmProvinceFamily(biomes, base, warmProvince, blockX, blockZ);
         }
         try {
             return biome(biomes, "minecraft:desert");
         } catch (Throwable ignored) {
-            return enforceWarmProvinceFamily(biomes, base, warmProvince);
+            return enforceWarmProvinceFamily(biomes, base, warmProvince, blockX, blockZ);
         }
     }
 
@@ -10560,17 +10816,17 @@ public final class LatitudeBiomes {
                 return outsideDesert;
             }
             // Reachable only for a pack that removed minecraft:desert.
-            return enforceWarmProvinceFamily(biomes, base, warmProvince);
+            return enforceWarmProvinceFamily(biomes, base, warmProvince, blockX, blockZ);
         }
         Holder<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
         if (variant != null) {
             return variant;
         }
         if (!aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
-            return enforceWarmProvinceFamily(biomes, base, warmProvince);
+            return enforceWarmProvinceFamily(biomes, base, warmProvince, blockX, blockZ);
         }
         Holder<Biome> desert = entryById(biomes, "minecraft:desert");
-        return desert != null ? desert : enforceWarmProvinceFamily(biomes, base, warmProvince);
+        return desert != null ? desert : enforceWarmProvinceFamily(biomes, base, warmProvince, blockX, blockZ);
     }
 
     private static void logSubtropicalJungleReturn(String pathLabel,
@@ -11284,9 +11540,30 @@ public final class LatitudeBiomes {
         return isBiomeId(biome, "minecraft:desert");
     }
 
+    /**
+     * The staple of the warm-medium belt outside a savanna country.
+     *
+     * <p>Returns null when the pack has removed {@code minecraft:forest}, in which case the callers
+     * fall back to the savanna chain — the belt keeps an identity rather than acquiring a hole.
+     */
+    private static Holder<Biome> warmMediumForestStaple(Registry<Biome> biomes) {
+        try {
+            return biome(biomes, "minecraft:forest");
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** Collection twin of {@link #warmMediumForestStaple(Registry)}. */
+    private static Holder<Biome> warmMediumForestStaple(Collection<Holder<Biome>> biomes) {
+        return entryById(biomes, "minecraft:forest");
+    }
+
     private static Holder<Biome> enforceWarmProvinceFamily(Registry<Biome> biomes,
                                                                   Holder<Biome> pick,
-                                                                  ProvinceAuthority.Province province) {
+                                                                  ProvinceAuthority.Province province,
+                                                                  int blockX,
+                                                                  int blockZ) {
         if (province == null || pick == null) {
             return pick;
         }
@@ -11318,7 +11595,48 @@ public final class LatitudeBiomes {
                 return pick;
             }
             case WARM_MEDIUM -> {
-                if (isSavannaFamily(pick)) return pick;
+                // Savanna is a COUNTRY inside this belt, not the belt itself (maintainer approval,
+                // 2026-08-18). savannaProvinceAuthorityHit is the authority for where that country
+                // is, in exactly the way badlandsProvinceAuthorityHit became the authority for the
+                // badlands country inside the arid belt on the same day. Inside it, nothing about
+                // this arm changes. Outside it, the warm-medium staple is minecraft:forest, which
+                // is what turns "the whole warm belt is savanna" into "savanna regions in a warm
+                // forest belt grading into the jungles".
+                //
+                // This is also why minecraft:forest had to be admitted to the tropical band pool in
+                // allowedExtraBiomeIdsForBand: this arm runs both upstream and downstream of
+                // enforceLandBandPool, and the upstream callers' forest is rerolled away without
+                // that admission. See the note there for what reverting it alone actually measures.
+                //
+                // TWO THINGS ESCAPE THIS COUNTRY, both accepted, both measured -- written down here
+                // so the next reader does not rediscover them as bugs:
+                //
+                //   (a) The equatorial demote gates (demoteEquatorialBadlands / demoteEquatorialDesert
+                //       / demotePolewardArid) hand back savanna without consulting the country at
+                //       all. That is the maintainer-accepted tropical-arid floor: their job is that
+                //       no desert or mesa stands in the tropics, and the identity they demote TO is
+                //       deliberately country-blind. Savanna produced that way can stand outside a
+                //       savanna country.
+                //
+                //   (b) Band-leak rerolls can put forest INSIDE a country, via the substitution pool
+                //       rather than through this arm. Accepted dilution; measured inside-country
+                //       savanna is 85-93% across the policy suite's seeds, not 100%, and that
+                //       remainder is what it is.
+                //
+                // MUST STAY IDENTICAL to the Collection overload below, decision for decision.
+                boolean inSavannaCountry = savannaCountryHere(blockX, blockZ);
+                if (isSavannaFamily(pick)) {
+                    // windswept_savanna is exempt from the country rule in both directions. It is
+                    // the WARM_UPLAND mountain identity, not the flat staple this country governs,
+                    // and it already has exactly one legal home (subtropical + real mountain, see
+                    // blockNewSubtropicalNonMountainWindswept). Rewriting it to forest out here
+                    // would close that home for the second time in one file's history.
+                    if (inSavannaCountry || isBiomeId(pick, "minecraft:windswept_savanna")) {
+                        return pick;
+                    }
+                    Holder<Biome> outsideForest = warmMediumForestStaple(biomes);
+                    return outsideForest != null ? outsideForest : pick;
+                }
                 // Preserve climate-appropriate variety so the warm-medium belt isn't flattened into a
                 // savanna monoculture: keep reviewed custom biomes unless their descriptor says
                 // they are jungle-family humidity identities. Those follow the same final rule as
@@ -11326,6 +11644,14 @@ public final class LatitudeBiomes {
                 // NOTE: WARM_DRY intentionally does NOT preserve custom — the tropical-arid LAW relies
                 // on the downstream demote catching VANILLA badlands/desert, which a custom arid would bypass.
                 if (isCustomBiome(pick) && !isReviewedJungleFamily(pick)) return pick;
+                if (!inSavannaCountry) {
+                    Holder<Biome> outsideForest = warmMediumForestStaple(biomes);
+                    if (outsideForest != null) {
+                        return outsideForest;
+                    }
+                    // Only a pack that removed minecraft:forest gets here; fall through to the
+                    // savanna chain rather than leave the belt without an identity.
+                }
                 try {
                     return biome(biomes, "minecraft:savanna");
                 } catch (Throwable ignored) {
@@ -11379,7 +11705,9 @@ public final class LatitudeBiomes {
 
     private static Holder<Biome> enforceWarmProvinceFamily(Collection<Holder<Biome>> biomes,
                                                                   Holder<Biome> pick,
-                                                                  ProvinceAuthority.Province province) {
+                                                                  ProvinceAuthority.Province province,
+                                                                  int blockX,
+                                                                  int blockZ) {
         if (province == null || pick == null) {
             return pick;
         }
@@ -11405,8 +11733,27 @@ public final class LatitudeBiomes {
                 return pick;
             }
             case WARM_MEDIUM -> {
-                if (isSavannaFamily(pick)) return pick;
+                // MUST STAY IDENTICAL to the Registry overload above -- see the note there for why
+                // savanna is a country inside this belt rather than the belt itself, why
+                // windswept_savanna is exempt in both directions, why minecraft:forest had to be
+                // admitted to the tropical band pool for any of it to survive, and for the two
+                // accepted leaks out of the country system (country-blind demote gates; band-leak
+                // rerolls diluting the inside of a country).
+                boolean inSavannaCountry = savannaCountryHere(blockX, blockZ);
+                if (isSavannaFamily(pick)) {
+                    if (inSavannaCountry || isBiomeId(pick, "minecraft:windswept_savanna")) {
+                        return pick;
+                    }
+                    Holder<Biome> outsideForest = warmMediumForestStaple(biomes);
+                    return outsideForest != null ? outsideForest : pick;
+                }
                 if (isCustomBiome(pick) && !isReviewedJungleFamily(pick)) return pick;
+                if (!inSavannaCountry) {
+                    Holder<Biome> outsideForest = warmMediumForestStaple(biomes);
+                    if (outsideForest != null) {
+                        return outsideForest;
+                    }
+                }
                 Holder<Biome> savanna = entryById(biomes, "minecraft:savanna");
                 if (savanna != null) return savanna;
                 Holder<Biome> plateau = entryById(biomes, "minecraft:savanna_plateau");
@@ -11987,7 +12334,7 @@ public final class LatitudeBiomes {
         if (bandIndex == BAND_TROPICAL) {
             ProvinceAuthority.Province warmProvince = warmProvinceClass(blockX, blockZ, bandIndex);
             if (isWarmFamily(pick)) {
-                return enforceWarmProvinceFamily(biomes, pick, warmProvince);
+                return enforceWarmProvinceFamily(biomes, pick, warmProvince, blockX, blockZ);
             }
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
@@ -11998,6 +12345,15 @@ public final class LatitudeBiomes {
                     double openness = tropicalOpennessNoise(blockX, blockZ);
                     double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
                     // Coarse, rare promotion only when both signals are strongly open/wet.
+                    //
+                    // THE THRESHOLD PAIR BELOW IS THE CANONICAL ONE. Its Collection twin used to
+                    // run on 0.76 / 0.06 with a different branch ladder, so the same column could
+                    // be repainted by one picker and left alone by the other — invisible while
+                    // forest was pool-illegal in the tropics and enforceLandBandPool erased the
+                    // difference, and load-bearing the moment forest became pool-legal (2026-08-18).
+                    // The strict pair wins because this promotion has to be the rare exception the
+                    // comment above says it is: a warm belt whose staple is now forest cannot also
+                    // repaint three quarters of its forest columns.
                     if (openness < 0.92 || compositionBias <= 0.20) {
                         return pick; // keep temperate winner; avoid speckle repaint
                     }
@@ -12009,7 +12365,11 @@ public final class LatitudeBiomes {
                     } else {
                         promoted = biome(biomes, "minecraft:sparse_jungle");
                     }
-                    return enforceWarmProvinceFamily(biomes, promoted, warmProvince);
+                    // The savanna branch above is a REQUEST, not the answer: it is handed to the
+                    // province enforcer, which grants it only inside a savanna country and answers
+                    // forest outside one. That is what makes this repaint respect the country
+                    // instead of quietly reintroducing savanna wherever openness happens to be high.
+                    return enforceWarmProvinceFamily(biomes, promoted, warmProvince, blockX, blockZ);
                 } catch (Throwable ignored) {
                     return pick;
                 }
@@ -12119,7 +12479,7 @@ public final class LatitudeBiomes {
             allowProvinceFamilyRewrite = false;
         }
         if (allowProvinceFamilyRewrite) {
-            out = enforceWarmProvinceFamily(biomes, out, warmProvince);
+            out = enforceWarmProvinceFamily(biomes, out, warmProvince, blockX, blockZ);
         }
         // Earth-analog latitude gate. Arid picks reach the deep equator on some seeds (WARM_DRY
         // pockets are latitude-independent), so demote them -> savanna below the equator ramp here,
@@ -12160,7 +12520,7 @@ public final class LatitudeBiomes {
         if (bandIndex == BAND_TROPICAL) {
             ProvinceAuthority.Province warmProvince = warmProvinceClass(blockX, blockZ, bandIndex);
             if (isWarmFamily(pick)) {
-                return enforceWarmProvinceFamily(biomes, pick, warmProvince);
+                return enforceWarmProvinceFamily(biomes, pick, warmProvince, blockX, blockZ);
             }
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
@@ -12169,17 +12529,23 @@ public final class LatitudeBiomes {
                     || isBiomeId(pick, "minecraft:flower_forest")) {
                 double openness = tropicalOpennessNoise(blockX, blockZ);
                 double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
-                if (openness < 0.76 || compositionBias <= 0.06) {
-                    return pick; // neutral/marginal openness → keep the original temperate winner
+                // RECONCILED to the Registry overload above (2026-08-18): thresholds 0.76 / 0.06
+                // and a two-signal ladder here against 0.92 / 0.20 and a three-branch ladder there
+                // meant the two pickers disagreed about which tropical columns get repainted at all.
+                // See that overload for why the strict pair is the canonical one. These two must
+                // stay identical, number for number and branch for branch — a divergence is live
+                // generation parting company with the map the atlas drew.
+                if (openness < 0.92 || compositionBias <= 0.20) {
+                    return pick; // keep temperate winner; avoid speckle repaint
                 }
-                Holder<Biome> entry = openness >= 0.90
+                Holder<Biome> entry = (openness >= 0.96 && compositionBias > 0.28)
                         ? entryById(biomes, "minecraft:savanna")
-                        : (openness >= 0.78 && compositionBias > 0.12
+                        : (compositionBias > 0.32
                         ? entryById(biomes, SWAMP_ID)
                         : entryById(biomes, "minecraft:sparse_jungle"));
                 if (entry == null) entry = entryById(biomes, "minecraft:sparse_jungle");
                 if (entry == null) entry = entryById(biomes, "minecraft:jungle");
-                Holder<Biome> out = enforceWarmProvinceFamily(biomes, entry != null ? entry : pick, warmProvince);
+                Holder<Biome> out = enforceWarmProvinceFamily(biomes, entry != null ? entry : pick, warmProvince, blockX, blockZ);
                 recordWarmDryPath("SANITIZE_REWRITE", pick, out, blockX, blockZ, bandIndex, warmProvince);
                 return out;
             }
@@ -12281,7 +12647,7 @@ public final class LatitudeBiomes {
             allowProvinceFamilyRewrite = false;
         }
         if (allowProvinceFamilyRewrite) {
-            out = enforceWarmProvinceFamily(biomes, out, warmProvince);
+            out = enforceWarmProvinceFamily(biomes, out, warmProvince, blockX, blockZ);
         }
         // Earth-analog latitude gate. Arid picks reach the deep equator on some seeds (WARM_DRY
         // pockets are latitude-independent), so demote them -> savanna below the equator ramp here,
