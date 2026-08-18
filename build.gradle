@@ -124,6 +124,12 @@ loom {
             vmArg "-Dlatdev.biomePng=${System.getProperty('latdev.biomePng', 'enabled')}"
             vmArg "-Dlatdev.locateBoundary=${System.getProperty('latdev.locateBoundary', '')}"
             vmArg "-Dlatitude.debugWorldgenPath=${System.getProperty('latitude.debugWorldgenPath', 'false')}"
+            // Terrain-aware atlas was reachable in code but not from the command line: BiomePreviewExporter
+            // reads this system property, and without forwarding it the preview JVM never saw it. A
+            // non-terrain-aware run nulls noiseConfig/heightView, so every column classifies flat and any
+            // terrain-gated rule is invisible to the map -- a census that silently cannot see what it claims
+            // to measure. Defaults false, so ordinary runs stay byte-identical.
+            vmArg "-Dlatitude.atlasTerrainAware=${System.getProperty('latitude.atlasTerrainAware', 'false')}"
         }
         biomeSeedSearch {
             server()
