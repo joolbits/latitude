@@ -53,6 +53,7 @@ final class BiomeProviderSelectionPolicyTest {
         polarExtremeCapCatchesNameAlikeModdedBiomesConsistently();
         windsweptFamilyIsSubpolarMountainOnly();
         desertIsTheStapleOfTheSubtropicalAridBelt();
+        dryWarmIdentityGateUsesTheDesertFirstOrder();
         cliffTreeLandAndOceanAreActuallyReachable();
         riverAndBeachAdmissionIsTagDrivenAndVanillaSafe();
         everyLedgerLandRouteSurvivesTheBandPoolGate();
@@ -3077,6 +3078,175 @@ final class BiomeProviderSelectionPolicyTest {
             }
         }
         return census;
+    }
+
+    /**
+     * The dry-warm identity gate is the last rewrite in the picker that can still name a warm biome,
+     * and until 2026-08-18 it named {@code minecraft:savanna} outright. That left it as the one
+     * place answering "what is a dry warm column" with grassland while enforceWarmProvinceFamily and
+     * pickAridRegionFallback -- reconciled to desert, then badlands, then savanna by the same ruling
+     * on the same day -- answered with sand. This pins the gate to that single order, and pins the
+     * latitude law it now has to re-apply for itself.
+     *
+     * <p>HONEST SCOPE — read this before treating any part of the method as proof of the gate's
+     * world effect. Section 1 is the teeth: it fails on the old code and passes on the new. Sections
+     * 2 and 3 were green before the change too, and they are guards, not proof. The reason is
+     * structural and is worth writing down rather than rediscovering: applyFinalSavannaClimateClamp
+     * runs BEFORE this gate in both pickers, and on a WARM_DRY column it always ends in the province
+     * rewrite — so by the time the gate is reached the column is already desert or badlands and the
+     * gate's own {@code isDryWarmIdentity} early return fires. The only stage between the clamp and
+     * the gate that can put a non-arid identity back is the vanilla coverage plan, and the only
+     * routes it may place on a WARM_DRY subtropical column are WARM_TRANSITION, WARM_UPLAND and the
+     * ARID pair — whose VANILLA members are all savanna-family or arid-family, so they early-return
+     * too. On a vanilla-only roster this gate therefore cannot fire, the census in section 2 reads
+     * identically before and after, and no behavioural sweep in this suite can have teeth on it.
+     * It fires for packs: a WARM_TRANSITION-route modded biome that is neither savanna-family nor an
+     * arid id (terralith:brushland, biomesoplenty:mediterranean_forest) is exactly what reaches it,
+     * and that is the world this fix changes.
+     */
+    private static void dryWarmIdentityGateUsesTheDesertFirstOrder() throws Exception {
+        // 1. THE REGRESSION TEST, and the only part of this method that fails on the old code. Both
+        //    overloads must resolve through the shared province helper rather than naming a savanna
+        //    id themselves, and each must re-apply the three latitude demotes AFTER it, because
+        //    this gate is the one arid producer that runs downstream of the clamp that owns them.
+        String source = read("src/main/java/com/example/globe/world/LatitudeBiomes.java");
+        String registryGate = method(source,
+                "private static Holder<Biome> gateDryWarmIdentity(Registry<Biome> biomes,");
+        String collectionGate = method(source,
+                "private static Holder<Biome> gateDryWarmIdentity(Collection<Holder<Biome>> biomes,");
+        for (String gate : List.of(registryGate, collectionGate)) {
+            String body = normalize(gate);
+            assertFalse(body.contains("minecraft:savanna"),
+                    "the dry-warm gate must not name a savanna id itself — savanna is the LAST "
+                            + "resort of the dry province, reachable only through the shared "
+                            + "province helper, and hardcoding it here is exactly how this gate "
+                            + "came to disagree with the desert-first ruling: " + body);
+            int enforce = body.indexOf("enforceWarmProvinceFamily(");
+            int badlands = body.indexOf("demoteEquatorialBadlands(");
+            int desert = body.indexOf("demoteEquatorialDesert(");
+            int poleward = body.indexOf("demotePolewardArid(");
+            assertTrue(enforce >= 0,
+                    "the dry-warm gate must resolve through the same helper every other dry "
+                            + "province column resolves through: " + body);
+            assertTrue(body.contains("out, ProvinceAuthority.Province.WARM_DRY)"),
+                    "the dry-warm gate must ask that helper for the WARM_DRY family explicitly: "
+                            + body);
+            assertTrue(badlands > enforce && desert > badlands && poleward > desert,
+                    "this gate runs after applyFinalSavannaClimateClamp, so it must re-apply that "
+                            + "clamp's three latitude demotes, in the clamp's order, to whatever it "
+                            + "answers — without them a gate-made desert stands at the equator with "
+                            + "nothing downstream left to take it back: " + body);
+        }
+        // The two overloads have to be the same world, not merely both correct. Everything from the
+        // helper call onward is compared literally.
+        assertEquals(
+                normalize(registryGate.substring(registryGate.indexOf("Holder<Biome> rerouted ="))),
+                normalize(collectionGate.substring(collectionGate.indexOf("Holder<Biome> rerouted ="))),
+                "the two dry-warm gate overloads must resolve identically, call for call — a "
+                        + "divergence here is live generation parting company with the map the "
+                        + "atlas drew");
+
+        // 2 and 3 drive the real picker, so they need a live worldgen context.
+        net.minecraft.SharedConstants.tryDetectVersion();
+        net.minecraft.server.Bootstrap.bootStrap();
+        MappedRegistry<Biome> registry = testBiomeRegistry();
+        List<Holder<Biome>> pool = registry.listElements()
+                .map(entry -> (Holder<Biome>) entry)
+                .toList();
+        int radius = 10_000;
+        Climate.Sampler sampler = coverageSampler(null);
+        List<String> ids = registry.keySet().stream().map(Identifier::toString).toList();
+
+        for (long seed : new long[]{3L, 131L, 461L}) {
+            BiomeSelectionProfile profile = BiomeSelectionProfile.capture(ids);
+            try {
+                LatitudeBiomes.activateWorldgenContext(
+                        radius,
+                        seed,
+                        LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE,
+                        profile,
+                        VanillaBiomeRepresentationProfile.capture(radius, seed, profile),
+                        sampler,
+                        null,
+                        63);
+                VanillaBiomeCoveragePlan plan = LatitudeBiomes.activeVanillaCoveragePlanForPolicyTest();
+                assertTrue(plan != null && plan.complete(),
+                        "the dry-warm gate proof needs a complete birth-locked land plan (seed="
+                                + seed + ")");
+
+                // 2. A humid donor is the shape of donor this gate exists to catch. Whatever route
+                //    it takes, the subtropical dry province must hand back DESERT — never the
+                //    grassland this gate used to name — and the two pickers must not disagree about
+                //    which of desert/badlands the column is.
+                AridBeltCensus humid = censusSubtropicalDryProvince(
+                        registry, pool, testBiomeHolder(registry, "minecraft:jungle"),
+                        radius, sampler, plan);
+                assertTrue(humid.dryColumns >= 50,
+                        "the sweep must actually land in the subtropical dry province, or it proves "
+                                + "nothing: seed=" + seed + " columns=" + humid.dryColumns);
+                assertGreaterThan(0.15, humid.dryDesert / (double) humid.dryColumns,
+                        "a jungle donor standing in the subtropical dry province must come out as "
+                                + "desert at a real rate, not be talked into savanna: seed=" + seed
+                                + " desert=" + humid.dryDesert
+                                + " badlands=" + humid.dryBadlands
+                                + " of " + humid.dryColumns + " dry columns");
+                assertTrue(humid.outsideProvince >= 20,
+                        "the sweep must reach dry ground outside the badlands province: seed=" + seed
+                                + " outside=" + humid.outsideProvince);
+                assertGreaterThan(0.70,
+                        humid.outsideProvinceDesert / (double) humid.outsideProvince,
+                        "outside its own province the dry belt reads as desert for a humid donor "
+                                + "too: seed=" + seed + " desert=" + humid.outsideProvinceDesert
+                                + " badlands=" + humid.outsideProvinceBadlands
+                                + " of " + humid.outsideProvince + " columns outside the province");
+                assertEquals(0, humid.familyDisagreements,
+                        "the registry and collection pickers must never disagree about desert vs "
+                                + "badlands at the same column, from a humid donor either (seed="
+                                + seed + ")");
+
+                // 3. EQUATOR GUARD, from the humid donors that reach the late warm gates. "Tropical
+                //    desert and badlands stay exactly zero" is a release constraint, and this gate
+                //    now produces arid on a path that runs AFTER the clamp which owns the tropical
+                //    law — so the law is re-applied inside the gate, and this sweep is what says so.
+                //    aridFamilyOf() answers "other" for everything that is neither desert nor one of
+                //    the three badlands ids, which is exactly the ARID_IDS set.
+                int tropicalColumns = 0;
+                for (String donorId : new String[]{"minecraft:jungle", "minecraft:forest"}) {
+                    Holder<Biome> donor = testBiomeHolder(registry, donorId);
+                    for (double fraction : new double[]{0.04, 0.10, 0.16, 0.22}) {
+                        for (int sign : new int[]{1, -1}) {
+                            int z = sign * (int) Math.round(radius * fraction);
+                            for (int x = -8_192; x <= 8_192; x += 512) {
+                                if ((long) x * x + (long) z * z >= (long) radius * radius) continue;
+                                // 0 == BAND_TROPICAL.
+                                if (LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, z, radius) != 0) {
+                                    continue;
+                                }
+                                tropicalColumns++;
+                                String registryId = LatitudeBiomes.biomeIdPublic(LatitudeBiomes.pick(
+                                        registry, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER"));
+                                String collectionId = LatitudeBiomes.biomeIdPublic(LatitudeBiomes.pick(
+                                        pool, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER"));
+                                String where = " — even from a " + donorId + " donor — at x=" + x
+                                        + " z=" + z + " (lat=" + (fraction * 90.0) + " degrees, seed="
+                                        + seed + ")";
+                                assertEquals("other", aridFamilyOf(registryId),
+                                        "the tropical band must never return arid" + where
+                                                + " (registry): " + registryId);
+                                assertEquals("other", aridFamilyOf(collectionId),
+                                        "the tropical band must never return arid" + where
+                                                + " (collection): " + collectionId);
+                            }
+                        }
+                    }
+                }
+                assertTrue(tropicalColumns >= 300,
+                        "the equator guard must actually reach the tropical band: seed=" + seed
+                                + " columns=" + tropicalColumns);
+            } finally {
+                LatitudeBiomes.clearWorldgenContext();
+            }
+        }
     }
 
     private static void assertWithinFourSigma(Map<String, Integer> counts, String key, int samples, double expected, String message) {

@@ -8780,11 +8780,30 @@ public final class LatitudeBiomes {
                         blockX, blockZ, province, biomeId(out));
             }
         }
-        try {
-            return biome(biomes, "minecraft:savanna");
-        } catch (Throwable ignored) {
-            return out;
-        }
+        // Answer with the dry province's own order -- desert, then badlands, then savanna as the
+        // last resort -- instead of naming savanna outright (maintainer ruling, 2026-08-18). This
+        // was the last savanna-hardcoded WARM_DRY path left in the pipeline: enforceWarmProvinceFamily
+        // and pickAridRegionFallback were both put on desert-first the same day, and this gate
+        // quietly disagreed with them, so every column it caught came out grassland no matter what
+        // the province said. It now asks the same helper they do, so "what is a dry warm column"
+        // has one answer instead of two.
+        //
+        // The three latitude demotes below are NOT decoration. This gate is the only thing that can
+        // hand out arid AFTER applyFinalSavannaClimateClamp has already run, and that clamp is where
+        // the latitude law lives: no desert or badlands anywhere in the tropics, and none past the
+        // temperate line. Producing sand here and stopping would leave desert standing at the
+        // equator with nothing downstream left to take it back. So the same three gates the clamp
+        // applies are applied to this answer too, in the clamp's order. At tropical latitudes that
+        // turns the desert straight back into savanna -- exactly what this gate used to return
+        // there -- so the tropics come out unchanged by construction.
+        //
+        // MUST STAY IDENTICAL to the Collection overload below, call for call and in this order.
+        Holder<Biome> rerouted = enforceWarmProvinceFamily(
+                biomes, out, ProvinceAuthority.Province.WARM_DRY);
+        rerouted = demoteEquatorialBadlands(biomes, rerouted, blockX, blockZ);
+        rerouted = demoteEquatorialDesert(biomes, rerouted, blockX, blockZ);
+        rerouted = demotePolewardArid(biomes, rerouted, blockX, blockZ);
+        return rerouted;
     }
 
     private static Holder<Biome> gateDryWarmIdentity(Collection<Holder<Biome>> biomes,
@@ -8805,8 +8824,15 @@ public final class LatitudeBiomes {
                         blockX, blockZ, province, biomeId(out));
             }
         }
-        Holder<Biome> safe = entryById(biomes, "minecraft:savanna");
-        return safe != null ? safe : out;
+        // MUST STAY IDENTICAL to the Registry overload above -- see the note there for why this gate
+        // now asks for the province's own desert-first order instead of naming savanna, and why the
+        // three latitude demotes have to be re-applied to whatever it answers.
+        Holder<Biome> rerouted = enforceWarmProvinceFamily(
+                biomes, out, ProvinceAuthority.Province.WARM_DRY);
+        rerouted = demoteEquatorialBadlands(biomes, rerouted, blockX, blockZ);
+        rerouted = demoteEquatorialDesert(biomes, rerouted, blockX, blockZ);
+        rerouted = demotePolewardArid(biomes, rerouted, blockX, blockZ);
+        return rerouted;
     }
 
     private static boolean warmWetDesertNeedsReroute(Holder<Biome> out,
