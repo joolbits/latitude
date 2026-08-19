@@ -3,33 +3,107 @@
 ## Latitude 1.5.1-beta.1 (Minecraft 26.2)
 
 A fix-and-polish pass on top of 1.5.0, carrying forward fixes discovered while porting Latitude to
-other Minecraft versions plus a round of live-tested UI cleanup. **Beta:** shipped for testing
-before the 1.5.1 stable tag.
+other Minecraft versions, a full worldgen variety pass, a compatibility fix affecting anyone
+running TerraBlender, and a round of live-tested UI cleanup. **Beta:** shipped for testing before
+the 1.5.1 stable tag. This update rounds out recent custom-biome integration work, but the sharpest
+fix is for the vanilla fallback. Without custom biome packs, biome admission was badly skewed and savanna
+was crowding the tropics, for one example.
 
-- **Windswept forest/hills snow reads correctly again.** Cold-enough windswept terrain was losing
-  its snow cover regardless of temperature; it's evaluated against the biome's own temperature now,
-  and windswept peaks get their own, more generous snow line.
+### World generation
+
+- **Windswept hills no longer dominate the polar band.** They were showing up snowless across the
+  pole with green grass and foliage; now correctly restricted to genuine cold mountain
+  terrain, and the pole reads more varied as a result.
+- **Desert is the staple of the arid belt again.** Badlands had been crowding it out almost
+  entirely. Badlands now generates as coherent regional patches inside a desert-dominant belt
+  instead of everywhere.
+- **Fixed bug where Savanna dominated the tropics.** It's now a coherent region with real borders, set
+  inside a proper mix of forest and jungle, and still forms the natural transition band hugging
+  every arid area.
+- **Custom biomes: Muskeg, ice marsh, and glacier cliff were unplaceable in every world.** Fixed — a disagreement
+  between two internal systems meant they were admitted but never actually reachable.
+- **Wetlands could appear in bone-dry regions, and deserts in explicitly wet ones.** Both directions
+  fixed.
+- **Rivers and beaches can now come from installed biome packs**, not only vanilla.
+- **`eroded_badlands` was structurally unplaceable in every world**, logging a coverage warning on
+  every load. Fixed.
+- **Redwood forest (a custom biome) now routes through the correct pool**, correcting a stale route
+  from an earlier port.
+- **Alpine terrain respects real snow footing**, and badlands structures keep their intended
+  desolate look instead of getting dressed up by nearby biomes.
 - **Custom-pack biomes decorate properly.** Biomes admitted only through a pack's provider ticket
   (not through Latitude's own band tags) could generate with no flowers, grass, or other decoration
-  at all. Confirmed live with real BiomesOPlenty/TerraBlender jars and fixed.
-- **`/locate biome` can find custom-pack biomes.** Previously reported "not found" immediately for
-  any biome outside Latitude's own tag set, even when it was generating nearby.
+  at all. Confirmed live with real Biomes O' Plenty/TerraBlender jars and fixed.
 - **Dedicated/server-created worlds now place custom-pack biomes at all.** That capture previously
   only happened for worlds created through the in-game screen.
 - **`savanna_plateau` no longer overrides a correct low-elevation biome choice.**
-- **The loading screen no longer flashes vanilla's own screen first** on world entry.
-- **The compass HUD no longer shifts position** when the location label's length changes, and it no
-  longer renders at all outside a Latitude world.
-- **Latitude reliably recognizes its own worlds** even when another worldgen mod (e.g. CliffTree)
-  is also installed, instead of silently falling back to vanilla terrain behind a Latitude loading
-  screen.
 - **The bonus chest no longer spawns floating over water.**
-- **Steep warm terrain no longer gets flattened onto a plains-family biome** — the land-cohesion
-  check that prevents this is now active rather than silently skipped.
-- **World-creation screen:** Cancel no longer occasionally selects a climate zone instead of closing
-  the screen; the layout is tighter (less dead space around the edges and between panels); climate
-  zone entries now have a visual divider between them; and the second tab correctly reads
-  "Settings."
+- *Known trade-off:* since forest doesn't spawn villages (vanilla behavior), warm-belt village
+  density drops somewhat now that savanna covers less ground. Villages remain common inside savanna
+  regions themselves.
+
+### Snow
+
+- **Windswept hills/forest at cold-but-not-freezing latitudes were showing bare grey grass with no
+  snow.** Three separate causes, all fixed, and windswept terrain now has its own lower snow line so
+  it reads as snow-capped.
+- **A leftover "orphaned" white-rimmed grass glitch** from snow removal is fixed.
+- **The tree line and foliage limit are now correctly separate rules** — trees stop at 72° latitude,
+  ground vegetation continues to the pole.
+- *(Snow fixes only affect newly-generated terrain — already-explored chunks are unchanged.)*
+
+### Sulfur caves
+
+**Sulfur caves generated completely empty** — no ore, no decoration. Root-caused and fixed at every
+layer, including a compatibility conflict with TerraBlender (pulled in by Biomes O' Plenty) that was
+silently overriding Latitude's terrain rules. Fixing that also restored **badlands' proper
+terracotta look** for anyone with TerraBlender installed — it had been silently using an old,
+untuned vanilla appearance instead.
+
+### World Creation screen
+
+- **Cancel could accidentally select a climate zone instead of closing the screen**, at high GUI
+  scale. Fixed.
+- **Tighter margins and spacing**, and a visual divider between climate zone entries.
+- **The second tab now correctly reads "Settings"** (was mislabeled "Rules").
+- **A new title-intro animation** plays once per screen-open in the compact layout.
+- **The loading screen no longer flashes vanilla's own screen first.**
+- **The compass HUD no longer shifts position** when the location label changes length, and no
+  longer renders outside a Latitude world.
+
+### Compatibility
+
+- **Latitude reliably recognizes its own worlds even with other world-gen mods installed**
+  (confirmed with CliffTree). It previously could silently fall back to vanilla terrain while still
+  showing Latitude's loading screen and HUD — now it either works correctly or fails loudly with a
+  clear error.
+- **Steep temperate terrain no longer gets flattened onto a plains-family biome** — the
+  land-cohesion check that prevents this is now active rather than silently skipped.
+
+### `/locate` and structures fixes
+
+- **`/locate biome` can now find custom-pack biomes**, not just vanilla.
+- **`/locate` now returns the actual nearest match**, not just the first one found along the search
+  path.
+- **Structures now generate using Latitude's own biome map.** This ensures that structures are placed
+  in the correct biomes, even when custom biome packs are installed. This also fixes an issue where
+  structures were not generating in some biomes.
+- **New worlds' spawn point reliably stays inside your selected latitude.**
+
+### Other
+
+- Corrected license inconsistencies and confirmed alignment to GPL-3.0-or-later.
+- Reduced unnecessary log-file bloat from the World Creation screen.
+
+### Known issues
+
+- A rare seam where a lush temperate biome can directly border an arid subtropical one (e.g. flower
+  forest against badlands) at the exact latitude-band boundary. Deferred — a fix is designed for a
+  future pass.
+- Windswept hills are correctly restricted to cold mountains now, but are still fairly rare there
+  (~3–6% of that terrain) — an open art-direction question, not a bug.
+- Climate-zone rows on the World Creation screen have extra spacing at high GUI scale. Known,
+  intentionally left for now.
 
 ## Latitude 1.5.0 (Minecraft 26.2)
 
