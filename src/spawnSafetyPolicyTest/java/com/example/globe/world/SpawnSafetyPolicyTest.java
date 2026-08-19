@@ -1,5 +1,7 @@
 package com.example.globe.world;
 
+import com.example.globe.util.LatitudeBands;
+import com.example.globe.util.LatitudeMath;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,12 +14,66 @@ public final class SpawnSafetyPolicyTest {
 
     public static void main(String[] args) throws Exception {
         searchBoundsStayInsideTerrainAndWarningMargins();
+        spawnLatitudesSitAtTheMidpointOfTheirOwnBand();
         initialSpawnStaysInRequestedLatitudeWithBoundedFallback();
         fallbackCandidatesAreDeterministicBoundedAndValidated();
         hazardousSurfacesAreRejected();
         heightmapPositionIsTheSpawnSpaceAboveGround();
         productionUsesTheValidatedCoordinateAndSurfacePolicy();
         System.out.println("SPAWN_SAFETY_POLICY_TEST_PASS");
+    }
+
+    /**
+     * Every canonical zone must spawn a player inside the zone they asked for. The retired
+     * hand-picked fractions did not: SUBTROPICAL's 0.40 put the target at 36 degrees, a degree
+     * past its own 35-degree upper boundary, so a Subtropical request landed in Temperate.
+     */
+    private static void spawnLatitudesSitAtTheMidpointOfTheirOwnBand() {
+        for (LatitudeBands.Band band : LatitudeBands.Band.values()) {
+            String zoneKey = band.name();
+            double targetDeg = LatitudeMath.spawnFracForZoneKey(zoneKey) * 90.0;
+            double midpointDeg = (band.lowDeg() + band.highDeg()) * 0.5;
+            assertEquals(
+                    midpointDeg,
+                    targetDeg,
+                    "the " + zoneKey + " spawn target is the midpoint of its own canonical band");
+            assertTrue(
+                    targetDeg > band.lowDeg() && targetDeg < band.highDeg(),
+                    "the " + zoneKey + " spawn target stays strictly inside its own band");
+            assertEquals(
+                    band,
+                    LatitudeBands.fromAbsoluteLatitudeDeg(targetDeg),
+                    "the " + zoneKey + " spawn target classifies back as " + zoneKey);
+        }
+
+        assertEquals(
+                LatitudeBands.Band.TEMPERATE,
+                LatitudeBands.fromAbsoluteLatitudeDeg(0.40 * 90.0),
+                "the retired SUBTROPICAL fraction really did land a Subtropical request in Temperate");
+
+        double equatorDeg = LatitudeMath.spawnFracForZoneKey("EQUATOR") * 90.0;
+        assertEquals(
+                LatitudeMath.LatitudeZone.EQUATOR,
+                LatitudeMath.zoneForDeg((int) Math.round(equatorDeg)),
+                "EQUATOR keeps its own display-only sub-zone fraction");
+        assertEquals(
+                LatitudeBands.Band.TROPICAL,
+                LatitudeBands.fromAbsoluteLatitudeDeg(equatorDeg),
+                "the EQUATOR sub-zone still sits inside the canonical Tropical band");
+
+        for (int radius : new int[] {3_750, 5_000, 7_500, 10_000, 15_000, 20_000}) {
+            for (LatitudeBands.Band band : LatitudeBands.Band.values()) {
+                String zoneKey = band.name();
+                int targetZ = (int) Math.round(radius * LatitudeMath.spawnFracForZoneKey(zoneKey));
+                for (int hemisphereSign : new int[] {-1, 1}) {
+                    assertEquals(
+                            zoneKey,
+                            LatitudeMath.zoneForRadius(radius, targetZ * hemisphereSign).name(),
+                            "a " + zoneKey + " request lands in " + zoneKey
+                                    + " at radius " + radius + " in both hemispheres");
+                }
+            }
+        }
     }
 
     private static void initialSpawnStaysInRequestedLatitudeWithBoundedFallback() throws IOException {
@@ -274,6 +330,12 @@ public final class SpawnSafetyPolicyTest {
 
     private static void assertEquals(int expected, int actual, String message) {
         if (expected != actual) {
+            throw new AssertionError(message + ": expected=" + expected + " actual=" + actual);
+        }
+    }
+
+    private static void assertEquals(double expected, double actual, String message) {
+        if (Math.abs(expected - actual) > 1.0e-9) {
             throw new AssertionError(message + ": expected=" + expected + " actual=" + actual);
         }
     }
