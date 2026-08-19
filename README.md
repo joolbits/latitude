@@ -2,9 +2,10 @@
 
 A globe-style world + latitude-based biome bands with a customizable compass HUD and warnings.
 
-## Current 1.4 candidate status
+## Status
 
-This checkout is the canonical Minecraft `26.1.2` Latitude 1.4 candidate root. Current release-readiness truth lives in `docs/release/checklist.md`; do not treat older published `1.4.0+26.1.2` or `1.21.11` records as the active candidate gate.
+This checkout tracks the Latitude `1.5.1-beta.1+26.2` line (Minecraft 26.2), branch
+`codex/port/1.5.1-beta.1-26.2-forward`. See `CHANGELOG.md` for what's new in this release.
 
 ## Features
 
@@ -25,20 +26,16 @@ See: docs/design-spec.md
 
 ## Dependencies
 
-- Fabric Loader (Minecraft 26.1.2)
+- Fabric Loader (Minecraft 26.2)
 - Fabric API
 
 ## Biome tag integration
 
-This mod selects biomes for latitude bands via biome tags:
+This mod selects biomes for latitude bands via a family of `globe:lat_*` biome tags — separate
+primary/secondary/accent tiers per latitude band, plus dedicated tags for rivers, beaches, oceans,
+and wetlands. See `src/main/resources/data/globe/tags/worldgen/biome/` for the current full set.
 
-- `globe:lat_equator`
-- `globe:lat_tropical`
-- `globe:lat_temperate`
-- `globe:lat_subpolar`
-- `globe:lat_polar`
-
-Biome mods can integrate by adding their biomes into these tags.
+Biome mods can integrate by adding their biomes into the relevant tags.
 
 ## Config
 
@@ -48,9 +45,11 @@ Compass HUD configuration is stored in:
 
 ## Building
 
-```powershell
-.\gradlew.bat clean build
+```bash
+./gradlew clean build
 ```
+
+(Windows: `gradlew.bat clean build`.)
 
 The release jar to upload is in:
 
