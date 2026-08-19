@@ -1,5 +1,39 @@
 # Changelog
 
+## Latitude 1.5.1-beta.2 (Minecraft 26.2)
+
+A focused follow-up to beta.1, adopting a set of fixes proven on the parallel 1.21.11 line and
+verified against this line's own measurements. **Beta:** shipped for testing before the 1.5.1
+stable tag.
+
+### Structures and `/locate`
+
+- **Structures are judged by their whole footprint, not a single center point.** A desert pyramid
+  or outpost whose bounding box reached into badlands could previously generate half-in anyway;
+  the entire footprint must now sit on legal ground. As deliberate design, no structure generates
+  within 100 blocks of the world's east/west border danger zone.
+- **`/locate structure` results now land on the actual structure.** The reported position is the
+  generated structure's center rather than the pre-generation placement point, and teleporting to
+  a buried structure (e.g. a desert pyramid) now surfaces you safely above it instead of inside it.
+
+### World generation
+
+- **Swamps now appear only in genuinely wet regions.** Previously "not explicitly dry" was enough,
+  which let swamps form on medium-moisture land. Expect noticeably fewer, better-placed swamps
+  (roughly a third fewer overall); mangroves are unaffected (they follow a separate coastal rule).
+  Applies to newly generated terrain only.
+- **Desert oases actually exist now.** The rare "desert surviving inside a wet region" feature was
+  silently dead on most worlds — its coherence noise scaled with world size, so the whole map got
+  about three coin-flips regardless of size. On some seeds this revives oases that never appeared;
+  on others nothing changes. Applies everywhere, new terrain only.
+
+### World creation
+
+- **Each climate zone now spawns you at the middle of its own band.** Most visibly: requesting a
+  Subtropical start previously spawned you just across the line in Temperate, every time. All five
+  zone starting latitudes shift slightly as a result (e.g. Tropical 18°→11.75°, Subpolar
+  65.25°→58.25°) — each now the honest center of its zone.
+
 ## Latitude 1.5.1-beta.1 (Minecraft 26.2)
 
 A fix-and-polish pass on top of 1.5.0, carrying forward fixes discovered while porting Latitude to
