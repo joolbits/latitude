@@ -3109,10 +3109,15 @@ final class BiomeProviderSelectionPolicyTest {
             Climate.Sampler sampler,
             VanillaBiomeCoveragePlan plan) {
         AridBeltCensus census = new AridBeltCensus();
-        for (double fraction : new double[]{0.30, 0.34, 0.38}) {
+        // Sweep density is sized for the 2026-08-19 calibration that made badlands earthlike-rare
+        // (~15% of the dry province): the positive control needs enough columns INSIDE a badlands
+        // country, and the old 3-row/128-step sweep crossed too few country cells to guarantee that.
+        // Rows stay at |z| >= 0.30*radius (27 deg): below that sits the deliberate badlands->savanna
+        // latitude ramp, which would dilute the inside-the-country badlands share by design.
+        for (double fraction : new double[]{0.30, 0.32, 0.34, 0.36, 0.38}) {
             for (int sign : new int[]{1, -1}) {
                 int z = sign * (int) Math.round(radius * fraction);
-                for (int x = -8_192; x <= 8_192; x += 128) {
+                for (int x = -8_192; x <= 8_192; x += 64) {
                     if ((long) x * x + (long) z * z >= (long) radius * radius) continue;
                     // 1 == BAND_SUBTROPICAL. The band constants are private to LatitudeBiomes, so
                     // the suite reads the picker's own final band decision rather than re-deriving

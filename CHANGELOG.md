@@ -26,6 +26,13 @@ stable tag.
   silently dead on most worlds — its coherence noise scaled with world size, so the whole map got
   about three coin-flips regardless of size. On some seeds this revives oases that never appeared;
   on others nothing changes. Applies everywhere, new terrain only.
+- **Badlands is now an earthlike-rare accent of the desert belt instead of a seed lottery.** The
+  badlands-region noise had the same world-size disease as the oases above: a handful of giant
+  cells per map, so some seeds handed badlands most of the arid belt (measured up to two-thirds,
+  with desert squeezed to a sliver) while others got almost none. The region size is now capped
+  and the coverage calibrated: on every measured seed badlands holds roughly 15% of the dry belt
+  and desert is the staple, in coherent kilometer-scale mesas rather than one continent-sized
+  sheet. Applies everywhere, new terrain only.
 
 ### World creation
 

@@ -2801,26 +2801,47 @@ public final class LatitudeBiomes {
             return false;
         }
 
-        // Coarse, world-size-safe dry sub-province authority: two low-frequency ValueNoise2D
-        // layers derive coherent badlands regions inside WARM_DRY without committing to a
-        // single anchored ellipse. Scale is proportional to the active world radius in the
-        // same style as aridHotspotHere(...). Z sampling is mirrored about the equator and
-        // shifted so the noise lattice is anchored to the subtropical (dry) band midpoint,
-        // which forces hemisphere symmetry and prevents the noise feature from drifting
-        // entirely outside the dry band on small worlds where band span < noise scale.
-        int dryBandLowAbsZ = bandBoundaryBlocks(0, radius);
-        int dryBandHighAbsZ = bandBoundaryBlocks(1, radius);
+        return badlandsCountryNoiseHit(worldSeed, radius, blockX, blockZ);
+    }
+
+    /** The badlands-country noise scale for a world radius. Package-visible as a focused-test seam. */
+    static int badlandsCountryScaleBlocks(int radiusBlocks) {
+        return Math.max(BADLANDS_COUNTRY_MIN_SCALE_BLOCKS,
+                Math.min((int) Math.round(radiusBlocks * 0.16), BADLANDS_COUNTRY_MAX_SCALE_BLOCKS));
+    }
+
+    /**
+     * Coarse, world-size-safe dry sub-province authority: two low-frequency ValueNoise2D
+     * layers derive coherent badlands regions inside WARM_DRY without committing to a
+     * single anchored ellipse. Z sampling is mirrored about the equator and shifted so the
+     * noise lattice is anchored to the subtropical (dry) band midpoint, which forces
+     * hemisphere symmetry and prevents the noise feature from drifting entirely outside the
+     * dry band on small worlds where band span &lt; noise scale.
+     *
+     * <p>The noise scale is capped and the thresholds calibrated (maintainer ruling,
+     * 2026-08-19: badlands is an earthlike 10-20% of the dry belt, desert the staple).
+     * The previous {@code radius * 0.28} scale grew WITH the world — ~7 primary cells across
+     * the entire map at any size — so per-seed badlands coverage of the dry belt was a
+     * lottery, measured swinging 13%-64% across five worlds. The same disease
+     * {@link #aridHotspotScaleBlocks} was capped for. With the cap the map holds ~30 primary
+     * cells and the thresholds put expected coverage near 15% of WARM_DRY with most seeds
+     * inside 8-22% (calibrated over 45 seeds against an exact offline replica of this
+     * arithmetic, then verified by atlas census).
+     */
+    static boolean badlandsCountryNoiseHit(long worldSeed, int radiusBlocks, int blockX, int blockZ) {
+        int dryBandLowAbsZ = bandBoundaryBlocks(0, radiusBlocks);
+        int dryBandHighAbsZ = bandBoundaryBlocks(1, radiusBlocks);
         int dryBandMidZ = (dryBandLowAbsZ + dryBandHighAbsZ) / 2;
         int sampleZ = Math.abs(blockZ) - dryBandMidZ;
 
-        int primaryScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radius * 0.28));
+        int primaryScale = badlandsCountryScaleBlocks(radiusBlocks);
         double primary = ValueNoise2D.sampleBlocks(worldSeed ^ BADLANDS_REGION_SHAPE_SALT, blockX, sampleZ, primaryScale);
-        if (primary >= 0.52) {
+        if (primary >= BADLANDS_COUNTRY_PRIMARY_MAX) {
             return false;
         }
-        int wobbleScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, primaryScale / 2);
+        int wobbleScale = Math.max(BADLANDS_COUNTRY_MIN_SCALE_BLOCKS, primaryScale / 2);
         double wobble = ValueNoise2D.sampleBlocks(worldSeed ^ BADLANDS_PROVINCE_WOBBLE_SALT, blockX, sampleZ, wobbleScale);
-        return wobble < 0.72;
+        return wobble < BADLANDS_COUNTRY_WOBBLE_MAX;
     }
 
     private static boolean badlandsProvinceAuthorityHitLegacy(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
@@ -3144,6 +3165,13 @@ public final class LatitudeBiomes {
     private static final long BADLANDS_REGION_ANCHOR_Z_SALT = 0x6261_646C_5F61_7A7AL; // "badl_azz"
     private static final long BADLANDS_REGION_SHAPE_SALT = 0x6261_646C_5F736861L; // "badl_sha"
     private static final long BADLANDS_PROVINCE_WOBBLE_SALT = 0x6261_646C_5F70_776FL; // "badl_pwo"
+    // Badlands-country calibration (maintainer ruling 2026-08-19, earthlike-rare badlands):
+    // cap the country scale so the cell count is world-size stable (~30 cells at cap), and
+    // aim the two thresholds at ~15% expected coverage of WARM_DRY. See badlandsCountryNoiseHit.
+    private static final int BADLANDS_COUNTRY_MIN_SCALE_BLOCKS = 512;
+    private static final int BADLANDS_COUNTRY_MAX_SCALE_BLOCKS = 640;
+    private static final double BADLANDS_COUNTRY_PRIMARY_MAX = 0.36;
+    private static final double BADLANDS_COUNTRY_WOBBLE_MAX = 0.52;
     private static final long BADLANDS_REGION_CORE_SHAPE_SALT = 0x6261_646C_5F636F72L; // "badl_cor"
     private static final long BADLANDS_OUTSIDE_PROVINCE_SALT = 0x6261_646C_5F6F7574L; // "badl_out"
     // Savanna COUNTRY authority (maintainer approval, 2026-08-18: "I like the savanna plan").

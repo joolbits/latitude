@@ -40,6 +40,7 @@ public final class WorldgenAuthorityPolicyTest {
         coastalSwampUsesMangroveIdentity();
         onlyWetProvincesAdmitWetlandClaims();
         aridHotspotsAreWorldSizeStableAndPresentOnEverySeed();
+        badlandsCountriesAreWorldSizeStableAndEarthlikeRare();
         wetlandLocateFilterMatchesFinalIdentityLaw();
         biomeLocateServiceClaimsAllSupportedTargets();
         structureLocateServiceIsBoundedAndTickDelivered();
@@ -578,6 +579,48 @@ public final class WorldgenAuthorityPolicyTest {
             assertTrue(mean >= 0.004 && mean <= 0.05,
                     "mean hotspot area at radius " + radius + " stays in the oasis band "
                             + "(got " + mean + ")");
+        }
+    }
+
+    private static void badlandsCountriesAreWorldSizeStableAndEarthlikeRare() {
+        assertEquals(512, LatitudeBiomes.badlandsCountryScaleBlocks(3_000),
+                "small worlds keep the coherence floor");
+        assertEquals(600, LatitudeBiomes.badlandsCountryScaleBlocks(3_750),
+                "the proportional scale still applies below the cap");
+        assertEquals(640, LatitudeBiomes.badlandsCountryScaleBlocks(10_000),
+                "regular worlds hit the cap, giving a world-size-stable cell count");
+        assertEquals(640, LatitudeBiomes.badlandsCountryScaleBlocks(20_000),
+                "massive worlds hit the same cap instead of scaling the countries up with the map");
+
+        for (int radius : new int[] {10_000, 20_000}) {
+            int dryLowAbsZ = com.example.globe.util.LatitudeMath.zForLatitudeDeg(23.5, radius);
+            int dryHighAbsZ = com.example.globe.util.LatitudeMath.zForLatitudeDeg(35.0, radius);
+            double aggregate = 0.0;
+            for (long seed = 41L; seed <= 52L; seed++) {
+                int samples = 0;
+                int hits = 0;
+                for (int blockZ = dryLowAbsZ; blockZ < dryHighAbsZ; blockZ += 64) {
+                    for (int blockX = -radius; blockX < radius; blockX += 64) {
+                        samples++;
+                        if (LatitudeBiomes.badlandsCountryNoiseHit(seed, radius, blockX, blockZ)) {
+                            hits++;
+                        }
+                    }
+                }
+                double fraction = (double) hits / samples;
+                aggregate += fraction;
+                assertTrue(hits >= 1,
+                        "seed " + seed + " at radius " + radius + " carries at least one badlands "
+                                + "country — a seed with zero badlands starves the biome");
+                assertTrue(fraction <= 0.35,
+                        "seed " + seed + " at radius " + radius + " stays under the badlands "
+                                + "flood ceiling (got " + fraction + ") — the pre-fix lottery let "
+                                + "single seeds hand badlands most of the dry belt");
+            }
+            double mean = aggregate / 12.0;
+            assertTrue(mean >= 0.08 && mean <= 0.22,
+                    "mean badlands-country coverage of the dry belt at radius " + radius
+                            + " stays in the earthlike-rare band (got " + mean + ")");
         }
     }
 
