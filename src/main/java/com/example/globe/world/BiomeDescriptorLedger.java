@@ -281,15 +281,24 @@ public final class BiomeDescriptorLedger {
     }
 
     /**
-     * Surface sulfur expression is restricted to Latitude-owned arid land. Unknown or merely
-     * name-alike provider biomes fail closed until the ledger can describe them intentionally.
+     * Latitude-owned arid surface land: vanilla desert and the badlands family, plus every optional
+     * provider identity the ledger deliberately routes the same way. Unknown or merely name-alike
+     * biomes fail closed until the ledger can describe them intentionally.
      */
-    public static boolean supportsSulfurSurfaceExpression(String id) {
+    public static boolean isAridSurfaceLand(String id) {
         Descriptor descriptor = descriptor(id);
         return descriptor != null
                 && descriptor.terrain() == Terrain.ARID
                 && descriptor.water() == Water.LAND
                 && descriptor.family() == Family.ARID;
+    }
+
+    /**
+     * Surface sulfur expression is restricted to Latitude-owned arid land. Unknown or merely
+     * name-alike provider biomes fail closed until the ledger can describe them intentionally.
+     */
+    public static boolean supportsSulfurSurfaceExpression(String id) {
+        return isAridSurfaceLand(id);
     }
 
     public static List<String> validate(Collection<String> activeIds) {

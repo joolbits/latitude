@@ -26,6 +26,11 @@ stable tag.
   silently dead on most worlds — its coherence noise scaled with world size, so the whole map got
   about three coin-flips regardless of size. On some seeds this revives oases that never appeared;
   on others nothing changes. Applies everywhere, new terrain only.
+- **Desert riverbanks can be green now.** Where an arid biome meets fresh water, the bank
+  sometimes grows a strip of grass and wildflowers instead of running bare sand to the waterline.
+  Deliberately not everywhere: long stretches stay bare, and which stretches green up is fixed by
+  the world seed. The biome itself is unchanged — it is still desert, still spawns desert mobs,
+  still admits desert structures; only the planting is different. New terrain only.
 - **Badlands is now an earthlike-rare accent of the desert belt instead of a seed lottery.** The
   badlands-region noise had the same world-size disease as the oases above: a handful of giant
   cells per map, so some seeds handed badlands most of the arid belt (measured up to two-thirds,

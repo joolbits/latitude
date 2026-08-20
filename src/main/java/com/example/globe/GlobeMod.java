@@ -131,6 +131,10 @@ public class GlobeMod implements ModInitializer {
 
         com.example.globe.compat.LatitudeTerraBlenderBridge.install();
 
+        // Placement modifier behind Latitude's lush desert riverbanks. Registered unconditionally
+        // so the placed-feature JSON still parses when the banks themselves are switched off.
+        com.example.globe.world.feature.LatitudeRiparianBanks.registerPlacementType();
+
         GlobeNet.registerPayloads();
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             // Shipping operator commands: unconditional and directly linked. Unlike the dev tree,
