@@ -1,5 +1,12 @@
 # AGENTS.md
 
+## Commit discipline — commit proven work; never commit prohibited content
+
+**Commit proven, task-owned work as you go.** This is not a blanket ban on ordinary commits.
+Once a focused change has its required proof, inspect the exact staged paths and make the normal
+focused commit with the repository hook enabled. The public-repository safety rules, `.gitignore`,
+and S-6/S-7 hook remain hard boundaries: never weaken or bypass them with `--no-verify`.
+
 ## Latitude Binder Instructions (Codex-native)
 
 For work in `<home>/CascadeProjects/Latitude (Globe)`, Codex must use the binder as the next-step authority for documentation and evidence workflows.

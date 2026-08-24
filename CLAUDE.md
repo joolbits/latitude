@@ -1,20 +1,25 @@
 # CLAUDE.md
 
 
-## ⛔ NEVER COMMIT — read this before your first `git add`
+## Commit discipline — commit proven work; never commit prohibited content
 
 This is a PUBLIC repository. A 2026-08-07 incident force-rewrote its entire history to remove
 13,246 accidentally-tracked files of decompiled Minecraft source and the development diary.
 These rules exist so that never happens again. The commit hook (S-6/S-7) and .gitignore enforce
 them mechanically — do not weaken either, do not commit with --no-verify.
 
+**Commit proven, task-owned work as you go.** This heading is not a blanket ban on ordinary
+commits: it means the prohibited categories below must never be staged or committed. Once a
+focused change has its required proof, inspect the exact staged paths and make the normal focused
+commit with the hook enabled.
+
 1. **No decompiled or extracted Minecraft sources. EVER.** No `_mcsrc*`, no `net/minecraft/**`
    Java files, no mappings dumps. That is proprietary code; tracking it in a public repo is
    redistribution. Reference extractions live OUTSIDE the repo or in gitignored dirs only.
 2. **No development diaries in the repo.** `docs/binder/**`, session reports, evidence
-   registries, handoffs, live-test ledgers, campaign notes — ALL of it goes to
-   `~/CascadeProjects/Latitude-notes/<line>/`, never into the tree. If you are writing a
-   dated narrative of what you did, you are writing a notes file, not a repo file.
+   registries, handoffs, live-test ledgers, campaign notes — ALL of it goes to the maintainer's
+   external Latitude notes tree, never into the repository. If you are writing a dated narrative
+   of what you did, you are writing a notes file, not a repo file.
 3. **No personal data.** No personal names, no machine usernames, no absolute home-directory
    paths, no session/recorder UUIDs — in ANY tracked file, source comments and commit messages
    included. Cite decisions as "maintainer ruling, <date>".
