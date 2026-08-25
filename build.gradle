@@ -46,6 +46,9 @@ loom {
             vmArg "-Xmx${latitudeClientXmx}"
             vmArg "-Dlatitude.skipSystemDetailsHardware=${latitudeSkipSystemDetailsHardware}"
             vmArg "-Dlatitude.fixSurfaceDripstone=true"
+            // The dev-only create-world probe is normally useful for autonomous checks, but manual UI testing
+            // must be able to leave the title screen untouched. This forwards its existing kill switch.
+            vmArg "-Dlatitude.debug.autoCreateWorldProbe.disable=${System.getProperty('latitude.debug.autoCreateWorldProbe.disable', 'false')}"
             vmArg "-Dlatitude.fogClampIndex=${System.getProperty('latitude.fogClampIndex', '-1')}"
             vmArg "-Dlatitude.fogClampValue=${System.getProperty('latitude.fogClampValue', '16.0')}"
             // Solar Tilt + Seasons (P1). The shipping defaults are ON / 60°, with four live-tuning dials.
