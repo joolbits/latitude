@@ -8,6 +8,7 @@ import com.example.globe.core.config.LatitudeConfigData.AccessibilityMode;
 import com.example.globe.core.ui.AccessibilityPalette;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.ChatFormatting;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
@@ -18,10 +19,12 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.GenericMessageScreen;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.client.gui.screens.worldselection.DataPackReloadCookie;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationGameRulesScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContextMapper;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -209,6 +212,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private Button modeNextBtn;
     private RulesIconRow gameRulesBtn;
     private RulesIconRow hudStudioBtn;
+    private RulesIconRow otherWorldTypesBtn;
 
     // ── Layout cache (computed in init, used in render) ──
     private int headerY;
@@ -463,8 +467,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         // Frozen tab order — widgets added in exact sequence:
         // 1. World Name  2. Seed  3. Size ◀  4. Size ▶
         // 5–9. Zone rows (Tropical → Polar)
-        // 10–18. Settings rail
-        // 17. Begin Expedition  18. Cancel
+        // 10–19. Settings rail
+        // 20. Create World  21. Cancel
         // ═══════════════════════════════════════════════
 
         // ── 1. World Name ──
@@ -586,11 +590,15 @@ public class LatitudeCreateWorldScreen extends Screen {
             gameRulesBtn = actionRow(RulesIconRow.Kind.GAME_RULES, "Game Rules",
                     "Fine-tune the world's rules (mob spawning, daylight cycle, keep inventory, and more).",
                     this::openGameRules, false);
+            otherWorldTypesBtn = actionRow(RulesIconRow.Kind.GAME_RULES, "Other World Types & Datapacks…",
+                    "Open Minecraft’s full setup for modded world types, Superflat presets, and datapacks. Latitude worlds still use this screen.",
+                    this::openOtherWorldTypes, false);
 
             // addWidget (not addRenderableWidget): these get input/focus but are NOT auto-rendered by super --
             // renderSettingsScrollWidgets() draws them inside the Rules-panel scissor so they clip when scrolled.
             addSettingsScrollWidget(worldTypePrevBtn);
             addSettingsScrollWidget(worldTypeNextBtn);
+            addSettingsScrollWidget(otherWorldTypesBtn);
             addSettingsScrollWidget(modePrevBtn);
             addSettingsScrollWidget(modeNextBtn);
             addSettingsScrollWidget(commandsBtn);
@@ -975,10 +983,11 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (bonusChestBtn != null) bonusChestBtn.active = bonusChestBtn.visible;
         if (gameRulesBtn != null) gameRulesBtn.active = gameRulesBtn.visible;
         if (hudStudioBtn != null) hudStudioBtn.active = hudStudioBtn.visible;
+        if (otherWorldTypesBtn != null) otherWorldTypesBtn.active = otherWorldTypesBtn.visible;
     }
 
     private void updateSettingsLayout() {
-        if (worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || structuresBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
+        if (worldTypePrevBtn == null || worldTypeNextBtn == null || otherWorldTypesBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || structuresBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
             settingsViewportTop = 0;
             settingsViewportBottom = 0;
             settingsContentHeight = 0;
@@ -1001,9 +1010,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int blockHeight = labelGap + btnH;
         // Leave a little trailing room so the HUD Studio row can scroll fully into view
         // on short windows instead of sitting flush against the viewport edge.
-        // 8 rows: World Type, Game Mode, Commands, Starting Compass, Generate Structures,
-        // Bonus Chest, Game Rules, HUD Studio. (World Shape moved to the World panel per live feedback.)
-        settingsContentHeight = blockHeight * 8 + rowGap * 7 + 12;
+        // 9 rows: World Type, the vanilla setup escape hatch, Game Mode, Commands, Starting Compass,
+        // Generate Structures, Bonus Chest, Game Rules, HUD Studio.
+        settingsContentHeight = blockHeight * 9 + rowGap * 8 + 12;
         int maxScroll = Math.max(0, settingsContentHeight - viewportHeight);
         if (settingsScroll < 0) settingsScroll = 0;
         if (settingsScroll > maxScroll) settingsScroll = maxScroll;
@@ -1012,6 +1021,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int y = contentTop - Math.round(settingsScrollDisplay) + labelGap;
         worldTypeRowY = y;
         positionSettingsStepper(worldTypePrevBtn, worldTypeNextBtn, settBtnX, settBtnW, y, btnH);
+
+        y += btnH + rowGap + labelGap;
+        positionSettingsButton(otherWorldTypesBtn, settBtnX, settBtnW, y, btnH);
 
         y += btnH + rowGap + labelGap;
         modeRowY = y;
@@ -1060,6 +1072,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         boolean showRules = activeTab == 2;
         setTabbedWidgetVisible(worldTypePrevBtn, showRules);
         setTabbedWidgetVisible(worldTypeNextBtn, showRules);
+        setTabbedWidgetVisible(otherWorldTypesBtn, showRules);
         setTabbedWidgetVisible(modePrevBtn, showRules);
         setTabbedWidgetVisible(modeNextBtn, showRules);
         setTabbedWidgetVisible(commandsBtn, showRules);
@@ -1079,6 +1092,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private void switchTab(int tab) {
         if (tab == activeTab) return;
         activeTab = tab;
+        clearFocus();
         applyTabbedVisibility();
     }
 
@@ -1141,6 +1155,21 @@ public class LatitudeCreateWorldScreen extends Screen {
     private void openHudStudio() {
         if (this.minecraft == null) return;
         this.minecraft.setScreenAndShow(new LatitudeHudStudioScreen(this));
+    }
+
+    private void openOtherWorldTypes() {
+        if (this.minecraft == null) return;
+        this.worldNameInput = this.worldNameField == null ? this.worldNameInput : this.worldNameField.getValue();
+        this.seedInput = this.seedField == null ? this.seedInput : this.seedField.getValue();
+        Runnable returnToLatitude = () -> this.minecraft.setScreenAndShow(this);
+        VanillaCreateWorldHandoff.armNext(returnToLatitude, this.worldNameInput, this.seedInput);
+        try {
+            CreateWorldScreen.openFresh(this.minecraft, returnToLatitude);
+        } catch (RuntimeException exception) {
+            VanillaCreateWorldHandoff.cancelNext();
+            this.minecraft.setScreenAndShow(this);
+            throw exception;
+        }
     }
 
     // ── Begin Expedition ──
@@ -1272,6 +1301,15 @@ public class LatitudeCreateWorldScreen extends Screen {
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+    }
+
+    @Override
+    public boolean keyPressed(KeyEvent input) {
+        if (tabbedMode && input.key() == InputConstants.KEY_TAB && input.hasControlDown()) {
+            switchTab(CreateWorldScreenUiPolicy.cyclePanel(activeTab, TAB_LABELS.length, input.hasShiftDown()));
+            return true;
+        }
+        return super.keyPressed(input);
     }
 
     @Override
@@ -2780,7 +2818,18 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         @Override
         public void onClick(net.minecraft.client.input.MouseButtonEvent click, boolean doubled) {
-            activate();
+            if (isMouseOver(click.x(), click.y())) {
+                activate();
+            }
+        }
+
+        @Override
+        public boolean isMouseOver(double mouseX, double mouseY) {
+            return this.active && this.visible && CreateWorldScreenUiPolicy.isInsideClip(
+                    mouseX, mouseY,
+                    this.getX(), this.getY(), this.getWidth(), this.getHeight(),
+                    Math.max(railX + 1, paneStripViewportLeft), settingsClipTop(),
+                    Math.min(railX + railW - 1, paneStripViewportRight), settingsViewportBottom);
         }
 
         @Override
