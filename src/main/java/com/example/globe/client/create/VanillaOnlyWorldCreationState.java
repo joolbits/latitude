@@ -1,4 +1,4 @@
-package com.example.globe.mixin.client;
+package com.example.globe.client.create;
 
 import java.util.List;
 

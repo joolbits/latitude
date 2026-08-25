@@ -2,6 +2,7 @@ package com.example.globe.mixin.client;
 
 import com.example.globe.client.create.LatitudeCreateWorldScreen;
 import com.example.globe.client.create.VanillaCreateWorldHandoff;
+import com.example.globe.client.create.VanillaOnlyWorldCreationState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Final;

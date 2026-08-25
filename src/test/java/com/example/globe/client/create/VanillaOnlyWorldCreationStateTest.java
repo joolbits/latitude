@@ -1,6 +1,5 @@
 package com.example.globe.client.create;
 
-import com.example.globe.mixin.client.VanillaOnlyWorldCreationState;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
