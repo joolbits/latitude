@@ -258,6 +258,13 @@ dependencies {
 
 test {
     useJUnitPlatform()
+    reports.junitXml.required = false
+    reports.html.required = false
+    afterSuite { descriptor, result ->
+        if (descriptor.parent == null) {
+            logger.lifecycle("Latitude tests: " + result.testCount + " total, " + result.successfulTestCount + " passed, " + result.failedTestCount + " failed, " + result.skippedTestCount + " skipped")
+        }
+    }
 }
 
 processResources {
@@ -269,10 +276,14 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
+    it.javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
     it.options.release = 25
 }
 
 java {
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
     withSourcesJar()
 
     sourceCompatibility = JavaVersion.VERSION_25
@@ -309,6 +320,10 @@ def releaseArtifactExcludeSpec = { details ->
         return true
     }
 
+    if (path == 'com/example/globe/debug' || path.startsWith('com/example/globe/debug/')) {
+        return true
+    }
+
     if (path == 'com/example/globe/client/ClipboardImageWriter.class'
             || path.startsWith('com/example/globe/client/ClipboardImageWriter$')) {
         return true
@@ -329,6 +344,14 @@ def releaseArtifactPatternExcludes = [
 ]
 
 tasks.named('jar', Jar).configure {
+    exclude(releaseArtifactExcludeSpec)
+    exclude(releaseArtifactPatternExcludes)
+}
+
+tasks.named('sourcesJar', Jar).configure {
+    from("LICENSE") {
+        rename { it + "_" + project.base.archivesName.get() }
+    }
     exclude(releaseArtifactExcludeSpec)
     exclude(releaseArtifactPatternExcludes)
 }
