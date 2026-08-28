@@ -271,10 +271,14 @@ tasks.register('generateLatitudeTestMetadata') {
 }
 
 tasks.withType(JavaCompile).configureEach {
+    it.javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
     it.options.release = 21
 }
 
 java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
     withSourcesJar()
 
     sourceCompatibility = JavaVersion.VERSION_21
@@ -335,6 +339,14 @@ def releaseArtifactPatternExcludes = [
 ]
 
 tasks.named('jar', Jar).configure {
+    exclude(releaseArtifactExcludeSpec)
+    exclude(releaseArtifactPatternExcludes)
+}
+
+tasks.named('sourcesJar', Jar).configure {
+    from("LICENSE") {
+        rename { it + "_" + project.base.archivesName.get() }
+    }
     exclude(releaseArtifactExcludeSpec)
     exclude(releaseArtifactPatternExcludes)
 }
