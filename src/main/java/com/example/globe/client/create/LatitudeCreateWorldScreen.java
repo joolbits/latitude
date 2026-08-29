@@ -4,6 +4,7 @@ import com.example.globe.GlobeMod;
 import com.example.globe.client.GlobeWorldSize;
 import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.util.LatitudeBands;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.ChatFormatting;
 import net.minecraft.SharedConstants;
@@ -14,6 +15,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.client.gui.screens.worldselection.DataPackReloadCookie;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationGameRulesScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
@@ -34,6 +36,7 @@ import net.minecraft.world.Difficulty;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.level.DataPackConfig;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.WorldDataConfiguration;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.WorldGenSettings;
@@ -182,6 +185,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private Button modeNextBtn;
     private Button gameRulesBtn;
     private Button hudStudioBtn;
+    private Button otherWorldTypesBtn;
 
     // ── Layout cache (computed in init, used in render) ──
     private int headerY;
@@ -239,6 +243,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int bonusChestRowY;
     private int gameRulesRowY;
     private int hudStudioRowY;
+    private int otherWorldTypesRowY;
     private int settingsColumnW;
     private int settingsRightColumnX;
 
@@ -736,6 +741,16 @@ public class LatitudeCreateWorldScreen extends Screen {
                     .bounds(settBtnX, panelTop, settBtnW, btnH)
                     .build();
             addSettingsScrollWidget(hudStudioBtn);
+
+            // The way out of Latitude's own flow. Without it this screen is a dead end for anyone
+            // wanting a Superflat, a datapack world, or another mod's world type, because Latitude
+            // claims the create-world screen (issue #19).
+            otherWorldTypesBtn = Button.builder(
+                            Component.literal("Other World Types & Datapacks..."),
+                            b -> openOtherWorldTypes())
+                    .bounds(settBtnX, panelTop, settBtnW, btnH)
+                    .build();
+            addSettingsScrollWidget(otherWorldTypesBtn);
             updateSettingsLayout();
         }
 
@@ -1093,10 +1108,13 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (hudStudioBtn != null) {
             hudStudioBtn.active = hudStudioBtn.visible;
         }
+        if (otherWorldTypesBtn != null) {
+            otherWorldTypesBtn.active = otherWorldTypesBtn.visible;
+        }
     }
 
     private void updateSettingsLayout() {
-        if (worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || structuresBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
+        if (worldTypePrevBtn == null || worldTypeNextBtn == null || otherWorldTypesBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || structuresBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
             settingsViewportTop = 0;
             settingsViewportBottom = 0;
             settingsContentHeight = 0;
@@ -1122,7 +1140,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int viewportHeight = Math.max(0, settingsViewportBottom - settingsViewportTop);
         int contentTop = settingsViewportTop + scaledUi(4);
         int blockHeight = labelGap + btnH;
-        int rulesRowCount = tabbedMode ? 4 : 8;
+        // The escape hatch takes a full-width row of its own in both layouts: its label is far
+        // longer than any stepper caption, so pairing it into a tabbed column would truncate it.
+        int rulesRowCount = tabbedMode ? 5 : 9;
         // Leave a little trailing room so the HUD Studio row can scroll fully into view
         // on short windows instead of sitting flush against the viewport edge.
         settingsContentHeight = blockHeight * rulesRowCount + rowGap * (rulesRowCount - 1) + scaledUi(12);
@@ -1136,6 +1156,10 @@ public class LatitudeCreateWorldScreen extends Screen {
             modeRowY = y;
             positionSettingsStepper(worldTypePrevBtn, worldTypeNextBtn, settBtnX, settingsColumnW, y, btnH);
             positionSettingsStepper(modePrevBtn, modeNextBtn, settingsRightColumnX, settingsColumnW, y, btnH);
+
+            y += btnH + rowGap + labelGap;
+            otherWorldTypesRowY = y;
+            positionSettingsButton(otherWorldTypesBtn, settBtnX, settBtnW, y, btnH);
 
             y += btnH + rowGap + labelGap;
             commandsRowY = y;
@@ -1156,6 +1180,10 @@ public class LatitudeCreateWorldScreen extends Screen {
             positionSettingsButton(hudStudioBtn, settingsRightColumnX, settingsColumnW, y, btnH);
         } else {
             positionSettingsStepper(worldTypePrevBtn, worldTypeNextBtn, settBtnX, settBtnW, y, btnH);
+
+            y += btnH + rowGap + labelGap;
+            otherWorldTypesRowY = y;
+            positionSettingsButton(otherWorldTypesBtn, settBtnX, settBtnW, y, btnH);
 
             y += btnH + rowGap + labelGap;
             modeRowY = y;
@@ -1205,6 +1233,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         boolean showRules = activeTab == 1;
         setTabbedWidgetVisible(worldTypePrevBtn, showRules);
         setTabbedWidgetVisible(worldTypeNextBtn, showRules);
+        setTabbedWidgetVisible(otherWorldTypesBtn, showRules);
         setTabbedWidgetVisible(modePrevBtn, showRules);
         setTabbedWidgetVisible(modeNextBtn, showRules);
         setTabbedWidgetVisible(commandsBtn, showRules);
@@ -1250,6 +1279,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         setTabbedWidgetVisible(worldTypePrevBtn, false);
         setTabbedWidgetVisible(worldTypeNextBtn, false);
+        setTabbedWidgetVisible(otherWorldTypesBtn, false);
         setTabbedWidgetVisible(modePrevBtn, false);
         setTabbedWidgetVisible(modeNextBtn, false);
         setTabbedWidgetVisible(commandsBtn, false);
@@ -1342,6 +1372,9 @@ public class LatitudeCreateWorldScreen extends Screen {
     private void switchTab(int tab) {
         if (tab == activeTab) return;
         activeTab = tab;
+        // Without this, a focused widget on the old tab (e.g. the seed field) stays focused while
+        // invisible: its own key handling can still fire, and Tab-cycling can land back on it.
+        clearFocus();
         applyTabbedVisibility();
     }
 
@@ -1404,6 +1437,114 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.minecraft.gui.setScreen(new LatitudeHudStudioScreen(this));
     }
 
+    /**
+     * Hands off to Minecraft's own create-world screen for Superflat, other mods' presets, and
+     * datapack-only setups Latitude does not represent (issue #19). The typed name and seed carry
+     * across via {@link VanillaCreateWorldHandoff}, a one-shot claim keyed to the return callback
+     * so only the screen actually opened here can consume it -- an unrelated create-world screen
+     * opened through some other path leaves the handoff alone. {@link CreateWorldScreenInitRedirectMixin}
+     * claims it and marks that session vanilla-only, withholding the Globe preset for its lifetime.
+     */
+    /**
+     * The one mapping from the mode selector to vanilla's types.
+     *
+     * <p>Extracted so the escape hatch and {@link #beginExpedition()} cannot drift apart: they read
+     * the same selector, and a world made through the hatch must arrive in the mode the player
+     * picked here. Two copies of {@code selectedModeIdx == 2} would diverge silently the first time
+     * either was edited.</p>
+     */
+    private GameType selectedGameType() {
+        return selectedModeIdx == 2 ? GameType.CREATIVE : GameType.SURVIVAL;
+    }
+
+    private boolean selectedHardcore() {
+        return selectedModeIdx == 1;
+    }
+
+    private Difficulty effectiveDifficulty() {
+        return selectedHardcore() ? Difficulty.HARD : selectedDifficulty;
+    }
+
+    private void openOtherWorldTypes() {
+        if (this.minecraft == null) return;
+        this.worldNameInput = this.worldNameField == null ? this.worldNameInput : this.worldNameField.getValue();
+        this.seedInput = this.seedField == null ? this.seedInput : this.seedField.getValue();
+        // Reads back whatever the vanilla screen is currently holding before returning to it.
+        //
+        // The carry on the way OUT is a snapshot taken once, at the moment this button is pressed --
+        // it cannot see anything the player changes afterwards, on that screen's own mode/difficulty
+        // controls. Without this, a player who toggles Hardcore there and presses "Back to Latitude"
+        // finds it reverted, because nothing was reading the vanilla screen's state back (maintainer
+        // report, 2026-08-27: "Hardcore does not survive; have to change it again when you go back").
+        //
+        // `current` is read at RUN time, not capture time: vanilla's own popScreen() calls this
+        // Runnable BEFORE replacing the screen, so the vanilla screen is still `gui.screen()` when
+        // this executes -- capturing it eagerly here would read the screen's state at the moment the
+        // player LEFT Latitude, defeating the whole point.
+        Runnable returnToLatitude = () -> {
+            Screen current = this.minecraft.gui.screen();
+            if (current instanceof CreateWorldScreen) {
+                // NOT a cast to the @Mixin class itself -- that compiles but crashes at runtime with
+                // IllegalClassLoadError the first time this code actually runs (caught live, not
+                // assumed). VanillaCreateWorldUiStateCarrier is a plain interface the mixin
+                // implements, which is the form ordinary code is allowed to cast to.
+                WorldCreationUiState vanillaState =
+                        ((VanillaCreateWorldUiStateCarrier) (Object) current).globe$getUiState();
+                this.selectedModeIdx = switch (vanillaState.getGameMode()) {
+                    case HARDCORE -> 1;
+                    case CREATIVE -> 2;
+                    default -> 0;
+                };
+                this.selectedDifficulty = vanillaState.getDifficulty();
+                this.allowCommands = vanillaState.isAllowCommands();
+                this.worldNameInput = vanillaState.getName();
+                this.seedInput = vanillaState.getSeed();
+            }
+            this.minecraft.setScreenAndShow(this);
+        };
+        // Pressed on the vanilla screen, this abandons the whole flow in one click instead of
+        // making the player cancel there and again here (maintainer report, 2026-08-26). The
+        // screen showing at click time is the vanilla one, so it -- not this screen -- is what
+        // "nothing took over yet" means for that exit.
+        Runnable exitCreateFlow = () ->
+                leaveCreateFlowFrom(this.minecraft == null ? null : this.minecraft.gui.screen());
+        VanillaCreateWorldHandoff.armNext(
+                returnToLatitude, this.worldNameInput, this.seedInput, exitCreateFlow);
+        try {
+            // Reuse the context we already hold instead of making vanilla load one again. Measured
+            // on this line: vanilla's fresh-open path blocks the render thread for ~2.4s building a
+            // PackRepository and running WorldLoader, and the hatch was paying that a SECOND time
+            // for data already in memory. createFromExisting does none of it -- no queueLoadScreen,
+            // no PackRepository, no WorldLoader in its body.
+            //
+            // Safe to reuse specifically because this screen only ever READS the held context;
+            // Latitude's own dimensions are built at creation time in LatitudeWorldLauncher and
+            // never written back into it, so the vanilla screen opens on the same vanilla preset
+            // that the fresh path would have resolved.
+            //
+            // The player's name, seed, mode and difficulty carry across rather than resetting: the
+            // hatch is a detour inside one act of world creation, not a fresh start.
+            String carriedName = this.worldNameInput == null ? "" : this.worldNameInput.trim();
+            LevelSettings carried = new LevelSettings(
+                    carriedName.isEmpty() ? "New World" : carriedName,
+                    selectedGameType(),
+                    new LevelSettings.DifficultySettings(effectiveDifficulty(), selectedHardcore(), false),
+                    this.allowCommands,
+                    this.holder.dataConfiguration());
+            // null temp-datapack dir is valid: vanilla's getOrCreateTempDataPackDir creates on demand.
+            CreateWorldScreen vanillaScreen = CreateWorldScreen.createFromExisting(
+                    this.minecraft, returnToLatitude, carried, this.holder, null);
+            this.minecraft.setScreenAndShow(vanillaScreen);
+        } catch (RuntimeException exception) {
+            // Opening can throw before ever showing a screen (e.g. resource reload failure);
+            // without this the handoff would sit armed for its full two-minute TTL and could be
+            // claimed by an unrelated later screen opened through the same callback shape.
+            VanillaCreateWorldHandoff.cancelNext();
+            this.minecraft.setScreenAndShow(this);
+            throw exception;
+        }
+    }
+
     // ── Begin Expedition ──
 
     private void beginExpedition() {
@@ -1412,9 +1553,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (worldName.isEmpty()) worldName = "New World";
         String seed = this.seedField.getValue(); // raw — no client-side trim
 
-        GameType gameMode = selectedModeIdx == 2 ? GameType.CREATIVE : GameType.SURVIVAL;
-        boolean hardcore = selectedModeIdx == 1;
-        Difficulty difficulty = hardcore ? Difficulty.HARD : selectedDifficulty;
+        GameType gameMode = selectedGameType();
+        boolean hardcore = selectedHardcore();
+        Difficulty difficulty = effectiveDifficulty();
 
         LatitudeWorldLauncher.beginExpedition(this.minecraft, this, this.holder,
                 worldName, seed, this.selectedSize, this.selectedZone, this.randomZone,
@@ -1466,8 +1607,24 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     @Override
     public void onClose() {
+        leaveCreateFlowFrom(this);
+    }
+
+    /**
+     * Leaves the whole create-world flow, exactly as Cancel on this screen does.
+     *
+     * <p>Shared with the escape hatch so the one-click exit on the vanilla screen cannot drift from
+     * a real Cancel here (issue #19 follow-up). {@code expectedCurrent} is the screen the caller
+     * believes is still showing: {@code this} for an ordinary Cancel, and the vanilla create screen
+     * when the exit is pressed over there. The guard exists so that an {@code onClose} callback which
+     * already navigated somewhere is not stomped by a second {@code setScreen} -- it asks "did
+     * anything take over?", and the answer differs by caller only in which screen counts as
+     * "nothing took over yet".</p>
+     */
+    private void leaveCreateFlowFrom(@Nullable Screen expectedCurrent) {
         this.onClose.run();
-        if (this.minecraft != null && (this.minecraft.gui.screen() == this || this.minecraft.gui.screen() == null)) {
+        if (this.minecraft != null
+                && (this.minecraft.gui.screen() == expectedCurrent || this.minecraft.gui.screen() == null)) {
             this.minecraft.gui.setScreen(this.parent);
         }
     }
@@ -1593,6 +1750,10 @@ public class LatitudeCreateWorldScreen extends Screen {
     public boolean keyPressed(net.minecraft.client.input.KeyEvent input) {
         if (introActive()) {
             skipIntro();
+            return true;
+        }
+        if (tabbedMode && input.key() == InputConstants.KEY_TAB && input.hasControlDown()) {
+            switchTab(CreateWorldScreenUiPolicy.cyclePanel(activeTab, TAB_LABELS.length, input.hasShiftDown()));
             return true;
         }
         return super.keyPressed(input);

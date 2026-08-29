@@ -160,9 +160,12 @@ public final class LatitudeBiomeLocateService {
         private final ServerBossEvent bossBar;
         private long nextProgressNanos;
         private boolean finished;
-        private Pair<BlockPos, Holder<Biome>> bestCandidate;
-        private long bestHorizontalDistanceSq = Long.MAX_VALUE;
+        private Pair<BlockPos, Holder<Biome>> bestInterior;
+        private long bestInteriorDistanceSq = Long.MAX_VALUE;
+        private Pair<BlockPos, Holder<Biome>> bestSliver;
+        private long bestSliverDistanceSq = Long.MAX_VALUE;
         private int completionRingLimit = Integer.MAX_VALUE;
+        private PendingConfirmation pendingConfirmation;
 
         private BiomeLocateJob(
                 CommandSourceStack source,
@@ -214,32 +217,128 @@ public final class LatitudeBiomeLocateService {
         /**
          * Keeps the nearest match seen so far and narrows how far the spiral still has to run.
          * Distance is horizontal because that is the distance the locate result reports.
+         *
+         * <p>An interior match — one whose full quart-cell neighbourhood also matched — always
+         * beats a sliver: a sliver answer strands the player on a razor-thin boundary cell whose
+         * surroundings are a different biome. A sliver is kept only as the fallback answer, and
+         * while it is the only match in hand the search bound stays widened so a real interior
+         * patch within the escape window can replace it.
          */
-        final void recordCandidate(Pair<BlockPos, Holder<Biome>> candidate, int stepBlocks) {
-            BlockPos found = candidate.getFirst();
-            long dx = (long) found.getX() - origin.getX();
-            long dz = (long) found.getZ() - origin.getZ();
-            long distanceSq = dx * dx + dz * dz;
-            if (bestCandidate != null && distanceSq >= bestHorizontalDistanceSq) {
+        private void recordCandidate(
+                Pair<BlockPos, Holder<Biome>> candidate, int stepBlocks, boolean interior) {
+            long distanceSq = horizontalDistanceSq(candidate.getFirst());
+            if (interior) {
+                if (bestInterior != null && distanceSq >= bestInteriorDistanceSq) {
+                    return;
+                }
+                bestInterior = candidate;
+                bestInteriorDistanceSq = distanceSq;
+                completionRingLimit = LatitudeLocateBudgetPolicy.nearestCompletionRingLimit(
+                        Math.sqrt((double) distanceSq), stepBlocks);
                 return;
             }
-            bestCandidate = candidate;
-            bestHorizontalDistanceSq = distanceSq;
-            completionRingLimit = LatitudeLocateBudgetPolicy.nearestCompletionRingLimit(
+            if (bestInterior != null
+                    || (bestSliver != null && distanceSq >= bestSliverDistanceSq)) {
+                return;
+            }
+            bestSliver = candidate;
+            bestSliverDistanceSq = distanceSq;
+            completionRingLimit = LatitudeLocateBudgetPolicy.sliverEscapeRingLimit(
                     Math.sqrt((double) distanceSq), stepBlocks);
         }
 
+        private long horizontalDistanceSq(BlockPos found) {
+            long dx = (long) found.getX() - origin.getX();
+            long dz = (long) found.getZ() - origin.getZ();
+            return dx * dx + dz * dz;
+        }
+
         final boolean hasCandidate() {
-            return bestCandidate != null;
+            return bestInterior != null || bestSliver != null;
         }
 
         /** True once no unvisited ring can hold anything nearer than the match already found. */
         final boolean ringExceedsCandidateBound(int ring) {
-            return bestCandidate != null && ring > completionRingLimit;
+            return hasCandidate() && ring > completionRingLimit;
         }
 
         final Pair<BlockPos, Holder<Biome>> bestCandidate() {
-            return bestCandidate;
+            return bestInterior != null ? bestInterior : bestSliver;
+        }
+
+        /**
+         * The quart-cell ring a match must also hold at before it counts as interior: the four
+         * cardinal cells first because a thin boundary stripe fails there fastest, then the
+         * diagonals so a diagonal filament cannot pass either. All eight passing means the full
+         * 12-block square around the answer is the requested biome.
+         */
+        private static final int[][] NEIGHBOUR_QUART_OFFSETS = {
+                {1, 0}, {-1, 0}, {0, 1}, {0, -1},
+                {1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
+
+        private static final class PendingConfirmation {
+            final int quartX;
+            final int quartY;
+            final int quartZ;
+            final Pair<BlockPos, Holder<Biome>> candidate;
+            final int stepBlocks;
+            int nextNeighbour;
+
+            PendingConfirmation(int quartX, int quartY, int quartZ,
+                    Pair<BlockPos, Holder<Biome>> candidate, int stepBlocks) {
+                this.quartX = quartX;
+                this.quartY = quartY;
+                this.quartZ = quartZ;
+                this.candidate = candidate;
+                this.stepBlocks = stepBlocks;
+            }
+        }
+
+        final boolean confirmationPending() {
+            return pendingConfirmation != null;
+        }
+
+        /**
+         * Queues neighbourhood confirmation for a cell whose own classification matched. The
+         * probes run one per {@link #stepConfirmation()} call so each job can charge them to the
+         * same per-tick exact-probe budget as the match that started them; a match that cannot
+         * beat the interior answer already in hand is dropped without spending any.
+         */
+        final void beginConfirmation(int quartX, int quartY, int quartZ,
+                Pair<BlockPos, Holder<Biome>> candidate, int stepBlocks) {
+            if (bestInterior != null
+                    && horizontalDistanceSq(candidate.getFirst()) >= bestInteriorDistanceSq) {
+                return;
+            }
+            pendingConfirmation = new PendingConfirmation(
+                    quartX, quartY, quartZ, candidate, stepBlocks);
+        }
+
+        /** Probes one neighbour cell; the first miss settles the match as a sliver immediately. */
+        final void stepConfirmation() {
+            PendingConfirmation pending = pendingConfirmation;
+            if (pending == null) {
+                return;
+            }
+            int[] offset = NEIGHBOUR_QUART_OFFSETS[pending.nextNeighbour++];
+            int quartX = pending.quartX + offset[0];
+            int quartZ = pending.quartZ + offset[1];
+            // A neighbour outside the playable border does not count as matching: preferring a
+            // fully-inside patch is the point, and the sliver fallback still keeps a border patch
+            // findable when nothing better exists.
+            boolean matches = isWithinLatitudeWorld(
+                    QuartPos.toBlock(quartX) + 2, QuartPos.toBlock(quartZ) + 2)
+                    && target.test(latitudeSource.getNoiseBiome(
+                            quartX, pending.quartY, quartZ, sampler));
+            if (!matches) {
+                pendingConfirmation = null;
+                recordCandidate(pending.candidate, pending.stepBlocks, false);
+                return;
+            }
+            if (pending.nextNeighbour >= NEIGHBOUR_QUART_OFFSETS.length) {
+                pendingConfirmation = null;
+                recordCandidate(pending.candidate, pending.stepBlocks, true);
+            }
         }
 
         final void updateProgress(int completed, int total) {
@@ -333,7 +432,18 @@ public final class LatitudeBiomeLocateService {
             long tickStarted = System.nanoTime();
             int tickGridProbes = 0;
             int tickExactProbes = 0;
+            while (confirmationPending()
+                    && tickExactProbes < LatitudeLocateBudgetPolicy.MAX_WETLAND_EXACT_PROBES_PER_TICK
+                    && !deadlineExceeded(tickStarted)) {
+                tickExactProbes++;
+                exactProbes++;
+                stepConfirmation();
+            }
+            if (confirmationPending()) {
+                return false;
+            }
             while (offsets.hasNext()
+                    && !confirmationPending()
                     && tickGridProbes < LatitudeLocateBudgetPolicy.MAX_WETLAND_GRID_PROBES_PER_TICK
                     && tickExactProbes < LatitudeLocateBudgetPolicy.MAX_WETLAND_EXACT_PROBES_PER_TICK
                     && !deadlineExceeded(tickStarted)) {
@@ -376,14 +486,17 @@ public final class LatitudeBiomeLocateService {
                 exact = latitudeSource.getNoiseBiome(
                         quartX, QuartPos.fromBlock(surfaceY), quartZ, sampler);
                 if (target.test(exact)) {
-                    recordCandidate(Pair.of(LatitudeBiomeSource.centerQuartPosition(
-                            new BlockPos(blockX, surfaceY, blockZ)), exact),
+                    // The neighbourhood probes own the exact budget from here; the grid resumes
+                    // once the match settles as interior or sliver.
+                    beginConfirmation(quartX, QuartPos.fromBlock(surfaceY), quartZ,
+                            Pair.of(LatitudeBiomeSource.centerQuartPosition(
+                                    new BlockPos(blockX, surfaceY, blockZ)), exact),
                             COMMAND_HORIZONTAL_STEP);
                 }
             }
             updateProgress(gridProbes, LatitudeLocateBudgetPolicy.worstCaseSamples(
                     searchRadius, COMMAND_HORIZONTAL_STEP, 1));
-            if (!offsets.hasNext()) {
+            if (!offsets.hasNext() && !confirmationPending()) {
                 finish(bestCandidate());
                 log(hasCandidate());
                 return true;
@@ -452,6 +565,12 @@ public final class LatitudeBiomeLocateService {
         @Override
         boolean runTick() {
             long tickStarted = System.nanoTime();
+            if (confirmationPending()) {
+                // The neighbourhood probe is this tick's single terrain-aware classification —
+                // the same stall guard that limits the match probes themselves.
+                stepConfirmation();
+                return false;
+            }
             if (!previewComplete) {
                 int tickPreviewProbes = 0;
                 while (previewOffsets.hasNext()
@@ -496,13 +615,14 @@ public final class LatitudeBiomeLocateService {
                     Holder<Biome> exact = latitudeSource.getNoiseBiome(
                             quartX, QuartPos.fromBlock(surfaceY), quartZ, sampler);
                     if (target.test(exact)) {
-                        recordCandidate(resultAt(quartX, quartZ, exact), previewStep);
+                        beginConfirmation(quartX, QuartPos.fromBlock(surfaceY), quartZ,
+                                resultAt(quartX, quartZ, exact), previewStep);
                     }
                     // One terrain-aware classification per surface tick keeps a bad terrain sample
                     // from recreating the old integrated-server stall.
                     break;
                 }
-                if (!previewOffsets.hasNext()) {
+                if (!previewOffsets.hasNext() && !confirmationPending()) {
                     // The preview grid is exhausted; a match found on it is already the nearest
                     // preview candidate, so the coarser fallback sweep has nothing to add.
                     if (hasCandidate()) {
@@ -538,7 +658,8 @@ public final class LatitudeBiomeLocateService {
                 Holder<Biome> exact = latitudeSource.getNoiseBiome(
                         quartX, QuartPos.fromBlock(surfaceY), quartZ, sampler);
                 if (target.test(exact)) {
-                    recordCandidate(resultAt(quartX, quartZ, exact), fallbackStep);
+                    beginConfirmation(quartX, QuartPos.fromBlock(surfaceY), quartZ,
+                            resultAt(quartX, quartZ, exact), fallbackStep);
                 }
                 updateProgress(previewTotal + fallbackChecks, previewTotal + fallbackTotal);
                 return false;
@@ -612,6 +733,11 @@ public final class LatitudeBiomeLocateService {
             int tickExactProbes = 0;
             while (tickExactProbes < LatitudeLocateBudgetPolicy.MAX_THREE_DIMENSIONAL_EXACT_PROBES_PER_TICK
                     && !deadlineExceeded(tickStarted)) {
+                if (confirmationPending()) {
+                    tickExactProbes++;
+                    stepConfirmation();
+                    continue;
+                }
                 if (currentOffset == null) {
                     if (!offsets.hasNext()) {
                         if (hasCandidate()) {
@@ -650,11 +776,12 @@ public final class LatitudeBiomeLocateService {
                 }
                 Holder<Biome> exact = latitudeSource.getNoiseBiome(quartX, quartY, quartZ, sampler);
                 if (target.test(exact)) {
-                    recordCandidate(Pair.of(LatitudeBiomeSource.centerQuartPosition(new BlockPos(
-                            QuartPos.toBlock(quartX) + 2, QuartPos.toBlock(quartY) + 2,
-                            QuartPos.toBlock(quartZ) + 2)), exact), horizontalStep);
+                    beginConfirmation(quartX, quartY, quartZ,
+                            Pair.of(LatitudeBiomeSource.centerQuartPosition(new BlockPos(
+                                    QuartPos.toBlock(quartX) + 2, QuartPos.toBlock(quartY) + 2,
+                                    QuartPos.toBlock(quartZ) + 2)), exact), horizontalStep);
                     // Remaining heights in this column share its horizontal distance, so they
-                    // cannot improve on the match just recorded.
+                    // cannot improve on the match just queued.
                     currentOffset = null;
                     continue;
                 }

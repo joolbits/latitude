@@ -3,6 +3,7 @@ package com.example.globe.client;
 import com.example.globe.util.LatitudeBands;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * Guards the separation between zone IDENTITY and zone NOTIFICATION.
@@ -231,12 +232,28 @@ public final class ZoneTitlePolicyTest {
                 "resync shifts the real last-zone announcement timestamp with the world clock");
     }
 
-    /** The public repo carries no process narrative or personal attribution in source comments. */
+    /**
+     * The public repo carries no process narrative or personal attribution in source comments.
+     *
+     * <p>Walks EVERY shipped source file rather than an enumerated list. The enumerated form named
+     * two files and therefore could not see the largest source file in the project, where two
+     * `LAW (&lt;name&gt;)` attributions sat undetected long enough to ship in a public tag. A guard
+     * whose coverage is a hand-written list silently stops matching the tree it is meant to police;
+     * discovering the set is what makes this assertion mean what its name says.
+     */
     private static void noProcessAttributionInShippedSource() throws Exception {
-        for (String path : new String[]{
-                "src/main/java/com/example/globe/client/GlobeWarningOverlay.java",
-                "src/main/java/com/example/globe/client/ZoneTitlePolicy.java"}) {
-            String source = read(path);
+        List<Path> shipped;
+        try (var walk = Files.walk(Path.of("src/main/java"))) {
+            shipped = walk.filter(Files::isRegularFile)
+                    .filter(p -> p.toString().endsWith(".java"))
+                    .sorted()
+                    .toList();
+        }
+        assertTrue(shipped.size() > 50,
+                "shipped-source walk found implausibly few files (" + shipped.size()
+                        + "); a broken walk would vacuously pass this guard");
+        for (Path path : shipped) {
+            String source = Files.readString(path);
             assertFalse(source.contains("Peetsa"),
                     "no personal attribution in shipped source: " + path);
             assertFalse(source.contains(" ask)") || source.contains(" ask:"),

@@ -6,7 +6,7 @@ public final class ViewportClipPolicyTest {
     private ViewportClipPolicyTest() {
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         acceptsFullyVisibleWidgetClick();
         acceptsVisiblePartOfTopClippedWidget();
         acceptsVisiblePartOfBottomClippedWidget();
@@ -14,6 +14,20 @@ public final class ViewportClipPolicyTest {
         rejectsFullyHiddenWidget();
         honorsHalfOpenClipEdges();
         System.out.println("PASS ViewportClipPolicyTest assertions=" + assertions);
+
+        // This source set is the create-screen policy suite (despite its name); every class in it
+        // must run from this one registered entry point, or the check gate compiles a test that
+        // never executes.
+        int vanillaStateAssertions = VanillaOnlyWorldCreationStateTest.run();
+        System.out.println("PASS VanillaOnlyWorldCreationStateTest assertions=" + vanillaStateAssertions);
+        int handoffAssertions = VanillaCreateWorldHandoffTest.run();
+        System.out.println("PASS VanillaCreateWorldHandoffTest assertions=" + handoffAssertions);
+        int uiPolicyAssertions = CreateWorldScreenUiPolicyTest.run();
+        System.out.println("PASS CreateWorldScreenUiPolicyTest assertions=" + uiPolicyAssertions);
+        int footerAssertions = VanillaFooterLayoutPolicyTest.run();
+        System.out.println("PASS VanillaFooterLayoutPolicyTest assertions=" + footerAssertions);
+        int hatchAssertions = EscapeHatchSourcePolicyTest.run();
+        System.out.println("PASS EscapeHatchSourcePolicyTest assertions=" + hatchAssertions);
     }
 
     private static void acceptsFullyVisibleWidgetClick() {

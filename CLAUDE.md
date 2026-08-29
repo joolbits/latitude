@@ -1,77 +1,40 @@
-# Latitude repository instructions
+# Latitude — agent guide
 
-These rules apply to every human or automated contributor.
+Rules for ANY coding agent working in this repo (Claude, Codex, or otherwise). CLAUDE.md and
+AGENTS.md are identical copies; edit both together.
 
-## Privacy and legal safety
+## ⛔ NEVER COMMIT — read this before your first `git add`
 
-Treat every Git object, branch, tag, build report, and artifact as public.
+This is a PUBLIC repository. A 2026-08-07 incident force-rewrote its entire history to remove
+13,246 accidentally-tracked files of decompiled Minecraft source and private process notes.
+These rules exist so that never happens again. The commit hook (S-6/S-7) and .gitignore enforce
+them mechanically — do not weaken either, do not commit with --no-verify.
 
-Never place these categories in tracked content, Git metadata, names, artifacts,
-or public communication:
+1. **No decompiled or extracted Minecraft sources. EVER.** No `_mcsrc*`, no `net/minecraft/**`
+   Java files, no mappings dumps. That is proprietary code; tracking it in a public repo is
+   redistribution. Reference extractions live OUTSIDE the repo or in gitignored dirs only.
+2. **No development diaries in the repo.** `docs/binder/**`, session reports, evidence
+   registries, handoffs, live-test ledgers, campaign notes — ALL of it goes to the
+   maintainer's notes directory for this line (outside the repository; its location is
+   recorded in the maintainer's private agent configuration), never into the tree. If you
+   are writing a dated narrative of what you did, you are writing a notes file, not a repo
+   file.
+3. **No personal data.** No personal names, no machine usernames, no absolute home-directory
+   paths, no session/recorder UUIDs — in ANY tracked file, source comments and commit messages
+   included. Cite decisions as "maintainer ruling, <date>".
+4. **No runtime state.** `run-headless/**`, `run/**` worlds, `tmp/**`, logs, archives
+   (`*.zip`, `*.7z`) stay untracked.
 
-- personal identity, email addresses, machine usernames, device names, or
-  absolute local paths;
-- operator-only records, conversational chronology, temporary proof output,
-  worlds, crash output, or local run state;
-- credentials, tokens, cookies, private keys, or credential-bearing URLs;
-- decompiled or extracted Minecraft source, mappings dumps, or proprietary
-  reference material;
-- third-party code, data, text, or assets without documented provenance and
-  redistribution permission.
+## Working rules
 
-Use Maintainer or Tester for roles. Use Peetsa only when public authorship is
-necessary. Store operator-only material in the established external notes tree.
-
-Before every commit, tag, push, release, or publication, run the private
-repository safety gate configured by repoSafety.scanner and repoSafety.patterns.
-If the gate or private pattern file is unavailable, stop. Never use
---no-verify and never weaken a rule to make a change pass.
-
-## Repository preflight
-
-Before editing, record:
-
-    git rev-parse --show-toplevel
-    git status -sb
-    git branch --show-current
-    git rev-parse HEAD
-    git tag --points-at HEAD
-    git config --get core.hooksPath
-
-Existing or unexplained changes are protected. Do not edit, stage, restore,
-stash, delete, or absorb them. Stop when root, branch, commit, tags, hook wiring,
-or protected state differs from the task boundary.
-
-## Product and proof authority
-
-Read README.md, docs/porting/PORTING.md for version migration work, and only the
-design or release policy directly relevant to the task. Product documentation
-belongs in Git. Operator records do not.
-
-Use the branch-native build and test tasks. Compilation, pure-math tests,
-headless world generation, staged artifacts, profiles, and live observations
-are separate proof surfaces. Never promote one into another.
-
-Before treating a JAR or source archive as shareable, verify its embedded
-identity, provenance, licenses, archive contents, and complete privacy scan.
-
-## Branches and worktrees
-
-Use stable names:
-
-- port branch: port/<minecraft>-<loader>
-- fix branch: fix/<minecraft>-<loader>/<purpose>
-- compatibility branch: compat/<minecraft>-<loader>/<purpose>
-- release branch: release/<approved-version>+<minecraft>-<loader>
-- worktree folder: Latitude-<minecraft>-<loader>-<purpose>
-
-Keep one canonical checkout and one worktree for each genuinely active task.
-Do not put a product version in an ordinary port or worktree name. Do not create
-a duplicate-purpose worktree. Record ownership and intended lifetime outside
-Git. No worktree, branch, tag, or saved change is removed automatically.
-
-## External actions
-
-Commits, tags, pushes, releases, history rewrites, ruleset changes, and
-deletions are separate authorization boundaries. Successful proof does not
-authorize the next boundary.
+- The maintainer's notes directory for this line (outside the repository; its location is
+  recorded in the maintainer's private agent configuration) is the home of ALL process
+  narrative. Read its HANDOFF.md for current state; append your session notes there.
+- Verification: run this line's suite before claiming green (1.5 lines: `./gradlew check`;
+  2.0 line: `./gradlew test` — count-gated). A green with a wrong count is a false green.
+- Release artifacts are gated (`tools/verify_release_artifact.py` on 2.0;
+  `tools/verify_phase6_dev_tooling.py` on 1.5): dev/debug tooling never ships. Do not remove
+  exclusion clauses; the drift baseline will fail the build if you do.
+- `git config core.hooksPath tools/hooks` once per checkout (the build self-installs it where
+  wired). Gates: S-6 (no personal/machine-local strings in added lines), S-7 (no forbidden
+  paths staged: `_mcsrc*`, `docs/binder/`, `run-headless/`, `tmp/`, archives).

@@ -1,5 +1,61 @@
 # Changelog
 
+## Latitude 1.5.1-beta.3 (Minecraft 26.2)
+
+Bug fixes to biome placement and `/locate`, plus a way out of Latitude's world-creation screen for
+players who want a Superflat, datapack, or other-mod world. **Beta:** shipped for testing before
+the 1.5.1 stable tag.
+
+### World creation
+
+- **You can reach Minecraft's own world-creation screen again.** Latitude replaces the create-world
+  screen, which left no route to Superflat, datapack-only worlds, or another mod's world type once
+  Latitude was installed. A new **Other World Types & Datapacks…** entry in the Rules panel hands
+  off to Minecraft's normal screen, carrying the world name and seed you already typed. Worlds made
+  there are ordinary Minecraft worlds — Latitude does not offer its own preset on that screen, so
+  there is no way to end up half in and half out.
+- `Ctrl+Tab` now cycles the World/Settings tabs, and switching tabs no longer leaves a text field on
+  the previous tab quietly holding your keystrokes.
+
+### World generation
+
+- **Oceans are the right depth again.** Outside the tropics, the first water off a beach could be
+  labelled deep ocean, so shallow coastal water got deep-ocean fish, colour, and mob spawns. Every
+  climate band now matches the water's real depth. This is the largest change in the release by
+  area — tens of thousands of map cells per world — but it is a correction to labelling, not a
+  reshaping of terrain. New terrain only.
+- **Lush forests no longer grow inside the desert belt.** Randomness at the band boundary could push
+  temperate forest as far equatorward as 31°, dropping green woodland islands into arid country.
+  Temperate growth now stops at the true 35° line with a soft, natural-looking edge. New terrain only.
+- **Desert riverbanks follow the water instead of printing blobs.** The test for "is there water
+  nearby" sampled sixteen fixed points, which narrow streams slipped straight through — the bank
+  right at the water's edge was the part most often missed. Banks now sweep outward properly and
+  fade with distance instead of ending on a hard rim.
+- **Rare biome slots can no longer come up empty without mods.** Two of the "accent" slots that add
+  variety to the dry and tropical belts contained only modded biomes, so on a vanilla world that
+  slot silently fell through to whatever the raw terrain suggested — which occasionally meant ice
+  spikes or snowy plains at the equator. Both slots now have vanilla members.
+- **Modded beaches stay beaches.** With biome packs installed, an unrecognised beach could be
+  replaced by an inland biome — and in rare cases by a swamp or mangrove that bypassed every
+  coastal check. Unrecognised beaches now fall back to the ordinary beach for that latitude.
+  Affects modded worlds only.
+
+### `/locate`
+
+- **`/locate biome` puts you inside the biome, not on its edge.** The command accepted the nearest
+  single matching cell, which at a thin boundary — swamp against mangrove, for instance — could
+  leave you standing in the neighbouring biome. It now prefers a spot whose surroundings match, and
+  will look moderately further to find one.
+
+### Known issues
+
+- **CliffTree and TerraBlender cannot currently be used together on Minecraft 26.2**, with or
+  without Latitude. CliffTree adds a terrain rule when TerraBlender is present that Minecraft 26.2
+  refuses to save, so the world crashes the moment it is first saved. This is not a Latitude bug —
+  it reproduces on a plain Minecraft world type with Latitude generating nothing — but Latitude
+  players hitting it will see it during world creation. Use one or the other until CliffTree or
+  TerraBlender ships a fix.
+
 ## Latitude 1.5.1-beta.2 (Minecraft 26.2)
 
 A focused follow-up to beta.1, adopting a set of fixes proven on the parallel 1.21.11 line and

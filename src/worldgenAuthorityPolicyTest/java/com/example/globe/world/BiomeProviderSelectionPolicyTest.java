@@ -56,8 +56,13 @@ final class BiomeProviderSelectionPolicyTest {
         dryWarmIdentityGateUsesTheDesertFirstOrder();
         savannaIsACountryInsideTheWarmBelt();
         cliffTreeLandAndOceanAreActuallyReachable();
+        oceanIdentityFollowsDonorDepthInEveryBand();
+        beachShortcutQuarantineRestoresBeachIdentity();
+        temperatePoolNeverResolvesEquatorwardOfTheTrueLine();
         riverAndBeachAdmissionIsTagDrivenAndVanillaSafe();
         everyLedgerLandRouteSurvivesTheBandPoolGate();
+        everyLandBandRoleKeepsAVanillaFloor();
+        riparianBankProbesCannotMissANarrowRiver();
         wetlandsAreAcceptedButNeverSubstitutedIn();
         cohesionGatePoolAgreesWithTheLedger();
         vanillaCoverageIsCompleteAndWorldSizeSafe();
@@ -1676,6 +1681,263 @@ final class BiomeProviderSelectionPolicyTest {
                 "a custom biome cannot be admitted through a mismatched route");
     }
 
+    /**
+     * The first water column off a beach was labeling itself deep_ocean: outside the tropics the
+     * band pickers drew from tag pools holding shallow and deep members together, and only band 0
+     * ever consulted the donor's own depth. Every band's ocean identity now follows the donor —
+     * a shallow donor may never resolve deep, and a deep donor may never resolve shallow. The
+     * fixture registry carries no tags, so this drives the depth-matched vanilla fallback arm;
+     * the tag arm shares the same depth filters, pinned below on hand-built pools.
+     */
+    private static void oceanIdentityFollowsDonorDepthInEveryBand() throws Exception {
+        // The shared fixture is land-only (the ledger carries no oceans), so this test builds its
+        // own registry carrying the vanilla ocean roster the band pickers fall back to.
+        MappedRegistry<Biome> registry = new MappedRegistry<>(Registries.BIOME, Lifecycle.stable());
+        Set<String> ids = new java.util.TreeSet<>(registryFor(Set.of()));
+        ids.addAll(List.of(
+                "minecraft:ocean", "minecraft:deep_ocean",
+                "minecraft:cold_ocean", "minecraft:deep_cold_ocean",
+                "minecraft:frozen_ocean", "minecraft:deep_frozen_ocean",
+                "minecraft:lukewarm_ocean", "minecraft:deep_lukewarm_ocean"));
+        for (String id : ids) {
+            registry.register(
+                    ResourceKey.create(Registries.BIOME, Identifier.parse(id)),
+                    testBiome(),
+                    RegistrationInfo.BUILT_IN);
+        }
+        registry.freeze();
+        registry.prepareTagReload(new net.minecraft.tags.TagLoader.LoadResult<>(
+                Registries.BIOME, Map.of())).apply();
+        List<Holder<Biome>> pool = registry.listElements()
+                .map(entry -> (Holder<Biome>) entry)
+                .toList();
+        java.lang.reflect.Method registryOcean = LatitudeBiomes.class.getDeclaredMethod(
+                "oceanByLatitudeBandOrBase",
+                Registry.class, Holder.class, int.class, int.class, int.class);
+        registryOcean.setAccessible(true);
+        java.lang.reflect.Method collectionOcean = LatitudeBiomes.class.getDeclaredMethod(
+                "oceanByLatitudeBandOrBase",
+                java.util.Collection.class, Holder.class, int.class, int.class, int.class);
+        collectionOcean.setAccessible(true);
+        Holder<Biome> shallowDonor = testBiomeHolder(registry, "minecraft:ocean");
+        Holder<Biome> deepDonor = testBiomeHolder(registry, "minecraft:deep_ocean");
+        LatitudeBiomes.clearWorldgenContext();
+        try {
+            LatitudeBiomes.setRadius(10_000);
+            LatitudeBiomes.setWorldSeed(41L);
+            for (int band = 1; band <= 4; band++) {
+                for (int[] at : new int[][]{{-4_211, 3_007}, {977, -6_133}, {5_501, 5_501}}) {
+                    Holder<Biome> fromShallowRegistry = castOceanPick(
+                            registryOcean.invoke(null, registry, shallowDonor, at[0], at[1], band));
+                    Holder<Biome> fromDeepRegistry = castOceanPick(
+                            registryOcean.invoke(null, registry, deepDonor, at[0], at[1], band));
+                    Holder<Biome> fromShallowPool = castOceanPick(
+                            collectionOcean.invoke(null, pool, shallowDonor, at[0], at[1], band));
+                    Holder<Biome> fromDeepPool = castOceanPick(
+                            collectionOcean.invoke(null, pool, deepDonor, at[0], at[1], band));
+                    for (Holder<Biome> shallowOut : List.of(fromShallowRegistry, fromShallowPool)) {
+                        String id = LatitudeBiomes.biomeIdPublic(shallowOut);
+                        assertTrue(id.contains("ocean") && !id.contains("deep"),
+                                "a shallow ocean donor must stay shallow in band " + band
+                                        + " (was " + id + ")");
+                    }
+                    for (Holder<Biome> deepOut : List.of(fromDeepRegistry, fromDeepPool)) {
+                        String id = LatitudeBiomes.biomeIdPublic(deepOut);
+                        assertTrue(id.contains("ocean") && id.contains("deep"),
+                                "a deep ocean donor must stay deep in band " + band
+                                        + " (was " + id + ")");
+                    }
+                }
+            }
+
+            // The tag arm relies on these depth filters; pin the split on a mixed pool.
+            java.lang.reflect.Method shallowFilter = LatitudeBiomes.class.getDeclaredMethod(
+                    "filterShallowOcean", List.class);
+            shallowFilter.setAccessible(true);
+            java.lang.reflect.Method deepFilter = LatitudeBiomes.class.getDeclaredMethod(
+                    "filterDeepOcean", List.class);
+            deepFilter.setAccessible(true);
+            List<Holder<Biome>> mixed = List.of(
+                    testBiomeHolder(registry, "minecraft:cold_ocean"),
+                    testBiomeHolder(registry, "minecraft:deep_cold_ocean"),
+                    testBiomeHolder(registry, "minecraft:frozen_ocean"),
+                    testBiomeHolder(registry, "minecraft:deep_frozen_ocean"));
+            @SuppressWarnings("unchecked")
+            List<Holder<Biome>> shallowSide = (List<Holder<Biome>>) shallowFilter.invoke(null, mixed);
+            @SuppressWarnings("unchecked")
+            List<Holder<Biome>> deepSide = (List<Holder<Biome>>) deepFilter.invoke(null, mixed);
+            assertEquals(2, shallowSide.size(), "the shallow filter keeps exactly the shallow members");
+            assertEquals(2, deepSide.size(), "the deep filter keeps exactly the deep members");
+            for (Holder<Biome> entry : shallowSide) {
+                assertTrue(!LatitudeBiomes.biomeIdPublic(entry).contains("deep"),
+                        "the shallow filter must not pass a deep member");
+            }
+            for (Holder<Biome> entry : deepSide) {
+                assertTrue(LatitudeBiomes.biomeIdPublic(entry).contains("deep"),
+                        "the deep filter must not pass a shallow member");
+            }
+        } finally {
+            LatitudeBiomes.clearWorldgenContext();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Holder<Biome> castOceanPick(Object picked) {
+        return (Holder<Biome>) picked;
+    }
+
+    /**
+     * The equatorward mirror of the poleward arid ramp: jitter, blend, and warp could promote a
+     * true-33-degree column to the TEMPERATE pool, planting mesic-forest islands inside the dry
+     * belt. The clamp demotes every temperate resolution at or below true 34.5 degrees, ramps
+     * noise-warped across 34.5..35.5, and keeps true temperate untouched. This drives the real
+     * jittered/blended/warped resolver, so pre-clamp some swept columns genuinely resolved
+     * temperate — the teeth of the equatorward assertion.
+     */
+    private static void temperatePoolNeverResolvesEquatorwardOfTheTrueLine() {
+        int radius = 10_000;
+        LatitudeBiomes.clearWorldgenContext();
+        try {
+            LatitudeBiomes.setRadius(radius);
+            for (long seed : new long[]{41L, 461L}) {
+                LatitudeBiomes.setWorldSeed(seed);
+                int equatorwardTemperate = 0;
+                boolean sawTrueTemperate = false;
+                for (int z = 2_900; z <= 3_833; z += 13) {
+                    for (int x = -6_000; x <= 6_000; x += 97) {
+                        int band = LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, z, radius);
+                        if (band == 2) {
+                            equatorwardTemperate++;
+                        }
+                        int mirrored = LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, -z, radius);
+                        if (mirrored == 2) {
+                            equatorwardTemperate++;
+                        }
+                    }
+                }
+                assertEquals(0, equatorwardTemperate,
+                        "the TEMPERATE pool must never resolve at or below true 34.5 degrees "
+                                + "(seed " + seed + ")");
+                for (int z = 3_950; z <= 5_400 && !sawTrueTemperate; z += 31) {
+                    for (int x = -6_000; x <= 6_000; x += 97) {
+                        if (LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, z, radius) == 2) {
+                            sawTrueTemperate = true;
+                            break;
+                        }
+                    }
+                }
+                assertTrue(sawTrueTemperate,
+                        "true temperate columns must keep resolving temperate (seed " + seed + ")");
+                for (int z = 3_834; z <= 3_943; z += 7) {
+                    for (int x = -6_000; x <= 6_000; x += 193) {
+                        int band = LatitudeBiomes.finalPickerLandBandIndexForPolicyTest(x, z, radius);
+                        assertTrue(band == 1 || band == 2,
+                                "the ramp ring resolves only subtropical or temperate (seed "
+                                        + seed + ", was band " + band + ")");
+                    }
+                }
+            }
+        } finally {
+            LatitudeBiomes.clearWorldgenContext();
+        }
+    }
+
+    /**
+     * A quarantined custom beach pick used to reroll through the LAND pool, so a beach column
+     * became a land biome — and because the subtropical land pool deliberately seeds swamp and
+     * mangrove, the beach shortcut (which returns before the final wetland authority) could
+     * conjure an ungated wetland on the shoreline. A quarantined beach pick must now resolve to
+     * the band's vanilla beach identity, and a vanilla pick must pass through untouched.
+     */
+    private static void beachShortcutQuarantineRestoresBeachIdentity() throws Exception {
+        MappedRegistry<Biome> registry = new MappedRegistry<>(Registries.BIOME, Lifecycle.stable());
+        Set<String> ids = new java.util.TreeSet<>(registryFor(Set.of()));
+        ids.addAll(List.of(
+                "minecraft:beach", "minecraft:snowy_beach", "minecraft:stony_shore",
+                "examplemod:crystal_shore"));
+        for (String id : ids) {
+            registry.register(
+                    ResourceKey.create(Registries.BIOME, Identifier.parse(id)),
+                    testBiome(),
+                    RegistrationInfo.BUILT_IN);
+        }
+        registry.freeze();
+        registry.prepareTagReload(new net.minecraft.tags.TagLoader.LoadResult<>(
+                Registries.BIOME, Map.of())).apply();
+        List<Holder<Biome>> pool = registry.listElements()
+                .map(entry -> (Holder<Biome>) entry)
+                .toList();
+        java.lang.reflect.Method registryQuarantine = LatitudeBiomes.class.getDeclaredMethod(
+                "quarantineUnknownCustomBeachBiome",
+                Registry.class, Holder.class, Holder.class, int.class, int.class, int.class);
+        registryQuarantine.setAccessible(true);
+        java.lang.reflect.Method collectionQuarantine = LatitudeBiomes.class.getDeclaredMethod(
+                "quarantineUnknownCustomBeachBiome",
+                java.util.Collection.class, Holder.class, Holder.class,
+                int.class, int.class, int.class);
+        collectionQuarantine.setAccessible(true);
+        Holder<Biome> customBeach = testBiomeHolder(registry, "examplemod:crystal_shore");
+        Holder<Biome> vanillaBeach = testBiomeHolder(registry, "minecraft:beach");
+        Holder<Biome> neutralBase = testBiomeHolder(registry, "minecraft:plains");
+        Set<String> beachFamily = Set.of(
+                "minecraft:beach", "minecraft:snowy_beach", "minecraft:stony_shore");
+        LatitudeBiomes.clearWorldgenContext();
+        try {
+            LatitudeBiomes.setRadius(10_000);
+            LatitudeBiomes.setWorldSeed(41L);
+            for (int band = 0; band <= 4; band++) {
+                for (int[] at : new int[][]{{-4_211, 3_007}, {977, -6_133}, {5_501, 5_501}}) {
+                    Holder<Biome> fromRegistry = castOceanPick(registryQuarantine.invoke(
+                            null, registry, customBeach, neutralBase, at[0], at[1], band));
+                    Holder<Biome> fromPool = castOceanPick(collectionQuarantine.invoke(
+                            null, pool, customBeach, neutralBase, at[0], at[1], band));
+                    for (Holder<Biome> out : List.of(fromRegistry, fromPool)) {
+                        String id = LatitudeBiomes.biomeIdPublic(out);
+                        assertTrue(beachFamily.contains(id),
+                                "a quarantined custom beach pick must restore beach identity in "
+                                        + "band " + band + " (was " + id + ")");
+                    }
+                    assertEquals(
+                            LatitudeBiomes.biomeIdPublic(fromRegistry),
+                            LatitudeBiomes.biomeIdPublic(fromPool),
+                            "both pickers restore the same beach identity at the same column");
+                    Holder<Biome> passThrough = castOceanPick(registryQuarantine.invoke(
+                            null, registry, vanillaBeach, neutralBase, at[0], at[1], band));
+                    assertTrue(passThrough == vanillaBeach,
+                            "a vanilla beach pick must pass the beach quarantine untouched");
+                }
+            }
+            // The cold arms must reuse the beach picker's own seed-free snowy/rocky roll: at a
+            // chunk whose roll lands in each side, the restored identity is that side's biome.
+            java.lang.reflect.Method beachId = LatitudeBiomes.class.getDeclaredMethod(
+                    "vanillaBeachIdForBand", int.class, int.class, int.class);
+            beachId.setAccessible(true);
+            boolean sawSnowy = false;
+            boolean sawRocky = false;
+            for (int chunk = 0; chunk < 64 && !(sawSnowy && sawRocky); chunk++) {
+                String id = (String) beachId.invoke(null, chunk << 4, 0, 3);
+                sawSnowy |= id.equals("minecraft:snowy_beach");
+                sawRocky |= id.equals("minecraft:stony_shore");
+            }
+            assertTrue(sawSnowy && sawRocky,
+                    "the cold-band restore must roll both snowy and rocky shore identities");
+
+            // Wiring: both beach-shortcut sites must route through the beach quarantine. The
+            // land quarantine's four occurrences are its two definitions and the two LAND-path
+            // call sites — a fifth means a beach path went back to the land reroll.
+            String source = Files.readString(Path.of(
+                    "src/main/java/com/example/globe/world/LatitudeBiomes.java"));
+            assertEquals(4, occurrences(source, "quarantineUnknownCustomBeachBiome("),
+                    "both beach-shortcut paths must quarantine through the beach restore "
+                            + "(two definitions plus two call sites)");
+            assertEquals(4, occurrences(source, "quarantineUnknownCustomLandBiome("),
+                    "the land quarantine may keep only its two definitions and two LAND-path "
+                            + "call sites; a beach path must never reroll through the land pool");
+        } finally {
+            LatitudeBiomes.clearWorldgenContext();
+        }
+    }
+
     private static void surfaceWaterCoverageIsCompleteAndWorldSizeSafe() throws Exception {
         Set<String> exactRequired = Set.of(
                 "minecraft:ocean", "minecraft:deep_ocean",
@@ -2097,6 +2359,155 @@ final class BiomeProviderSelectionPolicyTest {
 
 
     /**
+     * The riparian water probe must find a river that is genuinely within reach, whatever its
+     * width, distance, or orientation. The original stencil probed eight rays at exactly two
+     * distances ({@code searchRadius/2} and {@code searchRadius}), which left two geometric holes:
+     * a river band lying between those two distances on a ray was missed, and eight rays leave a
+     * 7.85-block arc gap at radius ten (the diagonals also sampling 7.07/14.14 rather than 5/10).
+     * Modelled here across every bank distance and orientation, that stencil found only 73.3% of
+     * three-block-wide rivers and 92.8% of five-block ones — so the admission band was already
+     * dotted before any feature placement, and the banks printed as blobs. Wide rivers hid it
+     * completely, which is why it surfaced as a taste report about narrow desert streams.
+     *
+     * <p>Reported by the 1.21.11 line from a live look (2026-08-25) and re-derived here against
+     * this line's own source before adoption; the mechanism transferred, the tuning deliberately
+     * did not.
+     */
+    private static void riparianBankProbesCannotMissANarrowRiver() throws Exception {
+        java.lang.reflect.Method offsets = com.example.globe.world.feature.RiparianPlacement.class
+                .getDeclaredMethod("probeOffsetsForPolicyTest", int.class);
+        offsets.setAccessible(true);
+        // Every radius the codec accepts, not just the shipped default: search_radius is a
+        // datapack-settable field, so a change to the ring spacing must not leave some other
+        // radius with a hole nobody exercises.
+        for (int radius = 1;
+                radius <= com.example.globe.world.feature.RiparianPlacement.MAX_SEARCH_RADIUS;
+                radius++) {
+            riparianProbeTableCoversEveryRiver(
+                    (int[][]) offsets.invoke(null, radius), radius);
+        }
+
+        int searchRadius = com.example.globe.world.feature.RiparianPlacement.DEFAULT_SEARCH_RADIUS;
+        int[][] probes = (int[][]) offsets.invoke(null, searchRadius);
+        assertTrue(probes.length > 0, "the riparian probe table must not be empty");
+
+        // Nearest-first ordering is what lets the sweep return the TRUE distance on first hit and
+        // stop there; an unordered table would report whichever ring happened to be walked first.
+        double previous = -1.0;
+        for (int[] probe : probes) {
+            double distance = Math.hypot(probe[0], probe[1]);
+            assertTrue(distance >= previous - 1.0e-9,
+                    "probe offsets must be ordered nearest-first so the first hit is the true "
+                            + "distance to the waterline");
+            previous = distance;
+            assertTrue(Math.abs(probe[0]) <= searchRadius && Math.abs(probe[1]) <= searchRadius,
+                    "no probe may exceed the search radius on either axis — the decoration region "
+                            + "only guarantees one chunk of reach");
+        }
+
+        // A straight river band of the given width, near edge at perpendicular distance d,
+        // rotated through every orientation: some probe must land inside the water band.
+        // The taper is what stops each patch ending on a hard rim: full inside the core, zero at
+        // the radius, monotonically non-increasing in between.
+        assertTrue(com.example.globe.world.feature.RiparianPlacement.bankDensity(1, searchRadius) == 1.0,
+                "a column on the waterline plants at full density");
+        assertTrue(com.example.globe.world.feature.RiparianPlacement.bankDensity(searchRadius, searchRadius) == 0.0,
+                "density must reach zero at the search radius, not stop on a rim");
+        double last = 1.0;
+        for (int distance = 0; distance <= searchRadius; distance++) {
+            double density = com.example.globe.world.feature.RiparianPlacement.bankDensity(distance, searchRadius);
+            assertTrue(density <= last + 1.0e-9,
+                    "bank density must never rise with distance from the water");
+            last = density;
+        }
+        assertTrue(com.example.globe.world.feature.RiparianPlacement.bankDensity(-1, searchRadius) == 0.0,
+                "a column with no water in reach plants nothing");
+    }
+
+    /**
+     * A straight river band of the given width, its near edge at each plantable distance, rotated
+     * through every orientation: some probe must land inside the water. Distances stop one short
+     * of the search radius because a column at exactly the radius already tapers to zero density,
+     * so detecting it would plant nothing — and requiring it would demand a probe lying exactly on
+     * the river's normal, which no finite ring can guarantee.
+     */
+    private static void riparianProbeTableCoversEveryRiver(int[][] probes, int searchRadius) {
+        assertTrue(probes.length > 0,
+                "the riparian probe table must not be empty at radius " + searchRadius);
+        for (int[] probe : probes) {
+            assertTrue(Math.abs(probe[0]) <= searchRadius && Math.abs(probe[1]) <= searchRadius,
+                    "no probe may exceed the search radius on either axis — the decoration region "
+                            + "only guarantees one chunk of reach (radius " + searchRadius + ")");
+        }
+        for (int width : new int[]{3, 5, 8}) {
+            for (int distance = 1; distance < searchRadius; distance++) {
+                for (int step = 0; step < 72; step++) {
+                    double theta = (2.0 * Math.PI * step) / 72.0;
+                    double nx = Math.cos(theta);
+                    double nz = Math.sin(theta);
+                    boolean found = false;
+                    for (int[] probe : probes) {
+                        double perpendicular = probe[0] * nx + probe[1] * nz;
+                        if (perpendicular >= distance && perpendicular <= distance + width - 1) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    assertTrue(found,
+                            "a river of width " + width + " at distance " + distance
+                                    + " must be detected at every orientation (radius "
+                                    + searchRadius + ", missed at "
+                                    + Math.round(Math.toDegrees(theta)) + " degrees)");
+                }
+            }
+        }
+    }
+
+    /**
+     * Every role {@link LatitudeBiomes#landBandTags} actually consults for selection must keep at
+     * least one vanilla member. {@code pickFromWeightedTags} and {@code allowedLandPool} draw
+     * straight from these tags with no vanilla-specific fallback, so a role with pack content but
+     * zero vanilla members can be rolled on a modded world with no chance of a vanilla-only
+     * outcome — the equal-provider-share machinery ({@link BiomeProviderSelectionPolicy}) assumes
+     * every active role has a vanilla row to weight against. Found 2026-08-18/24: two of the
+     * warm-belt accent tiers (the rarest, most "special" weighted slot) had this hole —
+     * {@code lat_arid_accent} carried 23 modded ids and no vanilla one, {@code lat_tropics_accent}
+     * 2 and none. Vanilla has no spare THIRD desert or jungle identity to give either accent its
+     * own distinct flavor the way {@code lat_temperate_accent} (meadow, stony_peaks) or
+     * {@code lat_polar_accent} (ice_spikes) can, so the floor reuses each band's existing
+     * secondary-tier vanilla identity — wooded_badlands and eroded_badlands for arid, bamboo_jungle
+     * for tropics — rather than inventing a new one.
+     *
+     * <p>The role roster is read from {@code landBandTags}' own source rather than hardcoded, so
+     * this gate covers any future role automatically instead of needing a matching row added by
+     * hand. The size pin exists only so a roster change is a deliberate, visible edit to this test.
+     */
+    private static void everyLandBandRoleKeepsAVanillaFloor() throws Exception {
+        String source = read("src/main/java/com/example/globe/world/LatitudeBiomes.java");
+        String landBandTagsMethod = method(source,
+                "private static List<TagKey<Biome>> landBandTags(int bandIndex) {");
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("LAT_[A-Z0-9_]+")
+                .matcher(landBandTagsMethod);
+        java.util.Set<String> tagConstants = new java.util.TreeSet<>();
+        while (matcher.find()) {
+            tagConstants.add(matcher.group());
+        }
+        assertEquals(26, tagConstants.size(),
+                "landBandTags' own role roster changed size — re-verify every role still keeps a "
+                        + "vanilla floor, then update this count deliberately");
+        for (String constant : tagConstants) {
+            String fileName = constant.substring("LAT_".length()).toLowerCase(java.util.Locale.ROOT);
+            String path = "src/main/resources/data/globe/tags/worldgen/biome/lat_" + fileName + ".json";
+            String tag = read(path);
+            assertTrue(tag.contains("\"minecraft:"),
+                    "role " + fileName + " is selectable by pickFromWeightedTags/allowedLandPool "
+                            + "and must keep at least one vanilla member, or a modded install can "
+                            + "roll that weighted tier with zero chance of a vanilla-only outcome: "
+                            + path);
+        }
+    }
+
+    /**
      * Acceptance and substitution must not use the same pool.
      *
      * <p>Maintainer, live 2026-08-10: teleporting to muskeg landed on a flat expanse of ice.
@@ -2243,11 +2654,12 @@ final class BiomeProviderSelectionPolicyTest {
         // Both overloads (registry-source and collection-source) must keep the roll. Asserting mere
         // presence was NOT enough: a teeth check that removed it from one overload still passed,
         // because the other overload's copy satisfied a contains() check.
-        assertEquals(2, occurrences(source, "0xBEEFBEEF"),
-                "the cold-beach category roll must survive in BOTH pickBeachForBand overloads — it "
-                        + "decides snowy vs rocky, and only the identity within that category is "
-                        + "tag-driven; losing it in either path silently rerolls every polar "
-                        + "coastline on vanilla-only worlds");
+        assertEquals(3, occurrences(source, "0xBEEFBEEF"),
+                "the cold-beach category roll must survive in BOTH pickBeachForBand overloads and "
+                        + "in vanillaBeachIdForBand's quarantine restore — it decides snowy vs "
+                        + "rocky, and only the identity within that category is tag-driven; losing "
+                        + "it in any path silently rerolls every polar coastline on vanilla-only "
+                        + "worlds, or restores a quarantined cold beach to the wrong category");
         String registryBeachMethod = method(source, "pickBeachForBand(Registry<Biome> biomes,");
         String collectionBeachMethod = method(source, "pickBeachForBand(Collection<Holder<Biome>> biomes,");
         for (String authority : new String[]{

@@ -1,6 +1,7 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.create.RecreatedWorldPresetCarrier;
+import com.example.globe.client.create.VanillaCreateWorldUiStateCarrier;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 import org.slf4j.Logger;
@@ -14,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 @Mixin(CreateWorldScreen.class)
-public abstract class CreateWorldScreenMixin implements RecreatedWorldPresetCarrier {
+public abstract class CreateWorldScreenMixin implements RecreatedWorldPresetCarrier, VanillaCreateWorldUiStateCarrier {
     private static final Logger LOGGER = LoggerFactory.getLogger("globe");
     // [LAT][CWPATH] fires on every ordinary create-screen open; opt-in only (maintainer ruling, 2026-08-18).
     private static final boolean DEBUG_CWPATH = Boolean.getBoolean("latitude.debugCwPath");
@@ -24,6 +25,11 @@ public abstract class CreateWorldScreenMixin implements RecreatedWorldPresetCarr
 
     @Shadow
     public abstract WorldCreationUiState getUiState();
+
+    @Override
+    public WorldCreationUiState globe$getUiState() {
+        return getUiState();
+    }
 
     @Accessor("recreated")
     public abstract boolean globe$isRecreated();

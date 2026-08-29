@@ -25,7 +25,7 @@ test, and neither is "it is only used by developers."
 ### Excluded class 1 — Recording
 
 Anything that persists observations of a play session. The test: **does it write anything to disk, or
-accumulate a record of technical changes?**
+accumulate a record of what happened?**
 
 Includes file writes of any kind (text, CSV, PNG, screenshots, clipboard capture), session/trace
 accumulators, and export tooling. A command that produces the same information as transient chat output
@@ -42,7 +42,7 @@ coordinators, and any pause/resume/status surface that exists to manage such a w
 ### Excluded class 3 — Auto-harness
 
 Anything that arms itself without an explicit player command. The test: **can it start without a player
-typing a command in this change?**
+typing a command in the current play session?**
 
 Includes auto-create/auto-close probes, client-side audit harnesses and bridges, keybind-triggered
 capture, and `-D` system-property-driven headless runners.
@@ -131,7 +131,8 @@ shipped command, and confirm no Latitude capture keybind appears in the vanilla 
 ## Amendment protocol
 
 This policy changes only by owner directive. Any amendment records a new evidence entry, scope
-`release`, in the maintainer's notes directory (`<external-notes>/1.5-26.2/`) —
-never in this tree — sets `supersedes` to the prior entry, and updates this document in the same
+`release`, in the maintainer's notes directory for this line (outside the repository; its
+location is recorded in the maintainer's private agent configuration) — never in this tree —
+sets `supersedes` to the prior entry, and updates this document in the same
 pass. Prior text is superseded, never rewritten — the history of what shipped under which rule
 stays readable.

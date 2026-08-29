@@ -67,3 +67,12 @@ compile-info.log
 codex_task_*.txt
 .codex/
 Gallery for Modrinth/
+
+# Atlas Viewer -- internal dev tooling, never public (maintainer ruling, 2026-08-28).
+# The atlas GENERATOR stays tracked; only the viewer is withheld. Untracked rather than
+# sanitised: a viewer that reads local runs will keep accreting local paths and world data,
+# so the durable fix is that it is not in the repo at all.
+atlas_viewer.ps1
+tools/atlas/viewer.html
+tools/atlas/viewer/
+tools/atlas/viewer_api_server.py

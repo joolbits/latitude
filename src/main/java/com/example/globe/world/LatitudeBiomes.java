@@ -618,6 +618,8 @@ public final class LatitudeBiomes {
             Collections.synchronizedMap(new IdentityHashMap<>());
     private static final Map<List<Holder<Biome>>, List<Holder<Biome>>> SHALLOW_OCEAN_TAG_ENTRY_CACHE =
             Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<List<Holder<Biome>>, List<Holder<Biome>>> DEEP_OCEAN_TAG_ENTRY_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
     // V1 may never re-scan a registry/source collection to rebuild its birth-locked route pool.
     // These caches are keyed by the live identity and are cleared on every context transition.
     private static final Map<Registry<Biome>, Map<BiomeRoute, List<Holder<Biome>>>> PROVIDER_TICKET_REGISTRY_ROUTE_CACHE =
@@ -922,6 +924,7 @@ public final class LatitudeBiomes {
         NO_MANGROVE_TAG_ENTRY_CACHE.clear();
         NO_SWAMP_TAG_ENTRY_CACHE.clear();
         SHALLOW_OCEAN_TAG_ENTRY_CACHE.clear();
+        DEEP_OCEAN_TAG_ENTRY_CACHE.clear();
         PROVIDER_TICKET_REGISTRY_ROUTE_CACHE.clear();
         PROVIDER_TICKET_SOURCE_ROUTE_CACHE.clear();
         VANILLA_COVERAGE_SOURCE_CACHE.clear();
@@ -3264,7 +3267,7 @@ public final class LatitudeBiomes {
     // and badlands concentrates in the subtropical arid belt where it belongs. The keep
     // decision uses a coherent ValueNoise2D field so the badlands<->savanna boundary is
     // noise-warped, not a hard horizontal line (Art VI: block-space continuous).
-    // LAW (Peetsa): badlands may NEVER appear in the tropical band (0-23.5deg) — Earth geography
+    // LAW (maintainer ruling, 2026-06-06): badlands may NEVER appear in the tropical band (0-23.5deg) — Earth geography
     // forbids it. So the ramp LOW edge sits at the tropical/subtropical boundary (23.5deg): the
     // entire tropical band has latGate==0 -> all badlands demoted to savanna; badlands phases in
     // across the lower subtropics and is fully allowed by the mid-subtropical arid belt.
@@ -3275,7 +3278,7 @@ public final class LatitudeBiomes {
     private static final double BADLANDS_LAT_RAMP_HIGH_DEG =
             Double.parseDouble(System.getProperty("latitude.aridRampHigh", "27.0"));
     private static final long BADLANDS_LAT_KEEP_SALT = 0x6261_646C_5F6C6174L; // "badl_lat"
-    // LAW (Peetsa): desert may NEVER appear in the tropical band (0-23.5deg) — same Earth-geography
+    // LAW (maintainer ruling, 2026-06-06): desert may NEVER appear in the tropical band (0-23.5deg) — same Earth-geography
     // rule as badlands. So desert is fully demoted to savanna across the whole tropical band
     // (below DESERT_LAT_RAMP_LOW_DEG), phases in across the lower subtropics via a coherent
     // ValueNoise2D field, and is fully allowed by the mid-subtropical desert belt (>= high edge).
@@ -3299,6 +3302,21 @@ public final class LatitudeBiomes {
     private static final double ARID_POLEWARD_RAMP_HIGH_DEG =
             Double.parseDouble(System.getProperty("latitude.aridPolewardRampHigh", "35.5"));
     private static final long ARID_POLEWARD_KEEP_SALT = 0x6172_6964_5F70_6F6CL; // "arid_pol"
+    // Equatorward mesic clamp: the mirror of the poleward arid ramp above, closing the last leaky
+    // direction. Jitter, blend, and warp can promote a true-33deg column to the TEMPERATE pool —
+    // full of mesic forests (and, with packs, autumn forests) — planting lush islands inside the
+    // dry belt. The repo fixed this bug SHAPE twice poleward (arid ramp, frozen-river ramp: "TRUE
+    // latitude, not the leaky band index") but never the mirror. Band-level on purpose: no biome
+    // classification needed (pack-proof), and one hook keeps land and rivers coherent (warm rivers
+    // now extend to the true 35deg edge; oceans are unaffected because bands 1/2 share a pool).
+    // Deliberately NOT delta-conditioned: the warp can move the effective boundary equatorward, so
+    // a chosen-temperate column can sit poleward of the WARPED boundary at true ~31deg. Adopted
+    // from the 1.21.11 line (maintainer-approved there, 2026-08-24) with identical constants.
+    private static final double TEMPERATE_EQUATORWARD_RAMP_LOW_DEG =
+            Double.parseDouble(System.getProperty("latitude.temperateEquatorwardRampLow", "34.5"));
+    private static final double TEMPERATE_EQUATORWARD_RAMP_HIGH_DEG =
+            Double.parseDouble(System.getProperty("latitude.temperateEquatorwardRampHigh", "35.5"));
+    private static final long MESIC_CLAMP_KEEP_SALT = 0x6D65_7369_635F_636CL; // "mesic_cl"
     // Frozen-river latitude clamp: frozen_river was assigned whenever the BLENDED band index was >= subpolar,
     // but the blend warp leaks the subpolar classification ~10deg equatorward, so frozen rivers (and the
     // Terralith ice spires gated to frozen_river) appeared in TEMPERATE (~40N). Decide freeze from TRUE
@@ -3657,7 +3675,7 @@ public final class LatitudeBiomes {
             }
             if (!beachMountainNoiseLike) {
                 Holder<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, beachBandIndex);
-                out = quarantineUnknownCustomLandBiome(biomeRegistry, out, base, blockX, blockZ, beachBandIndex, false);
+                out = quarantineUnknownCustomBeachBiome(biomeRegistry, out, base, blockX, blockZ, beachBandIndex);
                 out = applyV2SurfaceWaterCoverage(
                         biomeRegistry, VanillaSurfaceWaterCoveragePlan.Family.SHORE,
                         base, out, blockX, blockZ, sampler);
@@ -4471,7 +4489,7 @@ public final class LatitudeBiomes {
             }
             if (!beachMountainNoiseLike) {
                 Holder<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, beachBandIndex);
-                out = quarantineUnknownCustomLandBiome(biomePool, out, base, blockX, blockZ, beachBandIndex, false);
+                out = quarantineUnknownCustomBeachBiome(biomePool, out, base, blockX, blockZ, beachBandIndex);
                 out = applyV2SurfaceWaterCoverage(
                         biomePool, VanillaSurfaceWaterCoveragePlan.Family.SHORE,
                         base, out, blockX, blockZ, sampler);
@@ -5703,6 +5721,13 @@ public final class LatitudeBiomes {
         return candidate;
     }
 
+    /**
+     * Ocean identity follows the donor's true depth in every band. Only the tropical arm ever
+     * honored {@code isDeepOcean(base)}; the other bands drew from tag pools holding shallow and
+     * deep members together, so the first water column off a beach could label itself deep_ocean.
+     * Each band now filters its pool to the donor's depth class and falls back to the
+     * depth-matching vanilla identity.
+     */
     private static Holder<Biome> oceanByLatitudeBandOrBase(Registry<Biome> biomes, Holder<Biome> base, int blockX, int blockZ, int bandIndex) {
         if (bandIndex == 0) {
             if (isDeepOcean(base)) {
@@ -5719,20 +5744,40 @@ public final class LatitudeBiomes {
             return pickShallowTropicalOcean(biomes, blockX, blockZ);
         }
         if (bandIndex == 1 || bandIndex == 2) {
-            return pickFromTagNoiseOrFallback(biomes, LAT_OCEAN_TEMPERATE, blockX, blockZ, 21,
+            return pickOceanDepthAware(biomes, base, LAT_OCEAN_TEMPERATE, blockX, blockZ, 21,
                     "minecraft:ocean",
                     "minecraft:deep_ocean");
         }
         if (bandIndex == 3) {
-            return pickFromTagNoiseOrFallback(biomes, LAT_OCEAN_SUBPOLAR, blockX, blockZ, 22,
+            return pickOceanDepthAware(biomes, base, LAT_OCEAN_SUBPOLAR, blockX, blockZ, 22,
                     "minecraft:cold_ocean",
                     "minecraft:deep_cold_ocean");
         }
-        return pickFromTagNoiseOrFallback(biomes, LAT_OCEAN_POLAR, blockX, blockZ, 23,
+        return pickOceanDepthAware(biomes, base, LAT_OCEAN_POLAR, blockX, blockZ, 23,
                 "minecraft:frozen_ocean",
                 "minecraft:deep_frozen_ocean");
     }
 
+    private static Holder<Biome> pickOceanDepthAware(Registry<Biome> biomes, Holder<Biome> base,
+            TagKey<Biome> tag, int blockX, int blockZ, int bandSalt,
+            String shallowFallbackId, String deepFallbackId) {
+        boolean deep = isDeepOcean(base);
+        List<Holder<Biome>> entries = deep
+                ? filterDeepOcean(entriesForTag(biomes, tag))
+                : filterShallowOcean(entriesForTag(biomes, tag));
+        if (entries.isEmpty()) {
+            setSelectionPath(PATH_FALLBACK_PICK);
+            return pickFrom(biomes, blockX, blockZ, bandSalt,
+                    deep ? deepFallbackId : shallowFallbackId);
+        }
+        setSelectionPath(PATH_TAG_PICK);
+        Holder<Biome> out = selectProviderDiverseTagEntry(
+                entries, tag, blockX, blockZ, bandSalt, 0L);
+        setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
+        return out;
+    }
+
+    /** Depth-aware twin of the registry overload; see that javadoc. */
     private static Holder<Biome> oceanByLatitudeBandOrBase(Collection<Holder<Biome>> biomes, Holder<Biome> base, int blockX, int blockZ, int bandIndex) {
         if (bandIndex == 0) {
             if (isDeepOcean(base)) {
@@ -5748,18 +5793,36 @@ public final class LatitudeBiomes {
             return pickShallowTropicalOcean(biomes, blockX, blockZ);
         }
         if (bandIndex == 1 || bandIndex == 2) {
-            return pickFromTagNoiseOrFallback(biomes, base, LAT_OCEAN_TEMPERATE, blockX, blockZ, 21,
+            return pickOceanDepthAware(biomes, base, LAT_OCEAN_TEMPERATE, blockX, blockZ, 21,
                     "minecraft:ocean",
                     "minecraft:deep_ocean");
         }
         if (bandIndex == 3) {
-            return pickFromTagNoiseOrFallback(biomes, base, LAT_OCEAN_SUBPOLAR, blockX, blockZ, 22,
+            return pickOceanDepthAware(biomes, base, LAT_OCEAN_SUBPOLAR, blockX, blockZ, 22,
                     "minecraft:cold_ocean",
                     "minecraft:deep_cold_ocean");
         }
-        return pickFromTagNoiseOrFallback(biomes, base, LAT_OCEAN_POLAR, blockX, blockZ, 23,
+        return pickOceanDepthAware(biomes, base, LAT_OCEAN_POLAR, blockX, blockZ, 23,
                 "minecraft:frozen_ocean",
                 "minecraft:deep_frozen_ocean");
+    }
+
+    private static Holder<Biome> pickOceanDepthAware(Collection<Holder<Biome>> biomes, Holder<Biome> base,
+            TagKey<Biome> tag, int blockX, int blockZ, int bandSalt,
+            String shallowFallbackId, String deepFallbackId) {
+        boolean deep = isDeepOcean(base);
+        List<Holder<Biome>> entries = deep
+                ? filterDeepOcean(entriesForTag(biomes, tag))
+                : filterShallowOcean(entriesForTag(biomes, tag));
+        if (entries.isEmpty()) {
+            return pickFromFallbacks(biomes, base,
+                    deep ? deepFallbackId : shallowFallbackId);
+        }
+        setSelectionPath(PATH_TAG_PICK);
+        Holder<Biome> out = selectProviderDiverseTagEntry(
+                entries, tag, blockX, blockZ, bandSalt, 0L);
+        setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
+        return out;
     }
 
     private static Holder<Biome> pickShallowTropicalOcean(Registry<Biome> biomes, int blockX, int blockZ) {
@@ -5904,7 +5967,8 @@ public final class LatitudeBiomes {
         int canonicalBandIndex = crispBandIndex((double) absZ / (double) radius);
 
         if (TRANSITION_MODE == TransitionMode.OFF) {
-            return enforceTemperateSubpolarOwnership(canonicalBandIndex, bandIndex);
+            return clampEquatorwardTemperate(blockX, blockZ, radius,
+                    enforceTemperateSubpolarOwnership(canonicalBandIndex, bandIndex));
         }
 
         int lowerBandIndex;
@@ -5936,7 +6000,8 @@ public final class LatitudeBiomes {
 
         double halfWidthBlocks = BLEND_TRANSITION_WIDTH_BLOCKS * 0.5;
         if (!(halfWidthBlocks > 0.0)) {
-            return enforceTemperateSubpolarOwnership(canonicalBandIndex, bandIndex);
+            return clampEquatorwardTemperate(blockX, blockZ, radius,
+                    enforceTemperateSubpolarOwnership(canonicalBandIndex, bandIndex));
         }
 
         double diameter = radius * 2.0;
@@ -5951,7 +6016,8 @@ public final class LatitudeBiomes {
 
         double delta = absZ - effectiveBoundary;
         if (Math.abs(delta) > halfWidthBlocks) {
-            return enforceTemperateSubpolarOwnership(canonicalBandIndex, bandIndex);
+            return clampEquatorwardTemperate(blockX, blockZ, radius,
+                    enforceTemperateSubpolarOwnership(canonicalBandIndex, bandIndex));
         }
 
         double blendT = (delta + halfWidthBlocks) / (2.0 * halfWidthBlocks);
@@ -5977,7 +6043,8 @@ public final class LatitudeBiomes {
             }
         }
 
-        resolvedBandIndex = enforceTemperateSubpolarOwnership(canonicalBandIndex, resolvedBandIndex);
+        resolvedBandIndex = clampEquatorwardTemperate(blockX, blockZ, radius,
+                enforceTemperateSubpolarOwnership(canonicalBandIndex, resolvedBandIndex));
 
         if (DEBUG_BLEND
                 && (blockX & 15) == 0
@@ -6016,6 +6083,31 @@ public final class LatitudeBiomes {
             return BAND_TEMPERATE;
         }
         return resolvedBandIndex;
+    }
+
+    /**
+     * The TEMPERATE pool may not resolve equatorward of the true 35-degree line: unconditional
+     * demotion to SUBTROPICAL at or below {@link #TEMPERATE_EQUATORWARD_RAMP_LOW_DEG}, a
+     * noise-warped ramp across LOW..HIGH (Art VI), untouched poleward of HIGH. The keep noise
+     * shares the blend texture's own patch scale so demotion patches align with blend cells.
+     * See the constants block for why this exists and why it is band-level.
+     */
+    private static int clampEquatorwardTemperate(int blockX, int blockZ, int radius, int resolvedBandIndex) {
+        if (resolvedBandIndex != BAND_TEMPERATE || radius <= 0) {
+            return resolvedBandIndex;
+        }
+        double latDeg = Math.min(90.0, Math.abs((double) blockZ) / (double) radius * 90.0);
+        if (latDeg >= TEMPERATE_EQUATORWARD_RAMP_HIGH_DEG) {
+            return resolvedBandIndex; // true temperate: keep every temperate resolution
+        }
+        double keepGate = smoothstep((latDeg - TEMPERATE_EQUATORWARD_RAMP_LOW_DEG)
+                / (TEMPERATE_EQUATORWARD_RAMP_HIGH_DEG - TEMPERATE_EQUATORWARD_RAMP_LOW_DEG));
+        double diameter = radius * 2.0;
+        double noiseScale = diameter > 0.0 ? (REFERENCE_DIAMETER_BLOCKS / diameter) : 1.0;
+        double keepPatchBlocks = scaledPatchBlocks(BLEND_NOISE_PATCH_CHUNKS, noiseScale);
+        double keepNoise = blobNoise01ScaledBlocks(
+                WORLD_SEED, blockX, blockZ, keepPatchBlocks, MESIC_CLAMP_KEEP_SALT);
+        return keepNoise >= keepGate ? BAND_SUBTROPICAL : BAND_TEMPERATE;
     }
 
     private static int latitudeBandChosenIndexWithBlend(int blockX, int blockZ, int radius, LatitudeBands.Band band, double t) {
@@ -7597,6 +7689,74 @@ public final class LatitudeBiomes {
             List<Holder<Biome>> existing = variants.putIfAbsent(key, resolved);
             return existing != null ? existing : resolved;
         }
+    }
+
+    /**
+     * Beach-path twin of {@link #quarantineUnknownCustomLandBiome}. The land quarantine's reroll
+     * resolves through the LAND pool, which on a beach column painted land onto the shoreline —
+     * and because the subtropical pool deliberately seeds swamp and mangrove, it could conjure a
+     * wetland past every gate (the beach shortcut returns before the final wetland authority
+     * runs). A quarantined beach pick keeps beach identity instead: the band's vanilla beach,
+     * with the cold bands reusing the same seed-free snowy/rocky roll as the beach picker so the
+     * restored identity is exactly what the vanilla fallback would have chosen.
+     */
+    private static Holder<Biome> quarantineUnknownCustomBeachBiome(Registry<Biome> biomes,
+                                                                   Holder<Biome> candidate,
+                                                                   Holder<Biome> base,
+                                                                   int blockX,
+                                                                   int blockZ,
+                                                                   int bandIndex) {
+        if (!isCustomBiome(candidate)) {
+            return candidate;
+        }
+        List<Holder<Biome>> allowedPool = filteredAllowedLandPool(biomes, bandIndex, false);
+        if (isInAllowedLandPool(allowedPool, candidate)) {
+            setAllowedPoolAdmissionIfNeeded(candidate, "quarantine_allowed_land_pool");
+            return candidate;
+        }
+        try {
+            Holder<Biome> restored = biome(biomes, vanillaBeachIdForBand(blockX, blockZ, bandIndex));
+            setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "beach_identity_restore", restored);
+            return restored;
+        } catch (Throwable ignored) {
+            setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "no_safe_fallback", base);
+            return base;
+        }
+    }
+
+    /** See the registry overload. */
+    private static Holder<Biome> quarantineUnknownCustomBeachBiome(Collection<Holder<Biome>> biomes,
+                                                                   Holder<Biome> candidate,
+                                                                   Holder<Biome> base,
+                                                                   int blockX,
+                                                                   int blockZ,
+                                                                   int bandIndex) {
+        if (!isCustomBiome(candidate)) {
+            return candidate;
+        }
+        List<Holder<Biome>> allowedPool = filteredAllowedLandPool(biomes, bandIndex, false);
+        if (isInAllowedLandPool(allowedPool, candidate)) {
+            setAllowedPoolAdmissionIfNeeded(candidate, "quarantine_allowed_land_pool");
+            return candidate;
+        }
+        Holder<Biome> restored = entryById(biomes, vanillaBeachIdForBand(blockX, blockZ, bandIndex));
+        if (restored != null) {
+            setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "beach_identity_restore", restored);
+            return restored;
+        }
+        setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "no_safe_fallback", base);
+        return base;
+    }
+
+    /** The vanilla identity {@link #pickBeachForBand}'s fallback arm would choose here. */
+    private static String vanillaBeachIdForBand(int blockX, int blockZ, int bandIndex) {
+        if (bandIndex <= 2) {
+            return "minecraft:beach";
+        }
+        long roll = hash64(blockX >> 4, blockZ >> 4, 0xBEEFBEEF);
+        return Long.remainderUnsigned(roll, 100L) < 70L
+                ? "minecraft:snowy_beach"
+                : "minecraft:stony_shore";
     }
 
     private static Holder<Biome> quarantineUnknownCustomLandBiome(Registry<Biome> biomes,
@@ -9314,6 +9474,29 @@ public final class LatitudeBiomes {
         List<Holder<Biome>> immutableFiltered = List.copyOf(filtered);
         synchronized (SHALLOW_OCEAN_TAG_ENTRY_CACHE) {
             List<Holder<Biome>> existing = SHALLOW_OCEAN_TAG_ENTRY_CACHE.putIfAbsent(entries, immutableFiltered);
+            return existing != null ? existing : immutableFiltered;
+        }
+    }
+
+    private static List<Holder<Biome>> filterDeepOcean(List<Holder<Biome>> entries) {
+        if (entries.isEmpty()) {
+            return entries;
+        }
+        synchronized (DEEP_OCEAN_TAG_ENTRY_CACHE) {
+            List<Holder<Biome>> cached = DEEP_OCEAN_TAG_ENTRY_CACHE.get(entries);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        List<Holder<Biome>> filtered = new ArrayList<>(entries.size());
+        for (Holder<Biome> entry : entries) {
+            if (isDeepOcean(entry)) {
+                filtered.add(entry);
+            }
+        }
+        List<Holder<Biome>> immutableFiltered = List.copyOf(filtered);
+        synchronized (DEEP_OCEAN_TAG_ENTRY_CACHE) {
+            List<Holder<Biome>> existing = DEEP_OCEAN_TAG_ENTRY_CACHE.putIfAbsent(entries, immutableFiltered);
             return existing != null ? existing : immutableFiltered;
         }
     }

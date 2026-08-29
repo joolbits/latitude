@@ -92,6 +92,26 @@ public final class LatitudeLocateBudgetPolicy {
     }
 
     /**
+     * How much farther than a sliver match the search may run while it still hopes for an
+     * interior match. A locate that answers with a cell whose neighbourhood is a different
+     * biome strands the player on a boundary sliver, so a genuinely-inside match up to this
+     * factor farther away is the better answer; past it the sliver is returned rather than
+     * scanning without bound.
+     */
+    public static final double SLIVER_ESCAPE_DISTANCE_FACTOR = 2.0;
+
+    /**
+     * Last ring worth visiting when the only match in hand is a boundary sliver. Interior
+     * matches within {@link #SLIVER_ESCAPE_DISTANCE_FACTOR} times the sliver's distance are
+     * preferred over it, so the bound extends accordingly; an interior match found inside the
+     * window re-tightens the bound through {@link #nearestCompletionRingLimit}.
+     */
+    public static int sliverEscapeRingLimit(double sliverDistanceBlocks, int stepBlocks) {
+        return nearestCompletionRingLimit(
+                sliverDistanceBlocks * SLIVER_ESCAPE_DISTANCE_FACTOR, stepBlocks);
+    }
+
+    /**
      * Whether a climate-valid swamp point can still satisfy the requested wetland identity.
      *
      * <p>Swamp searches keep every swamp proxy. Mangrove-only searches keep swamp proxies only

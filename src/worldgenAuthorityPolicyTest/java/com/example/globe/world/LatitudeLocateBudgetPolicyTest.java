@@ -97,6 +97,25 @@ public final class LatitudeLocateBudgetPolicyTest {
                             + " (was " + diagonal + ")");
         }
 
+        // Sliver escape. While the only match in hand is a boundary sliver, the search may run
+        // this bounded factor farther looking for a match that is genuinely inside its biome.
+        assertTrue(LatitudeLocateBudgetPolicy.SLIVER_ESCAPE_DISTANCE_FACTOR == 2.0,
+                "sliver escape window changed unexpectedly");
+        assertEquals(
+                LatitudeLocateBudgetPolicy.nearestCompletionRingLimit(1000.0, 32),
+                LatitudeLocateBudgetPolicy.sliverEscapeRingLimit(500.0, 32),
+                "a sliver's escape bound is the completion bound of twice its distance");
+        assertTrue(
+                LatitudeLocateBudgetPolicy.sliverEscapeRingLimit(500.0, 32)
+                        >= LatitudeLocateBudgetPolicy.nearestCompletionRingLimit(500.0, 32),
+                "the escape bound can never cut the search shorter than the sliver's own bound");
+        assertEquals(Integer.MAX_VALUE,
+                LatitudeLocateBudgetPolicy.sliverEscapeRingLimit(100.0, 0),
+                "a degenerate step must not bound the escape window");
+        assertEquals(1,
+                LatitudeLocateBudgetPolicy.sliverEscapeRingLimit(0.0, 32),
+                "an origin-cell sliver still completes its own ring");
+
         assertTrue(
                 LatitudeLocateBudgetPolicy.allowsSwampProxyForTarget(true, false, 2, 1),
                 "swamp-only locate must retain temperate swamp candidates");
@@ -170,8 +189,14 @@ public final class LatitudeLocateBudgetPolicyTest {
                 occurrences(locateSource, "ringExceedsCandidateBound("),
                 "every spiral phase must stop only once no nearer ring remains");
         assertEquals(spiralSites + 1,
+                occurrences(locateSource, "beginConfirmation("),
+                "every spiral phase must send its match through neighbourhood confirmation");
+        assertEquals(3,
                 occurrences(locateSource, "recordCandidate("),
-                "every spiral phase must record its match instead of returning it immediately");
+                "a match may settle only through the confirmation resolver, as interior or sliver");
+        assertEquals(3,
+                occurrences(locateSource, "stepConfirmation();"),
+                "every job must drain its pending confirmation through the budgeted step");
         assertEquals(0,
                 occurrences(locateSource, "finish(Pair.of("),
                 "a match must never be finished straight from the search loop");

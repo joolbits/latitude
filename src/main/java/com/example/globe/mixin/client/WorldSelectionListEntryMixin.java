@@ -1,14 +1,18 @@
 package com.example.globe.mixin.client;
 
+import com.example.globe.client.WorldListZoneFitPolicy;
 import com.example.globe.client.create.RecreatedWorldMetadata;
 import com.example.globe.client.create.RecreatedWorldPresetCarrier;
 import com.example.globe.util.LatitudeBands;
 import java.io.IOException;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.StringWidget;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
+import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.world.level.LevelSettings;
@@ -71,7 +75,21 @@ public abstract class WorldSelectionListEntryMixin {
      * text instead of the row's true right margin). Editing the text directly sidesteps that
      * class of bug entirely: there is only ever one draw call, so nothing can land on top of it.
      * Injected at HEAD, before vanilla's own extractContent body renders this widget, so the
-     * combined text is correct from the very first frame.</p>
+     * combined text is correct from the very first frame.
+     *
+     * <p>That getWidth() diagnosis remains true, but it is no longer the reason right-alignment is
+     * off the table: the row's true allotment is reachable via {@link StringWidgetMaxWidthAccessor}.
+     * Single-draw-call is now the reason on its own merits, and it is what makes the reserve below
+     * possible at all.</p>
+     *
+     * <p><b>The zone is reserved, not appended and hoped for.</b> Vanilla caps this widget's width
+     * and clips overflow with a trailing ellipsis, so a suffix added at the END was the first thing
+     * cut -- longer rows rendered "... 10:12 PM) S" with the zone shorn away, and hovering did not
+     * help because vanilla builds the row's tooltip in its constructor, long before this runs, so it
+     * still held the pre-suffix text. The zone was invisible twice over. Now the suffix's width is
+     * reserved first and the HEAD is clipped instead, sacrificing the level id -- which duplicates
+     * the world name shown directly above it -- and the tooltip is rebuilt from the full untruncated
+     * text (maintainer report, 2026-08-26).</p>
      */
     @Inject(method = "extractContent", at = @At("HEAD"))
     private void globe$appendLastKnownZoneToTimestamp(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
@@ -94,10 +112,32 @@ public abstract class WorldSelectionListEntryMixin {
         if (this.globe$lastKnownBandLabel == null) {
             return;
         }
+        Component original = this.idAndLastPlayedText.getMessage();
         Component suffix = Component.literal(" " + this.globe$lastKnownBandLabel)
                 .withStyle(Style.EMPTY.withColor(GLOBE_LAST_ZONE_BADGE_COLOR));
-        Component combined = Component.empty().append(this.idAndLastPlayedText.getMessage()).append(suffix);
-        this.idAndLastPlayedText.setMessage(combined);
+
+        Font font = this.minecraft.font;
+        int allotted = ((StringWidgetMaxWidthAccessor) (Object) this.idAndLastPlayedText).globe$getMaxWidth();
+        int suffixWidth = font.width(suffix);
+
+        Component head = original;
+        if (!WorldListZoneFitPolicy.fitsWithoutClipping(font.width(original), suffixWidth, allotted)) {
+            // Vanilla's own marker, taken from vanilla rather than reproduced, so a Latitude-clipped
+            // row cannot drift from one of its own.
+            int budget = WorldListZoneFitPolicy.headBudget(
+                    suffixWidth, font.width(CommonComponents.ELLIPSIS), allotted);
+            // Clip only on the overflow path. Clipping unconditionally would append an ellipsis to
+            // every short row too, visibly damaging the rows this was meant to leave untouched.
+            head = Component.literal(font.plainSubstrByWidth(original.getString(), budget))
+                    .withStyle(original.getStyle())
+                    .append(CommonComponents.ELLIPSIS);
+        }
+        this.idAndLastPlayedText.setMessage(Component.empty().append(head).append(suffix));
+
+        // Rebuilt, not inherited: vanilla's constructor-time tooltip predates both the suffix and
+        // any clipping, so leaving it would leave a clipped row with no way to read either.
+        this.idAndLastPlayedText.setTooltip(
+                Tooltip.create(Component.empty().append(original).append(suffix)));
     }
 
     @Redirect(
