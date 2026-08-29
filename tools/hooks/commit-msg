@@ -54,4 +54,23 @@ if [ -n "$MSG_HITS" ]; then
 $(echo "$MSG_HITS" | sed 's/^/         /' | head -12)"
 fi
 
+# ── S-6c: discretion — the commit MESSAGE may not speak of people ───────────────────────────
+# Added 2026-08-28 after seven messages on one branch attributed decisions and live reports to a
+# person ("approved this", "reported from a flight", written with personal pronouns) and passed
+# every gate: S-6b matches only names, usernames, and home paths, and the chained content scanner
+# caught two of the seven through narrow phrase patterns. Rule 3 forbids personal data in commit
+# messages outright; the standing citation forms are impersonal -- "maintainer ruling, <date>",
+# "tester", "reported from a live flight".
+#
+# Deliberately MESSAGE-scoped, not applied to staged added lines: player-facing game text and
+# documentation may legitimately carry pronouns, and a false positive there would pressure a
+# product wording change to satisfy a privacy gate. A commit message has no such legitimate use.
+PRONOUN_HITS="$(printf '%s\n' "$MSG" | grep -inE '\b(she|her|hers|he|him|his)\b' || true)"
+if [ -n "$PRONOUN_HITS" ]; then
+  fail "S-6c: the commit MESSAGE refers to a person by pronoun. git log is public and the repo
+       stays impersonal. Attribute decisions as 'maintainer ruling, <date>' and live reports as
+       'reported from a live flight' / 'tester'. Offending lines:
+$(echo "$PRONOUN_HITS" | sed 's/^/         /' | head -12)"
+fi
+
 exit 0

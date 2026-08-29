@@ -6,7 +6,10 @@ import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
 import com.example.globe.world.LatitudeWorldgenScope;
+import com.example.globe.world.StructureSitingPolicy;
+import com.example.globe.world.VillageBiomeAdmissionPolicy;
 import com.example.globe.world.VillageTerrainSuitabilityPolicy;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
@@ -23,19 +26,26 @@ import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Predicate;
 
 /**
  * Rejects invalid fresh village starts before vanilla can register them. Villages are rejected
  * strictly beyond 80 degrees absolute latitude, when their declared climate conflicts with the
  * canonical Latitude band, or when a bounded physical sample crosses cliff-scale terrain.
- * Compatible/neutral villages on suitable terrain and other structures are not affected.
+ * Compatible/neutral villages on suitable terrain are not affected.
+ *
+ * <p>The post-generation block below applies to every structure, not only villages: it holds the
+ * east/west danger-zone rule, the woodland-mansion vanilla-biome rule, and the badlands-desolation
+ * footprint ruling, each judged against the finished start rather than the start chunk.
  */
 @Mixin(ChunkGenerator.class)
 public abstract class ExtremePolarVillageStartGuardMixin {
@@ -62,9 +72,14 @@ public abstract class ExtremePolarVillageStartGuardMixin {
             Operation<StructureStart> original) {
         int blockZ = chunkPos.getMiddleBlockZ();
         BiomeSource effectiveBiomeSource = biomeSource;
-        if (LatitudeWorldgenScope.isActive()
+        boolean latitudeOwned = LatitudeWorldgenScope.isActive()
                 && chunkGenerator instanceof NoiseBasedChunkGenerator noise
-                && GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
+                && GlobeMod.shouldApplyLatitudeWorldgen(noise);
+        Identifier generatedStructureId = null;
+        boolean generatedVillage = false;
+        int generatedWorldRadius = 0;
+        Registry<Biome> generatedBiomeRegistry = null;
+        if (latitudeOwned && chunkGenerator instanceof NoiseBasedChunkGenerator noise) {
             // Hand vanilla the biome the player will actually stand in.
             //
             // ChunkGenerator.tryGenerateStructure reads the raw `biomeSource` FIELD, while
@@ -87,8 +102,12 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                 Identifier structureId = registry.getKey(structure);
                 boolean village = structureHolder.is(StructureTags.VILLAGE)
                         || (structureId != null && structureId.getPath().contains("village"));
+                generatedStructureId = structureId;
+                generatedVillage = village;
+                generatedWorldRadius = GlobeMod.borderRadiusForNoiseGenerator(noise);
+                generatedBiomeRegistry = registryAccess.lookupOrThrow(Registries.BIOME);
                 if (structureId != null && village) {
-                    int radius = GlobeMod.borderRadiusForNoiseGenerator(noise);
+                    int radius = generatedWorldRadius;
                     int blockX = chunkPos.getMiddleBlockX();
                     double absDeg = Math.abs((double) blockZ) * 90.0 / Math.max(1, radius);
                     LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
@@ -116,26 +135,19 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                     if (!VillageTerrainSuitabilityPolicy.isSuitable(terrainHeights)) {
                         return StructureStart.INVALID_START;
                     }
-                    Registry<Biome> biomeRegistry =
-                            registryAccess.lookupOrThrow(Registries.BIOME);
-                    Holder<Biome> baseBiome = biomeSource.getNoiseBiome(
+                    Registry<Biome> biomeRegistry = generatedBiomeRegistry;
+                    // Judge the biome the world will PAINT at this column — the authoritative
+                    // wrapper source — not a fresh pick with different terrain evidence.
+                    // Re-picking under VILLAGE_START computed preview heights the SOURCE paint
+                    // path skips, and the two disagreed about where desert is: a measured
+                    // world at ~1.7% desert produced 0/1348 accepted desert-village candidates
+                    // with a rejection profile identical to a world with half the desert.
+                    // One authority, agreement by construction (2026-08-16).
+                    Holder<Biome> finalBiome = effectiveBiomeSource.getNoiseBiome(
                             Math.floorDiv(blockX, 4),
                             Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
                             Math.floorDiv(blockZ, 4),
                             randomState.sampler());
-                    Holder<Biome> pickedBiome = LatitudeBiomes.pick(
-                            biomeRegistry,
-                            baseBiome,
-                            blockX,
-                            blockZ,
-                            LatitudeBiomes.SURFACE_CLASSIFY_Y,
-                            radius,
-                            randomState.sampler(),
-                            "VILLAGE_START",
-                            noise,
-                            randomState,
-                            heightAccessor);
-                    Holder<Biome> finalBiome = pickedBiome != null ? pickedBiome : baseBiome;
                     Identifier finalBiomeId = biomeRegistry.getKey(finalBiome.value());
                     if (finalBiomeId != null
                             && LatitudeBiomes.villageVariantVsBiomeMismatch(
@@ -152,39 +164,46 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                     // Deliberately conservative — a structure guard that over-rejects silently
                     // empties the world. We only overrule vanilla where it would have said yes and
                     // Latitude's own biome says no; anything else (unknown biome, predicate that
-                    // already rejects the base, any exception) falls through and generates.
-                    int radius = GlobeMod.borderRadiusForNoiseGenerator(noise);
+                    // already rejects the base, any exception) falls through and generates. That
+                    // asymmetry has one proven hole: when the raw base FAILS the predicate, this
+                    // branch stands down entirely, and vanilla's own check then samples the
+                    // substituted source at the structure's start height, which can disagree with
+                    // the painted surface — live worlds grew desert pyramids and desert outposts on
+                    // badlands that no tag permits. The badlands ruling below closes that hole for
+                    // the structures the ruling names, judged against the final SURFACE biome; the
+                    // conservative predicate re-test is unchanged for everything else, so
+                    // underground structures whose biomes are never surface picks stay safe.
+                    int radius = generatedWorldRadius;
                     int blockX = chunkPos.getMiddleBlockX();
-                    Registry<Biome> biomeRegistry =
-                            registryAccess.lookupOrThrow(Registries.BIOME);
+                    Registry<Biome> biomeRegistry = generatedBiomeRegistry;
                     Holder<Biome> baseBiome = biomeSource.getNoiseBiome(
                             Math.floorDiv(blockX, 4),
                             Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
                             Math.floorDiv(blockZ, 4),
                             randomState.sampler());
-                    if (validBiome.test(baseBiome)) {
-                        Holder<Biome> pickedBiome = LatitudeBiomes.pick(
-                                biomeRegistry,
-                                baseBiome,
-                                blockX,
-                                blockZ,
-                                LatitudeBiomes.SURFACE_CLASSIFY_Y,
-                                radius,
-                                randomState.sampler(),
-                                "STRUCTURE_START",
-                                noise,
-                                randomState,
-                                heightAccessor);
-                        if (pickedBiome != null && !validBiome.test(pickedBiome)) {
-                            return StructureStart.INVALID_START;
-                        }
+                    // Same single-authority rule as the village branch: the painted biome comes
+                    // from the wrapper source, never from a re-pick with different evidence.
+                    Holder<Biome> finalBiome = effectiveBiomeSource.getNoiseBiome(
+                            Math.floorDiv(blockX, 4),
+                            Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
+                            Math.floorDiv(blockZ, 4),
+                            randomState.sampler());
+                    Identifier finalBiomeId = biomeRegistry.getKey(finalBiome.value());
+                    if (finalBiomeId != null
+                            && VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                                    structureId.getPath(), finalBiomeId.toString())) {
+                        return StructureStart.INVALID_START;
+                    }
+                    if (validBiome.test(baseBiome)
+                            && finalBiome != baseBiome && !validBiome.test(finalBiome)) {
+                        return StructureStart.INVALID_START;
                     }
                 }
             } catch (RuntimeException ignored) {
                 // Registry unavailable — fail open (allow generation).
             }
         }
-        return original.call(
+        StructureStart generated = original.call(
                 structure,
                 structureHolder,
                 levelKey,
@@ -198,5 +217,70 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                 references,
                 heightAccessor,
                 validBiome);
+        if (!latitudeOwned
+                || !generated.isValid()
+                || generatedStructureId == null
+                || generatedBiomeRegistry == null) {
+            return generated;
+        }
+
+        try {
+            BoundingBox footprint = generated.getBoundingBox();
+            if (StructureSitingPolicy.intersectsEastWestDangerZone(
+                    footprint.minX(), footprint.maxX(), generatedWorldRadius)) {
+                return StructureStart.INVALID_START;
+            }
+            // A woodland mansion must come to rest in a vanilla biome. Everything else in this
+            // block judges the footprint; this one judges the finished start's own center,
+            // because that is the column the mansion actually occupies once the jigsaw has
+            // settled and it can be a long way from the start chunk. Sampled at the same
+            // SURFACE_CLASSIFY_Y as every other authority in this guard, so the mansion is judged
+            // against the biome the world paints rather than a depth-dependent cave reading.
+            if (StructureSitingPolicy.requiresVanillaBiomeSiting(
+                    generatedStructureId.getNamespace(), generatedStructureId.getPath())) {
+                BlockPos center = footprint.getCenter();
+                Holder<Biome> centerBiome = effectiveBiomeSource.getNoiseBiome(
+                        Math.floorDiv(center.getX(), 4),
+                        Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
+                        Math.floorDiv(center.getZ(), 4),
+                        randomState.sampler());
+                Identifier centerBiomeId = generatedBiomeRegistry.getKey(centerBiome.value());
+                if (centerBiomeId != null && StructureSitingPolicy.shouldRejectCustomBiomeSiting(
+                        generatedStructureId.getNamespace(),
+                        generatedStructureId.getPath(),
+                        centerBiomeId.getNamespace())) {
+                    return StructureStart.INVALID_START;
+                }
+            }
+            if (!StructureSitingPolicy.requiresBadlandsFreeFootprint(
+                    generatedStructureId.getPath(), generatedVillage)) {
+                return generated;
+            }
+
+            List<String> sampledBiomes = new ArrayList<>();
+            for (StructureSitingPolicy.FootprintSample sample :
+                    StructureSitingPolicy.footprintSamples(
+                            footprint.minX(),
+                            footprint.maxX(),
+                            footprint.minZ(),
+                            footprint.maxZ())) {
+                Holder<Biome> finalBiome = effectiveBiomeSource.getNoiseBiome(
+                        Math.floorDiv(sample.x(), 4),
+                        Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
+                        Math.floorDiv(sample.z(), 4),
+                        randomState.sampler());
+                Identifier biomeId = generatedBiomeRegistry.getKey(finalBiome.value());
+                if (biomeId != null) {
+                    sampledBiomes.add(biomeId.toString());
+                }
+            }
+            if (StructureSitingPolicy.shouldRejectBadlandsFootprint(
+                    generatedStructureId.getPath(), generatedVillage, sampledBiomes)) {
+                return StructureStart.INVALID_START;
+            }
+        } catch (RuntimeException ignored) {
+            // Post-generation policy could not resolve; preserve the existing fail-open boundary.
+        }
+        return generated;
     }
 }

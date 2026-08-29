@@ -1,0 +1,55 @@
+{
+  "feature": "globe:riparian/desert_bank_plants",
+  "placement": [
+    {
+      "type": "minecraft:count",
+      "count": 36
+    },
+    {
+      "type": "minecraft:in_square"
+    },
+    {
+      "type": "minecraft:heightmap",
+      "heightmap": "WORLD_SURFACE_WG"
+    },
+    {
+      "type": "globe:riparian",
+      "search_radius": 10,
+      "bank_height": 2,
+      "noise_scale": 1280,
+      "verdant_threshold": 0.45
+    },
+    {
+      "type": "minecraft:random_offset",
+      "xz_spread": {
+        "type": "minecraft:clamped_normal",
+        "mean": 0.0,
+        "deviation": 2.0,
+        "min_inclusive": -4,
+        "max_inclusive": 4
+      },
+      "y_spread": 0
+    },
+    {
+      "type": "minecraft:block_predicate_filter",
+      "predicate": {
+        "type": "minecraft:all_of",
+        "predicates": [
+          {
+            "type": "minecraft:matching_block_tag",
+            "tag": "minecraft:air"
+          },
+          {
+            "type": "minecraft:matching_blocks",
+            "blocks": "minecraft:grass_block",
+            "offset": [
+              0,
+              -1,
+              0
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

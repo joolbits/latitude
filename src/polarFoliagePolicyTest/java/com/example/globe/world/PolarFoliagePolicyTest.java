@@ -17,6 +17,7 @@ public final class PolarFoliagePolicyTest {
         blockLevelGuardClosesTheFeatureClassBypass();
         theWoodyAndFoliageTagsDoNotOverlap();
         windsweptSnowLineDescendsPolewardAndCannotOrphanSnowyGrass();
+        alpineSnowLineCutsVegetationAtTheWarpLine();
         System.out.println("POLAR_FOLIAGE_POLICY_TEST_PASS");
     }
 
@@ -269,12 +270,17 @@ public final class PolarFoliagePolicyTest {
                 "modded ground cover must be caught by inheritance from the vanilla plant base; a "
                         + "tag-only test fails OPEN on any block a pack never tagged, which left the "
                         + "polar cap greener than a correctly-guarded biome");
-        assertTrue(guard.contains("LatitudeWorldgenScope.isActive()"),
-                "the guard is worldgen-only — bonemeal, sapling growth and /place stay the player's");
+        assertTrue(guard.contains("LatitudeWorldgenScope.isFeatureActive()"),
+                "the guard is decoration-only — structures, bonemeal, sapling growth and /place stay untouched");
         assertTrue(guard.contains("polar_woody") && guard.contains("polar_foliage"),
                 "both tiers must be consulted, or the split collapses to one threshold");
         assertTrue(guard.contains("PolarFoliagePolicy.isBeyondWoodyCompletionLimit("),
                 "the block-write seam permits only the bounded canopy completion band");
+        assertTrue(guard.contains("woody && pos.getY() >= LatitudeBiomes.TREE_LINE_Y"),
+                "raw woody features must obey the same high-alpine tree line as TreeFeature");
+        assertTrue(!guard.contains("vegetation && pos.getY() >= LatitudeBiomes.TREE_LINE_Y")
+                        && !guard.contains("foliage && pos.getY() >= LatitudeBiomes.TREE_LINE_Y"),
+                "the alpine backstop must not invent a bare-alpine rule for grass and flowers");
 
         // Both tiers, and the berry exemption, at the pure-policy level.
         assertTrue(PolarFoliagePolicy.shouldSuppressPolarBlock(true, false, true, false, false, false),
@@ -338,6 +344,113 @@ public final class PolarFoliagePolicyTest {
      * <p>So the ramp is only safe BECAUSE the guard now also clears SNOWY on the same condition.
      * Assert both halves; either alone is a regression.
      */
+    /**
+     * Nothing grows in the alpine snow cap (maintainer ruling, 2026-08-15).
+     *
+     * <p>Reported from live play: grass and flowers standing on snow blocks near a mountain top.
+     * The cap's own comment claimed this was impossible — that the snow zone leaves no grass block
+     * for vegetation to root in, so nothing can poke through. Saved chunks disagreed: plants sat
+     * directly on {@code snow_block} well above the height where the snow cap is unconditional,
+     * meaning the ground was already snow when the vegetation feature placed on it. The cap could
+     * not prevent that on its own, because it only rewrites the surface — it never had a say over
+     * what decoration puts on top afterwards.
+     *
+     * <p>The guard is at the block WRITE for the same reason the polar one is: feature classes are
+     * an unbounded set and enumerating them is what left gaps last time.
+     */
+    private static void alpineSnowLineCutsVegetationAtTheWarpLine() throws Exception {
+        String config = read("src/main/resources/globe.mixins.json");
+        assertTrue(config.contains("\"AlpineSnowVegetationGuardMixin\""),
+                "the alpine snow vegetation guard must be registered — unregistered, vegetation "
+                        + "keeps rooting in the snow cap");
+
+        String guard = read(
+                "src/main/java/com/example/globe/mixin/AlpineSnowVegetationGuardMixin.java");
+        assertTrue(guard.contains("method = \"setBlockState\""),
+                "the guard must intercept the block WRITE, not a named feature class");
+        assertTrue(guard.contains("instanceof VegetationBlock"),
+                "modded ground cover must be caught by inheritance from the vanilla plant base, "
+                        + "exactly as the polar guard catches it");
+        assertTrue(guard.contains("polar_foliage"),
+                "the curated foliage tag is reused rather than a second, drifting list");
+        assertTrue(guard.contains("LatitudeWorldgenScope.isActive()"),
+                "the guard is worldgen-only — bonemeal and player planting stay the player's");
+        assertTrue(guard.contains("LatitudeBiomes.alpineSurfaceKind("),
+                "the guard must ask the SAME question the snow cap asks, so the line where snow "
+                        + "begins and the line where vegetation stops cannot drift apart");
+        assertTrue(guard.contains("AlpineVegetationPolicy.footingOffsetBlocks("),
+                "the guard must judge the block a plant is ROOTED ON, not the plant's own "
+                        + "position — judging its own position removed plants rooted on real "
+                        + "ground one block below the line, and split tall plants in half");
+        assertTrue(guard.contains("getBlockState(footing)"),
+                "the guard must read the block actually present at the footing, so snow the cap "
+                        + "never placed is left alone and farmland keeps its crops");
+
+        // The cap and the guard agree on what kind 2 means. If the cap's mapping is ever renumbered
+        // this assertion fails here rather than silently unblocking vegetation in the snow.
+        String cap = read("src/main/java/com/example/globe/mixin/AlpineSurfaceMixin.java");
+        assertTrue(cap.contains("case 2 -> GLOBE_ALPINE_SNOW"),
+                "the alpine cap still paints snow for surface kind 2");
+        assertTrue(
+                AlpineVegetationPolicy.SNOW_SURFACE_KIND == 2,
+                "the vegetation guard reads the same surface kind the cap paints snow for");
+
+        final int snow = AlpineVegetationPolicy.SNOW_SURFACE_KIND;
+
+        // 1. A plant standing directly on snow is refused. This is the reported defect.
+        assertTrue(
+                AlpineVegetationPolicy.shouldSuppressAlpineVegetation(snow, true, true, false),
+                "tagged foliage rooted on snow is refused");
+        assertTrue(
+                AlpineVegetationPolicy.shouldSuppressAlpineVegetation(snow, true, false, true),
+                "an UNTAGGED modded plant rooted on snow is refused too — the fail-closed half, "
+                        + "mirroring the polar guard's reason for testing inheritance as well as "
+                        + "the tag");
+        assertFalse(
+                AlpineVegetationPolicy.shouldSuppressAlpineVegetation(snow, true, false, false),
+                "terrain, snow and everything that is not a plant is untouched");
+
+        // 2. A plant rooted on real ground immediately below the transition survives. Judging the
+        //    plant's own position removed these: the ground is grass, but the plant occupies the
+        //    first height the cap calls snow.
+        assertFalse(
+                AlpineVegetationPolicy.shouldSuppressAlpineVegetation(snow, false, true, true),
+                "a plant rooted on ground that is not snow survives even at a height the cap "
+                        + "would paint — the shelf keeps its flowers right up to the line");
+        for (int belowSnow : new int[]{0, 1}) {
+            assertFalse(
+                    AlpineVegetationPolicy.shouldSuppressAlpineVegetation(
+                            belowSnow, true, true, true),
+                    "below the snow line nothing is suppressed, whatever is underfoot");
+        }
+
+        // 3. Both halves of a tall plant reach ONE decision, because both resolve to the same
+        //    footing block. The previous guard judged each half at its own position, so a tall
+        //    plant straddling the line kept its lower half and lost its upper one.
+        assertTrue(
+                AlpineVegetationPolicy.footingOffsetBlocks(false) == 1
+                        && AlpineVegetationPolicy.footingOffsetBlocks(true) == 2,
+                "the upper half of a two-block plant looks one further down, past its own lower "
+                        + "half, to find what it is really rooted on");
+        for (int lowerHalfY = 160; lowerHalfY <= 200; lowerHalfY++) {
+            int lowerFooting = lowerHalfY - AlpineVegetationPolicy.footingOffsetBlocks(false);
+            int upperFooting = (lowerHalfY + 1) - AlpineVegetationPolicy.footingOffsetBlocks(true);
+            assertTrue(
+                    lowerFooting == upperFooting,
+                    "both halves of a tall plant judge the SAME footing block at lower-half y="
+                            + lowerHalfY + ", so one can never be removed without the other");
+        }
+
+        // 4. Village crops on farmland are deliberately PRESERVED: farmland is not snow, so a farm
+        //    plot high on a mountain is not "grass visible in snow" and is left alone. The curated
+        //    foliage tag includes #minecraft:crops, so without the real-block test the cap's
+        //    theoretical snow height alone would have stripped them.
+        assertFalse(
+                AlpineVegetationPolicy.shouldSuppressAlpineVegetation(snow, false, true, false),
+                "crops on farmland keep growing inside the cap's height range — only what is "
+                        + "actually rooted in snow is refused");
+    }
+
     private static void windsweptSnowLineDescendsPolewardAndCannotOrphanSnowyGrass() throws Exception {
         // Ramp: vanilla's line equatorward of temperate, fully lowered by subpolar, monotonic between.
         assertNear(WindsweptSnowLinePolicy.VANILLA_SNOW_LINE_OFFSET_ABOVE_SEA,

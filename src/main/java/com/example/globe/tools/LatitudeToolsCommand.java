@@ -3,6 +3,7 @@ package com.example.globe.tools;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
+import com.example.globe.world.LatitudeStructureLocateService;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -41,7 +42,8 @@ import net.minecraft.world.level.material.FluidState;
  * Latitude's shipping operator commands, rooted at {@code /latitude}.
  *
  * <p>This surface is packaged into public release artifacts, so every command here is
- * synchronous, emits only chat output, requires operator permission, and can never arm itself.
+ * synchronous, emits only chat output, and can never arm itself. The operator tree requires
+ * permission; the separate locate-teleport action is authorized by a player-bound one-time token.
  * It contains no recording, sentinel, or auto-harness behavior. See
  * {@code docs/release/artifact-content-policy.md}, which is project law.</p>
  *
@@ -91,6 +93,19 @@ public final class LatitudeToolsCommand {
     }
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        // The clickable coordinate a structure locate prints runs this, and nothing else does.
+        // It is deliberately NOT permission-gated: an elevated command makes Minecraft show its
+        // "run command" warning on every click, and the coordinate would then be unusable for a
+        // non-operator who legitimately ran /locate. The authorization boundary is instead the
+        // one-time, player-bound, expiring token the locate result minted — see
+        // LatitudeStructureLocateService.runPendingTeleport, which refuses any token it did not
+        // issue to the very player invoking it.
+        dispatcher.register(
+                Commands.literal("latitude_locate_teleport")
+                        .then(Commands.argument("token", StringArgumentType.word())
+                                .executes(context -> LatitudeStructureLocateService.runPendingTeleport(
+                                        context.getSource(),
+                                        StringArgumentType.getString(context, "token")))));
         dispatcher.register(
                 Commands.literal("latitude")
                         .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))

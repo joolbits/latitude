@@ -3,6 +3,7 @@ package com.example.globe.mixin;
 import com.example.globe.GlobeMod;
 import com.example.globe.world.BiomeDescriptorLedger;
 import com.example.globe.world.LatitudeWorldgenScope;
+import com.example.globe.world.feature.LatitudeRiparianBanks;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
@@ -44,12 +45,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(ChunkGenerator.class)
 public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
+    @Unique
     private static final boolean LATITUDE_DEBUG_CUSTOM_RETAINALL_GATES =
             Boolean.getBoolean("latitude.debugCustomBiomeRetainAll")
                     || Boolean.getBoolean("latitude.debugBopRetainAll");
+    @Unique
     private static final int LATITUDE_DEBUG_CUSTOM_RETAINALL_LOG_LIMIT =
             Integer.getInteger("latitude.debugCustomBiomeRetainAll.logLimit",
                     Integer.getInteger("latitude.debugBopRetainAll.logLimit", 20));
+    @Unique
     private static final String LATITUDE_CUSTOM_RETAINALL_CLASSIFICATION =
             "LATITUDE_TAGGED_CUSTOM_FEATURES_RETAINALL_GUARD";
     @Unique
@@ -58,6 +62,13 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
 
     @Unique
     private static final AtomicBoolean LATITUDE_DEBUG_CUSTOM_INDEX_AUDIT_DONE =
+            new AtomicBoolean();
+
+    @Unique
+    private static final AtomicBoolean LATITUDE_RIPARIAN_UNINDEXED_WARNED = new AtomicBoolean(false);
+
+    @Unique
+    private static final AtomicBoolean LATITUDE_CUSTOM_INDEX_FAILURE_WARNED =
             new AtomicBoolean();
 
     @Shadow
@@ -91,6 +102,15 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
     @Unique
     private volatile Set<Identifier> globe$customBiomeRetainIds;
 
+    /**
+     * Lush desert riverbank features, in load order, or empty when they are switched off, missing,
+     * or could not be proven present in the scoped index. Empty means "append nothing anywhere",
+     * which is the only safe fallback: a placed feature offered to the decoration loop without an
+     * index entry maps to -1 and would fault the feature lookup.
+     */
+    @Unique
+    private volatile List<Holder<PlacedFeature>> globe$riparianBankFeatures = List.of();
+
     @Inject(
             method = "applyBiomeDecoration(Lnet/minecraft/world/level/WorldGenLevel;Lnet/minecraft/world/level/chunk/ChunkAccess;Lnet/minecraft/world/level/StructureManager;)V",
             at = @At("HEAD")
@@ -111,17 +131,38 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
             if (this.globe$customBiomeFeaturesIndexed) {
                 return;
             }
+            boolean scopedIndexInstalled = false;
             try {
                 Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
                 List<Holder<Biome>> policyBiomes = latitude$taggedCustomPolicyBiomes(biomeRegistry);
                 this.globe$customBiomePolicyCount = policyBiomes.size();
                 List<Holder<Biome>> expandedBiomes = new ArrayList<>(this.biomeSource.possibleBiomes());
                 latitude$appendMissingPolicyBiomes(expandedBiomes, policyBiomes);
+                // Resolved before the index is built, because the scoped-index supplier below reads
+                // this field while appending the bank features to each arid biome's vegetal step.
+                this.globe$riparianBankFeatures =
+                        LatitudeRiparianBanks.resolvePlacedFeatures(world.registryAccess());
                 List<FeatureSorter.StepFeatureData> expandedIndex = FeatureSorter.buildFeaturesPerStep(
                         expandedBiomes,
                         this::latitude$featuresForScopedIndex,
                         true
                 );
+                // Only the INDEX-PROOF failure belongs to this message. An empty list here means the
+                // banks were switched off by flag or their placed feature was missing -- both of
+                // which already spoke for themselves at resolve time -- and blaming the index for
+                // those would send the next person reading this log hunting a mixin bug.
+                if (!this.globe$riparianBankFeatures.isEmpty()
+                        && !latitude$riparianFeaturesIndexed(expandedIndex)) {
+                    // Switching the banks off here is correct -- an unindexed placed feature maps to
+                    // -1 and would fault the lookup -- but doing it silently makes a dead feature
+                    // indistinguishable from a feature that simply had nothing to plant. Say it once.
+                    this.globe$riparianBankFeatures = List.of();
+                    if (LATITUDE_RIPARIAN_UNINDEXED_WARNED.compareAndSet(false, true)) {
+                        GlobeMod.LOGGER.warn(
+                                "[LAT][RIPARIAN] bank features are not present in the scoped index; "
+                                        + "desert banks stay bare for this world");
+                    }
+                }
                 int[] expandedCounts = latitude$countIndexedFeatures(policyBiomes, expandedIndex);
                 this.globe$customBiomeFeatureCount = expandedCounts[0];
                 this.globe$customBiomeIndexedCount = expandedCounts[1];
@@ -130,6 +171,7 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
                 // this preserves the pre-1.5 feature ordering after frozen-river vegetation is
                 // removed from Latitude only rather than from the global biome registry.
                 this.featuresPerStep = () -> expandedIndex;
+                scopedIndexInstalled = true;
                 if (this.globe$customBiomeIndexSafe) {
                     this.globe$customBiomeRetainIds = latitude$biomeIds(policyBiomes);
                 } else {
@@ -145,10 +187,27 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
             } catch (Exception e) {
                 this.globe$customBiomeIndexSafe = false;
                 this.globe$customBiomeRetainIds = Set.of();
-                if (LATITUDE_DEBUG_CUSTOM_RETAINALL_GATES) {
-                    GlobeMod.LOGGER.warn("[LAT][CUSTOM_RETAINALL] indexExpansion result=blocked exception={}", e.getMessage());
+                // The scoped index was not installed, so the vanilla index is still in force and
+                // knows nothing about the bank features. Appending them now would be a fault.
+                this.globe$riparianBankFeatures = List.of();
+                if (LATITUDE_CUSTOM_INDEX_FAILURE_WARNED.compareAndSet(false, true)) {
+                    GlobeMod.LOGGER.warn(
+                            "[LAT][CUSTOM_RETAINALL] indexExpansion result=blocked exceptionType={} exception={} policyBiomes={} featureTotal={} featureInIndex={}",
+                            e.getClass().getName(),
+                            e.getMessage(),
+                            this.globe$customBiomePolicyCount,
+                            this.globe$customBiomeFeatureCount,
+                            this.globe$customBiomeIndexedCount);
                 }
             } finally {
+                // An Error (OOM, stack overflow) escapes the catch above, so the reset there is not
+                // enough. The banks may only stay armed if the scoped index that carries them was
+                // actually installed -- otherwise the vanilla index is in force, knows nothing about
+                // them, and every arid chunk would map them to -1 and fault decoration for the rest
+                // of the session.
+                if (!scopedIndexInstalled) {
+                    this.globe$riparianBankFeatures = List.of();
+                }
                 this.globe$customBiomeFeaturesIndexed = true;
             }
         }
@@ -169,9 +228,17 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
             @Local Holder<Biome> biome,
             @Local(ordinal = 2) int stepIndex) {
         if (LatitudeWorldgenScope.isActive()
-                && biome.is(Biomes.FROZEN_RIVER)
                 && stepIndex == GenerationStep.Decoration.VEGETAL_DECORATION.ordinal()) {
-            return Stream.empty();
+            if (biome.is(Biomes.FROZEN_RIVER)) {
+                return Stream.empty();
+            }
+            // The decoration loop collects the indices to run from the biome's REAL generation
+            // settings, not from the scoped index, so an arid biome has to contribute its bank
+            // features here as well as in latitude$featuresForScopedIndex below.
+            List<Holder<PlacedFeature>> riparian = latitude$riparianBankFeaturesFor(biome);
+            if (!riparian.isEmpty()) {
+                return Stream.concat(original.call(features), riparian.stream());
+            }
         }
         return original.call(features);
     }
@@ -180,12 +247,79 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
     private List<HolderSet<PlacedFeature>> latitude$featuresForScopedIndex(Holder<Biome> biome) {
         List<HolderSet<PlacedFeature>> features = this.generationSettingsGetter.apply(biome).features();
         int vegetalStep = GenerationStep.Decoration.VEGETAL_DECORATION.ordinal();
-        if (!biome.is(Biomes.FROZEN_RIVER) || vegetalStep >= features.size()) {
+        if (vegetalStep >= features.size()) {
+            return features;
+        }
+        boolean frozenRiver = biome.is(Biomes.FROZEN_RIVER);
+        List<Holder<PlacedFeature>> riparian = latitude$riparianBankFeaturesFor(biome);
+        if (!frozenRiver && riparian.isEmpty()) {
             return features;
         }
         List<HolderSet<PlacedFeature>> filtered = new ArrayList<>(features);
-        filtered.set(vegetalStep, HolderSet.empty());
+        if (frozenRiver) {
+            filtered.set(vegetalStep, HolderSet.empty());
+            return filtered;
+        }
+        // Appended last, ground before plants, and in the same relative order for every arid
+        // biome - that is what keeps the feature sorter's cross-biome ordering acyclic.
+        List<Holder<PlacedFeature>> vegetal = new ArrayList<>();
+        for (Holder<PlacedFeature> existing : features.get(vegetalStep)) {
+            vegetal.add(existing);
+        }
+        for (Holder<PlacedFeature> bank : riparian) {
+            // Identity, not equals: the feature index is an identity lookup, and PlacedFeature is a
+            // record, so two distinct features with matching contents would compare equal and one
+            // of them would silently never be appended.
+            if (!latitude$containsFeatureValue(vegetal, bank)) {
+                vegetal.add(bank);
+            }
+        }
+        filtered.set(vegetalStep, HolderSet.direct(vegetal));
         return filtered;
+    }
+
+    @Unique
+    private static boolean latitude$containsFeatureValue(
+            List<Holder<PlacedFeature>> features, Holder<PlacedFeature> candidate) {
+        for (Holder<PlacedFeature> existing : features) {
+            if (existing == candidate || existing.value() == candidate.value()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The bank features this biome should carry, or empty for anything that is not arid land. */
+    @Unique
+    private List<Holder<PlacedFeature>> latitude$riparianBankFeaturesFor(Holder<Biome> biome) {
+        List<Holder<PlacedFeature>> riparian = this.globe$riparianBankFeatures;
+        if (riparian == null || riparian.isEmpty() || !LatitudeRiparianBanks.isAridLand(biome)) {
+            return List.of();
+        }
+        return riparian;
+    }
+
+    /**
+     * Proves every bank feature reached the rebuilt index. If no arid biome was in the expansion
+     * the features were never indexed, and offering them to the decoration loop would map to -1.
+     */
+    @Unique
+    private boolean latitude$riparianFeaturesIndexed(List<FeatureSorter.StepFeatureData> indexed) {
+        List<Holder<PlacedFeature>> riparian = this.globe$riparianBankFeatures;
+        if (riparian == null || riparian.isEmpty()) {
+            return false;
+        }
+        int vegetalStep = GenerationStep.Decoration.VEGETAL_DECORATION.ordinal();
+        if (vegetalStep >= indexed.size()) {
+            return false;
+        }
+        FeatureSorter.StepFeatureData stepData = indexed.get(vegetalStep);
+        for (Holder<PlacedFeature> bank : riparian) {
+            if (stepData.indexMapping().applyAsInt(bank.value()) < 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Redirect(

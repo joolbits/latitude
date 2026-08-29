@@ -87,9 +87,13 @@ public final class BiomeSelectionProfile {
         for (int i = 1; i < lines.length; i++) {
             String[] parts = lines[i].split("\\|", -1);
             if (parts.length != 2) throw new IllegalArgumentException("malformed provider ticket row");
-            BiomeRoute route = BiomeRoute.valueOf(parts[0]);
+            BiomeRoute route = migrateSavedRoute(BiomeRoute.valueOf(parts[0]), parts[1]);
             BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(parts[1]);
-            if (descriptor == null || !descriptor.routes().contains(route) || !seen.add(lines[i])) throw new IllegalArgumentException("invalid provider ticket row: " + lines[i]);
+            // Dedup on the MIGRATED pair: a roster carrying the same id under two legacy routes
+            // migrates both onto one route, and the raw lines differ, so raw-line dedup would admit
+            // the duplicate.
+            if (descriptor == null || !savedRouteRemainsValid(route, descriptor)
+                    || !seen.add(route.name() + "|" + parts[1])) throw new IllegalArgumentException("invalid provider ticket row: " + lines[i]);
             raw.get(route).add(parts[1]);
             providers.add(descriptor.provider());
         }
@@ -100,5 +104,54 @@ public final class BiomeSelectionProfile {
             sorted.put(route, List.copyOf(ids));
         }
         return new BiomeSelectionProfile(List.copyOf(providers), sorted);
+    }
+
+    private static boolean savedRouteRemainsValid(
+            BiomeRoute route,
+            BiomeDescriptorLedger.Descriptor descriptor) {
+        if (descriptor.routes().contains(route)) return true;
+        // Provider profiles are birth-locked. Keep the one pre-correction redwood route readable
+        // for existing worlds; capture() only emits the current temperate route for new worlds.
+        return descriptor.biomeId().equals("biomesoplenty:redwood_forest")
+                && route == BiomeRoute.SUBTROPICAL_HUMID_LOWLAND
+                && descriptor.routes().contains(BiomeRoute.TEMPERATE_LOWLAND);
+    }
+
+    /**
+     * Reads a legacy windswept row as its current route instead of refusing the whole save.
+     *
+     * <p>This decoder throws on the first row it cannot explain, and
+     * {@code LatitudeWorldState.getProviderTicketProfile()} answers that throw with
+     * {@code Optional.empty()} — so one unreadable windswept row does not cost a world its
+     * windswept placement, it costs the world its ENTIRE birth roster: provider-ticket selection
+     * switches off, {@code ACTIVE_VANILLA_COVERAGE_PLAN} is left null, and every other
+     * provider-ticket decision goes with it, silently.
+     *
+     * <p>TWO legacy routes are migrated, not one, and the older of them is the bigger population.
+     * {@code COLD_UPLAND} was only ever written between the 2026-08-10 and 2026-08-18 rulings.
+     * Before that, from the ledger's first day until this line moved the family to COLD_UPLAND,
+     * the windswept family sat on {@code TEMPERATE_UPLAND}, so every world created from an older
+     * jar — the TEST-jar worlds included — saved {@code TEMPERATE_UPLAND|minecraft:windswept_*}
+     * rows. Those worlds are ALREADY roster-less: the re-route made {@code savedRouteRemainsValid}
+     * reject their rows the moment the ledger stopped listing {@code TEMPERATE_UPLAND} for these
+     * ids. Handling that route here therefore repairs worlds that are broken today, rather than
+     * merely protecting ones this change would have broken.
+     *
+     * <p>Migrated rather than merely tolerated (the treatment redwood's pre-correction route got),
+     * because the two cases want opposite things. Redwood's old route is a placement the maintainer
+     * accepted and birth-lock exists to preserve; the polar windswept placement is the defect the
+     * re-route was made to remove, and she should not have to abandon an existing world to be rid
+     * of it. Tolerating the old row instead would keep {@code COLD_UPLAND} eligible for these ids,
+     * which is what lets the vanilla coverage plan reserve a guaranteed windswept province on a
+     * POLAR mountain — the exact thing the ruling forbids.
+     */
+    private static BiomeRoute migrateSavedRoute(BiomeRoute route, String biomeId) {
+        if (route != BiomeRoute.COLD_UPLAND && route != BiomeRoute.TEMPERATE_UPLAND) return route;
+        return switch (biomeId) {
+            case "minecraft:windswept_hills",
+                 "minecraft:windswept_forest",
+                 "minecraft:windswept_gravelly_hills" -> BiomeRoute.SUBPOLAR_UPLAND;
+            default -> route;
+        };
     }
 }

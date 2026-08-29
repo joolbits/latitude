@@ -16,7 +16,8 @@ public final class LatitudeWorldState extends SavedData {
         PROVIDER_TICKET_V1,
         PROVIDER_TICKET_V2_COVERAGE,
         PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE,
-        PROVIDER_TICKET_V4_CAVE_COVERAGE
+        PROVIDER_TICKET_V4_CAVE_COVERAGE,
+        PROVIDER_TICKET_V5_FINAL_ADMISSION
     }
 
     private static final Codec<WorldgenPolicyVersion> WORLDGEN_POLICY_CODEC = Codec.STRING.xmap(
@@ -176,7 +177,8 @@ public final class LatitudeWorldState extends SavedData {
         return policy == WorldgenPolicyVersion.PROVIDER_TICKET_V1
                 || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE
                 || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
-                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE;
+                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION;
     }
 
     /** Captured once, only by the trusted fresh-world marker before spawn chunks exist. */
@@ -190,7 +192,8 @@ public final class LatitudeWorldState extends SavedData {
 
     public Optional<VanillaBiomeRepresentationProfile> getVanillaRepresentationProfile() {
         if ((getWorldgenPolicy() != WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
-                && getWorldgenPolicy() != WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE)
+                && getWorldgenPolicy() != WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                && getWorldgenPolicy() != WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION)
                 || vanillaRepresentationProfile == null || vanillaRepresentationProfile.isBlank()) {
             return Optional.empty();
         }
@@ -211,7 +214,8 @@ public final class LatitudeWorldState extends SavedData {
     }
 
     public Optional<CaveBiomeRepresentationProfile> getCaveRepresentationProfile() {
-        if (getWorldgenPolicy() != WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+        if ((getWorldgenPolicy() != WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                && getWorldgenPolicy() != WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION)
                 || caveRepresentationProfile == null || caveRepresentationProfile.isBlank()) {
             return Optional.empty();
         }

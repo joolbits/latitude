@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# Latitude guardrail S-8: nothing forbidden leaves this machine.
+# Install once per checkout:  git config core.hooksPath tools/hooks
+#
+# WHY THIS EXISTS, and why it checks history rather than the working tree.
+#
+# The 2026-08-07 incident (tracked decompiled MC sources + public diary) forced a full history
+# rewrite of a PUBLIC repo. The commit-msg hook (S-6/S-7) gates what gets *staged*, which stops
+# the next mistake but cannot help with a mistake already sitting in history.
+#
+# On 2026-08-26 a release audit found exactly that: the branch named
+# `release/1.5.1-beta.2-1.21.11-clean` carried `assets/minecraft/lang/en_us.json` (492 KB of
+# verbatim vanilla Mojang strings) plus three vanilla world_presets in 740 of its 809 commits,
+# from the root commit onward -- while its TIP TREE WAS CLEAN. Every working-tree check, every
+# `git status`, and `git ls-tree -r HEAD` all reported that branch clean. A push transmits
+# reachable history, not the tip tree. Nothing mechanical stood in the way: `origin`'s push URL
+# is disabled, but this repo's documented workflow is to push via a one-shot explicit URL, which
+# bypasses that entirely.
+#
+# So this hook deliberately scans EVERY object reachable from each pushed ref, not the diff
+# against the remote. A ref whose history contains forbidden content must not be publishable
+# even if the remote already has some of it, and even if the push target is an explicit URL this
+# hook has never seen. Full reachability is the only check that cannot be talked out of the
+# answer. It costs ~1s on an 800-commit branch; correctness is worth a second.
+set -euo pipefail
+
+ZERO='0000000000000000000000000000000000000000'
+
+# ── CONTENT GATE (added 2026-08-28 after the sibling line's hook passed a push it should have
+# refused) ───────────────────────────────────────────────────────────────────────────────────
+#
+# Everything below this block greps PATHS. That is useful and it is NOT a content guarantee, and
+# treating it as one is exactly how a "history is clean by my own scan" report was made about a
+# history that carried 15 findings: four absolute local paths inside file CONTENT, nine pieces of
+# process narrative in file content and in COMMIT MESSAGES, and two binaries needing review. A
+# path regex is structurally incapable of seeing any of those -- widening the path list would not
+# have caught one of them.
+#
+# So this hook now delegates content scanning to the authoritative scanner, and FAILS CLOSED when
+# it cannot reach it. A guard that cannot check must never report a pass: silently degrading to
+# path-only is precisely the failure this block exists to prevent.
+updates="$(mktemp -t latitude-s8-pre-push.XXXXXX)"
+trap 'rm -f "$updates"' EXIT
+cat > "$updates"
+
+scanner="$(git config --global --path --get repoSafety.scanner || true)"
+patterns="$(git config --global --path --get repoSafety.patterns || true)"
+if [ -z "$scanner" ] || [ -z "$patterns" ] || [ ! -f "$scanner" ] || [ ! -f "$patterns" ]; then
+  echo "" >&2
+  echo "  x GUARDRAIL S-8 (pre-push): content scanning is UNAVAILABLE, so this push is refused." >&2
+  echo "" >&2
+  echo "       The path checks in this hook cannot see file content or commit messages. Passing" >&2
+  echo "       on those alone would be a false assurance, which is the specific defect this" >&2
+  echo "       gate was rewritten to remove." >&2
+  echo "" >&2
+  echo "       Configure the scanner, then retry:" >&2
+  echo "         git config --global --path repoSafety.scanner  <path to repo_safety.py>" >&2
+  echo "         git config --global --path repoSafety.patterns <path to patterns file>" >&2
+  echo "" >&2
+  exit 4
+fi
+python3 "$scanner" --patterns "$patterns" pre-push --updates "$updates"
+
+# Path checks below re-read the buffered updates rather than stdin, which the content gate consumed.
+exec < "$updates"
+
+# Forbidden path vocabulary. The first two groups are the S-7 list from the commit-msg hook, kept
+# deliberately in sync. The `assets/minecraft` and `data/minecraft` entries are ROOT-ANCHORED and
+# are the ones S-7 never had -- which is why the vanilla dump above was invisible to it.
+#
+# Anchoring matters and is not cosmetic: an unanchored `data/minecraft` substring match also hits
+# legitimate mod content such as `src/main/resources/data/minecraft/tags/worldgen/world_preset/`,
+# which is Latitude's own tag registering its preset into vanilla's. Anchored, that is untouched.
+FORBIDDEN_RE='^_mcsrc|/_mcsrc|^docs/binder/|^run-headless/|^run/|^tmp/|\.7z$|\.zip$|^Gallery |^assets/minecraft/|^data/minecraft/|^net/minecraft/.*\.java$|\.lnk$'
+
+fail() {
+  echo "" >&2
+  echo "  ✗ GUARDRAIL S-8 (pre-push): $1" >&2
+  echo "" >&2
+  exit 1
+}
+
+# Refs arrive on stdin as: <local ref> <local sha> <remote ref> <remote sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # Deleting a remote ref transmits no objects.
+  [ "$local_sha" = "$ZERO" ] && continue
+
+  # Enumerate every path present in any object reachable from this ref. `--objects` prints
+  # "<sha> <path>"; strip the sha so the anchors above apply to the path itself.
+  offenders="$(
+    git rev-list --objects "$local_sha" 2>/dev/null \
+      | awk '{ $1=""; sub(/^ /, ""); if (length($0)) print }' \
+      | grep -E "$FORBIDDEN_RE" \
+      | sort -u \
+      | head -20 \
+      || true
+  )"
+
+  if [ -n "$offenders" ]; then
+    count="$(git rev-list --objects "$local_sha" 2>/dev/null \
+      | awk '{ $1=""; sub(/^ /, ""); if (length($0)) print }' \
+      | grep -cE "$FORBIDDEN_RE" || true)"
+    fail "refusing to push ${local_ref:-<ref>} -- its reachable history contains content that
+       must never reach a public remote (extracted Minecraft assets or sources, diary docs,
+       runtime state, or archives). ${count} offending path(s); first 20:
+
+$(echo "$offenders" | sed 's/^/         /')
+
+       NOTE: the tip tree may well be clean. A push sends reachable HISTORY, so a clean
+       working tree proves nothing here. Rewriting history to remove these is an irreversible
+       operation -- rehearse it in a disposable clone and verify with a tree-hash oracle
+       captured BEFORE the rewrite. The supported route for publishing this line is to replay
+       the new commits onto a clean public branch rather than to push this history."
+  fi
+done
+
+exit 0

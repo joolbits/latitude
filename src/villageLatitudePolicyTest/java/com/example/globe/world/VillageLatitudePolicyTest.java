@@ -4,6 +4,8 @@ import com.example.globe.util.LatitudeBands;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public final class VillageLatitudePolicyTest {
@@ -17,6 +19,9 @@ public final class VillageLatitudePolicyTest {
         generationGuardRejectsInvalidStartsBeforeStore();
         climatePolicyClassifiesRepresentativeVillageIds();
         biomeFamilyPolicyRejectsNamedVillageMismatches();
+        badlandsCountryAdmitsNoVillageOfAnyVariety();
+        badlandsCountryRefusesDesertStructuresAndOutposts();
+        generatedFootprintsCloseBadlandsAndEwDangerGaps();
         physicalTerrainPolicyRejectsCliffsideVillageStarts();
         climateMismatchRejectsInvalidStartsBeforeStore();
         locateRejectsInvalidGeneratedStarts();
@@ -243,10 +248,12 @@ public final class VillageLatitudePolicyTest {
                 LatitudeBiomes.villageVariantVsBiomeMismatch(
                         "village_savanna", "minecraft:windswept_savanna"),
                 "savanna village remains compatible with savanna terrain");
-        assertFalse(
+        assertTrue(
                 LatitudeBiomes.villageVariantVsBiomeMismatch(
                         "village_desert", "minecraft:badlands"),
-                "desert village remains compatible with the coherent desert-badlands family");
+                "badlands admits no village, so a desert village can no longer inherit"
+                        + " compatibility from the shared arid family (maintainer ruling,"
+                        + " 2026-08-15)");
         assertTrue(
                 LatitudeBiomes.villageVariantVsBiomeMismatch(
                         "village_desert", "minecraft:mangrove_swamp"),
@@ -275,6 +282,216 @@ public final class VillageLatitudePolicyTest {
                 LatitudeBiomes.villageVariantVsBiomeMismatch(
                         "desert_pyramid", "minecraft:bamboo_jungle"),
                 "non-village structure remains fail-open");
+    }
+
+    /**
+     * Badlands country admits no village of any variety (maintainer ruling, 2026-08-15).
+     *
+     * <p>Reported from live play: an ordinary desert village generated inside badlands. Badlands,
+     * wooded badlands and eroded badlands all carry the ARID descriptor family, exactly as desert
+     * does, so the named-variant comparison alone could never separate them — an arid-declared
+     * village matched arid terrain and was admitted. Badlands is meant to read as desolate, so it
+     * is now village-free outright, whatever the village calls itself.
+     */
+    private static void badlandsCountryAdmitsNoVillageOfAnyVariety() {
+        String[] badlands = {
+                "minecraft:badlands",
+                "minecraft:wooded_badlands",
+                "minecraft:eroded_badlands"
+        };
+        String[] villages = {
+                "village_desert",
+                "village_savanna",
+                "village_plains",
+                "village_snowy",
+                "village_taiga"
+        };
+        for (String biome : badlands) {
+            for (String village : villages) {
+                assertTrue(
+                        LatitudeBiomes.villageVariantVsBiomeMismatch(village, biome),
+                        village + " is rejected from " + biome);
+            }
+        }
+
+        assertTrue(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "fortified_desert_village", "minecraft:badlands"),
+                "a provider village whose name still declares a variant is rejected from badlands");
+        assertTrue(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village", "minecraft:eroded_badlands"),
+                "a village that declares no variant at all is still rejected from badlands,"
+                        + " so the ruling cannot be bypassed by naming");
+        assertTrue(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_savanna", "terralith:savanna_badlands"),
+                "a provider badlands biome is badlands country too");
+
+        assertFalse(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_desert", "minecraft:desert"),
+                "desert itself keeps its desert villages");
+        assertFalse(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "village_savanna", "minecraft:savanna"),
+                "savanna keeps its savanna villages");
+        assertFalse(
+                LatitudeBiomes.villageVariantVsBiomeMismatch(
+                        "desert_pyramid", "minecraft:badlands"),
+                "the ruling governs villages only; other structures remain fail-open in badlands");
+
+        for (String biome : badlands) {
+            assertTrue(
+                    VillageBiomeAdmissionPolicy.isVillageFreeBiome(biome),
+                    biome + " is village-free country");
+        }
+        assertTrue(
+                VillageBiomeAdmissionPolicy.isVillageFreeBiome("MINECRAFT:Badlands"),
+                "biome identity is matched without case sensitivity");
+        for (String keeps : new String[]{
+                "minecraft:desert",
+                "minecraft:savanna",
+                "minecraft:plains",
+                "minecraft:snowy_plains",
+                "minecraft:taiga",
+                "terralith:desert_oasis"}) {
+            assertFalse(
+                    VillageBiomeAdmissionPolicy.isVillageFreeBiome(keeps),
+                    keeps + " keeps its villages; the veto must not widen to the whole arid family");
+        }
+        assertFalse(
+                VillageBiomeAdmissionPolicy.isVillageFreeBiome(null),
+                "an absent biome identity fails open rather than emptying the world of villages");
+    }
+
+    /**
+     * Badlands desolation extends past villages (maintainer ruling, 2026-08-16). Live evidence
+     * from one fresh world: Terralith desert outposts on badlands and eroded badlands, two desert
+     * pyramids on badlands, desert ruined portals and desert rubble on badlands — none of which
+     * any pack's biome tag permits — plus vanilla pillager outposts on badlands, which a provider
+     * tag genuinely does permit. The first group arrives through start-height sampling that can
+     * disagree with the painted surface; the second is tag-legal but contrary to the ruling. One
+     * policy refuses both, judged against Latitude's final surface biome at the start column.
+     */
+    private static void badlandsCountryRefusesDesertStructuresAndOutposts() throws IOException {
+        String[] badlands = {
+                "minecraft:badlands",
+                "minecraft:wooded_badlands",
+                "minecraft:eroded_badlands"
+        };
+        String[] refused = {
+                "desert_outpost",
+                "fortified_desert_village",
+                "desert_pyramid",
+                "rubble_desert",
+                "ruined_portal_desert",
+                "pillager_outpost"
+        };
+        for (String biome : badlands) {
+            for (String structure : refused) {
+                assertTrue(
+                        VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                                structure, biome),
+                        structure + " is refused from " + biome);
+            }
+        }
+
+        assertFalse(
+                VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                        "underground/mining_outpost", "minecraft:wooded_badlands"),
+                "underground mining outposts are cave content, outside the surface ruling");
+        assertFalse(
+                VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                        "mineshaft_mesa", "minecraft:badlands"),
+                "the mesa mineshaft is badlands-native and keeps its home");
+        assertFalse(
+                VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                        "ruined_portal", "minecraft:badlands"),
+                "a plain ruined portal is not desert-declared and stays");
+        assertFalse(
+                VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                        "rubble_mesa", "minecraft:badlands"),
+                "badlands rubble is badlands-native and stays");
+        assertFalse(
+                VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                        "desert_pyramid", "minecraft:desert"),
+                "desert structures keep their desert placement");
+        assertFalse(
+                VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
+                        "pillager_outpost", "minecraft:savanna_plateau"),
+                "outposts outside badlands are untouched");
+
+        String startGuard = normalize(read(
+                "src/main/java/com/example/globe/mixin/ExtremePolarVillageStartGuardMixin.java"));
+        assertTrue(
+                startGuard.contains(
+                        "VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome("),
+                "generation-time owner refuses desert structures and outposts on badlands before "
+                        + "vanilla can register the start");
+        String locate = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeStructureLocateService.java"));
+        assertTrue(
+                locate.contains(
+                        "VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome("),
+                "locate mirrors the badlands structure refusal, so it can never report a site the "
+                        + "guard would veto");
+    }
+
+    private static void generatedFootprintsCloseBadlandsAndEwDangerGaps() throws IOException {
+        assertFalse(
+                StructureSitingPolicy.intersectsEastWestDangerZone(-9899, 9899, 10_000),
+                "a footprint wholly outside the 100-block EW danger zones stays legal");
+        assertTrue(
+                StructureSitingPolicy.intersectsEastWestDangerZone(9899, 9900, 10_000),
+                "the east danger boundary is inclusive");
+        assertTrue(
+                StructureSitingPolicy.intersectsEastWestDangerZone(-9900, -9899, 10_000),
+                "the west danger boundary mirrors east");
+        assertTrue(
+                StructureSitingPolicy.requiresBadlandsFreeFootprint("desert_pyramid", false),
+                "desert pyramids keep their whole generated footprint out of badlands");
+        assertTrue(
+                StructureSitingPolicy.requiresBadlandsFreeFootprint("village_desert", true),
+                "villages keep their whole generated footprint out of badlands");
+        assertFalse(
+                StructureSitingPolicy.requiresBadlandsFreeFootprint("mineshaft_mesa", false),
+                "badlands-native underground structures retain their home");
+        List<StructureSitingPolicy.FootprintSample> samples =
+                StructureSitingPolicy.footprintSamples(-21, 21, -21, 21);
+        assertTrue(samples.contains(new StructureSitingPolicy.FootprintSample(-21, -21))
+                        && samples.contains(new StructureSitingPolicy.FootprintSample(21, 21))
+                        && samples.contains(new StructureSitingPolicy.FootprintSample(0, 0)),
+                "footprint sampling includes both edges and the center");
+        assertTrue(
+                StructureSitingPolicy.shouldRejectBadlandsFootprint(
+                        "desert_pyramid",
+                        false,
+                        List.of("minecraft:desert", "minecraft:badlands")),
+                "one badlands sample rejects a desert structure footprint");
+        assertFalse(
+                StructureSitingPolicy.shouldRejectBadlandsFootprint(
+                        "desert_pyramid",
+                        false,
+                        Set.of("minecraft:desert")),
+                "a wholly desert footprint remains legal");
+
+        String startGuard = normalize(read(
+                "src/main/java/com/example/globe/mixin/ExtremePolarVillageStartGuardMixin.java"));
+        String locate = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeStructureLocateService.java"));
+
+        assertTrue(
+                startGuard.contains("StructureSitingPolicy.footprintSamples(")
+                        && startGuard.contains("StructureSitingPolicy.intersectsEastWestDangerZone("),
+                "generation must judge the generated structure footprint for badlands and EW danger");
+        assertTrue(
+                locate.contains("candidate.placement().isStructureChunk( structureState")
+                        && locate.contains("StructureSitingPolicy.footprintSamples("),
+                "locate must use the full placement rule and the same generated-footprint law");
+        assertFalse(
+                locate.contains("if (!structure.biomes().contains(pickedBiome))"),
+                "non-village locate must not reject shoreline and underground structures from one surface-biome precheck");
     }
 
     private static void physicalTerrainPolicyRejectsCliffsideVillageStarts() {
@@ -421,19 +638,32 @@ public final class VillageLatitudePolicyTest {
                         && locate.contains("candidate.structure().biomes()::contains")
                         && locate.contains("if (!start.isValid())"),
                 "structure locate validates candidates through Minecraft's real start generator");
+        // The selection anchor moved when locate began reporting the generated footprint's own
+        // centre instead of the placement cell's hint: there is no locatePos to measure from any
+        // more. The LAW is unchanged and still pinned in order -- placement restrictions, then a
+        // validated start, then the footprint centre, and only then result selection.
+        int placementCheck = locate.indexOf("candidate.placement().isStructureChunk( structureState");
+        int validatedStart = locate.indexOf("StructureStart generatedStart = validGeneratedStart(");
+        int footprintCentre = locate.indexOf("BlockPos generatedTarget = generatedCenterTarget(generatedStart);");
+        int resultSelection = locate.indexOf("double distSqr = targetDx * targetDx + targetDz * targetDz;");
         assertTrue(
-                locate.indexOf("candidate.placement().applyAdditionalChunkRestrictions(") >= 0
-                        && locate.indexOf("candidate.placement().applyAdditionalChunkRestrictions(")
-                        < locate.indexOf("if (!hasValidGeneratedStart(")
-                        && locate.indexOf("if (!hasValidGeneratedStart(") >= 0
-                        && locate.indexOf("if (!hasValidGeneratedStart(")
-                        < locate.indexOf("double distSqr = origin.distSqr(locatePos);"),
-                "placement restrictions and invalid starts are rejected before result selection");
+                placementCheck >= 0
+                        && validatedStart > placementCheck
+                        && footprintCentre > validatedStart
+                        && resultSelection > footprintCentre,
+                "full placement restrictions, invalid starts, and footprint laws run before result selection");
+        // Ranking must measure the reported position, not the placement hint it replaced -- otherwise
+        // locate could rank one point and report another.
+        assertTrue(
+                locate.contains("ringBest = Pair.of(generatedTarget, candidate.holder());")
+                        && !locate.contains("origin.distSqr(locatePos)"),
+                "locate ranks and reports the same generated footprint centre");
         assertTrue(
                 locate.contains("tally.rejectedPlacement++")
                         && locate.contains("tally.rejectedInvalidStart++")
+                        && locate.contains("tally.rejectedEwDanger++")
                         && locate.contains("tally.startValidationFailures++"),
-                "placement, structure-start, and validation failures remain visible in one summary log");
+                "placement, structure-start, EW danger, and validation failures remain visible in one summary log");
         assertTrue(
                 locate.contains("progress.update(ring + 1)")
                         && locate.contains("source.getServer().execute(() ->")
@@ -498,11 +728,16 @@ public final class VillageLatitudePolicyTest {
                         "LatitudeBiomes.villageClimateVsBandMismatch(structureId.getPath(), band)"),
                 "generation-time owner applies the existing climate policy before start registration");
         assertTrue(
-                startGuard.contains("biomeSource.getNoiseBiome(")
-                        && startGuard.contains("LatitudeBiomes.pick(")
+                startGuard.contains("effectiveBiomeSource.getNoiseBiome(")
+                        && !startGuard.contains("LatitudeBiomes.pick(")
                         && startGuard.contains(
                         "LatitudeBiomes.villageVariantVsBiomeMismatch( structureId.getPath(), finalBiomeId.toString())"),
-                "generation-time owner compares the named village variant with Latitude's final biome");
+                "generation-time owner judges the biome the world will PAINT — the authoritative "
+                        + "wrapper source — never a fresh pick with different terrain evidence; "
+                        + "re-picking under a different caller context computed preview heights "
+                        + "the paint path skips, and the two disagreed about where desert is "
+                        + "(0/1348 desert-village candidates on a ~1.7%-desert world, "
+                        + "reconciled 2026-08-16)");
         assertTrue(
                 startGuard.contains("VillageTerrainSuitabilityPolicy.SAMPLE_COUNT")
                         && startGuard.contains(
@@ -530,8 +765,10 @@ public final class VillageLatitudePolicyTest {
                 "blocked new starts return the singleton invalid start and normal paths call generate once");
         assertTrue(
                 startGuard.indexOf("return StructureStart.INVALID_START;")
-                        < startGuard.indexOf("return original.call("),
-                "new invalid start is returned before the normal generate/store path");
+                                < startGuard.indexOf("StructureStart generated = original.call(")
+                        && startGuard.lastIndexOf("return StructureStart.INVALID_START;")
+                                > startGuard.indexOf("StructureStart generated = original.call("),
+                "cheap start refusals run before generation and footprint refusals run after the generated bounds exist");
         assertTrue(
                 !startGuard.contains("placeInChunk")
                         && !startGuard.contains("@Inject")

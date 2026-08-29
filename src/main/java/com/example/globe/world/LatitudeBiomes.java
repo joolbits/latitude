@@ -227,6 +227,33 @@ public final class LatitudeBiomes {
     }
 
     /**
+     * Is this column inside a savanna country? Exported for the policy suite, which has to be able
+     * to ask WHERE savanna is supposed to live before it can assert what a warm-medium column
+     * finishes as -- savanna-family inside a country, forest outside one (maintainer approval,
+     * 2026-08-18). Reads the active world seed, so it only answers meaningfully inside an activated
+     * worldgen context, and it reads the live province authority, so a suite that swaps the
+     * authority to force a province sees the same answer the picker does.
+     */
+    static boolean savannaCountryHitForPolicyTest(int blockX, int blockZ) {
+        // Pass straight through to the predicate the picker itself calls, exactly as the dry-fringe
+        // hook does. An earlier shape resolved its own radius, falling back to a caller-supplied
+        // one where savannaCountryHere falls back to REFERENCE_DIAMETER_BLOCKS / 2. With no live
+        // world the two fallbacks differ, the province noise scale is radius-derived, and the hook
+        // then reported a country map the picker never saw -- a policy hook that disagrees with the
+        // policy is worse than no hook.
+        return savannaCountryHere(blockX, blockZ);
+    }
+
+    /**
+     * Is this column in savanna's OTHER home, the dry fringe hugging an arid province? Exported for
+     * the same reason as the predicate above. Takes no radius because the fringe reads the active
+     * province authority, which was built with the world's own radius.
+     */
+    static boolean savannaDryFringeHitForPolicyTest(int blockX, int blockZ) {
+        return savannaDryFringeHere(blockX, blockZ);
+    }
+
+    /**
      * Diagnostic-only accessor for atlas/export tooling: returns the pre-rewrite band choice
      * from the blend comparator (chosenBandIndex) before the subtropical->temperate constitutional
      * rewrite is applied.
@@ -272,6 +299,40 @@ public final class LatitudeBiomes {
         return snowy
                 ? pickFromTagNoiseOrFallback(biomes, LAT_BEACH_COLD_SNOWY, blockX, blockZ, 32, "minecraft:snowy_beach")
                 : pickFromTagNoiseOrFallback(biomes, LAT_BEACH_COLD_ROCKY, blockX, blockZ, 33, "minecraft:stony_shore");
+    }
+
+    /**
+     * Restores a shoreline identity for a beach column whose custom pick the quarantine rejected.
+     * Falls back to the same vanilla identity the beach tag pick itself would have used for the
+     * band, cold snowy/rocky chunk roll included, so the restored paint agrees with neighbours.
+     */
+    private static Holder<Biome> vanillaBeachIdentityForBand(Registry<Biome> biomes, int blockX, int blockZ, int bandIndex, Holder<Biome> current) {
+        try {
+            Holder<Biome> beach = biome(biomes, vanillaBeachIdForBand(blockX, blockZ, bandIndex));
+            setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "beach_identity_restored", beach);
+            return beach;
+        } catch (Throwable ignored) {
+            return current;
+        }
+    }
+
+    private static Holder<Biome> vanillaBeachIdentityForBand(Collection<Holder<Biome>> biomes, int blockX, int blockZ, int bandIndex, Holder<Biome> current) {
+        Holder<Biome> beach = entryById(biomes, vanillaBeachIdForBand(blockX, blockZ, bandIndex));
+        if (beach == null) {
+            return current;
+        }
+        setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "beach_identity_restored", beach);
+        return beach;
+    }
+
+    private static String vanillaBeachIdForBand(int blockX, int blockZ, int bandIndex) {
+        if (bandIndex <= 2) {
+            return "minecraft:beach";
+        }
+        // Same chunk roll the cold-beach tag pick uses, so the restored identity lands on
+        // the same snowy/rocky side the column would have had anyway.
+        long roll = hash64(blockX >> 4, blockZ >> 4, 0xBEEFBEEF);
+        return Long.remainderUnsigned(roll, 100L) < 70L ? "minecraft:snowy_beach" : "minecraft:stony_shore";
     }
 
     private static boolean shouldSkipSavannaGate(String callerContext) {
@@ -407,8 +468,6 @@ public final class LatitudeBiomes {
             Boolean.getBoolean("latitude.disableRadiusOverride");
     private static final boolean SKIP_PREVIEW_HEIGHT_FOR_BIOME_PNG =
             Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForBiomePng", "true"));
-    private static final boolean SKIP_PREVIEW_HEIGHT_FOR_WORLDGEN =
-            Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForWorldgen", "true"));
     private static volatile long WORLD_SEED = 0L;
     private static volatile WorldgenPolicyVersion ACTIVE_WORLDGEN_POLICY = WorldgenPolicyVersion.MODERN_1_3;
     /** Birth-locked V1 roster. Null means a legacy world or a deliberately fail-closed V1 load. */
@@ -567,6 +626,8 @@ public final class LatitudeBiomes {
     private static final Map<List<Holder<Biome>>, List<Holder<Biome>>> NO_MANGROVE_TAG_ENTRY_CACHE =
             Collections.synchronizedMap(new IdentityHashMap<>());
     private static final Map<List<Holder<Biome>>, List<Holder<Biome>>> NO_SWAMP_TAG_ENTRY_CACHE =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<List<Holder<Biome>>, List<Holder<Biome>>> DEEP_OCEAN_TAG_ENTRY_CACHE =
             Collections.synchronizedMap(new IdentityHashMap<>());
     private static final Map<List<Holder<Biome>>, List<Holder<Biome>>> SHALLOW_OCEAN_TAG_ENTRY_CACHE =
             Collections.synchronizedMap(new IdentityHashMap<>());
@@ -755,10 +816,12 @@ public final class LatitudeBiomes {
                 : null;
         ACTIVE_VANILLA_REPRESENTATION_PROFILE =
                 (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
-                        || ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE)
+                        || ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                        || ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION)
                         ? representationProfile : null;
         ACTIVE_CAVE_REPRESENTATION_PROFILE =
-                ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                        || ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION)
                         ? caveRepresentationProfile : null;
         ACTIVE_RADIUS_BLOCKS = Math.max(0, radiusBlocks);
         ACTIVE_SEA_LEVEL = seaLevel;
@@ -771,8 +834,11 @@ public final class LatitudeBiomes {
         boolean exactV2 = ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE;
         boolean sizeAwareV3 = (ACTIVE_WORLDGEN_POLICY
                 == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
-                || ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE)
+                || ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                || ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION)
                 && ACTIVE_VANILLA_REPRESENTATION_PROFILE != null;
+        boolean v5FinalAdmission = ACTIVE_WORLDGEN_POLICY
+                == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION;
         Map<String, BiomeRoute> landTargets = sizeAwareV3
                 ? ACTIVE_VANILLA_REPRESENTATION_PROFILE.landTargets()
                 : VanillaBiomeCoveragePlan.requiredRoutes();
@@ -785,8 +851,17 @@ public final class LatitudeBiomes {
                         ACTIVE_PROVIDER_TICKET_PROFILE,
                         landTargets,
                         sizeAwareV3,
-                        (biomeId, route, x, z) -> vanillaCoverageRouteEligible(
-                                biomeId, route, x, z, sampler))
+                        (biomeId, route, x, z) -> v5FinalAdmission
+                                ? !paleGardenCoreAuthorityHit(
+                                        WORLD_SEED, x, z, ACTIVE_RADIUS_BLOCKS, sampler)
+                                        && VanillaCoverageFinalAdmissionPolicy.decide(
+                                                BiomeDescriptorLedger.descriptor(biomeId),
+                                                route,
+                                                vanillaCoverageFinalAdmissionFacts(
+                                                        x, z, sampler, isMountainLike(sampler, x, z)))
+                                                == VanillaCoverageFinalAdmissionPolicy.Decision.PRESERVE_EXACT
+                                : vanillaCoverageRouteEligible(
+                                        biomeId, route, x, z, sampler))
                 : null;
         if (ACTIVE_VANILLA_COVERAGE_PLAN != null && !ACTIVE_VANILLA_COVERAGE_PLAN.complete()) {
             LOGGER.error("[Latitude] Fresh-world vanilla coverage plan is incomplete; missing route-managed biomes: {} diagnostics={}",
@@ -814,8 +889,9 @@ public final class LatitudeBiomes {
                     ACTIVE_SURFACE_WATER_COVERAGE_PLAN.missingBiomeIds(),
                     ACTIVE_SURFACE_WATER_COVERAGE_PLAN.missingDiagnostics());
         }
-        ACTIVE_CAVE_COVERAGE_PLAN = ACTIVE_WORLDGEN_POLICY
+        ACTIVE_CAVE_COVERAGE_PLAN = (ACTIVE_WORLDGEN_POLICY
                 == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                || ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION)
                 && ACTIVE_CAVE_REPRESENTATION_PROFILE != null
                 && donorSource != null
                 && sampler != null
@@ -832,7 +908,10 @@ public final class LatitudeBiomes {
         }
         if (sizeAwareV3) {
             LOGGER.info("[Latitude] {} {} surface representation: landTargets={} omittedExact={} omissions={}",
-                    ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE ? "V4" : "V3",
+                    ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                            ? "V5"
+                            : ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                                    ? "V4" : "V3",
                     ACTIVE_VANILLA_REPRESENTATION_PROFILE.worldSize(),
                     landTargets.size(),
                     ACTIVE_VANILLA_REPRESENTATION_PROFILE.omittedExactIds().size(),
@@ -874,6 +953,7 @@ public final class LatitudeBiomes {
         NO_MANGROVE_TAG_ENTRY_CACHE.clear();
         NO_SWAMP_TAG_ENTRY_CACHE.clear();
         SHALLOW_OCEAN_TAG_ENTRY_CACHE.clear();
+        DEEP_OCEAN_TAG_ENTRY_CACHE.clear();
         PROVIDER_TICKET_REGISTRY_ROUTE_CACHE.clear();
         PROVIDER_TICKET_SOURCE_ROUTE_CACHE.clear();
         VANILLA_COVERAGE_SOURCE_CACHE.clear();
@@ -899,7 +979,8 @@ public final class LatitudeBiomes {
         return policy == WorldgenPolicyVersion.PROVIDER_TICKET_V1
                 || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE
                 || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE
-                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE;
+                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                || policy == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION;
     }
 
     private static boolean vanillaCoverageRouteEligible(String biomeId, BiomeRoute route,
@@ -912,31 +993,99 @@ public final class LatitudeBiomes {
         if (continentalness <= -0.05) return false;
         int band = authoritativeLandBandIndex(blockX, blockZ, ACTIVE_RADIUS_BLOCKS);
         boolean mountain = isMountainLike(sampler, blockX, blockZ);
-        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
         return switch (route) {
             case TROPICAL_HUMID_LOWLAND -> band == BAND_TROPICAL && !mountain;
             case SUBTROPICAL_HUMID_LOWLAND -> band == BAND_SUBTROPICAL && !mountain
-                    && province != ProvinceAuthority.Province.WARM_DRY;
+                    && classifyProvince(blockX, blockZ) != ProvinceAuthority.Province.WARM_DRY;
             case TEMPERATE_LOWLAND -> band == BAND_TEMPERATE && !mountain;
             case TEMPERATE_WETLAND -> band == BAND_TEMPERATE && !mountain
+                    && wetlandProvinceEligible(blockX, blockZ)
                     && evaluateSwamp(blockX, blockZ, sampler).allow();
             case TEMPERATE_UPLAND -> band == BAND_TEMPERATE && mountain;
+            // Subpolar mountains only: the windswept family is banned at the pole (2026-08-18).
+            case SUBPOLAR_UPLAND -> band == BAND_SUBPOLAR && mountain;
             case COLD_UPLAND -> band >= BAND_SUBPOLAR && mountain;
             case WARM_TRANSITION -> band == BAND_SUBTROPICAL && !mountain
-                    && province != ProvinceAuthority.Province.WARM_WET;
+                    && classifyProvince(blockX, blockZ) != ProvinceAuthority.Province.WARM_WET;
             case WARM_UPLAND -> band == BAND_SUBTROPICAL && mountain
-                    && province != ProvinceAuthority.Province.WARM_WET;
+                    && classifyProvince(blockX, blockZ) != ProvinceAuthority.Province.WARM_WET;
             case ARID_LOWLAND -> band == BAND_SUBTROPICAL && !mountain
-                    && (province == ProvinceAuthority.Province.WARM_DRY
+                    && (classifyProvince(blockX, blockZ) == ProvinceAuthority.Province.WARM_DRY
                     || aridHotspotHere(WORLD_SEED, blockX, blockZ));
             case ARID_UPLAND -> band == BAND_SUBTROPICAL && mountain
-                    && (province == ProvinceAuthority.Province.WARM_DRY
+                    && (classifyProvince(blockX, blockZ) == ProvinceAuthority.Province.WARM_DRY
                     || aridHotspotHere(WORLD_SEED, blockX, blockZ));
             case SUBPOLAR_WETLAND -> band == BAND_SUBPOLAR && !mountain
+                    && wetlandProvinceEligible(blockX, blockZ)
                     && evaluateSwamp(blockX, blockZ, sampler).allow();
             case SUBPOLAR_LOWLAND -> band == BAND_SUBPOLAR && !mountain;
             case POLAR_LOWLAND -> band == BAND_POLAR && !mountain;
             case CAVE_SHALLOW, CAVE_DEEP -> false;
+        };
+    }
+
+    private static VanillaCoverageFinalAdmissionPolicy.Facts vanillaCoverageFinalAdmissionFacts(
+            int blockX,
+            int blockZ,
+            Climate.Sampler sampler,
+            boolean physicalUpland) {
+        int radius = Math.max(1, ACTIVE_RADIUS_BLOCKS);
+        int authoritativeBand = authoritativeLandBandIndex(blockX, blockZ, radius);
+        double tBase = (double) Math.abs(blockZ) / (double) radius;
+        double t = applyBoundaryJitter(blockX, blockZ, radius, tBase);
+        LatitudeBands.Band blendedBand = bandForAbsLatFraction(t);
+        int sourceBand = bandIndexForBand(blendedBand);
+        int selectionBand = latitudeBandIndexWithBlend(
+                blockX, blockZ, radius, blendedBand, t);
+        ProvinceAuthority.Province province = warmProvinceClass(
+                blockX, blockZ, selectionBand);
+
+        Climate.TargetPoint point = sampler.sample(
+                blockX >> 2, SURFACE_CLASSIFY_Y >> 2, blockZ >> 2);
+        double continentalness = Climate.unquantizeCoord(point.continentalness());
+        double erosion = Climate.unquantizeCoord(point.erosion());
+        double weirdness = Climate.unquantizeCoord(point.weirdness());
+        int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
+        boolean ordinaryWetlandClaim = selectionBand <= BAND_TEMPERATE
+                && !(selectionBand != BAND_TEMPERATE
+                        && isAridTropicalStepSymmetric(blockX, blockZ, t))
+                && (selectionBand != BAND_SUBTROPICAL
+                        || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE)
+                && wetlandProvinceEligible(blockX, blockZ)
+                && swampPatchHere(WORLD_SEED, blockX, blockZ)
+                && swampOkInPatchScaled(continentalness, erosion, weirdness)
+                && wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ)
+                        < scaledWetlandThresholdForBand(sourceBand, t);
+        boolean finalWetlandCompatible = !physicalUpland
+                && oceanDistance >= 0
+                && (selectionBand == BAND_TEMPERATE
+                        || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE)
+                && wetlandProvinceEligible(blockX, blockZ)
+                && evaluateSwamp(blockX, blockZ, sampler).allow();
+        boolean aridClaim = province == ProvinceAuthority.Province.WARM_DRY
+                || aridHotspotHere(WORLD_SEED, blockX, blockZ);
+        boolean polarColdConflict = (authoritativeBand >= BAND_SUBPOLAR)
+                != (selectionBand >= BAND_SUBPOLAR);
+        return new VanillaCoverageFinalAdmissionPolicy.Facts(
+                coverageZone(authoritativeBand),
+                coverageZone(selectionBand),
+                province,
+                physicalUpland
+                        ? VanillaCoverageFinalAdmissionPolicy.PhysicalTerrain.UPLAND
+                        : VanillaCoverageFinalAdmissionPolicy.PhysicalTerrain.LOWLAND,
+                ordinaryWetlandClaim,
+                finalWetlandCompatible,
+                aridClaim,
+                polarColdConflict);
+    }
+
+    private static VanillaCoverageFinalAdmissionPolicy.LatitudeZone coverageZone(int bandIndex) {
+        return switch (bandIndex) {
+            case BAND_TROPICAL -> VanillaCoverageFinalAdmissionPolicy.LatitudeZone.TROPICAL;
+            case BAND_SUBTROPICAL -> VanillaCoverageFinalAdmissionPolicy.LatitudeZone.SUBTROPICAL;
+            case BAND_TEMPERATE -> VanillaCoverageFinalAdmissionPolicy.LatitudeZone.TEMPERATE;
+            case BAND_SUBPOLAR -> VanillaCoverageFinalAdmissionPolicy.LatitudeZone.SUBPOLAR;
+            default -> VanillaCoverageFinalAdmissionPolicy.LatitudeZone.POLAR;
         };
     }
 
@@ -1154,11 +1303,30 @@ public final class LatitudeBiomes {
         return plan != null && plan.isMushroomSolid(blockX, blockY, blockZ);
     }
 
+    /** Constant-cost locate fallback for exact land identities reserved by the fresh-world plan. */
+    static VanillaBiomeCoveragePlan.Anchor nearestPlannedVanillaCoverageAnchor(
+            Collection<String> biomeIds, int originX, int originZ) {
+        VanillaBiomeCoveragePlan plan = ACTIVE_VANILLA_COVERAGE_PLAN;
+        return plan != null ? plan.nearestAnchorFor(biomeIds, originX, originZ) : null;
+    }
+
     /** Constant-cost locate fallback for exact identities reserved by the fresh-world V2 plan. */
     public static VanillaSurfaceWaterCoveragePlan.Anchor nearestPlannedSurfaceWaterCoverageAnchor(
             Collection<String> biomeIds, int originX, int originZ) {
         VanillaSurfaceWaterCoveragePlan plan = ACTIVE_SURFACE_WATER_COVERAGE_PLAN;
         return plan != null ? plan.nearestAnchorFor(biomeIds, originX, originZ) : null;
+    }
+
+    /** Constant-cost locate fallback for exact cave identities reserved by the V4 plan. */
+    public static CaveBiomeCoveragePlan.Anchor nearestPlannedCaveCoverageAnchor(
+            Collection<String> biomeIds,
+            int originX,
+            int originZ,
+            int maxHorizontalDistance) {
+        CaveBiomeCoveragePlan plan = ACTIVE_CAVE_COVERAGE_PLAN;
+        return plan != null
+                ? plan.nearestAnchorFor(biomeIds, originX, originZ, maxHorizontalDistance)
+                : null;
     }
 
     private static Holder<Biome> applyVanillaCoverage(
@@ -1167,13 +1335,29 @@ public final class LatitudeBiomes {
             Holder<Biome> out,
             int blockX,
             int blockZ,
-            Climate.Sampler sampler) {
+            Climate.Sampler sampler,
+            boolean physicalUpland) {
         VanillaBiomeCoveragePlan plan = ACTIVE_VANILLA_COVERAGE_PLAN;
         if (plan == null || sampler == null || isOcean(base) || isRiver(base) || isBeachLike(base)
                 || isOcean(out) || isRiver(out) || isBeachLike(out)) return out;
+        boolean v5FinalAdmission = ACTIVE_WORLDGEN_POLICY
+                == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION;
+        VanillaCoverageFinalAdmissionPolicy.Facts facts = v5FinalAdmission
+                ? vanillaCoverageFinalAdmissionFacts(
+                        blockX, blockZ, sampler, physicalUpland)
+                : null;
         for (VanillaBiomeCoveragePlan.Anchor anchor : plan.matches(blockX, blockZ)) {
-            if (!vanillaCoverageRouteEligible(
-                    anchor.biomeId(), anchor.route(), blockX, blockZ, sampler)) continue;
+            VanillaCoverageFinalAdmissionPolicy.Decision decision = v5FinalAdmission
+                    ? VanillaCoverageFinalAdmissionPolicy.decide(
+                            BiomeDescriptorLedger.descriptor(anchor.biomeId()),
+                            anchor.route(),
+                            facts)
+                    : null;
+            if (v5FinalAdmission
+                    ? decision != VanillaCoverageFinalAdmissionPolicy.Decision.PRESERVE_EXACT
+                    : !vanillaCoverageRouteEligible(
+                            anchor.biomeId(), anchor.route(), blockX, blockZ, sampler)) continue;
+            if (v5FinalAdmission && !landCoverageMayReplace(out, anchor, blockX, blockZ)) continue;
             try {
                 Holder<Biome> target = biome(biomes, anchor.biomeId());
                 setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "vanilla_coverage_v2", target);
@@ -1191,19 +1375,82 @@ public final class LatitudeBiomes {
             Holder<Biome> out,
             int blockX,
             int blockZ,
-            Climate.Sampler sampler) {
+            Climate.Sampler sampler,
+            boolean physicalUpland) {
         VanillaBiomeCoveragePlan plan = ACTIVE_VANILLA_COVERAGE_PLAN;
         if (plan == null || sampler == null || isOcean(base) || isRiver(base) || isBeachLike(base)
                 || isOcean(out) || isRiver(out) || isBeachLike(out)) return out;
+        boolean v5FinalAdmission = ACTIVE_WORLDGEN_POLICY
+                == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION;
+        VanillaCoverageFinalAdmissionPolicy.Facts facts = v5FinalAdmission
+                ? vanillaCoverageFinalAdmissionFacts(
+                        blockX, blockZ, sampler, physicalUpland)
+                : null;
         for (VanillaBiomeCoveragePlan.Anchor anchor : plan.matches(blockX, blockZ)) {
-            if (!vanillaCoverageRouteEligible(
-                    anchor.biomeId(), anchor.route(), blockX, blockZ, sampler)) continue;
+            VanillaCoverageFinalAdmissionPolicy.Decision decision = v5FinalAdmission
+                    ? VanillaCoverageFinalAdmissionPolicy.decide(
+                            BiomeDescriptorLedger.descriptor(anchor.biomeId()),
+                            anchor.route(),
+                            facts)
+                    : null;
+            if (v5FinalAdmission
+                    ? decision != VanillaCoverageFinalAdmissionPolicy.Decision.PRESERVE_EXACT
+                    : !vanillaCoverageRouteEligible(
+                            anchor.biomeId(), anchor.route(), blockX, blockZ, sampler)) continue;
+            if (v5FinalAdmission && !landCoverageMayReplace(out, anchor, blockX, blockZ)) continue;
             Holder<Biome> target = resolveVanillaCoverageBiome(biomes, anchor.biomeId());
             if (target == null) continue;
             setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "vanilla_coverage_v2", target);
             return target;
         }
         return out;
+    }
+
+    static boolean landCoverageMayReplace(
+            Holder<Biome> out,
+            VanillaBiomeCoveragePlan.Anchor anchor,
+            int blockX,
+            int blockZ) {
+        if (ACTIVE_WORLDGEN_POLICY != WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION) {
+            return true;
+        }
+        if (out == null || anchor == null || isBiomeId(out, "minecraft:pale_garden")) {
+            return false;
+        }
+        if (isSwampCandidate(out) || isMangroveCandidate(out)) {
+            // A wetland the dry-province law forbids at this column is doomed to the generic
+            // fallback anyway (26.2 parity port, authorized 2026-08-16); a real reserved
+            // identity outranks it rather than being blocked by a biome that cannot survive.
+            return anchor.route() == BiomeRoute.TEMPERATE_WETLAND
+                    || !wetlandProvinceEligible(blockX, blockZ);
+        }
+        return true;
+    }
+
+    static VanillaBiomeCoveragePlan activeVanillaCoveragePlanForTest() {
+        return ACTIVE_VANILLA_COVERAGE_PLAN;
+    }
+
+    /** Test-only seam for varying humidity authority without mutating the active world context. */
+    static ProvinceAuthority swapProvinceAuthorityForTest(ProvinceAuthority replacement) {
+        ProvinceAuthority previous = PROVINCE_AUTHORITY;
+        PROVINCE_AUTHORITY = replacement;
+        return previous;
+    }
+
+    /** Restores the exact province authority captured by {@link #swapProvinceAuthorityForTest}. */
+    static void restoreProvinceAuthorityForTest(ProvinceAuthority previous) {
+        PROVINCE_AUTHORITY = previous;
+    }
+
+    /**
+     * Test-only view of whether {@code out} carries the exact fresh-world coverage admission
+     * ({@code VANILLA_FALLBACK / vanilla_coverage_v2}) recorded by the current thread's most
+     * recent pick. Lets proofs distinguish an applied reservation from ordinary composition that
+     * coincidentally produced the same identity.
+     */
+    static boolean hasExactVanillaCoverageAdmissionForTest(Holder<Biome> out) {
+        return hasExactVanillaCoverageAdmission(out);
     }
 
     public static void setRadius(int radius) {
@@ -1612,6 +1859,14 @@ public final class LatitudeBiomes {
         if (mountainLike && bandIndex != BAND_TEMPERATE) {
             summary.append(" Nearby relief is a major factor.");
         }
+        // Diagnostic follow-up to the desert-oasis ruling (maintainer ruling, 2026-08-16): an
+        // active arid hotspot may preserve desert despite a humid province label, so the
+        // diagnostic must say so — otherwise a sanctioned oasis reads as a broken humidity label.
+        boolean aridHotspotActive = aridHotspotHere(WORLD_SEED, blockX, blockZ);
+        if (aridHotspotActive) {
+            summary.append(" An arid hotspot is active here: desert may persist despite a humid"
+                    + " province label.");
+        }
         String summaryLine = summary.toString();
 
         // --- drivers block ---
@@ -1652,7 +1907,8 @@ public final class LatitudeBiomes {
                 + "  reasonSummary=%s%n"
                 + "  humidity=%s  openness=%s  compositionBias=%s%n"
                 + "  uplandT=%.3f%n"
-                + "  province=%s",
+                + "  province=%s%n"
+                + "  aridHotspot=%s",
                 blockX, blockY, blockZ, finalBiomeId,
                 latDeg, bandLabel, bandIndex,
                 oceanDistStr, coastalHint,
@@ -1669,7 +1925,10 @@ public final class LatitudeBiomes {
                 reasonSummary,
                 humidityStr, opennessStr, compositionBiasStr,
                 uplandT,
-                provinceStr);
+                provinceStr,
+                aridHotspotActive
+                        ? "true(desert-oasis override: may outrank the coarse province)"
+                        : "false");
 
         return new BiomeDiagnostics(
                 blockX, blockY, blockZ,
@@ -1829,8 +2088,11 @@ public final class LatitudeBiomes {
                 || "ATLAS_SAMPLER".equals(normalized)) {
             return SKIP_PREVIEW_HEIGHT_FOR_BIOME_PNG;
         }
+        // Biome population is already inside the chunk generator. Re-entering it through a
+        // terrain preview can block the integrated server, so this is an invariant rather than a
+        // launch-time tuning flag.
         if ("MIXIN".equals(normalized) || "CAVE_CLAMP".equals(normalized)) {
-            return SKIP_PREVIEW_HEIGHT_FOR_WORLDGEN;
+            return true;
         }
         return false;
     }
@@ -1987,8 +2249,26 @@ public final class LatitudeBiomes {
                 || isBiomeId(biome, "minecraft:windswept_gravelly_hills");
     }
 
+    /**
+     * The windswept identities {@link #clampTemperateWindsweptMountainOwnership} governs: all
+     * three, since 2026-08-18.
+     *
+     * <p>It listed only forest and gravelly_hills, so the mountain-ownership clamp had NEVER
+     * covered {@code minecraft:windswept_hills} — the exact id of the reported bug. Two live paths
+     * put a biome back on a column after the terrain gate has already run and re-check no route
+     * condition: {@code enforceLandBandPool}'s reroll through
+     * {@code pickFromAllowedLandPool(rerollLandPoolForBand(...))}, whose subpolar substitution pool
+     * is not mountain-filtered, and {@code quarantineUnknownCustomLandBiome} on modded worlds,
+     * which runs after every polar clamp. Measured through the policy suite's own picker before
+     * this line was added: windswept_hills came back on flat subpolar ground at x=-3999 z=6000.
+     *
+     * <p>Naming all three also means the clamp reads the same family as
+     * {@link #isColdWindsweptFamilyBiome}; two windswept lists that disagree about their members is
+     * how the first version of this fix left a third of the family unguarded.
+     */
     private static boolean isTemperateWindsweptVariant(Holder<Biome> biome) {
-        return isBiomeId(biome, "minecraft:windswept_forest")
+        return isBiomeId(biome, "minecraft:windswept_hills")
+                || isBiomeId(biome, "minecraft:windswept_forest")
                 || isBiomeId(biome, "minecraft:windswept_gravelly_hills");
     }
 
@@ -2667,26 +2947,53 @@ public final class LatitudeBiomes {
             return false;
         }
 
-        // Coarse, world-size-safe dry sub-province authority: two low-frequency ValueNoise2D
-        // layers derive coherent badlands regions inside WARM_DRY without committing to a
-        // single anchored ellipse. Scale is proportional to the active world radius in the
-        // same style as aridHotspotHere(...). Z sampling is mirrored about the equator and
-        // shifted so the noise lattice is anchored to the subtropical (dry) band midpoint,
-        // which forces hemisphere symmetry and prevents the noise feature from drifting
-        // entirely outside the dry band on small worlds where band span < noise scale.
-        int dryBandLowAbsZ = bandBoundaryBlocks(0, radius);
-        int dryBandHighAbsZ = bandBoundaryBlocks(1, radius);
+        return badlandsCountryNoiseHit(worldSeed, radius, blockX, blockZ);
+    }
+
+    /** The badlands-country noise scale for a world radius. Package-visible as a focused-test seam. */
+    static int badlandsCountryScaleBlocks(int radiusBlocks) {
+        return Math.max(BADLANDS_COUNTRY_MIN_SCALE_BLOCKS,
+                Math.min((int) Math.round(radiusBlocks * 0.16), BADLANDS_COUNTRY_MAX_SCALE_BLOCKS));
+    }
+
+    /**
+     * Coarse, world-size-safe dry sub-province authority: two low-frequency ValueNoise2D
+     * layers derive coherent badlands regions inside WARM_DRY without committing to a
+     * single anchored ellipse. Z sampling is mirrored about the equator and shifted so the
+     * noise lattice is anchored to the subtropical (dry) band midpoint, which forces
+     * hemisphere symmetry and prevents the noise feature from drifting entirely outside the
+     * dry band on small worlds where band span &lt; noise scale.
+     *
+     * <p>The noise scale is capped and the thresholds calibrated (maintainer ruling,
+     * 2026-08-19: badlands is an earthlike-rare accent of the dry belt, desert the staple).
+     * The previous {@code radius * 0.28} scale grew WITH the world — ~7 primary cells across
+     * the entire map at any size — so per-seed badlands coverage of the dry belt was a
+     * lottery. The same disease {@link #aridHotspotScaleBlocks} was capped for. Measured on
+     * THIS line's arithmetic over seeds 41-52, as a share of the geometric 23.5-35 degree
+     * belt: radius 10000 swung 24%-71% (mean 45%), radius 3750 swung 7%-83%. With the cap the
+     * map holds ~31 primary cells at radius 10000 and the same sweep reads 11%-30% (mean 18%),
+     * 14%-19% at radius 20000 — the field's own marginal instead of a coin flip. Locally it
+     * also stops a single country spanning thousands of blocks: at the cap a country is
+     * kilometre-scale, so the belt reads as mesas inside a desert rather than one sheet.
+     *
+     * <p>This is the COUNTRY only. Badlands outside it still comes from the outlier-mesa
+     * allowance ({@link #BADLANDS_OUTSIDE_PROVINCE_THRESHOLD}), so no seed is left without
+     * badlands however the country field falls.
+     */
+    static boolean badlandsCountryNoiseHit(long worldSeed, int radiusBlocks, int blockX, int blockZ) {
+        int dryBandLowAbsZ = bandBoundaryBlocks(0, radiusBlocks);
+        int dryBandHighAbsZ = bandBoundaryBlocks(1, radiusBlocks);
         int dryBandMidZ = (dryBandLowAbsZ + dryBandHighAbsZ) / 2;
         int sampleZ = Math.abs(blockZ) - dryBandMidZ;
 
-        int primaryScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radius * 0.28));
+        int primaryScale = badlandsCountryScaleBlocks(radiusBlocks);
         double primary = ValueNoise2D.sampleBlocks(worldSeed ^ BADLANDS_REGION_SHAPE_SALT, blockX, sampleZ, primaryScale);
-        if (primary >= 0.52) {
+        if (primary >= BADLANDS_COUNTRY_PRIMARY_MAX) {
             return false;
         }
-        int wobbleScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, primaryScale / 2);
+        int wobbleScale = Math.max(BADLANDS_COUNTRY_MIN_SCALE_BLOCKS, primaryScale / 2);
         double wobble = ValueNoise2D.sampleBlocks(worldSeed ^ BADLANDS_PROVINCE_WOBBLE_SALT, blockX, sampleZ, wobbleScale);
-        return wobble < 0.72;
+        return wobble < BADLANDS_COUNTRY_WOBBLE_MAX;
     }
 
     private static boolean badlandsProvinceAuthorityHitLegacy(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
@@ -2749,6 +3056,178 @@ public final class LatitudeBiomes {
         return (dx * dx + dz * dz) <= (regionRadius * regionRadius);
     }
 
+    /**
+     * Is this column inside a savanna COUNTRY?
+     *
+     * <p>Modelled on {@link #badlandsProvinceAuthorityHitModern}, which is the mechanism that
+     * already turned "badlands is everywhere in the arid belt" into "badlands is a country inside
+     * it" (maintainer ruling, 2026-08-18). Same shape, same two layers, same radius-proportional
+     * scale, same equator mirroring, its own salts. The warm belt had the same disease one province
+     * over: every WARM_MEDIUM column resolved to a literal {@code minecraft:savanna} with no roll,
+     * no pool and no geography, so half the tropics was one biome. Savanna is now a region, and the
+     * belt around it is forest grading into the jungles.
+     *
+     * <p>Answers only inside WARM_MEDIUM, exactly as the badlands helper answers only inside
+     * WARM_DRY. That is what makes it safe to call from the shared province enforcer: a WARM_WET or
+     * WARM_DRY column can never be told it is savanna country, so neither the jungle core nor the
+     * accepted tropical-arid savanna floor can be moved by this field.
+     *
+     * <p>The province is re-derived here from {@link #authoritativeLandBandIndex} rather than taken
+     * from the caller, again matching the badlands helper. On a band-blend column whose picker band
+     * says subtropical while the authority says temperate, this returns false and the belt resolves
+     * to forest -- which is the lawful answer at a temperate latitude, and the same fringe behaviour
+     * the 2026-08-18 dry-warm reroute produces when it sends blend columns through the poleward
+     * arid law instead of stamping savanna past the band edge.
+     *
+     * <p>Article VI: two continuous {@code ValueNoise2D} fields, no {@code floorDiv}, no per-block
+     * hash, no anchored ellipse.
+     *
+     * <p>NO {@code useLegacyWorldgenPolicy()} BRANCH, deliberately -- unlike the badlands template it
+     * is modelled on. That branch exists to preserve badlands geography in worlds born before the
+     * badlands province existed; this field is new in this slice, so no world has legacy savanna
+     * geography to preserve and the answer is policy-independent by design.
+     */
+    private static boolean savannaProvinceAuthorityHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
+        int radius = effectiveRadiusHint > 0 ? effectiveRadiusHint : ACTIVE_RADIUS_BLOCKS;
+        if (radius <= 0) {
+            radius = REFERENCE_DIAMETER_BLOCKS / 2;
+        }
+        radius = Math.max(1, radius);
+
+        ProvinceAuthority.Province province = warmProvinceClass(
+                blockX,
+                blockZ,
+                authoritativeLandBandIndex(blockX, blockZ, radius));
+        if (province != ProvinceAuthority.Province.WARM_MEDIUM) {
+            return false;
+        }
+
+        // Z sampling is mirrored about the equator and shifted to the midpoint of the WHOLE warm
+        // zone (equator to the temperate line), not of one band: WARM_MEDIUM spans tropical and
+        // subtropical together, so anchoring to either band alone would push the noise lattice off
+        // the other one on small worlds, exactly the failure the badlands helper anchors around.
+        int warmZoneHighAbsZ = bandBoundaryBlocks(1, radius);
+        int warmZoneMidZ = warmZoneHighAbsZ / 2;
+        int sampleZ = Math.abs(blockZ) - warmZoneMidZ;
+
+        int primaryScale = Math.max(
+                SAVANNA_PROVINCE_MIN_SCALE_BLOCKS,
+                (int) Math.round(radius * SAVANNA_PROVINCE_SCALE_FRAC));
+        double primary = ValueNoise2D.sampleBlocks(worldSeed ^ SAVANNA_REGION_SHAPE_SALT, blockX, sampleZ, primaryScale);
+        if (primary >= SAVANNA_PROVINCE_PRIMARY_MAX) {
+            return false;
+        }
+        int wobbleScale = Math.max(SAVANNA_PROVINCE_MIN_SCALE_BLOCKS / 2, primaryScale / 2);
+        double wobble = ValueNoise2D.sampleBlocks(worldSeed ^ SAVANNA_PROVINCE_WOBBLE_SALT, blockX, sampleZ, wobbleScale);
+        return wobble < SAVANNA_PROVINCE_WOBBLE_MAX;
+    }
+
+    /**
+     * {@link #savannaProvinceAuthorityHit} at the active world radius. The radius-hint fallback is
+     * the same one {@code chooseBadlandsVariant} uses, so the two country fields agree about what
+     * "this world" means when no context radius is set.
+     */
+    private static boolean savannaCountryHere(int blockX, int blockZ) {
+        int radiusHint = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+        return savannaProvinceAuthorityHit(WORLD_SEED, blockX, blockZ, radiusHint);
+    }
+
+    /**
+     * The SECOND home of savanna: the dry fringe of the warm-medium belt, the shell of WARM_MEDIUM
+     * that hugs an arid province (maintainer ruling, 2026-08-18 -- savanna is both COUNTRIES and the
+     * ARID FRINGE).
+     *
+     * <p>Savanna is the real world's transition between arid and forest, and it was the buffer
+     * standing between mesa/desert country and the lush belt until the country system moved it off
+     * exactly that position. Without this, lush forest presses flat against red terracotta.
+     *
+     * <p>NOT a neighbour query and NOT a new noise field: {@link ProvinceAuthority#warmDryFringe}
+     * asks how close the column's own dry-side moisture sits to the dry threshold, and because
+     * moisture is a smooth field that already means "just outside an arid province". Article VI
+     * clean, and it reads the SAME arithmetic {@code classifyWarm} thresholds against, so the
+     * province map and the fringe map cannot disagree.
+     *
+     * <p>Answers false with no authority, which matches {@link #classifyProvince}: every call site
+     * below is reached only after the authority has already returned WARM_MEDIUM, so this branch is
+     * unreachable there and exists only so the predicate is total.
+     */
+    private static boolean savannaDryFringeHere(int blockX, int blockZ) {
+        ProvinceAuthority authority = PROVINCE_AUTHORITY;
+        return authority != null && authority.warmDryFringe(blockX, blockZ);
+    }
+
+    /**
+     * Does savanna own this column -- either of its two homes, the country or the dry fringe?
+     *
+     * <p>Memoised per column because the answer is asked repeatedly for the SAME column on the
+     * hottest path in worldgen. The jungle-survival gate asks it, then hands the column to
+     * {@link #enforceWarmProvinceFamily}, whose warm-medium arm asks the identical question again;
+     * and the enforcer's arm is reached from five separate places per warm column. Each ask costs
+     * two band lookups, a province classification and four value-noise samples, none of which is
+     * cached anywhere else. Measured on this line: isolated biome sampling went 2367ms to 4603ms
+     * for 97,969 samples over the slice that introduced the pair.
+     *
+     * <p>The memo is one entry per thread and is invalidated by IDENTITY on the province authority,
+     * so the test hooks that swap an authority in and out cannot read a stale answer -- the same
+     * shape {@code PreviewHeightCache} uses. Seed and radius are keyed too because the country's
+     * noise scale is derived from the radius.
+     */
+    private static boolean savannaOwnsColumnAt(int blockX, int blockZ) {
+        ProvinceAuthority authority = PROVINCE_AUTHORITY;
+        long seed = WORLD_SEED;
+        int radius = ACTIVE_RADIUS_BLOCKS;
+        SavannaOwnershipCache cache = SAVANNA_OWNERSHIP_CACHE.get();
+        if (cache.matches(authority, seed, radius, blockX, blockZ)) {
+            return cache.owned;
+        }
+        boolean owned = savannaCountryHere(blockX, blockZ) || savannaDryFringeHere(blockX, blockZ);
+        cache.store(authority, seed, radius, blockX, blockZ, owned);
+        return owned;
+    }
+
+    private static final ThreadLocal<SavannaOwnershipCache> SAVANNA_OWNERSHIP_CACHE =
+            ThreadLocal.withInitial(SavannaOwnershipCache::new);
+
+    private static final class SavannaOwnershipCache {
+        private ProvinceAuthority authority;
+        private long worldSeed = Long.MIN_VALUE;
+        private int radius = Integer.MIN_VALUE;
+        private int blockX = Integer.MIN_VALUE;
+        private int blockZ = Integer.MIN_VALUE;
+        private boolean owned;
+        private boolean valid;
+
+        private boolean matches(
+                ProvinceAuthority candidateAuthority,
+                long candidateSeed,
+                int candidateRadius,
+                int candidateX,
+                int candidateZ) {
+            return valid
+                    && authority == candidateAuthority
+                    && worldSeed == candidateSeed
+                    && radius == candidateRadius
+                    && blockX == candidateX
+                    && blockZ == candidateZ;
+        }
+
+        private void store(
+                ProvinceAuthority newAuthority,
+                long newSeed,
+                int newRadius,
+                int newX,
+                int newZ,
+                boolean newOwned) {
+            authority = newAuthority;
+            worldSeed = newSeed;
+            radius = newRadius;
+            blockX = newX;
+            blockZ = newZ;
+            owned = newOwned;
+            valid = true;
+        }
+    }
+
     private static boolean badlandsProvinceCoreHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
         int radius = effectiveRadiusHint > 0 ? effectiveRadiusHint : ACTIVE_RADIUS_BLOCKS;
         if (radius <= 0) {
@@ -2774,18 +3253,38 @@ public final class LatitudeBiomes {
     }
 
     private static boolean aridHotspotHere(long worldSeed, int blockX, int blockZ) {
-        // Coarse, world-size-aware arid province membership. Restrict to warm/subtropical bands and
-        // demand a low-noise hit so only a few large provinces form instead of thin seams.
         int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : REFERENCE_DIAMETER_BLOCKS / 2;
-        if (radius <= 0) {
+        return aridHotspotHere(worldSeed, radius, blockX, blockZ);
+    }
+
+    /** The hotspot noise scale for a world radius. Package-visible as a focused-test seam. */
+    static int aridHotspotScaleBlocks(int radiusBlocks) {
+        return Math.max(ARID_REGION_MIN_SCALE_BLOCKS,
+                Math.min((int) Math.round(radiusBlocks * 0.60), ARID_REGION_MAX_SCALE_BLOCKS));
+    }
+
+    /**
+     * Coarse arid province membership — the desert-oasis mechanism. Restricted to the
+     * warm/subtropical belt with a low-noise hit so only a few large provinces form instead of
+     * thin seams.
+     *
+     * <p>The noise scale is capped (maintainer ruling, 2026-08-16, desert-abundance lever 1):
+     * the previous {@code radius * 0.60} scale grew WITH the world, so the primary field always
+     * had ~3 cells across the entire map at any size — hotspot presence was near-binary per
+     * seed, and most seeds had literally none, leaving the ruled-in oasis exception inert.
+     * Capping the scale keeps blobs large and coherent while making their count world-size
+     * stable, so every seed carries a few oases.
+     */
+    static boolean aridHotspotHere(long worldSeed, int radiusBlocks, int blockX, int blockZ) {
+        if (radiusBlocks <= 0) {
             return false;
         }
-        double latFrac = Math.abs(blockZ) / (double) radius; // 0 at equator, 1 at pole
+        double latFrac = Math.abs(blockZ) / (double) radiusBlocks; // 0 at equator, 1 at pole
         if (latFrac < 0.18 || latFrac > 0.58) {
             return false; // keep arid provinces in the warm/subtropical belt
         }
 
-        int scale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radius * 0.60));
+        int scale = aridHotspotScaleBlocks(radiusBlocks);
         double primary = ValueNoise2D.sampleBlocks(worldSeed ^ ARID_REGION_SALT, blockX, blockZ, scale);
         if (primary >= 0.18) {
             return false; // only the lowest 18% of the coarse noise become arid members
@@ -2816,6 +3315,9 @@ public final class LatitudeBiomes {
     private static final String BADLANDS_ID = "minecraft:badlands";
     private static final long ARID_REGION_SALT = 0xA11D9110L;
     private static final int ARID_REGION_MIN_SCALE_BLOCKS = 2048;
+    // Cap chosen so a radius-10000 world carries ~6.5 primary cells across its span instead of
+    // 3.3 — enough that the lowest-18% gate lands somewhere on essentially every seed.
+    private static final int ARID_REGION_MAX_SCALE_BLOCKS = 3072;
     private static final int MANGROVE_PATCH_CELL_BLOCKS = 1024;
     private static final int MANGROVE_PATCH_PERCENT = 20;
     private static final int MANGROVE_PATCH_SALT = 0x2F7A3B1C;
@@ -2885,9 +3387,111 @@ public final class LatitudeBiomes {
     private static final long BADLANDS_REGION_ANCHOR_Z_SALT = 0x6261_646C_5F61_7A7AL; // "badl_azz"
     private static final long BADLANDS_REGION_SHAPE_SALT = 0x6261_646C_5F736861L; // "badl_sha"
     private static final long BADLANDS_PROVINCE_WOBBLE_SALT = 0x6261_646C_5F70_776FL; // "badl_pwo"
+    // Badlands-COUNTRY calibration (maintainer ruling, 2026-08-19: badlands is an earthlike-rare
+    // accent of the dry belt, desert the staple). See badlandsCountryNoiseHit for the measurement.
+    //
+    // The pair below are the two dials, and they do different jobs. The PRIMARY threshold is the
+    // area dial: it decides how much of the dry belt is inside a country at all. The WOBBLE
+    // threshold is the texture dial: it punches desert holes inside a country so the edge is ragged
+    // rather than a clean noise contour. Move the primary when you want more or less badlands.
+    //
+    // RETUNE RULE, and it matters more here than it did upstream. These numbers were aimed at a
+    // target share of the DRY BELT, and this line's dry belt is not the same object 26.2 aimed at:
+    // ProvinceAuthority carries a subtropical dry-belt widening 26.2 has no equivalent of, so the
+    // same country coverage lands on more land here. The mechanism above is arithmetic-identical
+    // across the two lines and was re-measured on this one; the resulting share of subtropical LAND
+    // was not, and only this line's own atlas census can settle it. Retune the primary against that
+    // census, not against a number quoted from the other generator. Roughly +0.03 on the primary
+    // buys +2.5 points of belt coverage (measured, seeds 41-52 at radius 10000).
+    //
+    // Why the coverage is not the naive product of the two: ValueNoise2D is a bilinear blend of four
+    // uniform lattice values, so it is bell-shaped about 0.5 rather than flat, and the two fields are
+    // sampled at different scales rather than independently.
+    private static final int BADLANDS_COUNTRY_MIN_SCALE_BLOCKS = 512;
+    // The cap is what makes the cell count world-size stable instead of the country size. At 640 a
+    // radius-10000 world spans ~31 primary cells and a radius-20000 world ~63, where the old
+    // proportional scale gave both of them ~7 -- the same "the whole map is a handful of coin flips"
+    // geometry the arid-hotspot cap closed for desert oases.
+    private static final int BADLANDS_COUNTRY_MAX_SCALE_BLOCKS = 640;
+    private static final double BADLANDS_COUNTRY_PRIMARY_MAX = 0.36;
+    private static final double BADLANDS_COUNTRY_WOBBLE_MAX = 0.52;
     private static final long BADLANDS_REGION_CORE_SHAPE_SALT = 0x6261_646C_5F636F72L; // "badl_cor"
     private static final long BADLANDS_OUTSIDE_PROVINCE_SALT = 0x6261_646C_5F6F7574L; // "badl_out"
-    private static final double BADLANDS_OUTSIDE_PROVINCE_THRESHOLD = 0.34;
+    // Savanna COUNTRY authority (maintainer approval, 2026-08-18: savanna is a region, not the belt).
+    // Fresh salts, so savanna countries and badlands provinces are independent geographies that
+    // happen to be drawn by the same kind of pen. They cannot overlap in any case: badlands answers
+    // only inside WARM_DRY, this one only inside WARM_MEDIUM.
+    private static final long SAVANNA_REGION_SHAPE_SALT = 0x7361_766E_5F73_6861L; // "savn_sha"
+    private static final long SAVANNA_PROVINCE_WOBBLE_SALT = 0x7361_766E_5F70_776FL; // "savn_pwo"
+    // Country size, as a fraction of the active world radius, with its own floor.
+    //
+    // MUCH finer than the badlands country USED to be (0.28 / 2048, uncapped), and the reason was
+    // geometry, not taste. The badlands country lives in the subtropical band and is allowed to span
+    // it; the savanna country lives in WARM_MEDIUM, which is dominated by the tropical band -- only
+    // ~2600 blocks deep at radius 10000. At the old badlands scale the whole tropical belt fits
+    // inside ONE noise cell in Z, so a seed does not get savanna countries at all, it gets a single
+    // coin flip: the same field and the same thresholds then leave one seed nearly all forest and
+    // the next nearly all savanna. At 0.12 / 512 the belt spans roughly two cells in Z and sixteen
+    // in X, so a seed draws a handful of countries and the share converges on the field's own
+    // marginal.
+    //
+    // The badlands country has since been capped for exactly this reason (2026-08-19), so the two
+    // scales now sit close together rather than an order apart -- the note above is kept because it
+    // is still why THIS constant is 0.12, not a live comparison.
+    //
+    // A cell is 1200 blocks at radius 10000, so single countries run from several hundred blocks to
+    // a couple of thousand -- the "regions hundreds of blocks across with soft edges" the plan asked
+    // for, and still far coarser than the 38-block variant tier that produces confetti.
+    private static final double SAVANNA_PROVINCE_SCALE_FRAC = 0.12;
+    // THE FLOOR IS THE SMALL-WORLD DIAL, and it is set by the SMALLEST world, not the reference one.
+    // The tropical band runs 0 to 23.5 degrees, i.e. 23.5/90 = 0.261 of the radius in Z, and that is
+    // the belt this field has to draw countries inside:
+    //
+    //   radius 3750 (Itty Bitty): belt  979 blocks deep. Floor 1024 -> 0.96 cells. Floor 512 -> 1.91
+    //   radius 10000 (Regular):   belt 2611 blocks deep. 0.12 * 10000 = 1200, so NEITHER floor binds
+    //
+    // At 1024 the smallest world's whole tropical belt would sit inside ONE noise cell in Z -- the
+    // exact single-coin-flip geometry this constant's own note (three paragraphs up) rejects at the
+    // badlands scale, reintroduced on Itty Bitty by the floor rather than by the fraction. 512
+    // restores roughly two cells there and leaves every world at or above radius 4267 untouched,
+    // because above that 0.12 * radius already exceeds 512.
+    //
+    // Which sizes this governs: Itty Bitty (3750), Tiny (5000) and Small (7500) all have
+    // 0.12 * radius under 1024 and so use their proportional scale only because of this floor.
+    // Regular (10000), Large (15000) and Ginormous (20000) never touch the floor at all.
+    private static final int SAVANNA_PROVINCE_MIN_SCALE_BLOCKS = 512;
+    // This pair started out matching the badlands country's (0.52 primary / 0.72 wobble) and was
+    // raised on measurement upstream, because what the two fields have to deliver is different: the
+    // maintainer asked for tropical savanna at "roughly a third" of the tropical band. The two are
+    // no longer relatives at all -- badlands was re-aimed earthlike-rare on 2026-08-19 and now runs
+    // 0.36 / 0.52 -- so do not read these numbers as tracking that field. Note also that the two are
+    // not even the same quantity: the country covers a share of WARM_MEDIUM, and savanna then covers
+    // a share of the whole tropical band, which includes WARM_WET jungle the country never touches.
+    //
+    // RETUNE RULE. Each +0.04 on the primary buys roughly +2 points of tropical savanna. Above
+    // about 0.64 the binding constraint stops being taste and becomes coherence: the country stops
+    // being a country and starts being the province again, which is the monoculture this whole
+    // slice removed. Retune DOWN freely; going up needs a fresh coherence measurement on THIS
+    // line's generator first, not a widened assertion.
+    //
+    // The wobble threshold punches forest holes INSIDE the country. It is the texture dial, not the
+    // area one -- move the primary when you want more or less savanna.
+    //
+    // Why the coverage is not the naive product: ValueNoise2D is a bilinear blend of four uniform
+    // lattice values, so it is bell-shaped about 0.5 rather than flat, and the two fields are
+    // sampled at different scales rather than independently.
+    private static final double SAVANNA_PROVINCE_PRIMARY_MAX = 0.64;
+    private static final double SAVANNA_PROVINCE_WOBBLE_MAX = 0.72;
+    // Outlier-mesa allowance: the fraction of dry columns OUTSIDE a badlands province that may still
+    // come up badlands. 0.34 -> 0.06 (maintainer ruling, 2026-08-18). At 0.34 this was not an outlier
+    // allowance at all, it was a second badlands province covering a third of everything outside the
+    // first one, and it was one of the two reasons a vanilla-only arid belt generated far more
+    // badlands than desert. Narrowed rather than deleted on purpose: at exactly zero the province
+    // edge becomes a crisp geometric line, and a lone mesa standing a few thousand blocks out from the
+    // main badlands country is exactly what the American southwest looks like. The field is sampled at
+    // ~0.45 * world radius, so 6% of a smooth field reads as a handful of small, coherent outliers
+    // rather than pepper (Art VI: block-space continuous, never a per-block hash).
+    private static final double BADLANDS_OUTSIDE_PROVINCE_THRESHOLD = 0.06;
     // Earth-analog latitude gate for badlands. MC badlands/mesa is an American-SW
     // (~35deg N) subtropical landform; Earth's deep equator has ZERO badlands. WARM_DRY
     // dry pockets are latitude-independent, so on some seeds badlands leaks to 0-5deg
@@ -2898,7 +3502,8 @@ public final class LatitudeBiomes {
     // and badlands concentrates in the subtropical arid belt where it belongs. The keep
     // decision uses a coherent ValueNoise2D field so the badlands<->savanna boundary is
     // noise-warped, not a hard horizontal line (Art VI: block-space continuous).
-    // LAW (Peetsa): badlands may NEVER appear in the tropical band (0-23.5deg) — Earth geography
+    // LAW (maintainer ruling, 2026-06-25): badlands may NEVER appear in the tropical band
+    // (0-23.5deg) — Earth geography
     // forbids it. So the ramp LOW edge sits at the tropical/subtropical boundary (23.5deg): the
     // entire tropical band has latGate==0 -> all badlands demoted to savanna; badlands phases in
     // across the lower subtropics and is fully allowed by the mid-subtropical arid belt.
@@ -2909,7 +3514,8 @@ public final class LatitudeBiomes {
     private static final double BADLANDS_LAT_RAMP_HIGH_DEG =
             Double.parseDouble(System.getProperty("latitude.aridRampHigh", "27.0"));
     private static final long BADLANDS_LAT_KEEP_SALT = 0x6261_646C_5F6C6174L; // "badl_lat"
-    // LAW (Peetsa): desert may NEVER appear in the tropical band (0-23.5deg) — same Earth-geography
+    // LAW (maintainer ruling, 2026-06-25): desert may NEVER appear in the tropical band
+    // (0-23.5deg) — same Earth-geography
     // rule as badlands. So desert is fully demoted to savanna across the whole tropical band
     // (below DESERT_LAT_RAMP_LOW_DEG), phases in across the lower subtropics via a coherent
     // ValueNoise2D field, and is fully allowed by the mid-subtropical desert belt (>= high edge).
@@ -2933,6 +3539,19 @@ public final class LatitudeBiomes {
     private static final double ARID_POLEWARD_RAMP_HIGH_DEG =
             Double.parseDouble(System.getProperty("latitude.aridPolewardRampHigh", "35.5"));
     private static final long ARID_POLEWARD_KEEP_SALT = 0x6172_6964_5F70_6F6CL; // "arid_pol"
+    // Mirror of the arid poleward clamp, in the opposite direction. The band jitter (+-0.03r),
+    // blend (+-704 blocks) and boundary warp (+-420 blocks) can promote a column whose TRUE
+    // latitude is deep inside the subtropical dry belt (observed at 30-33degN live, 2026-08-24)
+    // to the TEMPERATE selection pool -- which is full of mesic/autumn forest -- painting maple
+    // and seasonal-forest islands inside erg desert. Same law as its two precedents
+    // (ARID_POLEWARD_RAMP, FROZEN_RIVER_RAMP): decide from TRUE latitude with a noise-warped
+    // ramp, not the leaky band index. Full temperate eligibility at/above HIGH; ramp across
+    // LOW..HIGH; never temperate equatorward of LOW.
+    private static final double TEMPERATE_EQUATORWARD_RAMP_LOW_DEG =
+            Double.parseDouble(System.getProperty("latitude.temperateEquatorwardRampLow", "34.5"));
+    private static final double TEMPERATE_EQUATORWARD_RAMP_HIGH_DEG =
+            Double.parseDouble(System.getProperty("latitude.temperateEquatorwardRampHigh", "35.5"));
+    private static final long TEMPERATE_EQUATORWARD_KEEP_SALT = 0x6D65_7369_635F_636CL; // "mesic_cl"
     // Frozen-river latitude clamp: frozen_river was assigned whenever the BLENDED band index was >= subpolar,
     // but the blend warp leaks the subpolar classification ~10deg equatorward, so frozen rivers (and the
     // Terralith ice spires gated to frozen_river) appeared in TEMPERATE (~40N). Decide freeze from TRUE
@@ -3007,6 +3626,9 @@ public final class LatitudeBiomes {
     private static final TagKey<Biome> LAT_BEACH_COLD_SNOWY = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_beach_cold_snowy"));
     private static final TagKey<Biome> LAT_BEACH_COLD_ROCKY = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_beach_cold_rocky"));
     private static final TagKey<Biome> LAT_RIVER_WARM = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_river_warm"));
+    // Subtropical rivers draw from their own pool so a tropical-declared pack river can never
+    // surface poleward of the tropical band (maintainer ruling, 2026-08-16).
+    private static final TagKey<Biome> LAT_RIVER_SUBTROPICAL = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_river_subtropical"));
     private static final TagKey<Biome> LAT_RIVER_TEMPERATE = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_river_temperate"));
     private static final TagKey<Biome> LAT_RIVER_FROZEN = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_river_frozen"));
     private static final TagKey<Biome> LAT_OCEAN_TEMPERATE = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_ocean_temperate"));
@@ -3289,8 +3911,15 @@ public final class LatitudeBiomes {
                 beachMountainNoiseLike = isMountainLike(sampler, blockX, blockZ);
             }
             if (!beachMountainNoiseLike) {
-                Holder<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, beachBandIndex);
-                out = quarantineUnknownCustomLandBiome(biomeRegistry, out, base, blockX, blockZ, beachBandIndex, false);
+                Holder<Biome> beachPick = pickBeachForBand(biomeRegistry, base, blockX, blockZ, beachBandIndex);
+                Holder<Biome> out = quarantineUnknownCustomLandBiome(biomeRegistry, beachPick, base, blockX, blockZ, beachBandIndex, false);
+                // The quarantine reroutes through the band's LAND pool, which is shape-blind: a
+                // beach column whose custom pick is rejected must stay a shoreline, not become
+                // whatever land biome the pool rolls (live find, 2026-08-24: subtropical land
+                // identities painted onto cliffed stony shores).
+                if (out != beachPick && !isBeachLike(out)) {
+                    out = vanillaBeachIdentityForBand(biomeRegistry, blockX, blockZ, beachBandIndex, out);
+                }
                 out = applyV2SurfaceWaterCoverage(
                         biomeRegistry, VanillaSurfaceWaterCoveragePlan.Family.SHORE,
                         base, out, blockX, blockZ, sampler);
@@ -3328,7 +3957,13 @@ public final class LatitudeBiomes {
                 mountainNoiseLike,
                 hasPreviewTerrainInputs,
                 callerContext);
-        boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
+        // Renamed from polarMountainNoiseLike (2026-08-18): this is the raw, ungated mountain-noise
+        // read, and it is no longer polar-only. It still feeds the polar authority chain below, and
+        // it is now ALSO what tells the windswept gate whether a subpolar column is a real mountain
+        // — see the isWindsweptFamilyLegal call in rerollTerrainCompatibleCandidate, and the late
+        // ownership veto in clampTemperateWindsweptMountainOwnership. Sampled once per column and
+        // reused; isMountainLike costs a climate sample, so do not re-evaluate it.
+        boolean rawMountainTruth = sampler != null && isMountainLike(sampler, blockX, blockZ);
         boolean terrainEvidenceAvailable = hasPreviewTerrainInputs
                 || (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && mountainNoiseLike);
         // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
@@ -3343,14 +3978,14 @@ public final class LatitudeBiomes {
         // columnDecisionY instead of a targeted previewTerrain() probe to avoid generator re-entry.
         int polarProbeHeight = preview.centerHeight;
         int polarProbeDelta  = preview.robustDelta;
-        if (skipPreview && landBandIndex >= BAND_POLAR && polarMountainNoiseLike && hasPreviewTerrainInputs) {
+        if (skipPreview && landBandIndex >= BAND_POLAR && rawMountainTruth && hasPreviewTerrainInputs) {
             polarProbeHeight = columnDecisionY;
             polarProbeDelta  = 0;
         }
-        boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && polarMountainNoiseLike)
+        boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && rawMountainTruth)
                 || (polarProbeDelta >= 12)
                 || (polarProbeHeight >= seaLevel + 20);
-        boolean polarMountainLikeFinal = polarMountainNoiseLike && polarTerrainMountainLike;
+        boolean polarMountainLikeFinal = rawMountainTruth && polarTerrainMountainLike;
         if (landBandIndex >= BAND_POLAR && polarMountainLikeFinal) {
             mountainLike = true;
         }
@@ -3399,7 +4034,7 @@ public final class LatitudeBiomes {
                         hasPreviewTerrainInputs,
                         terrainGateHeight,
                         seaLevel,
-                        polarMountainNoiseLike);
+                        rawMountainTruth);
         if (base.is(BiomeTags.IS_RIVER) && !raisedMountainRiver) {
             // Tag-driven since 2026-08-10. shouldFreezeRiver's latitude ramp still decides frozen
             // vs liquid exactly as before; only the identity chosen for that verdict is now
@@ -3409,7 +4044,7 @@ public final class LatitudeBiomes {
                 Holder<Biome> out = shouldFreezeRiver(blockX, blockZ)
                         ? pickFromTagNoiseOrFallback(biomeRegistry, LAT_RIVER_FROZEN, blockX, blockZ, 36, "minecraft:frozen_river")
                         : pickFromTagNoiseOrFallback(biomeRegistry,
-                                blendedBandIndex <= BAND_SUBTROPICAL ? LAT_RIVER_WARM : LAT_RIVER_TEMPERATE,
+                                blendedBandIndex == BAND_TROPICAL ? LAT_RIVER_WARM : blendedBandIndex == BAND_SUBTROPICAL ? LAT_RIVER_SUBTROPICAL : LAT_RIVER_TEMPERATE,
                                 blockX, blockZ, blendedBandIndex <= BAND_SUBTROPICAL ? 34 : 35, "minecraft:river");
                 out = applyV2SurfaceWaterCoverage(
                         biomeRegistry, VanillaSurfaceWaterCoveragePlan.Family.RIVER,
@@ -3549,7 +4184,7 @@ public final class LatitudeBiomes {
         }
         PreviewTerrain gateProbe = onDemandGateTerrain(
                 skipPreview, hasPreviewTerrainInputs, landBandIndex, chosen,
-                generator, noiseConfig, heightView, blockX, blockZ);
+                columnDecisionY, mountainNoiseLike);
         int gateHeight = gateProbe != null ? gateProbe.centerHeight : terrainGateHeight;
         int gateDelta = gateProbe != null ? gateProbe.robustDelta : terrainGateDelta;
         boolean gateEvidence = gateProbe != null || terrainEvidenceAvailable;
@@ -3559,6 +4194,9 @@ public final class LatitudeBiomes {
                         gateHeight,
                         gateDelta,
                         seaLevel);
+        boolean finalAdmissionPhysicalUpland = rawMountainTruth
+                || TerrainBiomeCohesionPolicy.shouldUseWarmUplandFamily(
+                        gateEvidence, gateHeight, gateDelta, seaLevel);
         if (forceTemperateUpland) {
             chosen = pickFromTagNoiseOrBase(
                     biomeRegistry,
@@ -3584,7 +4222,10 @@ public final class LatitudeBiomes {
                     seaLevel,
                     oceanDistance,
                     mountainNoiseLike,
-                    mountainLike);
+                    mountainLike,
+                    // Band-qualified here, not inside the gate, so the raw mountain read can never
+                    // reach any band but the windswept family's one legal home.
+                    landBandIndex == BAND_SUBPOLAR && rawMountainTruth);
         }
         String mangroveDecision = null;
         if (DEBUG_SPARSE_JUNGLE_AUDIT && chosen != null && isBiomeId(chosen, "minecraft:sparse_jungle")
@@ -3666,7 +4307,8 @@ public final class LatitudeBiomes {
                 if (mountainPromotion) {
                     temperateMountainRewriteRan = true;
                     chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
-                    if (isBiomeId(chosen, "minecraft:cherry_grove") && landBandIndex < BAND_POLAR) {
+                    if (ACTIVE_WORLDGEN_POLICY != WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                            && isBiomeId(chosen, "minecraft:cherry_grove") && landBandIndex < BAND_POLAR) {
                         return chosen;
                     }
                 }
@@ -3850,9 +4492,14 @@ public final class LatitudeBiomes {
         // Double-gated: same conditions as the polarTerrainMountainLike fix above.
         boolean polarAtlasMountainParity = !hasPreviewTerrainInputs
                 && isAtlasHeadlessContext(callerContext)
-                && polarMountainNoiseLike;
+                && rawMountainTruth;
         int effectivePolarHeight = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_HEIGHT : polarProbeHeight;
         int effectivePolarDelta  = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_DELTA  : polarProbeDelta;
+        if (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION) {
+            out = applyVanillaCoverage(
+                    biomeRegistry, base, out, blockX, blockZ, sampler,
+                    finalAdmissionPhysicalUpland);
+        }
         // Capture pre-clamp state so instrumentation comparison is unambiguous.
         Holder<Biome> preClampOut = out;
         if (DEBUG_POLAR_CAP_TRACE && landBandIndex == BAND_POLAR && isPolarCapTraceCoord(blockX, blockZ)) {
@@ -3865,7 +4512,7 @@ public final class LatitudeBiomes {
         }
         if (DEBUG_POLAR_ATLAS && landBandIndex == BAND_POLAR && isAtlasHeadlessContext(callerContext)) {
             PAR_SAMPLES.incrementAndGet();
-            if (polarMountainNoiseLike)       PAR_NOISE_MOUNTAIN.incrementAndGet();
+            if (rawMountainTruth)             PAR_NOISE_MOUNTAIN.incrementAndGet();
             if (preview.centerHeight > 0)     PAR_NONZERO_HEIGHT.incrementAndGet();
             if (preview.robustDelta > 0)      PAR_NONZERO_DELTA.incrementAndGet();
             if (polarMountainAuthority(effectivePolarDelta, effectivePolarHeight, landBandIndex))
@@ -3915,7 +4562,15 @@ public final class LatitudeBiomes {
             }
         }
         out = quarantineUnknownCustomLandBiome(biomeRegistry, out, base, blockX, blockZ, landBandIndex, mountainLike);
-        out = clampTemperateWindsweptMountainOwnership(biomeRegistry, out, landBandIndex, mountainLike);
+        VanillaCoverageFinalAdmissionPolicy.Facts finalAdmissionFacts =
+                ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                        && hasExactVanillaCoverageAdmission(out)
+                ? vanillaCoverageFinalAdmissionFacts(
+                        blockX, blockZ, sampler,
+                        finalAdmissionPhysicalUpland)
+                : null;
+        out = clampTemperateWindsweptMountainOwnership(
+                biomeRegistry, out, landBandIndex, rawMountainTruth, finalAdmissionFacts);
         logWetlandAudit("pick-registry-late",
                 callerContext,
                 base,
@@ -4001,6 +4656,20 @@ public final class LatitudeBiomes {
                 landBandIndex,
                 clearlyRaisedLand,
                 oceanDistance);
+        out = enforceFinalSubtropicalWetLowlandAuthority(
+                biomeRegistry,
+                out,
+                blockX,
+                blockZ,
+                landBandIndex,
+                finalAdmissionPhysicalUpland);
+        out = enforceFinalSubtropicalUplandAuthority(
+                biomeRegistry,
+                out,
+                blockX,
+                blockZ,
+                landBandIndex,
+                finalAdmissionPhysicalUpland);
         if (TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland(
                 forceTemperateUpland,
                 out != null && out.is(LAT_TEMPERATE_MOUNTAIN))) {
@@ -4012,8 +4681,10 @@ public final class LatitudeBiomes {
                 out = finalTerrainUpland;
             }
         }
-        out = applyVanillaCoverage(
-                biomeRegistry, base, out, blockX, blockZ, sampler);
+        if (ACTIVE_WORLDGEN_POLICY != WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION) {
+            out = applyVanillaCoverage(
+                    biomeRegistry, base, out, blockX, blockZ, sampler, mountainLike);
+        }
         if (ACTIVE_SURFACE_WATER_COVERAGE_PLAN != null) {
             MangroveDecision v2Mangrove = evaluateMangroveWithSurface(
                     blockX, blockZ, columnDecisionY, preview, seaLevel, sampler, nearOcean,
@@ -4071,8 +4742,13 @@ public final class LatitudeBiomes {
                 beachMountainNoiseLike = isMountainLike(sampler, blockX, blockZ);
             }
             if (!beachMountainNoiseLike) {
-                Holder<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, beachBandIndex);
-                out = quarantineUnknownCustomLandBiome(biomePool, out, base, blockX, blockZ, beachBandIndex, false);
+                Holder<Biome> beachPick = pickBeachForBand(biomePool, base, blockX, blockZ, beachBandIndex);
+                Holder<Biome> out = quarantineUnknownCustomLandBiome(biomePool, beachPick, base, blockX, blockZ, beachBandIndex, false);
+                // See the Registry-overload beach shortcut: a quarantined beach column keeps a
+                // shoreline identity instead of the land pool's shape-blind roll.
+                if (out != beachPick && !isBeachLike(out)) {
+                    out = vanillaBeachIdentityForBand(biomePool, blockX, blockZ, beachBandIndex, out);
+                }
                 out = applyV2SurfaceWaterCoverage(
                         biomePool, VanillaSurfaceWaterCoveragePlan.Family.SHORE,
                         base, out, blockX, blockZ, sampler);
@@ -4110,7 +4786,13 @@ public final class LatitudeBiomes {
                 mountainNoiseLike,
                 hasPreviewTerrainInputs,
                 callerContext);
-        boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
+        // Renamed from polarMountainNoiseLike (2026-08-18): this is the raw, ungated mountain-noise
+        // read, and it is no longer polar-only. It still feeds the polar authority chain below, and
+        // it is now ALSO what tells the windswept gate whether a subpolar column is a real mountain
+        // — see the isWindsweptFamilyLegal call in rerollTerrainCompatibleCandidate, and the late
+        // ownership veto in clampTemperateWindsweptMountainOwnership. Sampled once per column and
+        // reused; isMountainLike costs a climate sample, so do not re-evaluate it.
+        boolean rawMountainTruth = sampler != null && isMountainLike(sampler, blockX, blockZ);
         boolean terrainEvidenceAvailable = hasPreviewTerrainInputs
                 || (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && mountainNoiseLike);
         // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
@@ -4125,14 +4807,14 @@ public final class LatitudeBiomes {
         // columnDecisionY instead of a targeted previewTerrain() probe to avoid generator re-entry.
         int polarProbeHeight = preview.centerHeight;
         int polarProbeDelta  = preview.robustDelta;
-        if (skipPreview && landBandIndex >= BAND_POLAR && polarMountainNoiseLike && hasPreviewTerrainInputs) {
+        if (skipPreview && landBandIndex >= BAND_POLAR && rawMountainTruth && hasPreviewTerrainInputs) {
             polarProbeHeight = columnDecisionY;
             polarProbeDelta  = 0;
         }
-        boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && polarMountainNoiseLike)
+        boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && rawMountainTruth)
                 || (polarProbeDelta >= 12)
                 || (polarProbeHeight >= seaLevel + 20);
-        boolean polarMountainLikeFinal = polarMountainNoiseLike && polarTerrainMountainLike;
+        boolean polarMountainLikeFinal = rawMountainTruth && polarTerrainMountainLike;
         if (landBandIndex >= BAND_POLAR && polarMountainLikeFinal) {
             mountainLike = true;
         }
@@ -4179,14 +4861,14 @@ public final class LatitudeBiomes {
                         hasPreviewTerrainInputs,
                         terrainGateHeight,
                         seaLevel,
-                        polarMountainNoiseLike);
+                        rawMountainTruth);
         if (base.is(BiomeTags.IS_RIVER) && !raisedMountainRiver) {
             // See the registry twin: the frozen/liquid verdict is unchanged, only the identity is
             // now tag-extensible.
             Holder<Biome> out = shouldFreezeRiver(blockX, blockZ)
                     ? pickFromTagNoiseOrFallback(biomePool, base, LAT_RIVER_FROZEN, blockX, blockZ, 36, "minecraft:frozen_river")
                     : pickFromTagNoiseOrFallback(biomePool, base,
-                            blendedBandIndex <= BAND_SUBTROPICAL ? LAT_RIVER_WARM : LAT_RIVER_TEMPERATE,
+                            blendedBandIndex == BAND_TROPICAL ? LAT_RIVER_WARM : blendedBandIndex == BAND_SUBTROPICAL ? LAT_RIVER_SUBTROPICAL : LAT_RIVER_TEMPERATE,
                             blockX, blockZ, blendedBandIndex <= BAND_SUBTROPICAL ? 34 : 35, "minecraft:river");
             out = applyV2SurfaceWaterCoverage(
                     biomePool, VanillaSurfaceWaterCoveragePlan.Family.RIVER,
@@ -4304,7 +4986,7 @@ public final class LatitudeBiomes {
         }
         PreviewTerrain gateProbe = onDemandGateTerrain(
                 skipPreview, hasPreviewTerrainInputs, landBandIndex, chosen,
-                generator, noiseConfig, heightView, blockX, blockZ);
+                columnDecisionY, mountainNoiseLike);
         int gateHeight = gateProbe != null ? gateProbe.centerHeight : terrainGateHeight;
         int gateDelta = gateProbe != null ? gateProbe.robustDelta : terrainGateDelta;
         boolean gateEvidence = gateProbe != null || terrainEvidenceAvailable;
@@ -4314,6 +4996,9 @@ public final class LatitudeBiomes {
                         gateHeight,
                         gateDelta,
                         seaLevel);
+        boolean finalAdmissionPhysicalUpland = rawMountainTruth
+                || TerrainBiomeCohesionPolicy.shouldUseWarmUplandFamily(
+                        gateEvidence, gateHeight, gateDelta, seaLevel);
         if (forceTemperateUpland) {
             chosen = pickFromTagNoiseOrBase(
                     biomePool,
@@ -4339,7 +5024,10 @@ public final class LatitudeBiomes {
                     seaLevel,
                     oceanDistance,
                     mountainNoiseLike,
-                    mountainLike);
+                    mountainLike,
+                    // Band-qualified here, not inside the gate, so the raw mountain read can never
+                    // reach any band but the windswept family's one legal home.
+                    landBandIndex == BAND_SUBPOLAR && rawMountainTruth);
         }
         String mangroveDecision = null;
         Holder<Biome> sanitized = chosen;
@@ -4432,7 +5120,8 @@ public final class LatitudeBiomes {
             if (mountainPromotion) {
                 temperateMountainRewriteRan = true;
                 chosen = pickFromTagNoiseOrBase(biomePool, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
-                if (isBiomeId(chosen, "minecraft:cherry_grove") && landBandIndex < BAND_POLAR) {
+                if (ACTIVE_WORLDGEN_POLICY != WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                        && isBiomeId(chosen, "minecraft:cherry_grove") && landBandIndex < BAND_POLAR) {
                     return chosen;
                 }
             }
@@ -4572,9 +5261,14 @@ public final class LatitudeBiomes {
         // Double-gated: same conditions as the polarTerrainMountainLike fix above.
         boolean polarAtlasMountainParity = !hasPreviewTerrainInputs
                 && isAtlasHeadlessContext(callerContext)
-                && polarMountainNoiseLike;
+                && rawMountainTruth;
         int effectivePolarHeight = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_HEIGHT : polarProbeHeight;
         int effectivePolarDelta  = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_DELTA  : polarProbeDelta;
+        if (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION) {
+            out = applyVanillaCoverage(
+                    biomePool, base, out, blockX, blockZ, sampler,
+                    finalAdmissionPhysicalUpland);
+        }
         // Capture pre-clamp state so instrumentation comparison is unambiguous.
         Holder<Biome> preClampOut = out;
         if (DEBUG_POLAR_CAP_TRACE && landBandIndex == BAND_POLAR && isPolarCapTraceCoord(blockX, blockZ)) {
@@ -4587,7 +5281,7 @@ public final class LatitudeBiomes {
         }
         if (DEBUG_POLAR_ATLAS && landBandIndex == BAND_POLAR && isAtlasHeadlessContext(callerContext)) {
             PAR_SAMPLES.incrementAndGet();
-            if (polarMountainNoiseLike)       PAR_NOISE_MOUNTAIN.incrementAndGet();
+            if (rawMountainTruth)             PAR_NOISE_MOUNTAIN.incrementAndGet();
             if (preview.centerHeight > 0)     PAR_NONZERO_HEIGHT.incrementAndGet();
             if (preview.robustDelta > 0)      PAR_NONZERO_DELTA.incrementAndGet();
             if (polarMountainAuthority(effectivePolarDelta, effectivePolarHeight, landBandIndex))
@@ -4637,7 +5331,15 @@ public final class LatitudeBiomes {
             }
         }
         out = quarantineUnknownCustomLandBiome(biomePool, out, base, blockX, blockZ, landBandIndex, mountainLike);
-        out = clampTemperateWindsweptMountainOwnership(biomePool, out, landBandIndex, mountainLike);
+        VanillaCoverageFinalAdmissionPolicy.Facts finalAdmissionFacts =
+                ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                        && hasExactVanillaCoverageAdmission(out)
+                ? vanillaCoverageFinalAdmissionFacts(
+                        blockX, blockZ, sampler,
+                        finalAdmissionPhysicalUpland)
+                : null;
+        out = clampTemperateWindsweptMountainOwnership(
+                biomePool, out, landBandIndex, rawMountainTruth, finalAdmissionFacts);
         logWetlandAudit("pick-collection-late",
                 callerContext,
                 base,
@@ -4723,6 +5425,20 @@ public final class LatitudeBiomes {
                 landBandIndex,
                 clearlyRaisedLand,
                 oceanDistance);
+        out = enforceFinalSubtropicalWetLowlandAuthority(
+                biomePool,
+                out,
+                blockX,
+                blockZ,
+                landBandIndex,
+                finalAdmissionPhysicalUpland);
+        out = enforceFinalSubtropicalUplandAuthority(
+                biomePool,
+                out,
+                blockX,
+                blockZ,
+                landBandIndex,
+                finalAdmissionPhysicalUpland);
         if (TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland(
                 forceTemperateUpland,
                 out != null && out.is(LAT_TEMPERATE_MOUNTAIN))) {
@@ -4734,8 +5450,10 @@ public final class LatitudeBiomes {
                 out = finalTerrainUpland;
             }
         }
-        out = applyVanillaCoverage(
-                biomePool, base, out, blockX, blockZ, sampler);
+        if (ACTIVE_WORLDGEN_POLICY != WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION) {
+            out = applyVanillaCoverage(
+                    biomePool, base, out, blockX, blockZ, sampler, mountainLike);
+        }
         if (ACTIVE_SURFACE_WATER_COVERAGE_PLAN != null) {
             MangroveDecision v2Mangrove = evaluateMangroveWithSurface(
                     blockX, blockZ, columnDecisionY, preview, seaLevel, sampler, nearOcean,
@@ -4837,13 +5555,21 @@ public final class LatitudeBiomes {
                     && oceanDistance >= 0
                     && (landBandIndex == BAND_TEMPERATE
                         || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE)
+                    && wetlandProvinceEligible(blockX, blockZ)
                     && evaluateSwamp(blockX, blockZ, sampler).allow();
         }
         if (valid) {
             return out;
         }
         Holder<Biome> fallback = safeVanillaFallbackForBand(biomes, landBandIndex);
-        return fallback != null ? fallback : out;
+        if (fallback == null) {
+            return out;
+        }
+        if (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION) {
+            return enforceWarmProvinceFamily(biomes, fallback,
+                    warmProvinceClass(blockX, blockZ, landBandIndex), blockX, blockZ);
+        }
+        return fallback;
     }
 
     private static Holder<Biome> enforceFinalWetlandAuthority(
@@ -4880,13 +5606,21 @@ public final class LatitudeBiomes {
                     && oceanDistance >= 0
                     && (landBandIndex == BAND_TEMPERATE
                         || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE)
+                    && wetlandProvinceEligible(blockX, blockZ)
                     && evaluateSwamp(blockX, blockZ, sampler).allow();
         }
         if (valid) {
             return out;
         }
         Holder<Biome> fallback = safeVanillaFallbackForBand(biomes, landBandIndex);
-        return fallback != null ? fallback : out;
+        if (fallback == null) {
+            return out;
+        }
+        if (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION) {
+            return enforceWarmProvinceFamily(biomes, fallback,
+                    warmProvinceClass(blockX, blockZ, landBandIndex), blockX, blockZ);
+        }
+        return fallback;
     }
 
     private static Holder<Biome> applyFinalWetlandIdentityLaw(
@@ -4950,9 +5684,239 @@ public final class LatitudeBiomes {
         return mangrove != null ? mangrove : out;
     }
 
+    private static Holder<Biome> enforceFinalSubtropicalWetLowlandAuthority(
+            Registry<Biome> biomes,
+            Holder<Biome> out,
+            int blockX,
+            int blockZ,
+            int landBandIndex,
+            boolean physicalUpland) {
+        if (!shouldRejectFinalSubtropicalWetLowlandDesert(
+                out, blockX, blockZ, landBandIndex, physicalUpland)) {
+            return out;
+        }
+        return enforceWarmProvinceFamily(
+                biomes, out, ProvinceAuthority.Province.WARM_WET, blockX, blockZ);
+    }
+
+    private static Holder<Biome> enforceFinalSubtropicalWetLowlandAuthority(
+            Collection<Holder<Biome>> biomes,
+            Holder<Biome> out,
+            int blockX,
+            int blockZ,
+            int landBandIndex,
+            boolean physicalUpland) {
+        if (!shouldRejectFinalSubtropicalWetLowlandDesert(
+                out, blockX, blockZ, landBandIndex, physicalUpland)) {
+            return out;
+        }
+        return enforceWarmProvinceFamily(
+                biomes, out, ProvinceAuthority.Province.WARM_WET, blockX, blockZ);
+    }
+
+    private static boolean shouldRejectFinalSubtropicalWetLowlandDesert(
+            Holder<Biome> out,
+            int blockX,
+            int blockZ,
+            int landBandIndex,
+            boolean physicalUpland) {
+        return ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                && out != null
+                && landBandIndex == BAND_SUBTROPICAL
+                && !physicalUpland
+                && isDesertFamily(out)
+                && warmProvinceClass(blockX, blockZ, landBandIndex)
+                    == ProvinceAuthority.Province.WARM_WET
+                // The coarse WARM_WET label is not the whole desert law: an active arid hotspot —
+                // the designed desert-oasis mechanism, and the 26.2 line's committed behavior —
+                // may preserve desert despite the humid province (maintainer ruling, 2026-08-16).
+                && !aridHotspotHere(WORLD_SEED, blockX, blockZ);
+    }
+
+    private static Holder<Biome> enforceFinalSubtropicalUplandAuthority(
+            Registry<Biome> biomes,
+            Holder<Biome> out,
+            int blockX,
+            int blockZ,
+            int landBandIndex,
+            boolean physicalUpland) {
+        if (!shouldEnforceFinalSubtropicalUplandAuthority(out, blockX, blockZ,
+                landBandIndex, physicalUpland)) {
+            return out;
+        }
+        // A saved coverage identity is final: reservations outrank province composition, exactly
+        // as every other V5-aware clamp already concedes. Restricting the PLAN instead (an
+        // earlier attempt) broke plan completeness outright — on a real seed the widened dry
+        // belt left no non-WARM_DRY mountain columns, and the two warm-upland biomes lost their
+        // world guarantee (maintainer ruling, 2026-08-16, desert-abundance lever 2).
+        if (hasExactVanillaCoverageAdmission(out)) {
+            return out;
+        }
+        ProvinceAuthority.Province province = warmProvinceClass(blockX, blockZ, landBandIndex);
+        return switch (province) {
+            case WARM_DRY -> biomeForAridUpland(biomes, out);
+            case WARM_MEDIUM -> biomeForWarmUpland(biomes, out);
+            case WARM_WET -> biomeForHumidWarmUpland(biomes, out);
+            default -> out;
+        };
+    }
+
+    private static Holder<Biome> enforceFinalSubtropicalUplandAuthority(
+            Collection<Holder<Biome>> biomes,
+            Holder<Biome> out,
+            int blockX,
+            int blockZ,
+            int landBandIndex,
+            boolean physicalUpland) {
+        if (!shouldEnforceFinalSubtropicalUplandAuthority(out, blockX, blockZ,
+                landBandIndex, physicalUpland)) {
+            return out;
+        }
+        // A saved coverage identity is final: reservations outrank province composition, exactly
+        // as every other V5-aware clamp already concedes. Restricting the PLAN instead (an
+        // earlier attempt) broke plan completeness outright — on a real seed the widened dry
+        // belt left no non-WARM_DRY mountain columns, and the two warm-upland biomes lost their
+        // world guarantee (maintainer ruling, 2026-08-16, desert-abundance lever 2).
+        if (hasExactVanillaCoverageAdmission(out)) {
+            return out;
+        }
+        ProvinceAuthority.Province province = warmProvinceClass(blockX, blockZ, landBandIndex);
+        return switch (province) {
+            case WARM_DRY -> entryForAridUpland(biomes, out);
+            case WARM_MEDIUM -> entryForWarmUpland(biomes, out);
+            case WARM_WET -> entryForHumidWarmUpland(biomes, out);
+            default -> out;
+        };
+    }
+
+    private static boolean shouldEnforceFinalSubtropicalUplandAuthority(
+            Holder<Biome> out,
+            int blockX,
+            int blockZ,
+            int landBandIndex,
+            boolean physicalUpland) {
+        return ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                && out != null
+                && landBandIndex == BAND_SUBTROPICAL
+                && physicalUpland
+                && warmProvinceClass(blockX, blockZ, landBandIndex) != null;
+    }
+
+    private static boolean descriptorOwnsRoute(Holder<Biome> biome, BiomeRoute route) {
+        BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(biomeId(biome));
+        return descriptor != null && descriptor.routes().contains(route);
+    }
+
+    private static boolean isHumidWarmFamily(Holder<Biome> biome) {
+        BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(biomeId(biome));
+        return descriptor != null
+                && (descriptor.family() == BiomeDescriptorLedger.Family.FOREST
+                    || descriptor.family() == BiomeDescriptorLedger.Family.JUNGLE);
+    }
+
+    private static Holder<Biome> biomeForAridUpland(Registry<Biome> biomes, Holder<Biome> out) {
+        if (descriptorOwnsRoute(out, BiomeRoute.ARID_UPLAND)) {
+            return out;
+        }
+        try {
+            return biome(biomes, "minecraft:eroded_badlands");
+        } catch (Throwable ignored) {
+            return out;
+        }
+    }
+
+    private static Holder<Biome> entryForAridUpland(Collection<Holder<Biome>> biomes, Holder<Biome> out) {
+        if (descriptorOwnsRoute(out, BiomeRoute.ARID_UPLAND)) {
+            return out;
+        }
+        Holder<Biome> erodedBadlands = entryById(biomes, "minecraft:eroded_badlands");
+        return erodedBadlands != null ? erodedBadlands : out;
+    }
+
+    private static Holder<Biome> biomeForWarmUpland(Registry<Biome> biomes, Holder<Biome> out) {
+        if (descriptorOwnsRoute(out, BiomeRoute.WARM_UPLAND)) {
+            return out;
+        }
+        try {
+            return biome(biomes, "minecraft:savanna_plateau");
+        } catch (Throwable ignored) {
+            try {
+                return biome(biomes, "minecraft:windswept_savanna");
+            } catch (Throwable ignoredAgain) {
+                return out;
+            }
+        }
+    }
+
+    private static Holder<Biome> entryForWarmUpland(Collection<Holder<Biome>> biomes, Holder<Biome> out) {
+        if (descriptorOwnsRoute(out, BiomeRoute.WARM_UPLAND)) {
+            return out;
+        }
+        Holder<Biome> savannaPlateau = entryById(biomes, "minecraft:savanna_plateau");
+        if (savannaPlateau != null) {
+            return savannaPlateau;
+        }
+        Holder<Biome> windsweptSavanna = entryById(biomes, "minecraft:windswept_savanna");
+        return windsweptSavanna != null ? windsweptSavanna : out;
+    }
+
+    private static Holder<Biome> biomeForHumidWarmUpland(Registry<Biome> biomes, Holder<Biome> out) {
+        if (isDesertFamily(out)) {
+            try {
+                return biome(biomes, "minecraft:plains");
+            } catch (Throwable ignored) {
+                // Vanilla registries always provide plains; retain the humid-family fallback if not.
+            }
+        }
+        if (isHumidWarmFamily(out)) {
+            return out;
+        }
+        try {
+            return biome(biomes, "minecraft:forest");
+        } catch (Throwable ignored) {
+            try {
+                return biome(biomes, "minecraft:jungle");
+            } catch (Throwable ignoredAgain) {
+                return out;
+            }
+        }
+    }
+
+    private static Holder<Biome> entryForHumidWarmUpland(Collection<Holder<Biome>> biomes, Holder<Biome> out) {
+        if (isDesertFamily(out)) {
+            Holder<Biome> plains = entryById(biomes, "minecraft:plains");
+            if (plains != null) {
+                return plains;
+            }
+        }
+        if (isHumidWarmFamily(out)) {
+            return out;
+        }
+        Holder<Biome> forest = entryById(biomes, "minecraft:forest");
+        if (forest != null) {
+            return forest;
+        }
+        Holder<Biome> jungle = entryById(biomes, "minecraft:jungle");
+        return jungle != null ? jungle : out;
+    }
+
     private static Holder<Biome> pickTropicalGradient(Registry<Biome> biomes, Holder<Biome> base, int blockX, int blockZ, double t) {
         int chunkX = blockX >> 4;
         int chunkZ = blockZ >> 4;
+        // DELIBERATELY false, and this is not the dead flag it looks like. The only consumer,
+        // blockNewSubtropicalNonMountainWindswept, can at best let a minecraft:windswept_savanna
+        // through, and filteredAllowedLandPool has already deleted windswept_savanna from the
+        // subtropical allowed pool on every non-mountain column
+        // (removeSubtropicalNonMountainWindsweptFamily, keyed on the pipeline's own mountainLike).
+        // The pool filter closes the door this veto opens, so opening the veto changes no output.
+        //
+        // Repairing it for real means threading mountain truth into filteredAllowedLandPool, which
+        // changes the pool cache key landPoolVariantKey and therefore every cached band pool --
+        // deliberately deferred to its own slice rather than smuggled into a savanna pass.
+        //
+        // Maintainer-visible consequence in the meantime: minecraft:windswept_savanna is produced
+        // by the elevation tier only (savannaTierByY at blockY >= WINDSWEPT_MIN_Y), which runs
+        // downstream of the pool gate and is untouched by any of this.
         boolean mountainLike = false;
 
         long seed = WORLD_SEED;
@@ -4980,7 +5944,7 @@ public final class LatitudeBiomes {
         if (humidity < humidThreshold) {
             Holder<Biome> humidPick = pickFromWeightedTags(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
                     LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
-            Holder<Biome> humidOut = enforceWarmProvinceFamily(biomes, humidPick, warmProvince);
+            Holder<Biome> humidOut = enforceWarmProvinceFamily(biomes, humidPick, warmProvince, blockX, blockZ);
             return blockNewSubtropicalNonMountainWindswept(base, humidOut, mountainLike, BAND_SUBTROPICAL);
         }
         boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
@@ -5014,7 +5978,7 @@ public final class LatitudeBiomes {
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
         Holder<Biome> softened = softenSubtropicalBadlands(biomes, base, pick);
-        Holder<Biome> out = enforceWarmProvinceFamily(biomes, softened, warmProvince);
+        Holder<Biome> out = enforceWarmProvinceFamily(biomes, softened, warmProvince, blockX, blockZ);
         recordWarmDryPath("TROPICAL_GRADIENT", base, out, blockX, blockZ, BAND_SUBTROPICAL, warmProvince);
         return blockNewSubtropicalNonMountainWindswept(base, out, mountainLike, BAND_SUBTROPICAL);
     }
@@ -5062,6 +6026,10 @@ public final class LatitudeBiomes {
     private static Holder<Biome> pickTropicalGradient(Collection<Holder<Biome>> biomes, Holder<Biome> base, int blockX, int blockZ, double t) {
         int chunkX = blockX >> 4;
         int chunkZ = blockZ >> 4;
+        // DELIBERATELY false; see the Registry overload above for the whole reason (the subtropical
+        // pool filter deletes windswept_savanna before this veto can matter, and repairing that
+        // means re-keying landPoolVariantKey -- its own slice). windswept_savanna keeps coming from
+        // savannaTierByY's elevation tier and nowhere else.
         boolean mountainLike = false;
 
         long seed = WORLD_SEED;
@@ -5089,7 +6057,7 @@ public final class LatitudeBiomes {
         if (humidity < humidThreshold) {
             Holder<Biome> humidPick = pickFromWeightedTags(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
                     LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
-            Holder<Biome> humidOut = enforceWarmProvinceFamily(biomes, humidPick, warmProvince);
+            Holder<Biome> humidOut = enforceWarmProvinceFamily(biomes, humidPick, warmProvince, blockX, blockZ);
             return blockNewSubtropicalNonMountainWindswept(base, humidOut, mountainLike, BAND_SUBTROPICAL);
         }
         boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
@@ -5121,7 +6089,7 @@ public final class LatitudeBiomes {
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
         Holder<Biome> softened = softenSubtropicalBadlands(biomes, base, pick);
-        Holder<Biome> out = enforceWarmProvinceFamily(biomes, softened, warmProvince);
+        Holder<Biome> out = enforceWarmProvinceFamily(biomes, softened, warmProvince, blockX, blockZ);
         recordWarmDryPath("TROPICAL_GRADIENT", base, out, blockX, blockZ, BAND_SUBTROPICAL, warmProvince);
         return blockNewSubtropicalNonMountainWindswept(base, out, mountainLike, BAND_SUBTROPICAL);
     }
@@ -5158,16 +6126,16 @@ public final class LatitudeBiomes {
             return pickShallowTropicalOcean(biomes, blockX, blockZ);
         }
         if (bandIndex == 1 || bandIndex == 2) {
-            return pickFromTagNoiseOrFallback(biomes, LAT_OCEAN_TEMPERATE, blockX, blockZ, 21,
+            return pickOceanDepthAware(biomes, base, LAT_OCEAN_TEMPERATE, blockX, blockZ, 21,
                     "minecraft:ocean",
                     "minecraft:deep_ocean");
         }
         if (bandIndex == 3) {
-            return pickFromTagNoiseOrFallback(biomes, LAT_OCEAN_SUBPOLAR, blockX, blockZ, 22,
+            return pickOceanDepthAware(biomes, base, LAT_OCEAN_SUBPOLAR, blockX, blockZ, 22,
                     "minecraft:cold_ocean",
                     "minecraft:deep_cold_ocean");
         }
-        return pickFromTagNoiseOrFallback(biomes, LAT_OCEAN_POLAR, blockX, blockZ, 23,
+        return pickOceanDepthAware(biomes, base, LAT_OCEAN_POLAR, blockX, blockZ, 23,
                 "minecraft:frozen_ocean",
                 "minecraft:deep_frozen_ocean");
     }
@@ -5187,16 +6155,16 @@ public final class LatitudeBiomes {
             return pickShallowTropicalOcean(biomes, blockX, blockZ);
         }
         if (bandIndex == 1 || bandIndex == 2) {
-            return pickFromTagNoiseOrFallback(biomes, base, LAT_OCEAN_TEMPERATE, blockX, blockZ, 21,
+            return pickOceanDepthAware(biomes, base, LAT_OCEAN_TEMPERATE, blockX, blockZ, 21,
                     "minecraft:ocean",
                     "minecraft:deep_ocean");
         }
         if (bandIndex == 3) {
-            return pickFromTagNoiseOrFallback(biomes, base, LAT_OCEAN_SUBPOLAR, blockX, blockZ, 22,
+            return pickOceanDepthAware(biomes, base, LAT_OCEAN_SUBPOLAR, blockX, blockZ, 22,
                     "minecraft:cold_ocean",
                     "minecraft:deep_cold_ocean");
         }
-        return pickFromTagNoiseOrFallback(biomes, base, LAT_OCEAN_POLAR, blockX, blockZ, 23,
+        return pickOceanDepthAware(biomes, base, LAT_OCEAN_POLAR, blockX, blockZ, 23,
                 "minecraft:frozen_ocean",
                 "minecraft:deep_frozen_ocean");
     }
@@ -5233,6 +6201,47 @@ public final class LatitudeBiomes {
                 entries, LAT_OCEAN_TROPICAL, blockX, blockZ, 20, 0L);
         setAdmission(BiomeAdmissionKind.LATITUDE_TAG, LAT_OCEAN_TROPICAL.location().toString(), out);
         return out;
+    }
+
+    /**
+     * Ocean identity that respects the water's actual depth. The donor's deep/shallow verdict is
+     * the physical truth (vanilla's continentalness decided how deep the seafloor really is), and
+     * the tropical band already honours it; the depth-blind tag roll the other bands used could
+     * label the first water block off a beach "deep ocean" (live find, 2026-08-24). A shallow
+     * donor now only ever receives shallow tag members, a deep donor only deep ones, with the
+     * matching vanilla identity as the fallback.
+     */
+    private static Holder<Biome> pickOceanDepthAware(Registry<Biome> biomes, Holder<Biome> base, TagKey<Biome> tag,
+            int blockX, int blockZ, int salt, String shallowFallback, String deepFallback) {
+        boolean deepDonor = isDeepOcean(base);
+        List<Holder<Biome>> entries = deepDonor
+                ? filterDeepOcean(entriesForTag(biomes, tag))
+                : filterShallowOcean(entriesForTag(biomes, tag));
+        if (!entries.isEmpty()) {
+            setSelectionPath(PATH_TAG_PICK);
+            Holder<Biome> out = selectProviderDiverseTagEntry(entries, tag, blockX, blockZ, salt, 0L);
+            setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
+            return out;
+        }
+        setSelectionPath(PATH_FALLBACK_PICK);
+        return pickFrom(biomes, blockX, blockZ, salt, deepDonor ? deepFallback : shallowFallback);
+    }
+
+    private static Holder<Biome> pickOceanDepthAware(Collection<Holder<Biome>> biomes, Holder<Biome> base, TagKey<Biome> tag,
+            int blockX, int blockZ, int salt, String shallowFallback, String deepFallback) {
+        boolean deepDonor = isDeepOcean(base);
+        List<Holder<Biome>> entries = deepDonor
+                ? filterDeepOcean(entriesForTag(biomes, tag))
+                : filterShallowOcean(entriesForTag(biomes, tag));
+        if (!entries.isEmpty()) {
+            setSelectionPath(PATH_TAG_PICK);
+            Holder<Biome> out = selectProviderDiverseTagEntry(entries, tag, blockX, blockZ, salt, 0L);
+            setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
+            return out;
+        }
+        setSelectionPath(PATH_FALLBACK_PICK);
+        String fallbackId = deepDonor ? deepFallback : shallowFallback;
+        return pickFromFallbacks(biomes, base, fallbackId);
     }
 
     private static Holder<Biome> mushroomIslandOverride(Registry<Biome> biomes, Holder<Biome> oceanPick, int blockX, int blockZ, Climate.Sampler sampler) {
@@ -5413,6 +6422,30 @@ public final class LatitudeBiomes {
             double survivalNoise = blobNoise01ScaledBlocks(WORLD_SEED, blockX, blockZ, blendPatchBlocks, BLEND_SURVIVAL_NOISE_SALT);
             if (survivalNoise >= survivalProb) {
                 resolvedBandIndex = BAND_TEMPERATE;
+            }
+        }
+
+        if (lowerBandIndex == BAND_SUBTROPICAL
+                && upperBandIndex == BAND_TEMPERATE
+                && resolvedBandIndex == BAND_TEMPERATE) {
+            // TRUE-latitude gate on temperate promotion (see TEMPERATE_EQUATORWARD_RAMP_*).
+            // Deliberately not conditioned on delta: the boundary warp alone can move the
+            // effective boundary 420 blocks equatorward, so a chosen-temperate column can sit
+            // poleward of the WARPED boundary while its true latitude is still ~31deg.
+            double trueLatDeg = Math.min(90.0, (double) absZ / (double) radius * 90.0);
+            if (trueLatDeg <= TEMPERATE_EQUATORWARD_RAMP_LOW_DEG) {
+                resolvedBandIndex = BAND_SUBTROPICAL;
+            } else if (trueLatDeg < TEMPERATE_EQUATORWARD_RAMP_HIGH_DEG) {
+                // keepGate: 0 just past LOW (demote nearly all), 1 at HIGH (keep all). Demote where
+                // keepNoise >= keepGate so temperate survival thins coherently across the ramp, on
+                // the same patch scale as the blend texture it is correcting.
+                double keepGate = smoothstep((trueLatDeg - TEMPERATE_EQUATORWARD_RAMP_LOW_DEG)
+                        / (TEMPERATE_EQUATORWARD_RAMP_HIGH_DEG - TEMPERATE_EQUATORWARD_RAMP_LOW_DEG));
+                double keepNoise = blobNoise01ScaledBlocks(WORLD_SEED, blockX, blockZ,
+                        blendPatchBlocks, TEMPERATE_EQUATORWARD_KEEP_SALT);
+                if (keepNoise >= keepGate) {
+                    resolvedBandIndex = BAND_SUBTROPICAL;
+                }
             }
         }
 
@@ -6690,7 +7723,11 @@ public final class LatitudeBiomes {
             case BAND_SUBPOLAR -> List.of(
                     BiomeRoute.SUBPOLAR_LOWLAND,
                     BiomeRoute.SUBPOLAR_WETLAND,
+                    BiomeRoute.SUBPOLAR_UPLAND,
                     BiomeRoute.COLD_UPLAND);
+            // SUBPOLAR_UPLAND is deliberately absent from the polar arm: that is what keeps the
+            // windswept family out of the polar band pool entirely (2026-08-18), rather than
+            // relying on a downstream re-check that never fired.
             default -> List.of(
                     BiomeRoute.POLAR_LOWLAND,
                     BiomeRoute.COLD_UPLAND);
@@ -6714,7 +7751,21 @@ public final class LatitudeBiomes {
     private static List<String> allowedExtraBiomeIdsForBand(int bandIndex) {
         return switch (bandIndex) {
             case BAND_TROPICAL -> List.of(
-                    SWAMP_ID);
+                    SWAMP_ID,
+                    // The warm belt's staple outside a savanna country (maintainer approval,
+                    // 2026-08-18). minecraft:forest's ledger routes are SUBTROPICAL_HUMID_LOWLAND
+                    // and TEMPERATE_LOWLAND, so it is already pool-legal one band poleward; this
+                    // line is what lets enforceWarmProvinceFamily's new WARM_MEDIUM answer survive
+                    // in the tropics at all. Without it the stages upstream of enforceLandBandPool
+                    // produce forest and the pool gate rerolls it straight back to the belt's old
+                    // identity -- decisive for a donor that is already savanna, which is the live
+                    // worldgen case rather than a synthetic one.
+                    //
+                    // Admitted as a deliberate per-band seed -- the swamp precedent directly above --
+                    // rather than by widening TROPICAL_HUMID_LOWLAND, because the route law
+                    // ("tropical lowland means the jungle family") is still true; forest is here as
+                    // a named exception, not as a humid-tropical identity.
+                    "minecraft:forest");
             case BAND_SUBTROPICAL -> List.of(
                     SWAMP_ID,
                     MANGROVE_ID);
@@ -7029,7 +8080,14 @@ public final class LatitudeBiomes {
             setAllowedPoolAdmissionIfNeeded(candidate, "quarantine_allowed_land_pool");
             return candidate;
         }
-        List<Holder<Biome>> rerollPool = rerollLandPoolForBand(biomes, bandIndex, mountainLike);
+        // The reroute is a bare pool pick: none of the wetland admission gates run after it.
+        // Mangrove and swamp carry hard physical gates (latitude ceiling, coastline distance,
+        // terrain flatness, wetland noise), so a quarantine reroute must never be the door that
+        // places them — with biome packs installed it painted landlocked mangrove at 27 degrees N
+        // on cliffed shoreline (live find, 2026-08-24). Gated wetlands stay reachable only through
+        // their own validated doors.
+        List<Holder<Biome>> rerollPool = filterMangrove(filterSwamp(
+                rerollLandPoolForBand(biomes, bandIndex, mountainLike)));
         if (!rerollPool.isEmpty()) {
             Holder<Biome> out = pickFromAllowedLandPool(rerollPool, blockX, blockZ, bandIndex);
             setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "reroute_allowed_land_pool", out);
@@ -7060,7 +8118,14 @@ public final class LatitudeBiomes {
             setAllowedPoolAdmissionIfNeeded(candidate, "quarantine_allowed_land_pool");
             return candidate;
         }
-        List<Holder<Biome>> rerollPool = rerollLandPoolForBand(biomes, bandIndex, mountainLike);
+        // The reroute is a bare pool pick: none of the wetland admission gates run after it.
+        // Mangrove and swamp carry hard physical gates (latitude ceiling, coastline distance,
+        // terrain flatness, wetland noise), so a quarantine reroute must never be the door that
+        // places them — with biome packs installed it painted landlocked mangrove at 27 degrees N
+        // on cliffed shoreline (live find, 2026-08-24). Gated wetlands stay reachable only through
+        // their own validated doors.
+        List<Holder<Biome>> rerollPool = filterMangrove(filterSwamp(
+                rerollLandPoolForBand(biomes, bandIndex, mountainLike)));
         if (!rerollPool.isEmpty()) {
             Holder<Biome> out = pickFromAllowedLandPool(rerollPool, blockX, blockZ, bandIndex);
             setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "reroute_allowed_land_pool", out);
@@ -7357,6 +8422,17 @@ public final class LatitudeBiomes {
                 seaLevel);
     }
 
+    /**
+     * The terrain-compatibility reroll substitutes from the BAND-FILTERED pool, never the raw one.
+     *
+     * <p>Same acceptance-vs-substitution rule as {@link #rerollLandPoolForBand}: this method never
+     * asks "was this biome legitimately chosen here?", it drops a replacement in sight unseen, so
+     * it owes the band filters. Feeding it {@code allowedLandPool} raw let it substitute anything
+     * the ledger admitted anywhere in the band's route set, past every filter
+     * {@code filteredAllowedLandPool} exists to apply — that is how taiga could be dropped into the
+     * polar band despite {@code removePolarTaigaFamily}, and how the windswept family reached the
+     * pole before it was re-routed (2026-08-18).
+     */
     private static Holder<Biome> applyTerrainCompatibilityGate(Registry<Biome> biomes,
                                                                       Holder<Biome> chosen,
                                                                       int bandIndex,
@@ -7367,10 +8443,11 @@ public final class LatitudeBiomes {
                                                                       int seaLevel,
                                                                       int oceanDistance,
                                                                       boolean mountainNoiseLike,
-                                                                      boolean mountainLike) {
+                                                                      boolean mountainLike,
+                                                                      boolean rawMountainTruth) {
         return rerollTerrainCompatibleCandidate(
                 chosen,
-                allowedLandPool(biomes, bandIndex),
+                filteredAllowedLandPool(biomes, bandIndex, mountainLike),
                 bandIndex,
                 blockX,
                 blockZ,
@@ -7379,9 +8456,11 @@ public final class LatitudeBiomes {
                 seaLevel,
                 oceanDistance,
                 mountainNoiseLike,
-                mountainLike);
+                mountainLike,
+                rawMountainTruth);
     }
 
+    /** Collection-source twin of the registry gate above; both must use the filtered pool. */
     private static Holder<Biome> applyTerrainCompatibilityGate(Collection<Holder<Biome>> biomes,
                                                                       Holder<Biome> chosen,
                                                                       int bandIndex,
@@ -7392,10 +8471,11 @@ public final class LatitudeBiomes {
                                                                       int seaLevel,
                                                                       int oceanDistance,
                                                                       boolean mountainNoiseLike,
-                                                                      boolean mountainLike) {
+                                                                      boolean mountainLike,
+                                                                      boolean rawMountainTruth) {
         return rerollTerrainCompatibleCandidate(
                 chosen,
-                allowedLandPool(biomes, bandIndex),
+                filteredAllowedLandPool(biomes, bandIndex, mountainLike),
                 bandIndex,
                 blockX,
                 blockZ,
@@ -7404,7 +8484,8 @@ public final class LatitudeBiomes {
                 seaLevel,
                 oceanDistance,
                 mountainNoiseLike,
-                mountainLike);
+                mountainLike,
+                rawMountainTruth);
     }
 
     private static Holder<Biome> rerollTerrainCompatibleCandidate(Holder<Biome> chosen,
@@ -7417,12 +8498,18 @@ public final class LatitudeBiomes {
                                                                          int seaLevel,
                                                                          int oceanDistance,
                                                                          boolean mountainNoiseLike,
-                                                                         boolean mountainLike) {
+                                                                         boolean mountainLike,
+                                                                         boolean rawMountainTruth) {
         if (chosen == null || pool.isEmpty()) {
             return chosen;
         }
         int terrainClass = terrainClassForSelection(centerHeight, robustDelta, seaLevel, oceanDistance, mountainNoiseLike, mountainLike);
-        if (isBiomeCompatibleWithTerrain(chosen, terrainClass, mountainNoiseLike, mountainLike)) {
+        // rawMountainTruth only widens the windswept legality test; it is deliberately NOT fed to
+        // terrainClassForSelection or isBiomeCompatibleWithTerrain, which keep their existing
+        // band-scoped inputs so this lever cannot move any non-windswept identity.
+        boolean windsweptLegalHere = isWindsweptFamilyLegal(bandIndex, mountainNoiseLike, mountainLike, rawMountainTruth);
+        if (isBiomeCompatibleWithTerrain(chosen, bandIndex, terrainClass, mountainNoiseLike, mountainLike)
+                && (windsweptLegalHere || !isColdWindsweptFamilyBiome(chosen))) {
             return applyColdSiblingCoherence(chosen, pool, bandIndex, blockX, blockZ, terrainClass);
         }
         int size = pool.size();
@@ -7444,19 +8531,111 @@ public final class LatitudeBiomes {
                         || isBiomeId(candidate, "minecraft:ice_spikes"))) {
                 continue;
             }
-            if (isBiomeCompatibleWithTerrain(candidate, terrainClass, mountainNoiseLike, mountainLike)) {
+            // The windswept family is a mountain identity for the subpolar band alone. Substitution
+            // re-checks no route condition, so the ban has to be stated here as well as in the
+            // ledger route (2026-08-18): this walk is exactly what used to hand windswept_hills to
+            // ordinary polar shelves after snowy_plains was rejected for being 4 blocks above sea.
+            if (!windsweptLegalHere && isColdWindsweptFamilyBiome(candidate)) {
+                continue;
+            }
+            if (isBiomeCompatibleWithTerrain(candidate, bandIndex, terrainClass, mountainNoiseLike, mountainLike)) {
                 return applyColdSiblingCoherence(candidate, pool, bandIndex, blockX, blockZ, terrainClass);
             }
         }
         if (bandIndex >= BAND_POLAR && terrainClass == TERRAIN_CLASS_FLAT_SHELF && isFlatPolarShelfBannedMountainPick(chosen)) {
             for (int i = 0; i < size; i++) {
                 Holder<Biome> fallback = pool.get((start + i) % size);
+                if (!windsweptLegalHere && isColdWindsweptFamilyBiome(fallback)) {
+                    continue;
+                }
                 if (!isFlatPolarShelfBannedMountainPick(fallback)) {
                     return applyColdSiblingCoherence(fallback, pool, bandIndex, blockX, blockZ, terrainClass);
                 }
             }
         }
+        // Falling through returns the original pick unchanged, so an illegal windswept candidate
+        // that reached this method must not simply survive by exhausting the pool.
+        if (!windsweptLegalHere && isColdWindsweptFamilyBiome(chosen)) {
+            for (int i = 0; i < size; i++) {
+                Holder<Biome> fallback = pool.get((start + i) % size);
+                if (!isColdWindsweptFamilyBiome(fallback)) {
+                    return applyColdSiblingCoherence(fallback, pool, bandIndex, blockX, blockZ, terrainClass);
+                }
+            }
+        }
         return chosen;
+    }
+
+    /**
+     * The three cold windswept identities, matched by exact id.
+     *
+     * <p>Deliberately NOT a substring match on "windswept": {@code minecraft:windswept_savanna} is
+     * a hot savanna variant that lives in the warm bands and has nothing to do with this family.
+     */
+    private static final Identifier COLD_WINDSWEPT_HILLS_ID = Identifier.parse("minecraft:windswept_hills");
+    private static final Identifier COLD_WINDSWEPT_FOREST_ID = Identifier.parse("minecraft:windswept_forest");
+    private static final Identifier COLD_WINDSWEPT_GRAVELLY_ID = Identifier.parse("minecraft:windswept_gravelly_hills");
+
+    private static boolean isColdWindsweptFamilyBiome(Holder<Biome> candidate) {
+        // Resolve the identifier ONCE. The three-isBiomeId form unwrapped the holder's key three
+        // times, and each unwrap-and-map is a pair of Optionals -- roughly six allocations per call,
+        // paid inside per-column reroll loops over the whole band pool. The short-circuit in the
+        // callers does not save it: windswept is illegal almost everywhere, so the family check is
+        // the branch that actually runs.
+        Identifier id = biomeIdentifier(candidate);
+        return id != null
+                && (id.equals(COLD_WINDSWEPT_HILLS_ID)
+                        || id.equals(COLD_WINDSWEPT_FOREST_ID)
+                        || id.equals(COLD_WINDSWEPT_GRAVELLY_ID));
+    }
+
+    /**
+     * Where the windswept family may legally stand: subpolar band, genuine mountain column.
+     *
+     * <p>This is the runtime half of {@code BiomeRoute.SUBPOLAR_UPLAND}. The route keeps windswept
+     * out of the polar band pool; this keeps it off flat subpolar ground, which the route alone
+     * cannot do because substitution paths never re-evaluate a route's conditions.
+     *
+     * <p>{@code rawMountainTruth} is why the gate can ever open (2026-08-18). The other two signals
+     * are both scoped to other bands and are structurally false here: {@code mountainNoiseLike} is
+     * computed as {@code landBandIndex == BAND_TEMPERATE && ...}, and {@code mountainLike} comes
+     * from {@code temperateMountainTerrainAuthority} and is only force-set true under
+     * {@code landBandIndex >= BAND_POLAR}. The subpolar band sits between the two and got neither,
+     * so this predicate returned false on EVERY subpolar column, mountain or not — the family's
+     * one legal home was locked shut. Callers pass the raw {@code isMountainLike} read, already
+     * band-qualified to BAND_SUBPOLAR.
+     *
+     * <p>Deliberately the SAME signal the ownership veto uses: {@code pick} hands the same
+     * {@code rawMountainTruth} read to {@link #clampTemperateWindsweptMountainOwnership}, and that
+     * clamp deletes windswept wherever the signal is false. Gate and veto reading one predicate
+     * means every column this admits is a column the veto passes; if they disagreed, the gate
+     * would only be admitting picks for the veto to silently overwrite. Do not substitute a laxer
+     * terrain signal here — {@code terrainClass >= TERRAIN_CLASS_RAISED_SHOULDER} fires at
+     * {@code seaLevel + 4} or a 3-block relief delta, i.e. ordinary rolling ground, which is the
+     * bug the 2026-08-18 re-route closed.
+     */
+    private static boolean isWindsweptFamilyLegal(int bandIndex,
+                                                  boolean mountainNoiseLike,
+                                                  boolean mountainLike,
+                                                  boolean rawMountainTruth) {
+        return bandIndex == BAND_SUBPOLAR && (mountainLike || mountainNoiseLike || rawMountainTruth);
+    }
+
+    /**
+     * Exported for the policy suite (2026-08-18). The suite must be able to interrogate this
+     * predicate directly, because it cannot reach it through {@code pick}: the public picker is
+     * called with a null chunk generator, so preview terrain is synthetic (centerHeight sea-1,
+     * robustDelta 0) and every subpolar column classifies FLAT_SHELF or FLAT_LOWLAND — terrain on
+     * which the incoming pick is already compatible, so the gate returns it untouched and its
+     * reroll walk, the branch this predicate actually steers, never runs. A production sweep
+     * therefore cannot tell a working gate from a shut one, because on those columns the family is
+     * preserved by the LATE ownership clamp rather than by this gate.
+     */
+    static boolean windsweptFamilyLegalForPolicyTest(int bandIndex,
+                                                     boolean mountainNoiseLike,
+                                                     boolean mountainLike,
+                                                     boolean rawMountainTruth) {
+        return isWindsweptFamilyLegal(bandIndex, mountainNoiseLike, mountainLike, rawMountainTruth);
     }
 
     private static int continuousSelectionIndex(int size,
@@ -7592,16 +8771,34 @@ public final class LatitudeBiomes {
                 || id.contains("wetland") || id.contains("fen") || id.contains("bayou") || id.contains("mire");
     }
 
+    /**
+     * Whether a candidate suits the physical shape of the column.
+     *
+     * <p>{@code bandIndex} exists for one narrow exemption. Vanilla's snowy_plains is not a
+     * billiard table — it legitimately covers rolling ground — and a polar shelf four blocks above
+     * the sea is not a mountain shoulder. Rejecting it there rejected the polar band's staple on
+     * very nearly every polar column (the shoulder class triggers at {@code sea+4} or a 3-block
+     * relief delta), which forced the reroll band-wide and is what walked the picker into the
+     * windswept family in the first place (2026-08-18). The exemption is deliberately narrow:
+     * polar band, snowy_plains only, raised shoulder only. On a real mountain class it is still
+     * rejected, and plains/sunflower_plains and every other band keep the old behaviour.
+     */
     private static boolean isBiomeCompatibleWithTerrain(Holder<Biome> candidate,
+                                                        int bandIndex,
                                                         int terrainClass,
                                                         boolean mountainNoiseLike,
                                                         boolean mountainLike) {
         boolean mountainPick = isMountainCodedColdPick(candidate);
         boolean plainsPick = isPlainsFamily(candidate) || isFlatWetlandBiome(candidate);
+        boolean polarShelfStaple = bandIndex == BAND_POLAR
+                && terrainClass == TERRAIN_CLASS_RAISED_SHOULDER
+                && isBiomeId(candidate, "minecraft:snowy_plains");
         if (terrainClass == TERRAIN_CLASS_FLAT_SHELF && mountainPick) {
             return false;
         }
-        if ((terrainClass == TERRAIN_CLASS_RAISED_SHOULDER || terrainClass == TERRAIN_CLASS_MOUNTAIN) && plainsPick) {
+        if ((terrainClass == TERRAIN_CLASS_RAISED_SHOULDER || terrainClass == TERRAIN_CLASS_MOUNTAIN)
+                && plainsPick
+                && !polarShelfStaple) {
             return false;
         }
         if (mountainPick && !(mountainLike || mountainNoiseLike || terrainClass >= TERRAIN_CLASS_RAISED_SHOULDER)) {
@@ -7742,9 +8939,10 @@ public final class LatitudeBiomes {
     }
 
     /**
-     * Returns true when a named vanilla village variant clearly conflicts with Latitude's final
-     * surface-biome family at the start chunk. Unknown structure variants and unclassified
-     * provider biomes fail open.
+     * Returns true when a village conflicts with Latitude's final surface biome at the start
+     * chunk. Badlands country refuses every village outright; otherwise a named vanilla variant
+     * must not clearly conflict with the biome's family. Unknown structure variants and
+     * unclassified provider biomes fail open.
      */
     public static boolean villageVariantVsBiomeMismatch(
             String structurePath,
@@ -7755,6 +8953,11 @@ public final class LatitudeBiomes {
         String structure = structurePath.toLowerCase(java.util.Locale.ROOT);
         if (!structure.contains("village")) {
             return false;
+        }
+        // Ahead of the family comparison, which cannot separate badlands from desert: both are
+        // ARID. Ahead of the unnamed-variant fail-open below, so the ruling holds for any village.
+        if (VillageBiomeAdmissionPolicy.isVillageFreeBiome(biomeId)) {
+            return true;
         }
 
         VillageBiomeFamily declared;
@@ -7866,6 +9069,13 @@ public final class LatitudeBiomes {
      * ice_spikes) are intentionally NOT listed here — they are preserved or removed by
      * the downstream polarMountainAuthority check in clampFinalPolarNonMountainAlpineOutput.
      *
+     * <p>The explicit list now names all three cold windswept identities (2026-08-18). It listed
+     * only windswept_forest, which read as complete because the path catch-all below matches
+     * "forest" — but windswept_hills and windswept_gravelly_hills match none of "forest", "taiga"
+     * or "grove", so they passed the cap untouched and were measured at 15.6% of the land above it
+     * on a vanilla-only world. Their ledger route now stops them reaching the polar band at all;
+     * this list is the belt to that pair of braces.
+     *
      * Uses explicit isBiomeId() checks (not path-string matching) to avoid silent
      * false-negatives when registry-key resolution returns Optional.empty().
      *
@@ -7897,7 +9107,13 @@ public final class LatitudeBiomes {
                 || isBiomeId(candidate, "minecraft:flower_forest")
                 || isBiomeId(candidate, "minecraft:birch_forest")
                 || isBiomeId(candidate, "minecraft:old_growth_birch_forest")
-                || isBiomeId(candidate, "minecraft:windswept_forest")) {
+                // All three cold windswept identities, not just the one the "forest" catch-all
+                // happened to match (2026-08-18). windswept_hills and windswept_gravelly_hills
+                // carry the same green grass, flowers and passive-mob spawns and were measured at
+                // 15.6% of land above this cap on a vanilla-only world.
+                || isBiomeId(candidate, "minecraft:windswept_forest")
+                || isBiomeId(candidate, "minecraft:windswept_hills")
+                || isBiomeId(candidate, "minecraft:windswept_gravelly_hills")) {
             return true;
         }
         // Path-based catch-all for any unlisted biome whose ID path contains "forest" or "taiga".
@@ -7910,30 +9126,32 @@ public final class LatitudeBiomes {
     }
 
     /**
-     * Real terrain relief for a column the fast path skipped, computed only when it can actually
-     * change the answer. Worldgen runs with {@code latitude.skipPreviewHeightForWorldgen} on, which
-     * substitutes a synthetic {@code robustDelta} of 0 for every non-mountain column and therefore
-     * makes the land-cohesion gates inert — flat biomes end up draped over measured ridges. Probing
-     * every column is the cost that flag exists to avoid, so probe only when a flat-family candidate
-     * has landed in a gated band, which is the sole case where the gate can reject anything.
+     * Non-reentrant terrain evidence for a flat-family candidate in a gated band. Live biome
+     * population already computed the column height once; the climate sampler supplies the rugged
+     * shoulder signal without asking the chunk generator for a nine-column terrain preview.
      */
     private static PreviewTerrain onDemandGateTerrain(
             boolean skipPreview,
             boolean hasPreviewTerrainInputs,
             int landBandIndex,
             Holder<Biome> candidate,
-            NoiseBasedChunkGenerator generator,
-            RandomState noiseConfig,
-            LevelHeightAccessor heightView,
-            int blockX,
-            int blockZ) {
+            int columnDecisionY,
+            boolean ruggedNoiseLike) {
         if (!skipPreview || !hasPreviewTerrainInputs || !isLandGateBand(landBandIndex)) {
             return null;
         }
         if (!isPlainsFamily(candidate) && !isTemperateForestFamily(candidate)) {
             return null;
         }
-        return previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+        return nonReentrantTerrainEvidence(columnDecisionY, ruggedNoiseLike);
+    }
+
+    private static PreviewTerrain nonReentrantTerrainEvidence(
+            int columnDecisionY,
+            boolean ruggedNoiseLike) {
+        return new PreviewTerrain(
+                columnDecisionY,
+                ruggedNoiseLike ? TerrainBiomeCohesionPolicy.RUGGED_RELIEF_BLOCKS : 0);
     }
 
     /**
@@ -7978,11 +9196,34 @@ public final class LatitudeBiomes {
                                                                                 int centerHeight,
                                                                                 int robustDelta) {
         out = clampExtremePolarCapOutput(biomes, out, landBandIndex, latDeg);
+        out = clampPolarWindsweptOutput(biomes, out, landBandIndex);
         boolean polarAuthority = polarMountainAuthority(robustDelta, centerHeight, landBandIndex);
         if (landBandIndex != BAND_POLAR || polarAuthority) {
             return out;
         }
         if (!isFlatPolarShelfBannedMountainPick(out)) {
+            return out;
+        }
+        try {
+            return biome(biomes, "minecraft:snowy_plains");
+        } catch (Throwable ignored) {
+            return out;
+        }
+    }
+
+    /**
+     * Last line: no cold windswept identity leaves the picker anywhere in the polar band.
+     *
+     * <p>Unlike the alpine clamp above this one has no terrain or latitude escape hatch, because
+     * there is no polar column where the answer is yes. The polar band's mountains belong to the
+     * bare alpine set; the vegetated windswept identity stops at the subpolar boundary
+     * (maintainer ruling, 2026-08-18). Five earlier gates should each have caught this already —
+     * the point of a clamp at the very end is that it does not depend on any of them being right.
+     */
+    private static Holder<Biome> clampPolarWindsweptOutput(Registry<Biome> biomes,
+                                                           Holder<Biome> out,
+                                                           int landBandIndex) {
+        if (landBandIndex != BAND_POLAR || !isColdWindsweptFamilyBiome(out)) {
             return out;
         }
         try {
@@ -8009,11 +9250,23 @@ public final class LatitudeBiomes {
                                                                                 int centerHeight,
                                                                                 int robustDelta) {
         out = clampExtremePolarCapOutput(biomes, out, landBandIndex, latDeg);
+        out = clampPolarWindsweptOutput(biomes, out, landBandIndex);
         boolean polarAuthority = polarMountainAuthority(robustDelta, centerHeight, landBandIndex);
         if (landBandIndex != BAND_POLAR || polarAuthority) {
             return out;
         }
         if (!isFlatPolarShelfBannedMountainPick(out)) {
+            return out;
+        }
+        Holder<Biome> safe = entryById(biomes, "minecraft:snowy_plains");
+        return safe != null ? safe : out;
+    }
+
+    /** Collection-source twin of the polar windswept clamp; see the registry overload. */
+    private static Holder<Biome> clampPolarWindsweptOutput(Collection<Holder<Biome>> biomes,
+                                                           Holder<Biome> out,
+                                                           int landBandIndex) {
+        if (landBandIndex != BAND_POLAR || !isColdWindsweptFamilyBiome(out)) {
             return out;
         }
         Holder<Biome> safe = entryById(biomes, "minecraft:snowy_plains");
@@ -8063,6 +9316,23 @@ public final class LatitudeBiomes {
         return safe != null ? safe : out;
     }
 
+    /**
+     * The largest single savanna producer in the pipeline, and the last stage that can turn a jungle
+     * identity into a warm-belt one.
+     *
+     * <p>It runs AFTER {@code enforceLandBandPool}, which is what makes it decisive rather than
+     * advisory: in the tropical band {@code minecraft:savanna} is not even pool-legal, so every
+     * tropical savanna reaching the surface from a jungle donor comes through this method. That is
+     * why the savanna country is consulted HERE explicitly instead of being left to arrive via the
+     * province enforcer -- a gate that "looks wired and still stamps savanna" is this slice's known
+     * failure mode.
+     *
+     * <p>The WARM_DRY arm re-applies the three latitude demotes for the same reason
+     * {@code gateDryWarmIdentity} does (2026-08-18): this gate can hand out arid AFTER
+     * {@code applyFinalSavannaClimateClamp} has already run, and that clamp is where the tropical
+     * and poleward arid law lives. Before this, the arm returned {@code pickDryWarmFallback} desert
+     * with nothing downstream able to take it back -- the same defect one step worse.
+     */
     private static Holder<Biome> gateWarmJungleSurvival(Registry<Biome> biomes,
                                                                Holder<Biome> out,
                                                                int landBandIndex,
@@ -8075,7 +9345,15 @@ public final class LatitudeBiomes {
             return out;
         }
         if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
-            Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, out, province);
+            // Savanna has TWO homes in this belt: its countries, and the dry fringe hugging an arid
+            // province (maintainer ruling, 2026-08-18). Either one hands the column to the province
+            // enforcer exactly as the country case always did; outside both it is forest as before.
+            //
+            // MUST STAY IDENTICAL to the Collection overload below, decision for decision.
+            Holder<Biome> rerouted =
+                    savannaOwnsColumnAt(blockX, blockZ)
+                    ? enforceWarmProvinceFamily(biomes, out, province, blockX, blockZ)
+                    : warmMediumOutsideCountryStaple(biomes, out);
             if (DEBUG_PROVINCE) {
                 int count = PROVINCE_DEBUG_COUNT.get();
                 if (count <= PROVINCE_DEBUG_LIMIT) {
@@ -8095,7 +9373,13 @@ public final class LatitudeBiomes {
                         blockX, blockZ, province, biomeId(out));
             }
         }
-        return pickDryWarmFallback(biomes, out);
+        // MUST STAY IDENTICAL to the Collection overload below, call for call and in this order.
+        Holder<Biome> dry = enforceWarmProvinceFamily(
+                biomes, out, ProvinceAuthority.Province.WARM_DRY, blockX, blockZ);
+        dry = demoteEquatorialBadlands(biomes, dry, blockX, blockZ);
+        dry = demoteEquatorialDesert(biomes, dry, blockX, blockZ);
+        dry = demotePolewardArid(biomes, dry, blockX, blockZ);
+        return dry;
     }
 
     private static Holder<Biome> gateWarmJungleSurvival(Collection<Holder<Biome>> biomes,
@@ -8110,7 +9394,13 @@ public final class LatitudeBiomes {
             return out;
         }
         if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
-            Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, out, province);
+            // MUST STAY IDENTICAL to the Registry overload above -- see the note there for why the
+            // savanna country AND the dry fringe are consulted in this gate explicitly rather than
+            // inherited from the province enforcer.
+            Holder<Biome> rerouted =
+                    savannaOwnsColumnAt(blockX, blockZ)
+                    ? enforceWarmProvinceFamily(biomes, out, province, blockX, blockZ)
+                    : warmMediumOutsideCountryStaple(biomes, out);
             if (DEBUG_PROVINCE) {
                 int count = PROVINCE_DEBUG_COUNT.get();
                 if (count <= PROVINCE_DEBUG_LIMIT) {
@@ -8130,7 +9420,31 @@ public final class LatitudeBiomes {
                         blockX, blockZ, province, biomeId(out));
             }
         }
-        return pickDryWarmFallback(biomes, out);
+        // MUST STAY IDENTICAL to the Registry overload above -- see the note there for why this arm
+        // now asks the province for its own desert-first order instead of pickDryWarmFallback, and
+        // why the three latitude demotes have to be re-applied to whatever it answers.
+        Holder<Biome> dry = enforceWarmProvinceFamily(
+                biomes, out, ProvinceAuthority.Province.WARM_DRY, blockX, blockZ);
+        dry = demoteEquatorialBadlands(biomes, dry, blockX, blockZ);
+        dry = demoteEquatorialDesert(biomes, dry, blockX, blockZ);
+        dry = demotePolewardArid(biomes, dry, blockX, blockZ);
+        return dry;
+    }
+
+    /**
+     * What a warm-medium column outside a savanna country resolves to: the forest staple, or the
+     * incoming identity untouched when the pack has no {@code minecraft:forest}. Shared by both
+     * {@link #gateWarmJungleSurvival} overloads so the two picker paths cannot drift on it.
+     */
+    private static Holder<Biome> warmMediumOutsideCountryStaple(Registry<Biome> biomes, Holder<Biome> fallback) {
+        Holder<Biome> forest = warmMediumForestStaple(biomes);
+        return forest != null ? forest : fallback;
+    }
+
+    /** Collection twin of {@link #warmMediumOutsideCountryStaple(Registry, Holder)}. */
+    private static Holder<Biome> warmMediumOutsideCountryStaple(Collection<Holder<Biome>> biomes, Holder<Biome> fallback) {
+        Holder<Biome> forest = warmMediumForestStaple(biomes);
+        return forest != null ? forest : fallback;
     }
 
     private static Holder<Biome> guardWarmMediumSparseJungleExplicitTag(Registry<Biome> biomes,
@@ -8148,7 +9462,7 @@ public final class LatitudeBiomes {
         if (province != ProvinceAuthority.Province.WARM_MEDIUM) {
             return pick;
         }
-        Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, pick, province);
+        Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, pick, province, blockX, blockZ);
         if (!sameBiomeId(pick, rerouted)) {
             setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "warm_medium_sparse_jungle_explicit_tag_guard", rerouted);
         }
@@ -8170,7 +9484,7 @@ public final class LatitudeBiomes {
         if (province != ProvinceAuthority.Province.WARM_MEDIUM) {
             return pick;
         }
-        Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, pick, province);
+        Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, pick, province, blockX, blockZ);
         if (!sameBiomeId(pick, rerouted)) {
             setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "warm_medium_sparse_jungle_explicit_tag_guard", rerouted);
         }
@@ -8182,6 +9496,26 @@ public final class LatitudeBiomes {
         return admission != null
                 && admission.kind() == BiomeAdmissionKind.LATITUDE_TAG
                 && java.util.Objects.equals(admission.biomeId(), biomeId(out));
+    }
+
+    private static boolean hasExactVanillaCoverageAdmission(Holder<Biome> out) {
+        if (ACTIVE_WORLDGEN_POLICY != WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION) {
+            return false;
+        }
+        BiomeAdmission admission = LAST_BIOME_ADMISSION.get();
+        return admission != null
+                && admission.kind() == BiomeAdmissionKind.VANILLA_FALLBACK
+                && "vanilla_coverage_v2".equals(admission.source())
+                && java.util.Objects.equals(admission.biomeId(), biomeId(out));
+    }
+
+    /** A saved lowland coverage identity is final only for the descriptor route it actually owns. */
+    private static boolean hasExactTemperateLowlandCoverageAdmission(Holder<Biome> out) {
+        if (!hasExactVanillaCoverageAdmission(out)) {
+            return false;
+        }
+        BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(biomeId(out));
+        return descriptor != null && descriptor.routes().contains(BiomeRoute.TEMPERATE_LOWLAND);
     }
 
     private static Holder<Biome> warmWetCoreJungleFallback(Registry<Biome> biomes, Holder<Biome> fallback) {
@@ -8217,6 +9551,9 @@ public final class LatitudeBiomes {
         if (province != ProvinceAuthority.Province.WARM_WET) {
             return out;
         }
+        if (hasExactVanillaCoverageAdmission(out)) {
+            return out;
+        }
         if (isJungleFamily(base)) {
             return out;
         }
@@ -8242,6 +9579,9 @@ public final class LatitudeBiomes {
         }
         ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
         if (province != ProvinceAuthority.Province.WARM_WET) {
+            return out;
+        }
+        if (hasExactVanillaCoverageAdmission(out)) {
             return out;
         }
         if (isJungleFamily(base)) {
@@ -8277,6 +9617,20 @@ public final class LatitudeBiomes {
         if (province != ProvinceAuthority.Province.WARM_DRY) {
             return out;
         }
+        // A saved coverage identity is final, and V5's reviewed dry-family customs keep their
+        // identity here exactly as enforceWarmProvinceFamily keeps them — this gate predates
+        // both laws and was silently overriding them (exposed when the dry belt widened,
+        // desert-abundance lever 2, 2026-08-16).
+        if (hasExactVanillaCoverageAdmission(out)) {
+            return out;
+        }
+        if (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                && isCustomBiome(out)
+                && VanillaCoverageFinalAdmissionPolicy.mayPreserveCustomInWarmProvince(
+                        BiomeDescriptorLedger.descriptor(biomeId(out)),
+                        ProvinceAuthority.Province.WARM_DRY)) {
+            return out;
+        }
         if (DEBUG_PROVINCE) {
             int count = PROVINCE_DEBUG_COUNT.get();
             if (count <= PROVINCE_DEBUG_LIMIT) {
@@ -8284,11 +9638,30 @@ public final class LatitudeBiomes {
                         blockX, blockZ, province, biomeId(out));
             }
         }
-        try {
-            return biome(biomes, "minecraft:savanna");
-        } catch (Throwable ignored) {
-            return out;
-        }
+        // Answer with the dry province's own order -- desert, then badlands, then savanna as the
+        // last resort -- instead of naming savanna outright (maintainer ruling, 2026-08-18). This
+        // was the last savanna-hardcoded WARM_DRY path left in the pipeline: enforceWarmProvinceFamily
+        // and pickAridRegionFallback were both put on desert-first the same day, and this gate
+        // quietly disagreed with them, so every column it caught came out grassland no matter what
+        // the province said. It now asks the same helper they do, so "what is a dry warm column"
+        // has one answer instead of two.
+        //
+        // The three latitude demotes below are NOT decoration. This gate is the only thing that can
+        // hand out arid AFTER applyFinalSavannaClimateClamp has already run, and that clamp is where
+        // the latitude law lives: no desert or badlands anywhere in the tropics, and none past the
+        // temperate line. Producing sand here and stopping would leave desert standing at the
+        // equator with nothing downstream left to take it back. So the same three gates the clamp
+        // applies are applied to this answer too, in the clamp's order. At tropical latitudes that
+        // turns the desert straight back into savanna -- exactly what this gate used to return
+        // there -- so the tropics come out unchanged by construction.
+        //
+        // MUST STAY IDENTICAL to the Collection overload below, call for call and in this order.
+        Holder<Biome> rerouted = enforceWarmProvinceFamily(
+                biomes, out, ProvinceAuthority.Province.WARM_DRY, blockX, blockZ);
+        rerouted = demoteEquatorialBadlands(biomes, rerouted, blockX, blockZ);
+        rerouted = demoteEquatorialDesert(biomes, rerouted, blockX, blockZ);
+        rerouted = demotePolewardArid(biomes, rerouted, blockX, blockZ);
+        return rerouted;
     }
 
     private static Holder<Biome> gateDryWarmIdentity(Collection<Holder<Biome>> biomes,
@@ -8302,6 +9675,20 @@ public final class LatitudeBiomes {
         if (province != ProvinceAuthority.Province.WARM_DRY) {
             return out;
         }
+        // A saved coverage identity is final, and V5's reviewed dry-family customs keep their
+        // identity here exactly as enforceWarmProvinceFamily keeps them — this gate predates
+        // both laws and was silently overriding them (exposed when the dry belt widened,
+        // desert-abundance lever 2, 2026-08-16).
+        if (hasExactVanillaCoverageAdmission(out)) {
+            return out;
+        }
+        if (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                && isCustomBiome(out)
+                && VanillaCoverageFinalAdmissionPolicy.mayPreserveCustomInWarmProvince(
+                        BiomeDescriptorLedger.descriptor(biomeId(out)),
+                        ProvinceAuthority.Province.WARM_DRY)) {
+            return out;
+        }
         if (DEBUG_PROVINCE) {
             int count = PROVINCE_DEBUG_COUNT.get();
             if (count <= PROVINCE_DEBUG_LIMIT) {
@@ -8309,8 +9696,15 @@ public final class LatitudeBiomes {
                         blockX, blockZ, province, biomeId(out));
             }
         }
-        Holder<Biome> safe = entryById(biomes, "minecraft:savanna");
-        return safe != null ? safe : out;
+        // MUST STAY IDENTICAL to the Registry overload above -- see the note there for why this gate
+        // now asks for the province's own desert-first order instead of naming savanna, and why the
+        // three latitude demotes have to be re-applied to whatever it answers.
+        Holder<Biome> rerouted = enforceWarmProvinceFamily(
+                biomes, out, ProvinceAuthority.Province.WARM_DRY, blockX, blockZ);
+        rerouted = demoteEquatorialBadlands(biomes, rerouted, blockX, blockZ);
+        rerouted = demoteEquatorialDesert(biomes, rerouted, blockX, blockZ);
+        rerouted = demotePolewardArid(biomes, rerouted, blockX, blockZ);
+        return rerouted;
     }
 
     private static String bandName(int bandIndex) {
@@ -8392,8 +9786,33 @@ public final class LatitudeBiomes {
         }
     }
 
+    private static List<Holder<Biome>> filterDeepOcean(List<Holder<Biome>> entries) {
+        if (entries.isEmpty()) {
+            return entries;
+        }
+        synchronized (DEEP_OCEAN_TAG_ENTRY_CACHE) {
+            List<Holder<Biome>> cached = DEEP_OCEAN_TAG_ENTRY_CACHE.get(entries);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        List<Holder<Biome>> filtered = new ArrayList<>(entries.size());
+        for (Holder<Biome> entry : entries) {
+            if (isDeepOcean(entry)) {
+                filtered.add(entry);
+            }
+        }
+        List<Holder<Biome>> immutableFiltered = List.copyOf(filtered);
+        synchronized (DEEP_OCEAN_TAG_ENTRY_CACHE) {
+            List<Holder<Biome>> existing = DEEP_OCEAN_TAG_ENTRY_CACHE.putIfAbsent(entries, immutableFiltered);
+            return existing != null ? existing : immutableFiltered;
+        }
+    }
+
     private static Holder<Biome> entryById(Collection<Holder<Biome>> biomes, String id) {
-        Identifier target = Identifier.parse(id);
+        // Same parse cache the registry-side id match uses. This is the collection twin of a warm-belt
+        // hot path, so it was re-parsing a constant string per call while its sibling did not.
+        Identifier target = ID_PARSE_CACHE.computeIfAbsent(id, Identifier::parse);
         for (Holder<Biome> entry : biomes) {
             var key = entry.unwrapKey();
             if (key.isPresent() && key.get().identifier().equals(target)) {
@@ -8545,24 +9964,61 @@ public final class LatitudeBiomes {
         return entry;
     }
 
+    // Retargeted COLD_UPLAND -> SUBPOLAR_UPLAND, and the temperate-only escape generalised to the
+    // descriptor's own upland route (2026-08-18). This clamp asks whether a windswept variant
+    // actually owns the mountain it is standing on; the windswept family's route moved, so reading
+    // BAND_TEMPERATE alone here would have condemned windswept on the subpolar mountains that are
+    // now its only legal home, while still waving it through at the pole. The mountain signal the
+    // callers pass is rawMountainTruth — the same raw isMountainLike read isWindsweptFamilyLegal
+    // uses, so gate and veto cannot disagree; mountainLike itself is temperate-only and would be
+    // false on every subpolar column.
     private static Holder<Biome> clampTemperateWindsweptMountainOwnership(Registry<Biome> biomes,
                                                                            Holder<Biome> candidate,
                                                                            int bandIndex,
-                                                                           boolean mountainLike) {
+                                                                           boolean mountainLike,
+                                                                           VanillaCoverageFinalAdmissionPolicy.Facts finalAdmissionFacts) {
+        if (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                && hasExactVanillaCoverageAdmission(candidate)
+                && VanillaCoverageFinalAdmissionPolicy.decideExactColdUplandPreservation(
+                        BiomeDescriptorLedger.descriptor(biomeId(candidate)),
+                        finalAdmissionFacts)
+                == VanillaCoverageFinalAdmissionPolicy.Decision.PRESERVE_EXACT) {
+            return candidate;
+        }
+        boolean descriptorOwnedMountain = mountainLike
+                && ((bandIndex == BAND_TEMPERATE
+                        && descriptorOwnsRoute(candidate, BiomeRoute.TEMPERATE_UPLAND))
+                    || (bandIndex == BAND_SUBPOLAR
+                        && descriptorOwnsRoute(candidate, BiomeRoute.SUBPOLAR_UPLAND)));
         if (!isTemperateWindsweptVariant(candidate)
-                || (bandIndex == BAND_TEMPERATE && mountainLike)) {
+                || descriptorOwnedMountain) {
             return candidate;
         }
         Holder<Biome> fallback = safeVanillaFallbackForBand(biomes, bandIndex);
         return fallback != null ? fallback : candidate;
     }
 
+    /** Collection-source twin; see the registry overload for the 2026-08-18 route retarget. */
     private static Holder<Biome> clampTemperateWindsweptMountainOwnership(Collection<Holder<Biome>> biomes,
                                                                            Holder<Biome> candidate,
                                                                            int bandIndex,
-                                                                           boolean mountainLike) {
+                                                                           boolean mountainLike,
+                                                                           VanillaCoverageFinalAdmissionPolicy.Facts finalAdmissionFacts) {
+        if (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                && hasExactVanillaCoverageAdmission(candidate)
+                && VanillaCoverageFinalAdmissionPolicy.decideExactColdUplandPreservation(
+                        BiomeDescriptorLedger.descriptor(biomeId(candidate)),
+                        finalAdmissionFacts)
+                == VanillaCoverageFinalAdmissionPolicy.Decision.PRESERVE_EXACT) {
+            return candidate;
+        }
+        boolean descriptorOwnedMountain = mountainLike
+                && ((bandIndex == BAND_TEMPERATE
+                        && descriptorOwnsRoute(candidate, BiomeRoute.TEMPERATE_UPLAND))
+                    || (bandIndex == BAND_SUBPOLAR
+                        && descriptorOwnsRoute(candidate, BiomeRoute.SUBPOLAR_UPLAND)));
         if (!isTemperateWindsweptVariant(candidate)
-                || (bandIndex == BAND_TEMPERATE && mountainLike)) {
+                || descriptorOwnedMountain) {
             return candidate;
         }
         Holder<Biome> fallback = safeVanillaFallbackForBand(biomes, bandIndex);
@@ -8776,6 +10232,9 @@ public final class LatitudeBiomes {
         if (landBandIndex != BAND_TEMPERATE || mountainLike || !isTaigaNamedBiome(out)) {
             return out;
         }
+        if (hasExactTemperateLowlandCoverageAdmission(out)) {
+            return out;
+        }
         if (isTemperateWarmEdgeShoulderCell(blockX, blockZ, effectiveRadius, sourceBandIndex, landBandIndex, false)) {
             return out;
         }
@@ -8792,6 +10251,9 @@ public final class LatitudeBiomes {
                                                                     int blockX, int blockZ, int effectiveRadius,
                                                                     int sourceBandIndex, int landBandIndex, boolean mountainLike) {
         if (landBandIndex != BAND_TEMPERATE || mountainLike || !isTaigaNamedBiome(out)) {
+            return out;
+        }
+        if (hasExactTemperateLowlandCoverageAdmission(out)) {
             return out;
         }
         if (isTemperateWarmEdgeShoulderCell(blockX, blockZ, effectiveRadius, sourceBandIndex, landBandIndex, false)) {
@@ -9702,19 +11164,31 @@ public final class LatitudeBiomes {
                     return outsideVariant;
                 }
             }
-            return enforceWarmProvinceFamily(biomes, base, warmProvince);
+            // Outside the badlands province the arid belt is DESERT (maintainer ruling, 2026-08-18).
+            // badlandsProvinceAuthorityHit already says where badlands country IS; this line is what
+            // makes that the actual authority instead of a decoration. Resolved to desert DIRECTLY
+            // rather than by handing `base` to enforceWarmProvinceFamily, because that helper returns
+            // any badlands-family pick untouched -- so a column where vanilla had already placed
+            // badlands re-admitted badlands outside its own province, no matter what the province
+            // said. Badlands is the regional accent here; desert is the staple.
+            try {
+                return biome(biomes, "minecraft:desert");
+            } catch (Throwable ignored) {
+            }
+            // Reachable only for a pack that removed minecraft:desert.
+            return enforceWarmProvinceFamily(biomes, base, warmProvince, blockX, blockZ);
         }
         Holder<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
         if (variant != null) {
             return variant;
         }
         if (!aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
-            return enforceWarmProvinceFamily(biomes, base, warmProvince);
+            return enforceWarmProvinceFamily(biomes, base, warmProvince, blockX, blockZ);
         }
         try {
             return biome(biomes, "minecraft:desert");
         } catch (Throwable ignored) {
-            return enforceWarmProvinceFamily(biomes, base, warmProvince);
+            return enforceWarmProvinceFamily(biomes, base, warmProvince, blockX, blockZ);
         }
     }
 
@@ -9749,10 +11223,26 @@ public final class LatitudeBiomes {
         return savanna != null ? savanna : pick;
     }
 
-    /** Shared latitude/noise predicate for {@link #demoteEquatorialBadlands}. Matches the whole arid family
-     *  (vanilla badlands/desert + modded arid variants) so the tropical-no-arid law covers them all. */
+    /** Shared latitude/noise predicate for {@link #demoteEquatorialBadlands}. Matches the badlands family
+     *  plus modded arid variants, so the tropical-no-arid law covers every arid identity a pack can add.
+     *  Vanilla {@code minecraft:desert} is deliberately NOT matched here: it is handled by the paired
+     *  {@link #shouldDemoteEquatorialDesert}, which enforces the same law over the same ramp, and being
+     *  gated by both cost desert the 23.5-27deg phase-in (maintainer ruling, 2026-08-18). */
     private static boolean shouldDemoteEquatorialBadlands(Holder<Biome> pick, int blockX, int blockZ) {
         if (pick == null || !isAridFamily(pick)) {
+            return false;
+        }
+        // Vanilla desert has its OWN gate, running immediately after this one, with the same law, the
+        // same ramp edges and the same tropical ban (maintainer ruling, 2026-08-18). Matching desert
+        // here TOO made a desert pick clear two independent noise fields where badlands cleared one,
+        // so across the 23.5-27deg phase-in desert survived ~latGate^2 against badlands' ~latGate.
+        // That cost nothing while the belt was badlands anyway; now that desert is the belt's staple
+        // it would quietly hand the lower subtropics to savanna instead. This does NOT loosen the
+        // tropical law: shouldDemoteEquatorialDesert reads the same authoritativeTropicalAridBan and
+        // the same 23.5deg low edge, where smoothstep clamps latGate to exactly 0 and therefore
+        // demotes EVERY desert pick. Modded arid variants deliberately stay in this predicate -- the
+        // desert gate matches the literal vanilla id and would never catch them.
+        if (isBiomeId(pick, "minecraft:desert")) {
             return false;
         }
         int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
@@ -9935,17 +11425,26 @@ public final class LatitudeBiomes {
                     return outsideVariant;
                 }
             }
-            return enforceWarmProvinceFamily(biomes, base, warmProvince);
+            // Same ruling as the Registry twin above: outside the province the belt is desert, and it
+            // is resolved directly so an already-badlands `base` cannot re-admit badlands out here.
+            // These two overloads must keep returning the same identity for the same column -- when
+            // they diverge, live chunk generation stops matching what the atlas draws.
+            Holder<Biome> outsideDesert = entryById(biomes, "minecraft:desert");
+            if (outsideDesert != null) {
+                return outsideDesert;
+            }
+            // Reachable only for a pack that removed minecraft:desert.
+            return enforceWarmProvinceFamily(biomes, base, warmProvince, blockX, blockZ);
         }
         Holder<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
         if (variant != null) {
             return variant;
         }
         if (!aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
-            return enforceWarmProvinceFamily(biomes, base, warmProvince);
+            return enforceWarmProvinceFamily(biomes, base, warmProvince, blockX, blockZ);
         }
         Holder<Biome> desert = entryById(biomes, "minecraft:desert");
-        return desert != null ? desert : enforceWarmProvinceFamily(biomes, base, warmProvince);
+        return desert != null ? desert : enforceWarmProvinceFamily(biomes, base, warmProvince, blockX, blockZ);
     }
 
     private static void logSubtropicalJungleReturn(String pathLabel,
@@ -10053,9 +11552,18 @@ public final class LatitudeBiomes {
     }
 
     private static boolean isJungleFamily(Holder<Biome> entry) {
-        return isBiomeId(entry, "minecraft:jungle")
+        if (isBiomeId(entry, "minecraft:jungle")
                 || isBiomeId(entry, "minecraft:bamboo_jungle")
-                || isBiomeId(entry, "minecraft:sparse_jungle");
+                || isBiomeId(entry, "minecraft:sparse_jungle")) {
+            return true;
+        }
+        if (ACTIVE_WORLDGEN_POLICY != WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION) {
+            return false;
+        }
+        BiomeDescriptorLedger.Descriptor descriptor =
+                BiomeDescriptorLedger.descriptor(biomeId(entry));
+        return descriptor != null
+                && descriptor.family() == BiomeDescriptorLedger.Family.JUNGLE;
     }
 
     private static String selectionPathForTrace(Holder<Biome> base, Holder<Biome> picked) {
@@ -10492,6 +12000,7 @@ public final class LatitudeBiomes {
         double weirdness = Climate.unquantizeCoord(point.weirdness());
         int landBandIndex = authoritativeLandBandIndex(blockX, blockZ, borderRadiusBlocks);
         boolean swampClimate = (includeSwamp || includeMangrove)
+                && wetlandProvinceEligible(blockX, blockZ)
                 && swampOkForSize(cont, erosion, weirdness);
         int radiusHint = ACTIVE_RADIUS_BLOCKS > 0
                 ? ACTIVE_RADIUS_BLOCKS
@@ -10618,6 +12127,14 @@ public final class LatitudeBiomes {
         return badlandsPatchHere(WORLD_SEED, blockX, blockZ);
     }
 
+    /** Wetland admission requires a genuinely wet province; mangrove uses a separate authority. */
+    static boolean wetlandProvinceEligible(int blockX, int blockZ) {
+        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+        return province == null
+                || province == ProvinceAuthority.Province.WARM_WET
+                || province == ProvinceAuthority.Province.COLD_WET;
+    }
+
     private static ProvinceAuthority.Province warmProvinceClass(int blockX, int blockZ, int bandIndex) {
         if (bandIndex != BAND_TROPICAL && bandIndex != BAND_SUBTROPICAL) {
             return null;
@@ -10637,9 +12154,30 @@ public final class LatitudeBiomes {
         return isBiomeId(biome, "minecraft:desert");
     }
 
+    /**
+     * The staple of the warm-medium belt outside a savanna country.
+     *
+     * <p>Returns null when the pack has removed {@code minecraft:forest}, in which case the callers
+     * fall back to the savanna chain -- the belt keeps an identity rather than acquiring a hole.
+     */
+    private static Holder<Biome> warmMediumForestStaple(Registry<Biome> biomes) {
+        try {
+            return biome(biomes, "minecraft:forest");
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** Collection twin of {@link #warmMediumForestStaple(Registry)}. */
+    private static Holder<Biome> warmMediumForestStaple(Collection<Holder<Biome>> biomes) {
+        return entryById(biomes, "minecraft:forest");
+    }
+
     private static Holder<Biome> enforceWarmProvinceFamily(Registry<Biome> biomes,
                                                                   Holder<Biome> pick,
-                                                                  ProvinceAuthority.Province province) {
+                                                                  ProvinceAuthority.Province province,
+                                                                  int blockX,
+                                                                  int blockZ) {
         if (province == null || pick == null) {
             return pick;
         }
@@ -10650,7 +12188,12 @@ public final class LatitudeBiomes {
                 // jungle monoculture: keep tropical wetlands (swamp/mangrove) and any admitted
                 // custom biome the band tags placed here on purpose. Only out-of-place vanilla
                 // biomes fall through to the jungle core identity below.
-                if (isCustomBiome(pick) || isSwampCandidate(pick) || isMangroveCandidate(pick)) {
+                if ((isCustomBiome(pick)
+                        && (ACTIVE_WORLDGEN_POLICY
+                                != WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                                || VanillaCoverageFinalAdmissionPolicy.mayPreserveCustomInWarmProvince(
+                                        BiomeDescriptorLedger.descriptor(biomeId(pick)), province)))
+                        || isSwampCandidate(pick) || isMangroveCandidate(pick)) {
                     return pick;
                 }
                 // Jungle is the WARM_WET core identity; sparse_jungle is the edge/shoulder.
@@ -10671,13 +12214,74 @@ public final class LatitudeBiomes {
                 return pick;
             }
             case WARM_MEDIUM -> {
-                if (isSavannaFamily(pick)) return pick;
+                // Savanna is a COUNTRY inside this belt, not the belt itself (maintainer approval,
+                // 2026-08-18). savannaProvinceAuthorityHit is the authority for where that country
+                // is, in exactly the way badlandsProvinceAuthorityHit became the authority for the
+                // badlands country inside the arid belt on the same day. Inside it, nothing about
+                // this arm changes. Outside it, the warm-medium staple is minecraft:forest, which
+                // is what turns "the whole warm belt is savanna" into "savanna regions in a warm
+                // forest belt grading into the jungles".
+                //
+                // This is also why minecraft:forest had to be admitted to the tropical band pool in
+                // allowedExtraBiomeIdsForBand: this arm runs both upstream and downstream of
+                // enforceLandBandPool, and the upstream callers' forest is rerolled away without
+                // that admission.
+                //
+                // TWO THINGS ESCAPE THIS COUNTRY, both accepted -- written down here so the next
+                // reader does not rediscover them as bugs:
+                //
+                //   (a) The equatorial demote gates (demoteEquatorialBadlands / demoteEquatorialDesert
+                //       / demotePolewardArid) hand back savanna without consulting the country at
+                //       all. That is the maintainer-accepted tropical-arid floor: their job is that
+                //       no desert or mesa stands in the tropics, and the identity they demote TO is
+                //       deliberately country-blind. Savanna produced that way can stand outside a
+                //       savanna country.
+                //
+                //   (b) Band-leak rerolls can put forest INSIDE a country, via the substitution pool
+                //       rather than through this arm. Accepted dilution: a country is not expected
+                //       to come out 100% savanna.
+                //
+                // SAVANNA'S SECOND HOME, added the same day and by the same ruling: the DRY FRINGE.
+                // Savanna is the real world's transition between arid and forest, and it was the
+                // buffer between mesa/desert country and the lush belt until the country above took
+                // it off that border. savannaDryFringeHere restores the buffer by asking how close
+                // this column's own dry-side moisture sits to the WARM_DRY threshold, which on a
+                // smooth field already means "just outside an arid province" -- no neighbour
+                // sampling, no new field. It reads the bias-inclusive moisture, so the fringe
+                // narrows by itself at the deep equator and the humid-equator directive holds.
+                //
+                // MUST STAY IDENTICAL to the Collection overload below, decision for decision.
+                boolean savannaOwnsColumn = savannaOwnsColumnAt(blockX, blockZ);
+                if (isSavannaFamily(pick)) {
+                    // windswept_savanna is exempt from the country rule in both directions. It is
+                    // the WARM_UPLAND mountain identity, not the flat staple this country governs,
+                    // and it already has exactly one legal home (subtropical + real mountain, see
+                    // blockNewSubtropicalNonMountainWindswept). Rewriting it to forest out here
+                    // would close that home for the second time in one file's history.
+                    if (savannaOwnsColumn || isBiomeId(pick, "minecraft:windswept_savanna")) {
+                        return pick;
+                    }
+                    Holder<Biome> outsideForest = warmMediumForestStaple(biomes);
+                    return outsideForest != null ? outsideForest : pick;
+                }
                 // Preserve climate-appropriate variety so the warm-medium belt isn't flattened into a
                 // savanna monoculture: keep any custom biome the band tags placed here on purpose
                 // (mirrors WARM_WET). Only out-of-place vanilla biomes fall through to savanna.
                 // NOTE: WARM_DRY intentionally does NOT preserve custom — the tropical-arid LAW relies
                 // on the downstream demote catching VANILLA badlands/desert, which a custom arid would bypass.
-                if (isCustomBiome(pick)) return pick;
+                if (isCustomBiome(pick)
+                        && (ACTIVE_WORLDGEN_POLICY
+                                != WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                                || VanillaCoverageFinalAdmissionPolicy.mayPreserveCustomInWarmProvince(
+                                        BiomeDescriptorLedger.descriptor(biomeId(pick)), province))) return pick;
+                if (!savannaOwnsColumn) {
+                    Holder<Biome> outsideForest = warmMediumForestStaple(biomes);
+                    if (outsideForest != null) {
+                        return outsideForest;
+                    }
+                    // Only a pack that removed minecraft:forest gets here; fall through to the
+                    // savanna chain rather than leave the belt without an identity.
+                }
                 try {
                     return biome(biomes, "minecraft:savanna");
                 } catch (Throwable ignored) {
@@ -10694,16 +12298,30 @@ public final class LatitudeBiomes {
             }
             case WARM_DRY -> {
                 if (isDesertFamily(pick) || isBadlandsFamily(pick)) return pick;
+                // Desert FIRST (maintainer ruling, 2026-08-18). This chain is the default identity of
+                // a dry warm province, and it used to name badlands first -- so every column that
+                // reached here with an out-of-place pick became mesa, which is half of why a
+                // vanilla-only arid belt read as badlands with desert as the curiosity. Badlands is
+                // regional: it is placed by badlandsProvinceAuthorityHit in pickAridRegionFallback,
+                // not by being the fallback for everything dry.
+                //
+                // MUST STAY IDENTICAL to the Collection overload below, id for id and in this order.
+                // The two overloads had disagreed here since they were written (this one badlands ->
+                // savanna -> desert, that one desert -> badlands), and the picker pair really does
+                // reach both. Divergence here means the world a player walks around in stops matching
+                // the map the atlas drew.
+                try {
+                    return biome(biomes, "minecraft:desert");
+                } catch (Throwable ignored) {
+                }
                 try {
                     return biome(biomes, "minecraft:badlands");
                 } catch (Throwable ignored) {
                 }
+                // Last resort, and unreachable in vanilla: only a pack that removed BOTH desert and
+                // the badlands family gets here. Not part of the savanna override layer.
                 try {
                     return biome(biomes, "minecraft:savanna");
-                } catch (Throwable ignored) {
-                }
-                try {
-                    return biome(biomes, "minecraft:desert");
                 } catch (Throwable ignored) {
                     return pick;
                 }
@@ -10716,7 +12334,9 @@ public final class LatitudeBiomes {
 
     private static Holder<Biome> enforceWarmProvinceFamily(Collection<Holder<Biome>> biomes,
                                                                   Holder<Biome> pick,
-                                                                  ProvinceAuthority.Province province) {
+                                                                  ProvinceAuthority.Province province,
+                                                                  int blockX,
+                                                                  int blockZ) {
         if (province == null || pick == null) {
             return pick;
         }
@@ -10727,7 +12347,12 @@ public final class LatitudeBiomes {
                 // jungle monoculture: keep tropical wetlands (swamp/mangrove) and any admitted
                 // custom biome the band tags placed here on purpose. Only out-of-place vanilla
                 // biomes fall through to the jungle core identity below.
-                if (isCustomBiome(pick) || isSwampCandidate(pick) || isMangroveCandidate(pick)) {
+                if ((isCustomBiome(pick)
+                        && (ACTIVE_WORLDGEN_POLICY
+                                != WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                                || VanillaCoverageFinalAdmissionPolicy.mayPreserveCustomInWarmProvince(
+                                        BiomeDescriptorLedger.descriptor(biomeId(pick)), province)))
+                        || isSwampCandidate(pick) || isMangroveCandidate(pick)) {
                     return pick;
                 }
                 // Jungle is the WARM_WET core identity; sparse_jungle is the edge/shoulder.
@@ -10742,8 +12367,31 @@ public final class LatitudeBiomes {
                 return pick;
             }
             case WARM_MEDIUM -> {
-                if (isSavannaFamily(pick)) return pick;
-                if (isCustomBiome(pick)) return pick;
+                // MUST STAY IDENTICAL to the Registry overload above -- see the note there for why
+                // savanna is a country inside this belt rather than the belt itself, why it ALSO
+                // owns the dry fringe hugging every arid province, why windswept_savanna is exempt
+                // in both directions, why minecraft:forest had to be admitted to the tropical band
+                // pool for any of it to survive, and for the two accepted leaks out of the country
+                // system (country-blind demote gates; band-leak rerolls diluting a country).
+                boolean savannaOwnsColumn = savannaOwnsColumnAt(blockX, blockZ);
+                if (isSavannaFamily(pick)) {
+                    if (savannaOwnsColumn || isBiomeId(pick, "minecraft:windswept_savanna")) {
+                        return pick;
+                    }
+                    Holder<Biome> outsideForest = warmMediumForestStaple(biomes);
+                    return outsideForest != null ? outsideForest : pick;
+                }
+                if (isCustomBiome(pick)
+                        && (ACTIVE_WORLDGEN_POLICY
+                                != WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION
+                                || VanillaCoverageFinalAdmissionPolicy.mayPreserveCustomInWarmProvince(
+                                        BiomeDescriptorLedger.descriptor(biomeId(pick)), province))) return pick;
+                if (!savannaOwnsColumn) {
+                    Holder<Biome> outsideForest = warmMediumForestStaple(biomes);
+                    if (outsideForest != null) {
+                        return outsideForest;
+                    }
+                }
                 Holder<Biome> savanna = entryById(biomes, "minecraft:savanna");
                 if (savanna != null) return savanna;
                 Holder<Biome> plateau = entryById(biomes, "minecraft:savanna_plateau");
@@ -10753,10 +12401,16 @@ public final class LatitudeBiomes {
             }
             case WARM_DRY -> {
                 if (isDesertFamily(pick) || isBadlandsFamily(pick)) return pick;
+                // MUST STAY IDENTICAL to the Registry overload above -- see the note there for why a
+                // disagreement between these two is a live-vs-atlas divergence, not a style nit.
                 Holder<Biome> desert = entryById(biomes, "minecraft:desert");
                 if (desert != null) return desert;
                 Holder<Biome> badlands = entryById(biomes, "minecraft:badlands");
-                return badlands != null ? badlands : pick;
+                if (badlands != null) return badlands;
+                // Last resort, and unreachable in vanilla: only a pack that removed BOTH desert and
+                // the badlands family gets here. Not part of the savanna override layer.
+                Holder<Biome> savanna = entryById(biomes, "minecraft:savanna");
+                return savanna != null ? savanna : pick;
             }
             default -> {
                 return pick;
@@ -11109,14 +12763,26 @@ public final class LatitudeBiomes {
         if (isMangroveCandidate(out)) {
             boolean inlandMangrove = oceanDistance < 0 || oceanDistance > MANGROVE_COASTAL_MAX_BLOCKS;
             if (mountainLike || inlandMangrove) {
-                out = pickMangroveFallback(biomes, base, blockX, blockZ, t, bandIndex);
+                if (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION) {
+                    out = enforceWarmProvinceFamily(biomes,
+                            pickMangroveFallback(biomes, base, blockX, blockZ, t, bandIndex),
+                            warmProvinceClass(blockX, blockZ, bandIndex), blockX, blockZ);
+                } else {
+                    out = pickMangroveFallback(biomes, base, blockX, blockZ, t, bandIndex);
+                }
             }
         }
         if (isSwampCandidate(out)) {
             boolean inlandSwamp = bandIndex != BAND_TEMPERATE
                     && (oceanDistance < 0 || oceanDistance > SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE);
             if (mountainLike || inlandSwamp) {
-                out = pickSwampFallback(biomes, base, blockX, blockZ, t, bandIndex);
+                if (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION) {
+                    out = enforceWarmProvinceFamily(biomes,
+                            pickSwampFallback(biomes, base, blockX, blockZ, t, bandIndex),
+                            warmProvinceClass(blockX, blockZ, bandIndex), blockX, blockZ);
+                } else {
+                    out = pickSwampFallback(biomes, base, blockX, blockZ, t, bandIndex);
+                }
             }
         }
         return out;
@@ -11135,14 +12801,26 @@ public final class LatitudeBiomes {
         if (isMangroveCandidate(out)) {
             boolean inlandMangrove = oceanDistance < 0 || oceanDistance > MANGROVE_COASTAL_MAX_BLOCKS;
             if (mountainLike || inlandMangrove) {
-                out = pickMangroveFallback(biomes, base, blockX, blockZ, t, bandIndex);
+                if (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION) {
+                    out = enforceWarmProvinceFamily(biomes,
+                            pickMangroveFallback(biomes, base, blockX, blockZ, t, bandIndex),
+                            warmProvinceClass(blockX, blockZ, bandIndex), blockX, blockZ);
+                } else {
+                    out = pickMangroveFallback(biomes, base, blockX, blockZ, t, bandIndex);
+                }
             }
         }
         if (isSwampCandidate(out)) {
             boolean inlandSwamp = bandIndex != BAND_TEMPERATE
                     && (oceanDistance < 0 || oceanDistance > SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE);
             if (mountainLike || inlandSwamp) {
-                out = pickSwampFallback(biomes, base, blockX, blockZ, t, bandIndex);
+                if (ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION) {
+                    out = enforceWarmProvinceFamily(biomes,
+                            pickSwampFallback(biomes, base, blockX, blockZ, t, bandIndex),
+                            warmProvinceClass(blockX, blockZ, bandIndex), blockX, blockZ);
+                } else {
+                    out = pickSwampFallback(biomes, base, blockX, blockZ, t, bandIndex);
+                }
             }
         }
         return out;
@@ -11318,7 +12996,7 @@ public final class LatitudeBiomes {
         if (bandIndex == BAND_TROPICAL) {
             ProvinceAuthority.Province warmProvince = warmProvinceClass(blockX, blockZ, bandIndex);
             if (isWarmFamily(pick)) {
-                return enforceWarmProvinceFamily(biomes, pick, warmProvince);
+                return enforceWarmProvinceFamily(biomes, pick, warmProvince, blockX, blockZ);
             }
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
@@ -11329,6 +13007,15 @@ public final class LatitudeBiomes {
                     double openness = tropicalOpennessNoise(blockX, blockZ);
                     double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
                     // Coarse, rare promotion only when both signals are strongly open/wet.
+                    //
+                    // THE THRESHOLD PAIR BELOW IS THE CANONICAL ONE. Its Collection twin used to
+                    // run on 0.76 / 0.06 with a different branch ladder, so the same column could
+                    // be repainted by one picker and left alone by the other -- invisible while
+                    // forest was pool-illegal in the tropics and enforceLandBandPool erased the
+                    // difference, and load-bearing the moment forest became pool-legal (2026-08-18).
+                    // The strict pair wins because this promotion has to be the rare exception the
+                    // comment above says it is: a warm belt whose staple is now forest cannot also
+                    // repaint three quarters of its forest columns.
                     if (openness < 0.92 || compositionBias <= 0.20) {
                         return pick; // keep temperate winner; avoid speckle repaint
                     }
@@ -11340,7 +13027,11 @@ public final class LatitudeBiomes {
                     } else {
                         promoted = biome(biomes, "minecraft:sparse_jungle");
                     }
-                    return enforceWarmProvinceFamily(biomes, promoted, warmProvince);
+                    // The savanna branch above is a REQUEST, not the answer: it is handed to the
+                    // province enforcer, which grants it only inside a savanna country and answers
+                    // forest outside one. That is what makes this repaint respect the country
+                    // instead of quietly reintroducing savanna wherever openness happens to be high.
+                    return enforceWarmProvinceFamily(biomes, promoted, warmProvince, blockX, blockZ);
                 } catch (Throwable ignored) {
                     return pick;
                 }
@@ -11450,15 +13141,18 @@ public final class LatitudeBiomes {
             allowProvinceFamilyRewrite = false;
         }
         if (allowProvinceFamilyRewrite) {
-            out = enforceWarmProvinceFamily(biomes, out, warmProvince);
+            out = enforceWarmProvinceFamily(biomes, out, warmProvince, blockX, blockZ);
         }
-        // Earth-analog latitude gate: enforceWarmProvinceFamily defaults WARM_DRY to badlands,
-        // which leaks mesa to the deep equator on some seeds. Demote badlands -> savanna below
-        // the equator ramp here (the final warm clamp, after the province rewrite) so the savanna
-        // tier pass below still applies; badlands survives only in the subtropical arid belt.
+        // Earth-analog latitude gate. Arid picks reach the deep equator on some seeds (WARM_DRY
+        // pockets are latitude-independent), so demote them -> savanna below the equator ramp here,
+        // at the final warm clamp after the province rewrite, where the savanna tier pass below still
+        // applies. The two gates are a PAIR and both must run: this one owns the badlands family and
+        // every modded arid variant, the next owns vanilla desert (maintainer ruling, 2026-08-18 --
+        // desert was in both, and being gated twice cost it the 23.5-27deg phase-in). Arid of any
+        // kind survives only in the subtropical belt.
         out = demoteEquatorialBadlands(biomes, out, blockX, blockZ);
-        // Partial deep-equator desert thinning (Earth keeps rare equatorial desert): coherent
-        // fraction demoted to savanna below the ramp; subtropical desert belt untouched.
+        // The desert half of that pair: no vanilla desert in the tropics, phased back in across the
+        // lower subtropics on its own coherent field; the subtropical desert belt is untouched.
         out = demoteEquatorialDesert(biomes, out, blockX, blockZ);
         // Poleward partner: keep badlands/desert out of the TEMPERATE band (the band-blend leak past 35deg).
         out = demotePolewardArid(biomes, out, blockX, blockZ);
@@ -11488,7 +13182,7 @@ public final class LatitudeBiomes {
         if (bandIndex == BAND_TROPICAL) {
             ProvinceAuthority.Province warmProvince = warmProvinceClass(blockX, blockZ, bandIndex);
             if (isWarmFamily(pick)) {
-                return enforceWarmProvinceFamily(biomes, pick, warmProvince);
+                return enforceWarmProvinceFamily(biomes, pick, warmProvince, blockX, blockZ);
             }
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
@@ -11497,17 +13191,23 @@ public final class LatitudeBiomes {
                     || isBiomeId(pick, "minecraft:flower_forest")) {
                 double openness = tropicalOpennessNoise(blockX, blockZ);
                 double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
-                if (openness < 0.76 || compositionBias <= 0.06) {
-                    return pick; // neutral/marginal openness → keep the original temperate winner
+                // RECONCILED to the Registry overload above (2026-08-18): thresholds 0.76 / 0.06
+                // and a two-signal ladder here against 0.92 / 0.20 and a three-branch ladder there
+                // meant the two pickers disagreed about which tropical columns get repainted at all.
+                // See that overload for why the strict pair is the canonical one. These two must
+                // stay identical, number for number and branch for branch -- a divergence is live
+                // generation parting company with the map the atlas drew.
+                if (openness < 0.92 || compositionBias <= 0.20) {
+                    return pick; // keep temperate winner; avoid speckle repaint
                 }
-                Holder<Biome> entry = openness >= 0.90
+                Holder<Biome> entry = (openness >= 0.96 && compositionBias > 0.28)
                         ? entryById(biomes, "minecraft:savanna")
-                        : (openness >= 0.78 && compositionBias > 0.12
+                        : (compositionBias > 0.32
                         ? entryById(biomes, SWAMP_ID)
                         : entryById(biomes, "minecraft:sparse_jungle"));
                 if (entry == null) entry = entryById(biomes, "minecraft:sparse_jungle");
                 if (entry == null) entry = entryById(biomes, "minecraft:jungle");
-                Holder<Biome> out = enforceWarmProvinceFamily(biomes, entry != null ? entry : pick, warmProvince);
+                Holder<Biome> out = enforceWarmProvinceFamily(biomes, entry != null ? entry : pick, warmProvince, blockX, blockZ);
                 recordWarmDryPath("SANITIZE_REWRITE", pick, out, blockX, blockZ, bandIndex, warmProvince);
                 return out;
             }
@@ -11609,15 +13309,18 @@ public final class LatitudeBiomes {
             allowProvinceFamilyRewrite = false;
         }
         if (allowProvinceFamilyRewrite) {
-            out = enforceWarmProvinceFamily(biomes, out, warmProvince);
+            out = enforceWarmProvinceFamily(biomes, out, warmProvince, blockX, blockZ);
         }
-        // Earth-analog latitude gate: enforceWarmProvinceFamily defaults WARM_DRY to badlands,
-        // which leaks mesa to the deep equator on some seeds. Demote badlands -> savanna below
-        // the equator ramp here (the final warm clamp, after the province rewrite) so the savanna
-        // tier pass below still applies; badlands survives only in the subtropical arid belt.
+        // Earth-analog latitude gate. Arid picks reach the deep equator on some seeds (WARM_DRY
+        // pockets are latitude-independent), so demote them -> savanna below the equator ramp here,
+        // at the final warm clamp after the province rewrite, where the savanna tier pass below still
+        // applies. The two gates are a PAIR and both must run: this one owns the badlands family and
+        // every modded arid variant, the next owns vanilla desert (maintainer ruling, 2026-08-18 --
+        // desert was in both, and being gated twice cost it the 23.5-27deg phase-in). Arid of any
+        // kind survives only in the subtropical belt.
         out = demoteEquatorialBadlands(biomes, out, blockX, blockZ);
-        // Partial deep-equator desert thinning (Earth keeps rare equatorial desert): coherent
-        // fraction demoted to savanna below the ramp; subtropical desert belt untouched.
+        // The desert half of that pair: no vanilla desert in the tropics, phased back in across the
+        // lower subtropics on its own coherent field; the subtropical desert belt is untouched.
         out = demoteEquatorialDesert(biomes, out, blockX, blockZ);
         // Poleward partner: keep badlands/desert out of the TEMPERATE band (the band-blend leak past 35deg).
         out = demotePolewardArid(biomes, out, blockX, blockZ);

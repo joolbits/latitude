@@ -1,0 +1,7 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:river",
+    { "id": "clifftree:warm_river", "required": false }
+  ]
+}

@@ -25,11 +25,22 @@ public final class GlobeNet {
         PayloadTypeRegistry.playC2S().register(SetSpawnPickerPayload.ID, SetSpawnPickerPayload.CODEC);
     }
 
-    public record GlobeStatePayload(boolean isGlobe) implements CustomPacketPayload {
-        public static final Type<GlobeStatePayload> ID = new Type<>(Identifier.fromNamespaceAndPath("globe", "s2c_globe_state"));
+    /**
+     * The channel id carries a version suffix because this payload gained a field.
+     *
+     * <p>Beta 1 shipped the same id with a single boolean. Had the id stayed put, a Beta 2 client
+     * reading a Beta 1 server would run off the end of the buffer looking for the band string, and
+     * the mismatch would surface as a disconnect rather than a missing label. An unrecognised id is
+     * discarded by vanilla instead, so a mixed pair now simply loses the loading-screen zone name
+     * and keeps playing.
+     */
+    public record GlobeStatePayload(boolean isGlobe, String loadingBandId) implements CustomPacketPayload {
+        public static final Type<GlobeStatePayload> ID = new Type<>(Identifier.fromNamespaceAndPath("globe", "s2c_globe_state_v2"));
         public static final StreamCodec<RegistryFriendlyByteBuf, GlobeStatePayload> CODEC = StreamCodec.composite(
                 ByteBufCodecs.BOOL,
                 GlobeStatePayload::isGlobe,
+                ByteBufCodecs.STRING_UTF8,
+                GlobeStatePayload::loadingBandId,
                 GlobeStatePayload::new
         );
 

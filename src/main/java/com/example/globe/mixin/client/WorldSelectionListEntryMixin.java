@@ -1,14 +1,18 @@
 package com.example.globe.mixin.client;
 
+import com.example.globe.client.WorldListZoneFitPolicy;
 import com.example.globe.client.create.RecreatedWorldMetadata;
 import com.example.globe.client.create.RecreatedWorldPresetCarrier;
 import com.example.globe.util.LatitudeBands;
 import java.io.IOException;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.StringWidget;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
+import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.world.level.LevelSettings;
@@ -68,7 +72,18 @@ public abstract class WorldSelectionListEntryMixin {
      * text instead of the row's true right margin). Editing the text directly sidesteps that
      * class of bug entirely: there is only ever one draw call, so nothing can land on top of it.
      * Injected at HEAD, before vanilla's own renderContent body renders this widget, so the
-     * combined text is correct from the very first frame.</p>
+     * combined text is correct from the very first frame.
+     *
+     * <p>That getWidth() diagnosis remains true, but it is no longer the reason right-alignment is
+     * off the table: the row's true allotment is reachable via {@link StringWidgetMaxWidthAccessor}.
+     * Single-draw-call stands on its own merits, and reading the allotment is what makes the
+     * reservation below possible at all — without it the zone is simply clipped away, which is what
+     * a live report showed on long rows ("… 10:12 PM) S…" instead of "Subtropical").</p>
+     *
+     * <p>The tooltip is rebuilt rather than inherited. Vanilla attaches one carrying the full text
+     * in the entry's constructor, i.e. before this runs, so the inherited tooltip holds the
+     * PRE-SUFFIX text — hovering a clipped row would not reveal the zone either, and the feature
+     * would be invisible twice over.</p>
      */
     // GitHub #7 rule: fail soft -- a missed target costs the zone suffix / preset carry on the
     // world list, never a crash. expect=1 keeps dev boots loud under -Dmixin.debug.strict=true.
@@ -95,8 +110,32 @@ public abstract class WorldSelectionListEntryMixin {
         }
         Component suffix = Component.literal(" " + this.globe$lastKnownBandLabel)
                 .withStyle(Style.EMPTY.withColor(GLOBE_LAST_ZONE_BADGE_COLOR));
-        Component combined = Component.empty().append(this.idAndLastPlayedText.getMessage()).append(suffix);
-        this.idAndLastPlayedText.setMessage(combined);
+        Component original = this.idAndLastPlayedText.getMessage();
+        Font font = this.minecraft.font;
+        int allotted = ((StringWidgetMaxWidthAccessor) (Object) this.idAndLastPlayedText)
+                .globe$getMaxWidth();
+
+        Component head = original;
+        if (allotted > 0) {
+            // Measure candidates exactly as they will draw -- same style, style-aware overload --
+            // so the reservation cannot drift from what is rendered.
+            Style style = original.getStyle();
+            String originalText = original.getString();
+            String headText = WorldListZoneFitPolicy.headText(
+                    originalText,
+                    text -> font.width(Component.literal(text).withStyle(style)),
+                    CommonComponents.ELLIPSIS.getString(),
+                    font.width(suffix),
+                    allotted);
+            if (!headText.equals(originalText)) {
+                head = Component.literal(headText).withStyle(style);
+                // Only a clipped row hides anything, so only a clipped row earns a tooltip; on a
+                // row that fits, one would just repeat text already fully visible.
+                this.idAndLastPlayedText.setTooltip(Tooltip.create(
+                        Component.empty().append(original).append(suffix)));
+            }
+        }
+        this.idAndLastPlayedText.setMessage(Component.empty().append(head).append(suffix));
     }
 
     // 26.2 named the two call sites "recreateWorld" and its lambda. On this target the second one

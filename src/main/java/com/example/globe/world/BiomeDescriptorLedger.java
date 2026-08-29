@@ -51,6 +51,7 @@ public final class BiomeDescriptorLedger {
                     && !routes.contains(BiomeRoute.SUBPOLAR_WETLAND)) throw new IllegalArgumentException("wetland needs an owned wetland route: " + biomeId);
             if (terrain == Terrain.UPLAND
                     && !routes.contains(BiomeRoute.TEMPERATE_UPLAND)
+                    && !routes.contains(BiomeRoute.SUBPOLAR_UPLAND)
                     && !routes.contains(BiomeRoute.COLD_UPLAND)) throw new IllegalArgumentException("upland needs an owned upland route: " + biomeId);
             if (terrain == Terrain.ARID && !routes.contains(BiomeRoute.ARID_LOWLAND)) throw new IllegalArgumentException("arid descriptor needs the owned arid-lowland route: " + biomeId);
         }
@@ -62,9 +63,9 @@ public final class BiomeDescriptorLedger {
             d("biomesoplenty:tropics", r(BiomeRoute.TROPICAL_HUMID_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.JUNGLE),
             d("biomesoplenty:fungal_jungle", r(BiomeRoute.TROPICAL_HUMID_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.JUNGLE),
             d("biomesoplenty:subtropics", r(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
-            d("biomesoplenty:redwood_forest", r(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("biomesoplenty:mystic_grove", r(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             // BOP: temperate land and verified flat wetlands
+            d("biomesoplenty:redwood_forest", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("biomesoplenty:seasonal_forest", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("biomesoplenty:maple_woods", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("biomesoplenty:woodland", r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
@@ -232,9 +233,23 @@ public final class BiomeDescriptorLedger {
             // mountains had no vegetated identity at all. Above the 72-degree tree line the polar
             // guard strips their trees, so they degrade correctly toward the pole.
             // Temperate uplands retain meadow, grove, cherry_grove, stony_peaks and caldera.
-            d("minecraft:windswept_hills", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
-            d("minecraft:windswept_forest", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
-            d("minecraft:windswept_gravelly_hills", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
+            //
+            // Refined COLD_UPLAND -> SUBPOLAR_UPLAND (maintainer ruling, 2026-08-18). The 08-10
+            // ruling was right about the tint and wrong about how far poleward it could go: a
+            // vanilla-only census of the shipped build measured windswept_hills at 12.8% of all
+            // polar land and 15.6% above 74.5 degrees -- the second most common land biome at the
+            // pole, arriving snowless, green-grassed and stocked with passive animals at 80 north.
+            // COLD_UPLAND's "50-90 degrees AND mountain" was only ever half true in practice: the
+            // band half held, but nothing downstream re-checked the mountain half, so the
+            // terrain-compatibility reroll walked into windswept on ordinary polar shelves. The
+            // pole must read white. Polar mountains therefore keep the bare alpine set, and the
+            // vegetated wind-scoured identity is now subpolar-only (50-66.5 degrees), where it was
+            // always most convincing and where WindsweptSnowLinePolicy already lowers its snow
+            // line. COLD_UPLAND keeps snowy_slopes/frozen_peaks/jagged_peaks/glacier_cliff and
+            // still spans subpolar and polar.
+            d("minecraft:windswept_hills", r(BiomeRoute.SUBPOLAR_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
+            d("minecraft:windswept_forest", r(BiomeRoute.SUBPOLAR_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
+            d("minecraft:windswept_gravelly_hills", r(BiomeRoute.SUBPOLAR_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("minecraft:stony_peaks", r(BiomeRoute.TEMPERATE_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("minecraft:snowy_slopes", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
             d("minecraft:frozen_peaks", r(BiomeRoute.COLD_UPLAND), Terrain.UPLAND, Water.LAND, Family.UPLAND),
@@ -270,6 +285,27 @@ public final class BiomeDescriptorLedger {
     public static boolean isCaveDescriptor(String id) {
         Descriptor descriptor = descriptor(id);
         return descriptor != null && descriptor.terrain() == Terrain.CAVE;
+    }
+
+    /**
+     * Latitude-owned arid surface land: vanilla desert and the badlands family, plus every optional
+     * provider identity the ledger deliberately routes the same way. Unknown or merely name-alike
+     * biomes fail closed until the ledger can describe them intentionally.
+     *
+     * <p>All three fields are checked rather than {@code terrain() == ARID} alone: terrain says
+     * where a biome sits, family says what it is, and water rules out anything the ledger routes as
+     * wetland. A caller asking "may I plant this like a desert?" needs all three to agree.</p>
+     *
+     * <p>On the 26.x line this predicate is also what gates surface sulfur expression. There is no
+     * such caller here: {@code minecraft:sulfur_caves} is a 26.x biome that does not exist on
+     * Minecraft 1.21.11, and is deliberately absent from the descriptor list above.</p>
+     */
+    public static boolean isAridSurfaceLand(String id) {
+        Descriptor descriptor = descriptor(id);
+        return descriptor != null
+                && descriptor.terrain() == Terrain.ARID
+                && descriptor.water() == Water.LAND
+                && descriptor.family() == Family.ARID;
     }
 
     public static List<String> validate(Collection<String> activeIds) {

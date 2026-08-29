@@ -1,5 +1,29 @@
 package com.example.globe.world;
 
+import com.example.globe.world.LatitudeWorldState.WorldgenPolicyVersion;
+import com.mojang.serialization.Lifecycle;
+import net.minecraft.SharedConstants;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.core.MappedRegistry;
+import net.minecraft.core.RegistrationInfo;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.Bootstrap;
+import net.minecraft.tags.TagKey;
+import net.minecraft.util.KeyDispatchDataCodec;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeGenerationSettings;
+import net.minecraft.world.level.biome.BiomeSpecialEffects;
+import net.minecraft.world.level.biome.Climate;
+import net.minecraft.world.level.biome.MobSpawnSettings;
+import net.minecraft.world.level.levelgen.DensityFunction;
+import net.minecraft.world.level.levelgen.DensityFunctions;
+
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -25,6 +49,13 @@ final class BiomeProviderSelectionPolicyTest {
     private BiomeProviderSelectionPolicyTest() {}
 
     static void run() throws Exception {
+        // Minecraft 1.21.11 static-initialises BuiltInRegistries from BiomeSource's own clinit, so any
+        // test that touches LatitudeBiomeSource live needs the bootstrap to have already run. The
+        // 26.2 twin of this suite gets away without it because its BiomeSource does not reach the
+        // registries that early. Bootstrap is idempotent, so the later call in buildTestBiomeRegistry
+        // becomes a no-op.
+        SharedConstants.tryDetectVersion();
+        Bootstrap.bootStrap();
         descriptorAdmissionIsClosedAndCanonical();
         wetlandRoutesMatchRealBiomeClimate();
         climateLowlandDescriptorsRemainRouteBounded();
@@ -35,16 +66,553 @@ final class BiomeProviderSelectionPolicyTest {
         providerProfileCompatibilityIsBirthLocked();
         polarIceSpikeAccentStaysAMinorityInEveryPoolSize();
         polarExtremeCapCatchesNameAlikeModdedBiomesConsistently();
+        windsweptFamilyIsSubpolarMountainOnly();
+        warmBeltIdentityIsProvinceOrdered();
         cliffTreeLandAndOceanAreActuallyReachable();
         riverAndBeachAdmissionIsTagDrivenAndVanillaSafe();
         everyLedgerLandRouteSurvivesTheBandPoolGate();
         wetlandsAreAcceptedButNeverSubstitutedIn();
         cohesionGatePoolAgreesWithTheLedger();
         vanillaCoverageIsCompleteAndWorldSizeSafe();
+        erodedBadlandsIsGuaranteedOnTheLowlandAridRoute();
+        customJungleAdmissionIsProvinceBounded();
+        reservedLandLocateFallsBackToExactAnchor();
+        finalVanillaCoverageHonorsHumidityAndLateAuthorities();
         surfaceWaterCoverageIsCompleteAndWorldSizeSafe();
         sizeAwareVanillaRepresentationIsClosedAndBirthLocked();
         caveCoverageIsClosedAndWorldSizeSafe();
         vanillaCoverageIsV2OnlyAndClearsWithContext();
+    }
+
+    static void runHumidCoverageProof() {
+        CoverageFixture regular = activateCoverageFixture(10_000, Set.of());
+        try {
+            assertEquals(VanillaBiomeCoveragePlan.requiredRoutes(), regular.representation().landTargets(),
+                    "Regular V5 coverage retains the exact vanilla land representation");
+            assertHumidCoverageFinalOutputs(regular);
+            assertJungleProvinceRejectionAndRestoration(regular);
+            assertHumidCoverageEvidenceIsRejected(regular);
+            assertExistingWetlandAndPaleGardenProtection(regular);
+        } finally {
+            LatitudeBiomes.clearWorldgenContext();
+        }
+
+        CoverageFixture compact = activateCoverageFixture(
+                7_500, Set.of("biomesoplenty", "terralith"));
+        try {
+            assertTrue(compact.representation().worldSize().compact(),
+                    "Small V5 coverage uses the compact representation contract");
+            for (Map.Entry<String, VanillaBiomeRepresentationProfile.Omission> omission
+                    : compact.representation().omittedExactIds().entrySet()) {
+                assertTrue(VanillaBiomeRepresentationProfile.areApprovedEquivalents(
+                                omission.getKey(), omission.getValue()),
+                        "every compact V5 representative is descriptor-approved: " + omission.getKey());
+            }
+            assertHumidCoverageFinalOutputs(compact);
+            assertJungleProvinceRejectionAndRestoration(compact);
+            assertHumidCoverageEvidenceIsRejected(compact);
+        } finally {
+            LatitudeBiomes.clearWorldgenContext();
+        }
+    }
+
+    /**
+     * Exercises ordinary (non-reservation) subtropical output through both public picker owners.
+     * The flat controls establish the existing province-specific lowland identities; the rugged
+     * case then proves the final V5 authority selects a province-compatible upland identity.
+     */
+    static void runWarmUplandProof() {
+        int radius = 10_000;
+        long worldSeed = 41L;
+        TestBiomeRegistry registry = buildTestBiomeRegistry(registryFor(Set.of()));
+        Holder<Biome> desert = holder(registry.registry(), "minecraft:desert");
+        Holder<Biome> erodedBadlands = holder(registry.registry(), "minecraft:eroded_badlands");
+        Climate.Sampler flatTerrain = fixedTerrainSampler(0.30, 0.20, 0.0);
+        Climate.Sampler ruggedTerrain = fixedTerrainSampler(0.30, -0.60, 0.70);
+
+        LatitudeBiomes.activateWorldgenContext(
+                radius, worldSeed, WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE,
+                null, null, flatTerrain, null, 63);
+        try {
+            int[] sample = findLegacySubtropicalWetDesertSample(
+                    registry, desert, radius, flatTerrain);
+            int blockX = sample[0];
+            int blockZ = sample[1];
+
+            long wetSeed = findProvinceSeed(
+                    radius, blockX, blockZ, ProvinceAuthority.Province.WARM_WET);
+            ProvinceAuthority original = LatitudeBiomes.swapProvinceAuthorityForTest(
+                    new ProvinceAuthority(wetSeed, radius));
+            try {
+                assertBothBiomeId(
+                        "minecraft:desert",
+                        pickRegistry(registry, desert, blockX, blockZ, radius, flatTerrain),
+                        pickCollection(registry, desert, blockX, blockZ, radius, flatTerrain),
+                        "V4 preserves its legacy WARM_WET subtropical desert result");
+            } finally {
+                LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+            }
+
+            LatitudeBiomes.activateWorldgenContext(
+                    radius, worldSeed, v5FinalAdmissionPolicy(), null, null, flatTerrain, null, 63);
+            long mediumSeed = findProvinceSeed(
+                    radius, blockX, blockZ, ProvinceAuthority.Province.WARM_MEDIUM);
+            long drySeed = findProvinceSeed(
+                    radius, blockX, blockZ, ProvinceAuthority.Province.WARM_DRY);
+            original = LatitudeBiomes.swapProvinceAuthorityForTest(
+                    new ProvinceAuthority(drySeed, radius));
+            try {
+                assertBothFamily(
+                        BiomeDescriptorLedger.Family.ARID,
+                        pickRegistry(registry, desert, blockX, blockZ, radius, flatTerrain),
+                        pickCollection(registry, desert, blockX, blockZ, radius, flatTerrain),
+                        "physical WARM_DRY subtropical lowland keeps its ordinary arid-family "
+                                + "identity [x=" + blockX + " z=" + blockZ + " lat="
+                                + String.format(java.util.Locale.ROOT, "%.1f",
+                                        Math.abs(blockZ) * 90.0 / radius)
+                                + "deg, settled belt starts at " + ARID_SETTLED_BELT_MIN_DEG
+                                + "deg] -- a savanna result at or above the settled edge is a real "
+                                + "defect, because both arid latitude gates return early there; "
+                                + "below it, savanna is the lawful phase-in answer and the sample "
+                                + "itself is wrong");
+            } finally {
+                LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+            }
+
+            original = LatitudeBiomes.swapProvinceAuthorityForTest(
+                    new ProvinceAuthority(mediumSeed, radius));
+            try {
+                assertBothFamily(
+                        warmMediumExpectedFamily(blockX, blockZ, radius),
+                        pickRegistry(registry, desert, blockX, blockZ, radius, flatTerrain),
+                        pickCollection(registry, desert, blockX, blockZ, radius, flatTerrain),
+                        "physical WARM_MEDIUM subtropical lowland keeps its ordinary warm-medium "
+                                + "identity -- savanna-family inside a savanna country or the dry "
+                                + "fringe, the forest staple outside both");
+            } finally {
+                LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+            }
+
+            // The coarse WARM_WET label is not the whole desert law (maintainer ruling,
+            // 2026-08-16): an active arid hotspot — the designed desert-oasis mechanism — may
+            // preserve desert despite the humid province, exactly as on the 26.2 line. The
+            // focused legacy sample is NOT a hotspot, so it pins the ordinary rejection; the
+            // separately-found hotspot sample pins the exception.
+            assertFalse(LatitudeBiomes.debugAridHotspot(blockX, blockZ),
+                    "the focused legacy sample is an ordinary (non-hotspot) column");
+            original = LatitudeBiomes.swapProvinceAuthorityForTest(
+                    new ProvinceAuthority(wetSeed, radius));
+            try {
+                assertBothWarmWetLowlandCompatible(
+                        pickRegistry(registry, desert, blockX, blockZ, radius, flatTerrain),
+                        pickCollection(registry, desert, blockX, blockZ, radius, flatTerrain),
+                        "V5 WARM_WET subtropical lowland rejects ordinary (non-hotspot) desert");
+            } finally {
+                LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+            }
+
+            long[] hotspot = findAridHotspotSubtropicalSample(radius, flatTerrain);
+            int hotspotX = (int) hotspot[1];
+            int hotspotZ = (int) hotspot[2];
+            original = LatitudeBiomes.swapProvinceAuthorityForTest(
+                    new ProvinceAuthority(hotspot[3], radius));
+            try {
+                assertBothBiomeId(
+                        "minecraft:desert",
+                        pickRegistry(registry, desert, hotspotX, hotspotZ, radius, flatTerrain),
+                        pickCollection(registry, desert, hotspotX, hotspotZ, radius, flatTerrain),
+                        "V5 WARM_WET subtropical lowland preserves desert at an active arid hotspot");
+            } finally {
+                LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+            }
+
+            LatitudeBiomes.activateWorldgenContext(
+                    radius, worldSeed, v5FinalAdmissionPolicy(), null, null, ruggedTerrain, null, 63);
+            assertTrue(
+                    TerrainBiomeCohesionPolicy.shouldUseWarmUplandFamily(true, 63, 6, 63),
+                    "the focused rugged sample is a physical warm upland");
+
+            original = LatitudeBiomes.swapProvinceAuthorityForTest(
+                    new ProvinceAuthority(drySeed, radius));
+            try {
+                assertBothBiomeId(
+                        "minecraft:eroded_badlands",
+                        pickRegistry(registry, desert, blockX, blockZ, radius, ruggedTerrain),
+                        pickCollection(registry, desert, blockX, blockZ, radius, ruggedTerrain),
+                        "V5 WARM_DRY physical upland rewrites ordinary desert to the arid-upland representative");
+                assertBothBiomeId(
+                        "minecraft:eroded_badlands",
+                        pickRegistry(registry, erodedBadlands, blockX, blockZ, radius, ruggedTerrain),
+                        pickCollection(registry, erodedBadlands, blockX, blockZ, radius, ruggedTerrain),
+                        "V5 retains an existing descriptor-owned arid-upland identity");
+            } finally {
+                LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+            }
+
+            assertProvinceCompatibleWarmUpland(
+                    registry, desert, radius, ruggedTerrain, blockX, blockZ,
+                    ProvinceAuthority.Province.WARM_MEDIUM,
+                    "V5 WARM_MEDIUM physical upland replaces desert with a dedicated warm-upland savanna");
+
+            original = LatitudeBiomes.swapProvinceAuthorityForTest(
+                    new ProvinceAuthority(wetSeed, radius));
+            try {
+                assertBothBiomeId(
+                        "minecraft:plains",
+                        pickRegistry(registry, desert, blockX, blockZ, radius, ruggedTerrain),
+                        pickCollection(registry, desert, blockX, blockZ, radius, ruggedTerrain),
+                        "V5 WARM_WET physical upland grass-caps ordinary desert without a forest canopy");
+            } finally {
+                LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+            }
+
+            LatitudeBiomes.activateWorldgenContext(
+                    radius, worldSeed, WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE,
+                    null, null, ruggedTerrain, null, 63);
+            original = LatitudeBiomes.swapProvinceAuthorityForTest(
+                    new ProvinceAuthority(drySeed, radius));
+            try {
+                assertBothFamily(
+                        BiomeDescriptorLedger.Family.ARID,
+                        pickRegistry(registry, desert, blockX, blockZ, radius, ruggedTerrain),
+                        pickCollection(registry, desert, blockX, blockZ, radius, ruggedTerrain),
+                        "V4 keeps its ordinary subtropical arid-family behavior unchanged");
+            } finally {
+                LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+            }
+        } finally {
+            LatitudeBiomes.clearWorldgenContext();
+        }
+    }
+
+    private static void assertProvinceCompatibleWarmUpland(
+            TestBiomeRegistry registry,
+            Holder<Biome> desert,
+            int radius,
+            Climate.Sampler sampler,
+            int blockX,
+            int blockZ,
+            ProvinceAuthority.Province province,
+            String message) {
+        long provinceSeed = findProvinceSeed(radius, blockX, blockZ, province);
+        ProvinceAuthority original = LatitudeBiomes.swapProvinceAuthorityForTest(
+                new ProvinceAuthority(provinceSeed, radius));
+        try {
+            Holder<Biome> registryResult = pickRegistry(
+                    registry, desert, blockX, blockZ, radius, sampler);
+            Holder<Biome> collectionResult = pickCollection(
+                    registry, desert, blockX, blockZ, radius, sampler);
+            BiomeDescriptorLedger.Descriptor registryDescriptor = BiomeDescriptorLedger.descriptor(
+                    LatitudeBiomes.biomeIdPublic(registryResult));
+            BiomeDescriptorLedger.Descriptor collectionDescriptor = BiomeDescriptorLedger.descriptor(
+                    LatitudeBiomes.biomeIdPublic(collectionResult));
+            boolean registryCompatible = isWarmUplandFamilyCompatible(
+                    registryResult, registryDescriptor, province, blockX, blockZ, radius);
+            boolean collectionCompatible = isWarmUplandFamilyCompatible(
+                    collectionResult, collectionDescriptor, province, blockX, blockZ, radius);
+            assertTrue(registryCompatible && collectionCompatible,
+                    message + ": registry=" + LatitudeBiomes.biomeIdPublic(registryResult)
+                            + " collection=" + LatitudeBiomes.biomeIdPublic(collectionResult));
+        } finally {
+            LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+        }
+    }
+
+    private static boolean isWarmUplandFamilyCompatible(
+            Holder<Biome> biome,
+            BiomeDescriptorLedger.Descriptor descriptor,
+            ProvinceAuthority.Province province,
+            int blockX,
+            int blockZ,
+            int radius) {
+        if (descriptor == null || descriptor.family() == BiomeDescriptorLedger.Family.ARID) {
+            return false;
+        }
+        if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
+            // Outside a savanna country and outside the dry fringe the warm-medium staple is
+            // forest, so the savanna-plateau representative is only the RIGHT answer where savanna
+            // owns the column (maintainer approval, 2026-08-18). windswept_savanna stays acceptable
+            // either way: it is exempt from the country rule in both directions, being the mountain
+            // identity rather than the flat staple the country governs.
+            String id = LatitudeBiomes.biomeIdPublic(biome);
+            if ("minecraft:windswept_savanna".equals(id)) {
+                return true;
+            }
+            if (warmMediumExpectedFamily(blockX, blockZ, radius)
+                    == BiomeDescriptorLedger.Family.FOREST) {
+                return descriptor.family() == BiomeDescriptorLedger.Family.FOREST;
+            }
+            return "minecraft:savanna_plateau".equals(id);
+        }
+        return descriptor.family() == BiomeDescriptorLedger.Family.FOREST
+                || descriptor.family() == BiomeDescriptorLedger.Family.JUNGLE;
+    }
+
+    /**
+     * The explain diagnostic must disclose the arid-hotspot override next to the coarse province
+     * (diagnostic follow-up to maintainer ruling, 2026-08-16). Before this, explain printed only
+     * {@code province=WARM_WET} at a hotspot-preserved desert, making a sanctioned desert oasis
+     * indistinguishable from a broken humidity label — the exact misreading that started the V5
+     * anomaly triage. Both surfaces must tell the story: the drivers block carries the raw flag,
+     * and the plain-language summary explains it when the override is active.
+     */
+    static void explainDisclosesTheAridHotspotOverride() throws Exception {
+        int radius = 10_000;
+        Climate.Sampler flatTerrain = fixedTerrainSampler(0.30, 0.20, 0.0);
+        long[] hotspot = findAridHotspotSubtropicalSample(radius, flatTerrain);
+        int hotspotX = (int) hotspot[1];
+        int hotspotZ = (int) hotspot[2];
+        try {
+            ProvinceAuthority original = LatitudeBiomes.swapProvinceAuthorityForTest(
+                    new ProvinceAuthority(hotspot[3], radius));
+            try {
+                LatitudeBiomes.BiomeDiagnostics active = LatitudeBiomes.explainBiomeAt(
+                        "minecraft:desert", hotspotX, hotspotZ, 64, radius, flatTerrain,
+                        null, null, null, false, null, null, false, Integer.MIN_VALUE);
+                assertTrue(active.driversBlock().contains("province=WARM_WET"),
+                        "the coarse province stays visible");
+                assertTrue(active.driversBlock().contains("aridHotspot=true"),
+                        "the drivers block discloses the active arid-hotspot override");
+                assertTrue(active.summaryLine().contains("arid hotspot"),
+                        "the plain-language summary explains the override when it is active");
+
+                // latFrac > 0.58 is outside the hotspot belt by construction: the flag must read
+                // false there, and the summary must not mention an override that is not active.
+                int quietZ = 6_200;
+                LatitudeBiomes.BiomeDiagnostics quiet = LatitudeBiomes.explainBiomeAt(
+                        "minecraft:plains", hotspotX, quietZ, 64, radius, flatTerrain,
+                        null, null, null, false, null, null, false, Integer.MIN_VALUE);
+                assertTrue(quiet.driversBlock().contains("aridHotspot=false"),
+                        "the drivers block reports an inactive hotspot honestly");
+                assertFalse(quiet.summaryLine().contains("arid hotspot"),
+                        "the summary stays quiet when no override is active");
+            } finally {
+                LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+            }
+        } finally {
+            LatitudeBiomes.clearWorldgenContext();
+        }
+    }
+
+    /**
+     * A subtropical lowland column where the arid-hotspot noise is active, so the desert-oasis
+     * exception applies. Hotspot blobs are world-size-scale noise cells (lowest 18% of a
+     * ~radius*0.6 field, latFrac 0.18..0.58), so one fixed world seed may genuinely contain no
+     * hit inside the subtropical band; the search therefore walks a deterministic candidate
+     * world-seed list and returns with the winning V5 context ACTIVE. It also requires a
+     * WARM_WET-classifying authority seed so the exception is exercised against the exact humid
+     * label it is meant to outrank.
+     *
+     * <p>The scan starts poleward of DESERT_LAT_RAMP_HIGH_DEG (27deg -> z>=3_100 at this radius):
+     * below that line the 1.4 equator-thinning law demotes desert by latitude alone, which is a
+     * separate, older ruling this proof must not disturb. Above it, only the WARM_WET authority
+     * can reject desert — exactly the law under test.
+     *
+     * @return {worldSeed, blockX, blockZ, wetAuthoritySeed}
+     */
+    private static long[] findAridHotspotSubtropicalSample(int radius, Climate.Sampler sampler) {
+        for (long worldSeed = 41L; worldSeed <= 104L; worldSeed++) {
+            LatitudeBiomes.activateWorldgenContext(
+                    radius, worldSeed, v5FinalAdmissionPolicy(), null, null, sampler, null, 63);
+            for (int blockZ = 3_100; blockZ <= 3_800; blockZ += 100) {
+                for (int blockX = -9_600; blockX <= 9_600; blockX += 400) {
+                    if (LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radius) != 1
+                            || !LatitudeBiomes.debugAridHotspot(blockX, blockZ)) {
+                        continue;
+                    }
+                    long wetSeed = findProvinceSeedOrZero(
+                            radius, blockX, blockZ, ProvinceAuthority.Province.WARM_WET);
+                    if (wetSeed != 0L) {
+                        return new long[] {worldSeed, blockX, blockZ, wetSeed};
+                    }
+                }
+            }
+            LatitudeBiomes.clearWorldgenContext();
+        }
+        throw new AssertionError(
+                "no active arid hotspot with a WARM_WET-classifying seed across the candidate "
+                        + "world seeds");
+    }
+
+    /**
+     * The equatorward edge of the SETTLED subtropical arid belt, in degrees.
+     *
+     * <p>Mirrors {@code BADLANDS_LAT_RAMP_HIGH_DEG} and {@code DESERT_LAT_RAMP_HIGH_DEG} in
+     * LatitudeBiomes, which share the {@code latitude.aridRampHigh} knob and both default to 27.0.
+     * Below this edge, down to 23.5, is the arid PHASE-IN: {@code demoteEquatorialBadlands} and
+     * {@code demoteEquatorialDesert} deliberately hand a coherent, latitude-weighted fraction of
+     * arid columns to savanna there, so that the desert belt fades in rather than starting at a
+     * hard line. Above it both gates return early and every arid pick is kept unconditionally.
+     *
+     * <p>Any proof asserting "a dry province keeps its arid identity" must sample at or above this
+     * edge. Below it, savanna IS the lawful answer for a coherent share of columns, and a proof that
+     * samples there is asserting a law the generator does not have.
+     */
+    private static final double ARID_SETTLED_BELT_MIN_DEG = 27.0;
+
+    private static int[] findLegacySubtropicalWetDesertSample(
+            TestBiomeRegistry registry,
+            Holder<Biome> desert,
+            int radius,
+            Climate.Sampler sampler) {
+        int[] xs = {-4_096, -3_072, -2_048, -1_024, 0, 1_024, 2_048, 3_072, 4_096};
+        // 3_000 == 27.0deg at radius 10_000, the settled-belt edge. z=2_800 (25.2deg) was removed
+        // from this list on 2026-08-19: it sits inside the arid phase-in ramp, where the latitude
+        // gates lawfully demote a share of arid picks to savanna, so the WARM_DRY assertion below
+        // held there only by luck. The guard inside the loop is what actually enforces the rule --
+        // the list is just the search order.
+        int[] zs = {3_000, 3_200, 3_400};
+        for (int blockZ : zs) {
+            if (Math.abs(blockZ) * 90.0 / radius < ARID_SETTLED_BELT_MIN_DEG) {
+                continue; // arid phase-in: savanna is lawful here, so it cannot anchor an arid proof
+            }
+            for (int blockX : xs) {
+                long wetSeed = findProvinceSeedOrZero(
+                        radius, blockX, blockZ, ProvinceAuthority.Province.WARM_WET);
+                if (wetSeed == 0L) {
+                    continue;
+                }
+                ProvinceAuthority original = LatitudeBiomes.swapProvinceAuthorityForTest(
+                        new ProvinceAuthority(wetSeed, radius));
+                try {
+                    Holder<Biome> registryResult = pickRegistry(
+                            registry, desert, blockX, blockZ, radius, sampler);
+                    Holder<Biome> collectionResult = pickCollection(
+                            registry, desert, blockX, blockZ, radius, sampler);
+                    if (LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radius)
+                                    == 1
+                            && "minecraft:desert".equals(
+                                    LatitudeBiomes.biomeIdPublic(registryResult))
+                            && "minecraft:desert".equals(
+                                    LatitudeBiomes.biomeIdPublic(collectionResult))) {
+                        return new int[] {blockX, blockZ};
+                    }
+                } finally {
+                    LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+                }
+            }
+        }
+        throw new AssertionError("no legacy WARM_WET subtropical desert sample for the focused fixture");
+    }
+
+    private static long findProvinceSeed(
+            int radius,
+            int blockX,
+            int blockZ,
+            ProvinceAuthority.Province expected) {
+        long found = findProvinceSeedOrZero(radius, blockX, blockZ, expected);
+        if (found != 0L) {
+            return found;
+        }
+        throw new AssertionError("no province seed for focused warm-upland fixture: " + expected);
+    }
+
+    private static long findProvinceSeedOrZero(
+            int radius,
+            int blockX,
+            int blockZ,
+            ProvinceAuthority.Province expected) {
+        for (long candidate = 1; candidate <= 20_000; candidate++) {
+            if (new ProvinceAuthority(candidate, radius).classify(blockX, blockZ) == expected) {
+                return candidate;
+            }
+        }
+        return 0L;
+    }
+
+    private static Holder<Biome> pickRegistry(
+            TestBiomeRegistry registry,
+            Holder<Biome> base,
+            int blockX,
+            int blockZ,
+            int radius,
+            Climate.Sampler sampler) {
+        return LatitudeBiomes.pick(
+                registry.registry(), base, blockX, blockZ, 63, radius, sampler, "ATLAS_SAMPLER");
+    }
+
+    private static Holder<Biome> pickCollection(
+            TestBiomeRegistry registry,
+            Holder<Biome> base,
+            int blockX,
+            int blockZ,
+            int radius,
+            Climate.Sampler sampler) {
+        return LatitudeBiomes.pick(
+                registry.holders(), base, blockX, blockZ, 63, radius, sampler, "ATLAS_SAMPLER");
+    }
+
+    private static void assertBothBiomeId(
+            String expected,
+            Holder<Biome> registryResult,
+            Holder<Biome> collectionResult,
+            String message) {
+        String registryId = LatitudeBiomes.biomeIdPublic(registryResult);
+        String collectionId = LatitudeBiomes.biomeIdPublic(collectionResult);
+        assertTrue(expected.equals(registryId) && expected.equals(collectionId),
+                message + ": registry=" + registryId + " collection=" + collectionId);
+    }
+
+    /**
+     * What a WARM_MEDIUM column is entitled to finish as, now that savanna is a REGION rather than
+     * the whole belt (maintainer approval, 2026-08-18).
+     *
+     * <p>Savanna has exactly two homes inside this province -- its countries, and the dry fringe
+     * hugging an arid province -- and outside both the warm-medium staple is minecraft:forest. Three
+     * assertions in this suite predate that ruling and asserted SAVANNA unconditionally; they were
+     * correct when WARM_MEDIUM had one answer. They ask the geography now rather than being widened
+     * to "savanna or forest", which would have passed on a picker that had stopped consulting the
+     * country at all -- the exact "looks wired, does nothing" failure this slice was most at risk of.
+     *
+     * <p>Both predicates read the LIVE province authority, so they answer for the same swapped
+     * authority the picker under test is running against.
+     */
+    private static BiomeDescriptorLedger.Family warmMediumExpectedFamily(
+            int blockX, int blockZ, int radius) {
+        boolean savannaOwnsColumn =
+                LatitudeBiomes.savannaCountryHitForPolicyTest(blockX, blockZ)
+                        || LatitudeBiomes.savannaDryFringeHitForPolicyTest(blockX, blockZ);
+        return savannaOwnsColumn
+                ? BiomeDescriptorLedger.Family.SAVANNA
+                : BiomeDescriptorLedger.Family.FOREST;
+    }
+
+    private static void assertBothFamily(
+            BiomeDescriptorLedger.Family expected,
+            Holder<Biome> registryResult,
+            Holder<Biome> collectionResult,
+            String message) {
+        BiomeDescriptorLedger.Descriptor registryDescriptor = BiomeDescriptorLedger.descriptor(
+                LatitudeBiomes.biomeIdPublic(registryResult));
+        BiomeDescriptorLedger.Descriptor collectionDescriptor = BiomeDescriptorLedger.descriptor(
+                LatitudeBiomes.biomeIdPublic(collectionResult));
+        assertTrue(registryDescriptor != null && collectionDescriptor != null
+                        && registryDescriptor.family() == expected
+                        && collectionDescriptor.family() == expected,
+                message + ": registry=" + LatitudeBiomes.biomeIdPublic(registryResult)
+                        + " collection=" + LatitudeBiomes.biomeIdPublic(collectionResult));
+    }
+
+    private static void assertBothWarmWetLowlandCompatible(
+            Holder<Biome> registryResult,
+            Holder<Biome> collectionResult,
+            String message) {
+        BiomeDescriptorLedger.Descriptor registryDescriptor = BiomeDescriptorLedger.descriptor(
+                LatitudeBiomes.biomeIdPublic(registryResult));
+        BiomeDescriptorLedger.Descriptor collectionDescriptor = BiomeDescriptorLedger.descriptor(
+                LatitudeBiomes.biomeIdPublic(collectionResult));
+        assertTrue(isWarmWetLowlandCompatible(registryDescriptor)
+                        && isWarmWetLowlandCompatible(collectionDescriptor),
+                message + ": registry=" + LatitudeBiomes.biomeIdPublic(registryResult)
+                        + " collection=" + LatitudeBiomes.biomeIdPublic(collectionResult));
+    }
+
+    private static boolean isWarmWetLowlandCompatible(BiomeDescriptorLedger.Descriptor descriptor) {
+        return descriptor != null
+                && descriptor.terrain() != BiomeDescriptorLedger.Terrain.ARID
+                && (descriptor.family() == BiomeDescriptorLedger.Family.FOREST
+                    || descriptor.family() == BiomeDescriptorLedger.Family.JUNGLE
+                    || descriptor.family() == BiomeDescriptorLedger.Family.WETLAND);
     }
 
     private static void descriptorAdmissionIsClosedAndCanonical() {
@@ -75,6 +643,22 @@ final class BiomeProviderSelectionPolicyTest {
         }
         assertEquals(normal.encode(), BiomeSelectionProfile.decode(normal.encode()).encode(),
                 "profile serialization is canonical");
+        assertTrue(normal.contains(BiomeRoute.TEMPERATE_LOWLAND, "biomesoplenty:redwood_forest"),
+                "new profiles route redwood forest through temperate lowlands");
+        assertFalse(normal.contains(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND, "biomesoplenty:redwood_forest"),
+                "new profiles do not retain the corrected subtropical redwood route");
+        BiomeSelectionProfile legacyRedwood = BiomeSelectionProfile.decode(
+                "provider_ticket_v1\nSUBTROPICAL_HUMID_LOWLAND|biomesoplenty:redwood_forest");
+        assertTrue(legacyRedwood.contains(
+                        BiomeRoute.SUBTROPICAL_HUMID_LOWLAND,
+                        "biomesoplenty:redwood_forest"),
+                "an existing world's birth-locked redwood route remains readable without migration");
+        assertThrows(() -> BiomeSelectionProfile.decode(
+                        "provider_ticket_v1\nSUBTROPICAL_HUMID_LOWLAND|biomesoplenty:redwood_forest|extra"),
+                "a malformed legacy-looking redwood row is rejected");
+        assertThrows(() -> BiomeSelectionProfile.decode(
+                        "provider_ticket_v1\nSUBTROPICAL_HUMID_LOWLAND|biomesoplenty:seasonal_forest"),
+                "the redwood compatibility exception does not migrate other stale descriptor routes");
         assertThrows(() -> BiomeSelectionProfile.decode("provider_ticket_v1\nTEMPERATE_LOWLAND|terralith:amethyst_canyon"),
                 "a descriptorless saved row is rejected");
         assertThrows(() -> BiomeSelectionProfile.decode("provider_ticket_v1\nTEMPERATE_LOWLAND|minecraft:forest\nTEMPERATE_LOWLAND|minecraft:forest"),
@@ -144,9 +728,10 @@ final class BiomeProviderSelectionPolicyTest {
         assertClimateLowland(BiomeRoute.TROPICAL_HUMID_LOWLAND, BiomeDescriptorLedger.Family.JUNGLE,
                 "biomesoplenty:fungal_jungle");
         assertClimateLowland(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND, BiomeDescriptorLedger.Family.FOREST,
-                "biomesoplenty:redwood_forest", "biomesoplenty:mystic_grove");
+                "biomesoplenty:mystic_grove");
         assertClimateLowland(BiomeRoute.TEMPERATE_LOWLAND, BiomeDescriptorLedger.Family.FOREST,
-                "biomesoplenty:lavender_field", "biomesoplenty:overgrown_greens",
+                "biomesoplenty:redwood_forest", "biomesoplenty:lavender_field",
+                "biomesoplenty:overgrown_greens",
                 "terralith:moonlight_grove", "terralith:moonlight_valley");
         assertClimateLowland(BiomeRoute.WARM_TRANSITION, BiomeDescriptorLedger.Family.FOREST,
                 "biomesoplenty:mediterranean_forest", "terralith:brushland");
@@ -445,6 +1030,721 @@ final class BiomeProviderSelectionPolicyTest {
                 "land-plan diagnostics distinguish absent eligible terrain from topology/capacity");
     }
 
+    /**
+     * Eroded Badlands is guaranteed on the lowland arid route, not the upland one (maintainer
+     * ruling, 2026-08-12).
+     *
+     * <p>ARID_UPLAND demands mountain terrain AND a WARM_DRY province at the anchor centre and at
+     * all four shoulders, and those are independent sparse fields. On the live Regular seed
+     * 8507730871486520283 that intersection held at a centre 66 times and never once survived the
+     * shoulders, so the coverage guarantee simply could not be issued. The shape below is that
+     * live failure in miniature: an upland pocket narrower than the reservation, so every eligible
+     * centre loses a shoulder, while lowland arid terrain stays coherent. Revert the route to
+     * ARID_UPLAND and this fails — the planner finds a centre and no anchor.</p>
+     */
+    private static void erodedBadlandsIsGuaranteedOnTheLowlandAridRoute() {
+        assertEquals(BiomeRoute.ARID_LOWLAND,
+                VanillaBiomeCoveragePlan.requiredRoutes().get("minecraft:eroded_badlands"),
+                "Eroded Badlands is guaranteed on the same arid route its representation profile "
+                        + "and descriptor ledger already use");
+
+        BiomeSelectionProfile vanilla = BiomeSelectionProfile.capture(registryFor(Set.of()));
+        int radius = 10_000;
+        long seed = 8_507_730_871_486_520_283L;
+        // Only ARID_UPLAND is pinched. Every other route keeps its ordinary synthetic eligibility,
+        // so this cannot pass by making the rest of the map easier.
+        VanillaBiomeCoveragePlan plan = VanillaBiomeCoveragePlan.build(
+                radius, seed, vanilla,
+                (id, route, x, z) -> {
+                    if (!insideSyntheticRoute(route, x, z, radius)) return false;
+                    if (route != BiomeRoute.ARID_UPLAND) return true;
+                    // 48-block stripe against a 64-block reservation: centres land on it (they are
+                    // 16-aligned), but x+32 or x-32 always falls off it.
+                    return Math.floorMod(x, 512) < 48;
+                });
+        assertTrue(plan.complete(),
+                "an unsatisfiable upland arid pocket cannot cost the world its Eroded Badlands: "
+                        + plan.missingBiomeIds());
+
+        VanillaBiomeCoveragePlan.Anchor eroded = plan.anchors().stream()
+                .filter(anchor -> anchor.biomeId().equals("minecraft:eroded_badlands"))
+                .findFirst().orElse(null);
+        assertTrue(eroded != null && eroded.route() == BiomeRoute.ARID_LOWLAND,
+                "the reservation Eroded Badlands receives is a lowland arid province");
+
+        // The pinch is real: the same shape still starves a route that genuinely requires upland.
+        VanillaBiomeCoveragePlan uplandOnly = VanillaBiomeCoveragePlan.build(
+                radius, seed, vanilla,
+                Map.of("minecraft:eroded_badlands", BiomeRoute.ARID_UPLAND),
+                (id, route, x, z) -> insideSyntheticRoute(route, x, z, radius)
+                        && Math.floorMod(x, 512) < 48);
+        VanillaBiomeCoveragePlan.SearchStats pinched =
+                uplandOnly.missingDiagnostics().get("minecraft:eroded_badlands");
+        assertTrue(pinched != null && pinched.centerEligible() > 0
+                        && pinched.topologyEligible() == 0,
+                "the modelled pocket reproduces the live centre-eligible/shoulder-failing shape");
+    }
+
+    private static void customJungleAdmissionIsProvinceBounded() {
+        BiomeDescriptorLedger.Descriptor tropicalJungle =
+                BiomeDescriptorLedger.descriptor("terralith:tropical_jungle");
+        assertTrue(tropicalJungle != null,
+                "the reviewed Terralith tropical jungle has a descriptor");
+        assertEquals(BiomeDescriptorLedger.Family.JUNGLE, tropicalJungle.family(),
+                "the reviewed Terralith tropical jungle retains its jungle family");
+        assertTrue(
+                VanillaCoverageFinalAdmissionPolicy.mayPreserveCustomInWarmProvince(
+                        tropicalJungle, ProvinceAuthority.Province.WARM_WET),
+                "custom jungle is preserved only in WARM_WET");
+        assertFalse(
+                VanillaCoverageFinalAdmissionPolicy.mayPreserveCustomInWarmProvince(
+                        tropicalJungle, ProvinceAuthority.Province.WARM_MEDIUM),
+                "custom jungle is not preserved in WARM_MEDIUM");
+        assertFalse(
+                VanillaCoverageFinalAdmissionPolicy.mayPreserveCustomInWarmProvince(
+                        tropicalJungle, ProvinceAuthority.Province.WARM_DRY),
+                "custom jungle is not preserved in WARM_DRY");
+    }
+
+    private static void reservedLandLocateFallsBackToExactAnchor() throws Exception {
+        int radius = 10_000;
+        BiomeSelectionProfile vanilla = BiomeSelectionProfile.capture(registryFor(Set.of()));
+        VanillaBiomeCoveragePlan plan = VanillaBiomeCoveragePlan.build(
+                radius,
+                41L,
+                vanilla,
+                Map.of("minecraft:grove", BiomeRoute.TEMPERATE_UPLAND),
+                (id, route, x, z) -> insideSyntheticRoute(route, x, z, radius));
+        assertTrue(plan.complete(), "the focused Grove reservation has one complete exact-land anchor");
+        VanillaBiomeCoveragePlan.Anchor grove = plan.anchors().stream().findFirst().orElseThrow();
+        assertEquals("minecraft:grove", grove.biomeId(), "the focused reservation is Grove");
+
+        Method nearest = VanillaBiomeCoveragePlan.class.getDeclaredMethod(
+                "nearestAnchorFor", java.util.Collection.class, int.class, int.class);
+        assertFalse(Modifier.isPublic(nearest.getModifiers())
+                        || Modifier.isProtected(nearest.getModifiers())
+                        || Modifier.isPrivate(nearest.getModifiers()),
+                "the exact-land locate capability remains package-private");
+        nearest.setAccessible(true);
+        VanillaBiomeCoveragePlan.Anchor located = (VanillaBiomeCoveragePlan.Anchor) nearest.invoke(
+                plan, List.of("minecraft:grove"), 0, 0);
+        assertEquals(grove, located,
+                "the exact Grove locate fallback resolves the reserved anchor, not an approximate route");
+        assertEquals(grove.blockX(), located.blockX(), "the exact Grove fallback preserves its X coordinate");
+        assertEquals(grove.blockZ(), located.blockZ(), "the exact Grove fallback preserves its Z coordinate");
+        assertTrue(nearest.invoke(plan, List.of("minecraft:the_void"), 0, 0) == null,
+                "an unreserved identity has no exact-land fallback anchor");
+
+        List<BlockPos> samples = LatitudeBiomeSource.plannedLandCoverageSamplePositions(
+                grove, new BlockPos(grove.blockX() + grove.radiusBlocks(), 80, grove.blockZ()));
+        int half = grove.radiusBlocks() / 2;
+        assertEquals(5, samples.size(),
+                "planned land locate checks the centre and all four planner-certified shoulders");
+        assertEquals(new BlockPos(grove.blockX() + half, 80, grove.blockZ()), samples.getFirst(),
+                "planned land locate returns the nearest final-output sample first");
+        assertTrue(samples.contains(new BlockPos(grove.blockX(), 80, grove.blockZ()))
+                        && samples.contains(new BlockPos(grove.blockX() - half, 80, grove.blockZ()))
+                        && samples.contains(new BlockPos(grove.blockX(), 80, grove.blockZ() + half))
+                        && samples.contains(new BlockPos(grove.blockX(), 80, grove.blockZ() - half)),
+                "planned land locate retains every planner-certified center-or-shoulder sample");
+
+        String biomeSource = Files.readString(
+                Path.of("src/main/java/com/example/globe/world/LatitudeBiomeSource.java"))
+                .replaceAll("\\s+", " ");
+        int ordinaryCoarseFallback = biomeSource.indexOf("Pair<BlockPos, Holder<Biome>> fallback =");
+        int ordinaryCombinedFallback = biomeSource.indexOf(
+                "findPlannedSurfaceCoverage(", ordinaryCoarseFallback);
+        assertTrue(ordinaryCoarseFallback >= 0 && ordinaryCombinedFallback > ordinaryCoarseFallback,
+                "ordinary surface locate calls the combined planned fallback only after its coarse fallback");
+        assertTrue(
+                biomeSource.contains("LatitudeBiomes.nearestPlannedVanillaCoverageAnchor(")
+                        && biomeSource.contains("LatitudeBiomes.nearestPlannedSurfaceWaterCoverageAnchor("),
+                "combined planned surface fallback checks exact land identity without removing water fallback");
+        assertTrue(
+                biomeSource.contains("plannedLandCoverageSamplePositions(anchor, origin)")
+                        && biomeSource.contains("had no final surviving center-or-shoulder sample"),
+                "a saved land anchor is verified at every certified footprint sample and reports a true exhaustion");
+
+        String locateService = Files.readString(
+                Path.of("src/main/java/com/example/globe/world/LatitudeBiomeLocateService.java"))
+                .replaceAll("\\s+", " ");
+        int tickCoarseFallback = locateService.indexOf("if (fallbackOffsets.hasNext())");
+        int tickCombinedFallback = locateService.indexOf(
+                "findPlannedSurfaceCoverage(", tickCoarseFallback);
+        assertTrue(tickCoarseFallback >= 0 && tickCombinedFallback > tickCoarseFallback,
+                "tick-sliced surface locate calls the combined planned fallback only after its coarse fallback");
+    }
+
+    /**
+     * Exercises the real V5 plan through both public biome-picker owners. Coverage is intentionally
+     * built against coordinate-aware terrain so the test proves the saved identity survives the
+     * same final climate and physical authorities used by live worldgen.
+     */
+    private static void finalVanillaCoverageHonorsHumidityAndLateAuthorities() {
+        CoverageFixture regular = activateCoverageFixture(10_000, Set.of());
+        try {
+            assertEquals(VanillaBiomeCoveragePlan.requiredRoutes(), regular.representation().landTargets(),
+                    "Regular V5 coverage retains the exact vanilla land representation");
+            assertCoverageFinalOutputs(regular);
+            assertJungleProvinceRejectionAndRestoration(regular);
+            assertIncompatibleCoverageEvidenceIsRejected(regular);
+            assertExistingWetlandAndPaleGardenProtection(regular);
+        } finally {
+            LatitudeBiomes.clearWorldgenContext();
+        }
+
+        CoverageFixture compact = activateCoverageFixture(
+                7_500, Set.of("biomesoplenty", "terralith"));
+        try {
+            assertTrue(compact.representation().worldSize().compact(),
+                    "Small V5 coverage uses the compact representation contract");
+            for (Map.Entry<String, VanillaBiomeRepresentationProfile.Omission> omission
+                    : compact.representation().omittedExactIds().entrySet()) {
+                assertTrue(VanillaBiomeRepresentationProfile.areApprovedEquivalents(
+                                omission.getKey(), omission.getValue()),
+                        "every compact V5 representative is descriptor-approved: " + omission.getKey());
+            }
+            assertCoverageFinalOutputs(compact);
+            assertJungleProvinceRejectionAndRestoration(compact);
+        } finally {
+            LatitudeBiomes.clearWorldgenContext();
+        }
+    }
+
+    private static CoverageFixture activateCoverageFixture(int radius, Set<String> providers) {
+        List<String> providerIds = registryFor(providers);
+        BiomeSelectionProfile providerProfile = BiomeSelectionProfile.capture(providerIds);
+        TestBiomeRegistry testRegistry = buildTestBiomeRegistry(providerIds);
+        Climate.Sampler sampler = stripedTerrainSampler();
+        for (long seed : AUDIT_SEEDS) {
+            VanillaBiomeRepresentationProfile representation =
+                    VanillaBiomeRepresentationProfile.capture(radius, seed, providerProfile);
+            LatitudeBiomes.activateWorldgenContext(
+                    radius,
+                    seed,
+                    v5FinalAdmissionPolicy(),
+                    providerProfile,
+                    representation,
+                    null,
+                    sampler,
+                    null,
+                    63);
+            VanillaBiomeCoveragePlan plan = LatitudeBiomes.activeVanillaCoveragePlanForTest();
+            if (plan != null && plan.complete() && everyAuditSampleIsUnshadowed(plan)) {
+                return new CoverageFixture(radius, seed, representation, plan, sampler,
+                        testRegistry.registry(), testRegistry.holders(),
+                        holder(testRegistry.registry(), "minecraft:plains"));
+            }
+            LatitudeBiomes.clearWorldgenContext();
+        }
+        throw new AssertionError("no existing audit seed produced a complete, unshadowed V5 land plan at radius="
+                + radius);
+    }
+
+    private static WorldgenPolicyVersion v5FinalAdmissionPolicy() {
+        try {
+            return WorldgenPolicyVersion.valueOf("PROVIDER_TICKET_V5_FINAL_ADMISSION");
+        } catch (IllegalArgumentException missingV5) {
+            throw new AssertionError(
+                    "missing V5 final-admission policy PROVIDER_TICKET_V5_FINAL_ADMISSION",
+                    missingV5);
+        }
+    }
+
+    private static boolean everyAuditSampleIsUnshadowed(VanillaBiomeCoveragePlan plan) {
+        for (VanillaBiomeCoveragePlan.Anchor anchor : plan.anchors()) {
+            for (int[] sample : coverageSamples(anchor)) {
+                VanillaBiomeCoveragePlan.Anchor firstEligible = plan.matches(sample[0], sample[1]).stream()
+                        .filter(candidate -> candidate.route() == anchor.route())
+                        .findFirst()
+                        .orElse(null);
+                if (!anchor.equals(firstEligible)) return false;
+            }
+        }
+        return true;
+    }
+
+    private static void assertCoverageFinalOutputs(CoverageFixture fixture) {
+        for (VanillaBiomeCoveragePlan.Anchor anchor : fixture.plan().anchors()) {
+            Holder<Biome> expected = holder(fixture.registry(), anchor.biomeId());
+            for (int[] sample : coverageSamples(anchor)) {
+                assertSameBiome(expected, pickRegistry(fixture, sample[0], sample[1], fixture.sampler()),
+                        "registry picker retains V5 land target " + anchor.biomeId()
+                                + " at x=" + sample[0] + " z=" + sample[1]
+                                + " seed=" + fixture.seed());
+                assertSameBiome(expected, pickCollection(fixture, sample[0], sample[1], fixture.sampler()),
+                        "collection picker retains V5 land target " + anchor.biomeId()
+                                + " at x=" + sample[0] + " z=" + sample[1]
+                                + " seed=" + fixture.seed());
+                if (anchor.route() == BiomeRoute.TROPICAL_HUMID_LOWLAND) {
+                    assertEquals(0, LatitudeBiomes.authoritativeLandBandIndex(
+                                    sample[0], sample[1], fixture.radius()),
+                            "jungle-family coverage is tropical");
+                    assertFalse(isSyntheticMountain(fixture.sampler(), sample[0], sample[1]),
+                            "jungle-family coverage is not mountain terrain");
+                    assertEquals(ProvinceAuthority.Province.WARM_WET,
+                            LatitudeBiomes.classifyProvince(sample[0], sample[1]),
+                            "jungle-family coverage is admitted only by WARM_WET");
+                }
+            }
+        }
+    }
+
+    private static void assertHumidCoverageFinalOutputs(CoverageFixture fixture) {
+        for (VanillaBiomeCoveragePlan.Anchor anchor : fixture.plan().anchors()) {
+            if (anchor.route() != BiomeRoute.TROPICAL_HUMID_LOWLAND) continue;
+            Holder<Biome> expected = holder(fixture.registry(), anchor.biomeId());
+            for (int[] sample : coverageSamples(anchor)) {
+                assertSameBiome(expected, pickRegistry(fixture, sample[0], sample[1], fixture.sampler()),
+                        "registry picker retains V5 humid target " + anchor.biomeId());
+                assertSameBiome(expected, pickCollection(fixture, sample[0], sample[1], fixture.sampler()),
+                        "collection picker retains V5 humid target " + anchor.biomeId());
+                assertEquals(0, LatitudeBiomes.authoritativeLandBandIndex(
+                                sample[0], sample[1], fixture.radius()),
+                        "jungle-family coverage is tropical");
+                assertFalse(isSyntheticMountain(fixture.sampler(), sample[0], sample[1]),
+                        "jungle-family coverage is not mountain terrain");
+                assertEquals(ProvinceAuthority.Province.WARM_WET,
+                        LatitudeBiomes.classifyProvince(sample[0], sample[1]),
+                        "jungle-family coverage is admitted only by WARM_WET");
+            }
+        }
+    }
+
+    private static void assertJungleProvinceRejectionAndRestoration(CoverageFixture fixture) {
+        for (VanillaBiomeCoveragePlan.Anchor anchor : fixture.plan().anchors()) {
+            if (anchor.route() != BiomeRoute.TROPICAL_HUMID_LOWLAND) continue;
+            int x = anchor.blockX();
+            int z = anchor.blockZ();
+            Holder<Biome> exact = holder(fixture.registry(), anchor.biomeId());
+            String context = " [fixtureRadius=" + fixture.radius()
+                    + " anchor=" + anchor.biomeId() + " x=" + x + " z=" + z + "]";
+
+            long mediumSeed = findProvinceSeed(fixture, x, z, ProvinceAuthority.Province.WARM_MEDIUM);
+            ProvinceAuthority original = LatitudeBiomes.swapProvinceAuthorityForTest(
+                    new ProvinceAuthority(mediumSeed, fixture.radius()));
+            try {
+                assertEquals(ProvinceAuthority.Province.WARM_MEDIUM,
+                        LatitudeBiomes.classifyProvince(x, z),
+                        "swapped WARM_MEDIUM authority is live at the anchor" + context);
+                boolean savannaOwnsColumn =
+                        LatitudeBiomes.savannaCountryHitForPolicyTest(x, z)
+                                || LatitudeBiomes.savannaDryFringeHitForPolicyTest(x, z);
+                assertWarmMediumStaleJungleFinish(
+                        pickRegistry(fixture, x, z, fixture.sampler()), savannaOwnsColumn,
+                        "registry WARM_MEDIUM stale jungle coverage" + context);
+                assertWarmMediumStaleJungleFinish(
+                        pickCollection(fixture, x, z, fixture.sampler()), savannaOwnsColumn,
+                        "collection WARM_MEDIUM stale jungle coverage" + context);
+            } finally {
+                LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+            }
+
+            long drySeed = findProvinceSeed(fixture, x, z, ProvinceAuthority.Province.WARM_DRY);
+            original = LatitudeBiomes.swapProvinceAuthorityForTest(
+                    new ProvinceAuthority(drySeed, fixture.radius()));
+            try {
+                assertEquals(ProvinceAuthority.Province.WARM_DRY,
+                        LatitudeBiomes.classifyProvince(x, z),
+                        "swapped WARM_DRY authority is live at the anchor" + context);
+                assertDryWarmFamily(pickRegistry(fixture, x, z, fixture.sampler()),
+                        "registry WARM_DRY stale jungle coverage finishes as dry-warm family" + context);
+                assertDryWarmFamily(pickCollection(fixture, x, z, fixture.sampler()),
+                        "collection WARM_DRY stale jungle coverage finishes as dry-warm family" + context);
+            } finally {
+                LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+            }
+
+            assertSameBiome(exact, pickRegistry(fixture, x, z, fixture.sampler()),
+                    "registry restored WARM_WET retains the exact saved jungle identity" + context);
+            assertSameBiome(exact, pickCollection(fixture, x, z, fixture.sampler()),
+                    "collection restored WARM_WET retains the exact saved jungle identity" + context);
+        }
+    }
+
+    /**
+     * What a WARM_MEDIUM column carrying a stale jungle coverage identity is allowed to finish as.
+     *
+     * <p>WHY THIS IS NOT SIMPLY {@link #warmMediumExpectedFamily}. That helper predicts what the
+     * province ENFORCER answers, and it is exactly right wherever the enforcer is what decides the
+     * column — which is why the two physical-lowland/upland call sites still use it. On THIS route
+     * the enforcer is not always what decides, and the reason is a specific, traceable consequence
+     * of the savanna-country slice (2026-08-18):
+     *
+     * <ol>
+     *   <li>{@code minecraft:forest} became pool-legal in the tropical band, because the belt's new
+     *       staple cannot survive {@code enforceLandBandPool} otherwise. A column whose tag pick was
+     *       already forest is therefore no longer rerolled into the jungle family — it now reaches
+     *       the final clamp still holding forest.</li>
+     *   <li>{@code applyFinalSavannaClimateClamp} only performs the province rewrite when
+     *       {@code allowWarmMediumSavannaClamp} passes, and that allowlist is savanna-family,
+     *       plains and sunflower_plains. Forest is none of them, so the enforcer is never called
+     *       and the country is never asked.</li>
+     *   <li>{@code gateWarmJungleSurvival} — the other place the country is consulted — early
+     *       returns on {@code !isJungleFamily(out)}, and forest is not jungle-family, so it does not
+     *       fire either.</li>
+     * </ol>
+     *
+     * <p>The column therefore finishes forest even INSIDE a savanna country. That is the dilution
+     * the 26.2 line measured and accepted rather than fixed (inside-country savanna 85-93%, not
+     * 100%), documented on the enforcer's WARM_MEDIUM arm as accepted leak (b). It is the country
+     * system being bypassed, not a picker that forgot to ask.
+     *
+     * <p>So this asserts the three things that ARE absolute for such a column, and deliberately
+     * makes no per-column positive claim it cannot honestly support:
+     *
+     * <ol>
+     *   <li>the stale jungle identity is REJECTED — the invariant this method is named for, and the
+     *       one the WARM_WET half restores at the end;</li>
+     *   <li>a WARM_MEDIUM province never finishes arid — the province still governs the column even
+     *       when the country does not;</li>
+     *   <li>savanna is a REGION: a column savanna does not own must never finish savanna-family.</li>
+     * </ol>
+     *
+     * <p>(3) is the direction with teeth against the regression this proof exists to catch — a
+     * picker that stamps savanna across the whole warm belt again would fail it on the first
+     * unowned anchor. The opposite direction (that the country is consulted AT ALL, rather than the
+     * belt being answered forest everywhere) is pinned structurally in
+     * {@link #warmBeltIdentityIsProvinceOrdered}, at all four consult points and in both picker
+     * overloads, so it is not restated here as a per-column assertion that the bypass above would
+     * make false. Widening this to "savanna or forest, either is fine" WOULD have been the wrong
+     * fix: it passes on a picker that never consults the country.
+     *
+     * <p>ONE ACCEPTED ESCAPE, named so a future failure is diagnosed in seconds rather than
+     * rediscovered: the equatorial demote gates hand back savanna country-blind (accepted leak (a)
+     * on the same arm), so an ARID pick reaching them in the tropics finishes savanna regardless of
+     * ownership. That cannot happen on this route — the tropical band pool holds no arid identity
+     * and {@code sanitizeLandBiome} routes any warm-family pick through the enforcer first — but if
+     * (3) ever fails with {@code minecraft:savanna} on an unowned column, that gate is where to
+     * look, not the country field.
+     */
+    private static void assertWarmMediumStaleJungleFinish(
+            Holder<Biome> actual, boolean savannaOwnsColumn, String message) {
+        String id = LatitudeBiomes.biomeIdPublic(actual);
+        BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
+        String where = ": actual=" + id + " savannaOwnsColumn=" + savannaOwnsColumn;
+        assertTrue(descriptor != null,
+                message + " must finish on a ledger-admitted biome" + where);
+        assertFalse(descriptor.family() == BiomeDescriptorLedger.Family.JUNGLE,
+                message + " must REJECT the stale jungle identity — a jungle-family finish means "
+                        + "the coverage plan re-admitted an identity its own province forbids"
+                        + where);
+        assertFalse(descriptor.family() == BiomeDescriptorLedger.Family.ARID,
+                message + " must not finish arid — a WARM_MEDIUM province still governs the column, "
+                        + "and the tropical band bans arid outright" + where);
+        if (!savannaOwnsColumn) {
+            assertFalse(descriptor.family() == BiomeDescriptorLedger.Family.SAVANNA,
+                    message + " must not finish savanna-family on a column savanna does not own — "
+                            + "savanna is a COUNTRY plus the dry fringe, not the whole warm belt "
+                            + "(maintainer approval, 2026-08-18), and a savanna here is the belt-wide "
+                            + "monoculture that slice removed coming back" + where);
+        }
+    }
+
+    private static long findProvinceSeed(CoverageFixture fixture, int x, int z,
+                                         ProvinceAuthority.Province expected) {
+        for (long candidate : AUDIT_SEEDS) {
+            if (new ProvinceAuthority(candidate, fixture.radius()).classify(x, z) == expected) return candidate;
+        }
+        for (long candidate = 1; candidate <= 10_000; candidate++) {
+            if (new ProvinceAuthority(candidate, fixture.radius()).classify(x, z) == expected) return candidate;
+        }
+        throw new AssertionError("no deterministic seed produced " + expected + " at " + x + "," + z);
+    }
+
+    private static void assertIncompatibleCoverageEvidenceIsRejected(CoverageFixture fixture) {
+        VanillaBiomeCoveragePlan.Anchor wetland = fixture.plan().anchors().stream()
+                .filter(anchor -> anchor.route() == BiomeRoute.TEMPERATE_WETLAND)
+                .findFirst().orElseThrow();
+        Climate.Sampler failedWetland = fixedTerrainSampler(0.95, 0.20, 0.0);
+        assertNotSameBiome(wetland.biomeId(),
+                pickRegistry(fixture, wetland.blockX(), wetland.blockZ(), failedWetland),
+                "registry rejects saved wetland when real wetland evidence fails");
+        assertNotSameBiome(wetland.biomeId(),
+                pickCollection(fixture, wetland.blockX(), wetland.blockZ(), failedWetland),
+                "collection rejects saved wetland when real wetland evidence fails");
+
+        VanillaBiomeCoveragePlan.Anchor upland = fixture.plan().anchors().stream()
+                .filter(anchor -> isUplandRoute(anchor.route()))
+                .findFirst().orElseThrow();
+        Climate.Sampler lowlandOnly = fixedTerrainSampler(0.30, 0.20, 0.0);
+        assertNotSameBiome(upland.biomeId(),
+                pickRegistry(fixture, upland.blockX(), upland.blockZ(), lowlandOnly),
+                "registry rejects an upland reservation on lowland evidence");
+        assertNotSameBiome(upland.biomeId(),
+                pickCollection(fixture, upland.blockX(), upland.blockZ(), lowlandOnly),
+                "collection rejects an upland reservation on lowland evidence");
+
+        VanillaBiomeCoveragePlan.Anchor tropical = fixture.plan().anchors().stream()
+                .filter(anchor -> anchor.route() == BiomeRoute.TROPICAL_HUMID_LOWLAND)
+                .findFirst().orElseThrow();
+        int wrongLatitudeRadius = Math.max(512, Math.abs(tropical.blockZ()) * 2);
+        LatitudeBiomes.setRadius(wrongLatitudeRadius);
+        assertNotSameBiome(tropical.biomeId(),
+                pickRegistry(fixture, tropical.blockX(), tropical.blockZ(), fixture.sampler()),
+                "registry rejects a saved jungle reservation after its latitude becomes incompatible");
+        assertNotSameBiome(tropical.biomeId(),
+                pickCollection(fixture, tropical.blockX(), tropical.blockZ(), fixture.sampler()),
+                "collection rejects a saved jungle reservation after its latitude becomes incompatible");
+        LatitudeBiomes.setRadius(fixture.radius());
+        LatitudeBiomes.setWorldSeed(fixture.seed());
+    }
+
+    private static void assertHumidCoverageEvidenceIsRejected(CoverageFixture fixture) {
+        VanillaBiomeCoveragePlan.Anchor tropical = fixture.plan().anchors().stream()
+                .filter(anchor -> anchor.route() == BiomeRoute.TROPICAL_HUMID_LOWLAND)
+                .findFirst().orElseThrow();
+        int wrongLatitudeRadius = Math.max(512, Math.abs(tropical.blockZ()) * 2);
+        LatitudeBiomes.setRadius(wrongLatitudeRadius);
+        assertNotSameBiome(tropical.biomeId(),
+                pickRegistry(fixture, tropical.blockX(), tropical.blockZ(), fixture.sampler()),
+                "registry rejects a saved jungle reservation after its latitude becomes incompatible");
+        assertNotSameBiome(tropical.biomeId(),
+                pickCollection(fixture, tropical.blockX(), tropical.blockZ(), fixture.sampler()),
+                "collection rejects a saved jungle reservation after its latitude becomes incompatible");
+        LatitudeBiomes.setRadius(fixture.radius());
+        LatitudeBiomes.setWorldSeed(fixture.seed());
+
+        // Ordinary WARM_WET composition may legitimately produce the anchor's own identity at the
+        // anchor coords (the plan placed the anchor where the equator pool favors it), so the
+        // rejection proof observes the coverage ADMISSION, not the final identity: upland evidence
+        // must prevent the reservation from being applied.
+        Climate.Sampler mountainEvidence = fixedTerrainSampler(0.30, -0.60, 0.70);
+        Holder<Biome> uplandRegistry =
+                pickRegistry(fixture, tropical.blockX(), tropical.blockZ(), mountainEvidence);
+        assertFalse(LatitudeBiomes.hasExactVanillaCoverageAdmissionForTest(uplandRegistry),
+                "registry rejects a saved humid lowland reservation on upland evidence");
+        Holder<Biome> uplandCollection =
+                pickCollection(fixture, tropical.blockX(), tropical.blockZ(), mountainEvidence);
+        assertFalse(LatitudeBiomes.hasExactVanillaCoverageAdmissionForTest(uplandCollection),
+                "collection rejects a saved humid lowland reservation on upland evidence");
+    }
+
+    private static void assertExistingWetlandAndPaleGardenProtection(CoverageFixture fixture) {
+        Holder<Biome> swamp = holder(fixture.registry(), "minecraft:swamp");
+        Holder<Biome> mangrove = holder(fixture.registry(), "minecraft:mangrove_swamp");
+        Holder<Biome> paleGarden = holder(fixture.registry(), "minecraft:pale_garden");
+        VanillaBiomeCoveragePlan.Anchor unrelated = new VanillaBiomeCoveragePlan.Anchor(
+                "minecraft:desert", BiomeRoute.ARID_LOWLAND, 0, 0, 96, 1L);
+        VanillaBiomeCoveragePlan.Anchor matchingWetland = new VanillaBiomeCoveragePlan.Anchor(
+                "minecraft:swamp", BiomeRoute.TEMPERATE_WETLAND, 0, 0, 96, 2L);
+        ProvinceAuthority guardOriginal = LatitudeBiomes.swapProvinceAuthorityForTest(null);
+        try {
+            // Null authority = wetland-eligible everywhere: the protective semantics hold.
+            assertFalse(LatitudeBiomes.landCoverageMayReplace(swamp, unrelated, 0, 0),
+                    "unrelated land coverage cannot erase an existing swamp");
+            assertFalse(LatitudeBiomes.landCoverageMayReplace(mangrove, unrelated, 0, 0),
+                    "unrelated land coverage cannot erase an existing mangrove");
+            assertFalse(LatitudeBiomes.landCoverageMayReplace(paleGarden, unrelated, 0, 0),
+                    "land coverage cannot erase Pale Garden");
+            assertTrue(LatitudeBiomes.landCoverageMayReplace(swamp, matchingWetland, 0, 0),
+                    "matching wetland coverage may restore its saved wetland identity");
+            assertTrue(LatitudeBiomes.landCoverageMayReplace(mangrove, matchingWetland, 0, 0),
+                    "matching wetland coverage may replace mangrove with the saved wetland identity");
+        } finally {
+            LatitudeBiomes.restoreProvinceAuthorityForTest(guardOriginal);
+        }
+
+        // At a dry-province column the wetland is doomed by the dry-province law, so it yields
+        // to a real reserved identity instead of blocking it (26.2 parity port, 2026-08-16).
+        int dryX = 400;
+        int dryZ = 3_200;
+        long drySeed = findProvinceSeed(
+                fixture.radius(), dryX, dryZ, ProvinceAuthority.Province.WARM_DRY);
+        guardOriginal = LatitudeBiomes.swapProvinceAuthorityForTest(
+                new ProvinceAuthority(drySeed, fixture.radius()));
+        try {
+            assertTrue(LatitudeBiomes.landCoverageMayReplace(swamp, unrelated, dryX, dryZ),
+                    "a dry-province swamp yields to a reserved land identity");
+            assertTrue(LatitudeBiomes.landCoverageMayReplace(mangrove, unrelated, dryX, dryZ),
+                    "a dry-province mangrove yields to a reserved land identity");
+            assertFalse(LatitudeBiomes.landCoverageMayReplace(paleGarden, unrelated, dryX, dryZ),
+                    "Pale Garden protection is not wetland law and does not yield");
+        } finally {
+            LatitudeBiomes.restoreProvinceAuthorityForTest(guardOriginal);
+        }
+    }
+
+    private static List<int[]> coverageSamples(VanillaBiomeCoveragePlan.Anchor anchor) {
+        int shoulder = anchor.radiusBlocks() / 2;
+        return List.of(
+                new int[]{anchor.blockX(), anchor.blockZ()},
+                new int[]{anchor.blockX() + shoulder, anchor.blockZ()},
+                new int[]{anchor.blockX() - shoulder, anchor.blockZ()},
+                new int[]{anchor.blockX(), anchor.blockZ() + shoulder},
+                new int[]{anchor.blockX(), anchor.blockZ() - shoulder});
+    }
+
+    private static Holder<Biome> pickRegistry(CoverageFixture fixture, int x, int z,
+                                               Climate.Sampler sampler) {
+        return LatitudeBiomes.pick(fixture.registry(), fixture.plains(), x, z, 63,
+                fixture.radius(), sampler, "ATLAS_SAMPLER");
+    }
+
+    private static Holder<Biome> pickCollection(CoverageFixture fixture, int x, int z,
+                                                 Climate.Sampler sampler) {
+        return LatitudeBiomes.pick(fixture.holders(), fixture.plains(), x, z, 63,
+                fixture.radius(), sampler, "ATLAS_SAMPLER");
+    }
+
+    /**
+     * WARM_DRY's final identity spans ARID and SAVANNA: the deep-equator arid law
+     * (demoteEquatorialBadlands/demoteEquatorialDesert) lawfully demotes badlands and part of the
+     * desert share to savanna below the equatorial ramp, so a WARM_DRY anchor deep in the tropics
+     * finishes savanna-family while anchors above the ramp finish arid-family. This mirrors
+     * production's own isDryWarmIdentity (savanna | badlands | desert).
+     */
+    private static void assertDryWarmFamily(Holder<Biome> actual, String message) {
+        BiomeDescriptorLedger.Descriptor descriptor =
+                BiomeDescriptorLedger.descriptor(LatitudeBiomes.biomeIdPublic(actual));
+        assertTrue(descriptor != null
+                        && (descriptor.family() == BiomeDescriptorLedger.Family.ARID
+                        || descriptor.family() == BiomeDescriptorLedger.Family.SAVANNA),
+                message + ": actual=" + LatitudeBiomes.biomeIdPublic(actual));
+    }
+
+    private static void assertSameBiome(Holder<Biome> expected, Holder<Biome> actual, String message) {
+        assertEquals(LatitudeBiomes.biomeIdPublic(expected), LatitudeBiomes.biomeIdPublic(actual), message);
+    }
+
+    private static void assertNotSameBiome(String unexpectedId, Holder<Biome> actual, String message) {
+        assertFalse(unexpectedId.equals(LatitudeBiomes.biomeIdPublic(actual)),
+                message + ": actual=" + LatitudeBiomes.biomeIdPublic(actual));
+    }
+
+    private static TestBiomeRegistry buildTestBiomeRegistry(List<String> providerIds) {
+        SharedConstants.tryDetectVersion();
+        Bootstrap.bootStrap();
+        TreeSet<String> ids = new TreeSet<>(providerIds);
+        ids.addAll(VanillaBiomeCoveragePlan.requiredRoutes().keySet());
+        ids.addAll(VanillaSurfaceWaterCoveragePlan.requirements().keySet());
+        ids.addAll(List.of(
+                "minecraft:pale_garden", "minecraft:mangrove_swamp", "minecraft:mushroom_fields",
+                "minecraft:river", "minecraft:frozen_river", "minecraft:beach",
+                "minecraft:snowy_beach", "minecraft:stony_shore"));
+        MappedRegistry<Biome> writable = new MappedRegistry<>(Registries.BIOME, Lifecycle.stable());
+        for (String id : ids) {
+            ResourceKey<Biome> key = ResourceKey.create(Registries.BIOME, Identifier.parse(id));
+            writable.register(key, minimalBiome(), RegistrationInfo.BUILT_IN);
+        }
+        writable.bindAllTagsToEmpty();
+        List<Holder<Biome>> temperateMountainHolders = new ArrayList<>();
+        for (String id : List.of(
+                "minecraft:meadow",
+                "minecraft:cherry_grove",
+                "minecraft:grove",
+                "minecraft:windswept_hills",
+                "minecraft:windswept_forest",
+                "minecraft:windswept_gravelly_hills",
+                "minecraft:stony_peaks",
+                "terralith:caldera",
+                "byg:howling_peaks",
+                "byg:skyris_vale",
+                "byg:dacite_ridges",
+                "byg:crag_gardens",
+                "terrestria:caldera",
+                "terrestria:canyon")) {
+            writable.get(Identifier.parse(id)).ifPresent(temperateMountainHolders::add);
+        }
+        writable.bindTag(
+                TagKey.create(
+                        Registries.BIOME,
+                        Identifier.fromNamespaceAndPath("globe", "lat_temperate_mountain")),
+                temperateMountainHolders);
+        Registry<Biome> registry = writable.freeze();
+        List<Holder<Biome>> holders = registry.listElements()
+                .map(holder -> (Holder<Biome>) holder)
+                .toList();
+        return new TestBiomeRegistry(registry, holders);
+    }
+
+    private static Biome minimalBiome() {
+        return new Biome.BiomeBuilder()
+                .hasPrecipitation(true)
+                .temperature(0.8F)
+                .downfall(0.4F)
+                .specialEffects(new BiomeSpecialEffects.Builder().waterColor(0x3f76e4).build())
+                .mobSpawnSettings(MobSpawnSettings.EMPTY)
+                .generationSettings(BiomeGenerationSettings.EMPTY)
+                .build();
+    }
+
+    private static Holder<Biome> holder(Registry<Biome> registry, String id) {
+        return registry.get(Identifier.parse(id))
+                .orElseThrow(() -> new AssertionError("missing test biome holder: " + id));
+    }
+
+    private static Climate.Sampler stripedTerrainSampler() {
+        return new Climate.Sampler(
+                DensityFunctions.zero(),
+                DensityFunctions.zero(),
+                DensityFunctions.constant(0.30),
+                new StripeDensity(false),
+                DensityFunctions.zero(),
+                new StripeDensity(true),
+                List.of());
+    }
+
+    private static Climate.Sampler fixedTerrainSampler(double continentalness, double erosion,
+                                                        double weirdness) {
+        return new Climate.Sampler(
+                DensityFunctions.zero(),
+                DensityFunctions.zero(),
+                DensityFunctions.constant(continentalness),
+                DensityFunctions.constant(erosion),
+                DensityFunctions.zero(),
+                DensityFunctions.constant(weirdness),
+                List.of());
+    }
+
+    private static boolean syntheticUpland(int blockX) {
+        return Math.floorMod(Math.floorDiv(blockX, 1_024), 2) == 1;
+    }
+
+    private static boolean isSyntheticMountain(Climate.Sampler sampler, int blockX, int blockZ) {
+        Climate.TargetPoint point = sampler.sample(blockX >> 2, 64 >> 2, blockZ >> 2);
+        return Climate.unquantizeCoord(point.continentalness()) > 0.10
+                && Climate.unquantizeCoord(point.erosion()) < -0.25
+                && Math.abs(Climate.unquantizeCoord(point.weirdness())) > 0.25;
+    }
+
+    private record StripeDensity(boolean weirdness) implements DensityFunction {
+        @Override
+        public double compute(FunctionContext context) {
+            boolean upland = syntheticUpland(context.blockX() << 2);
+            if (!upland) return weirdness ? 0.0 : 0.20;
+            return weirdness ? 0.70 : -0.60;
+        }
+
+        @Override
+        public void fillArray(double[] values, ContextProvider contextProvider) {
+            for (int i = 0; i < values.length; i++) values[i] = compute(contextProvider.forIndex(i));
+        }
+
+        @Override
+        public DensityFunction mapAll(Visitor visitor) {
+            return visitor.apply(this);
+        }
+
+        @Override public double minValue() { return -0.60; }
+        @Override public double maxValue() { return 0.70; }
+        @Override public KeyDispatchDataCodec<? extends DensityFunction> codec() {
+            return DensityFunctions.zero().codec();
+        }
+    }
+
+    private record TestBiomeRegistry(Registry<Biome> registry, List<Holder<Biome>> holders) {}
+
+    private record CoverageFixture(
+            int radius,
+            long seed,
+            VanillaBiomeRepresentationProfile representation,
+            VanillaBiomeCoveragePlan plan,
+            Climate.Sampler sampler,
+            Registry<Biome> registry,
+            List<Holder<Biome>> holders,
+            Holder<Biome> plains) {}
+
     private static void caveCoverageIsClosedAndWorldSizeSafe() throws Exception {
         // Three, not 26.2's four: minecraft:sulfur_caves does not exist on Minecraft 1.21.11.
         // Requiring it made CaveBiomeRepresentationProfile.validate() throw and hard-crashed world
@@ -502,6 +1802,22 @@ final class BiomeProviderSelectionPolicyTest {
                     assertTrue(anchor.horizontalRadius() >= 80 && anchor.verticalRadius() == 24,
                             "cave coverage is a compact underground region, not a one-cell token");
                 }
+                CaveBiomeCoveragePlan.Anchor locateAnchor = plan.anchors().get(0);
+                assertEquals(locateAnchor, plan.nearestAnchorFor(
+                                Set.of(locateAnchor.biomeId()),
+                                locateAnchor.x(), locateAnchor.z(), 0),
+                        "a cave reservation is directly locatable at its exact planned column");
+                assertTrue(plan.nearestAnchorFor(
+                                Set.of(locateAnchor.biomeId()),
+                                locateAnchor.x() + 100, locateAnchor.z(), 99) == null,
+                        "cave planned locate preserves the caller's horizontal radius");
+                assertEquals(locateAnchor, plan.nearestAnchorFor(
+                                Set.of(locateAnchor.biomeId()),
+                                locateAnchor.x() + 100, locateAnchor.z(), 100),
+                        "the exact cave locate radius boundary is inclusive");
+                assertTrue(plan.nearestAnchorFor(
+                                Set.of("minecraft:the_void"), 0, 0, radius) == null,
+                        "planned cave locate cannot invent an unreserved identity");
                 Map<String, BiomeRoute> showcase = profile.customShowcaseTargets(seed);
                 assertEquals(3, showcase.size(), "combined stack contributes one deterministic BOP shallow and Terralith shallow/deep showcase each");
                 assertTrue(showcase.entrySet().stream().anyMatch(entry -> entry.getKey().startsWith("biomesoplenty:")
@@ -521,17 +1837,18 @@ final class BiomeProviderSelectionPolicyTest {
         assertTrue(biomes.contains("ACTIVE_CAVE_COVERAGE_PLAN")
                         && biomes.contains("isUndergroundCaveBiome(current)")
                         && biomes.contains("blockY <= 96"),
-                "the V4 override is donor-cave-gated and cannot create a surface cave");
+                "the V5 final-admission override is donor-cave-gated and cannot create a surface cave");
         assertTrue(source.contains("LatitudeBiomes.caveCoverageOverride")
                         && mixin.contains("return LatitudeBiomes.caveCoverageOverride(biomes, current, blockX, blockY, blockZ);"),
                 "biome-source, locate-preview, and chunk-population paths share final cave identity");
         assertTrue(state.contains("PROVIDER_TICKET_V1") && state.contains("PROVIDER_TICKET_V2_COVERAGE")
                         && state.contains("PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE")
-                        && state.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE"),
-                "legacy/V1/V2/V3 policies remain explicit alongside fresh-only V4");
+                        && state.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE")
+                        && state.contains("PROVIDER_TICKET_V5_FINAL_ADMISSION"),
+                "legacy/V1/V2/V3/V4 policies remain explicit alongside fresh-only V5");
         assertTrue(mod.contains("CaveBiomeRepresentationProfile.capture(captureRadius, profile)")
-                        && mod.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE"),
-                "only a newly created world captures the V4 cave profile before spawn generation");
+                        && mod.contains("PROVIDER_TICKET_V5_FINAL_ADMISSION"),
+                "only a newly created or adopted fresh world captures the V5 cave profile before spawn generation");
     }
 
     private static void vanillaCoverageIsV2OnlyAndClearsWithContext() throws Exception {
@@ -545,8 +1862,9 @@ final class BiomeProviderSelectionPolicyTest {
                 .replaceAll("\\s+", " ");
         assertTrue(biomes.contains("boolean exactV2 = ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE")
                         && biomes.contains("PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE")
-                        && biomes.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE"),
-                "V2 keeps exact coverage while V3/V4 consume the saved size-aware surface contract");
+                        && biomes.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE")
+                        && biomes.contains("PROVIDER_TICKET_V5_FINAL_ADMISSION"),
+                "V2 keeps exact coverage while V3/V4/V5 consume the saved size-aware surface contract");
         assertTrue(biomes.contains("ACTIVE_VANILLA_COVERAGE_PLAN = null;"),
                 "world/context cleanup clears the coverage plan");
         assertTrue(biomes.contains("ACTIVE_SURFACE_WATER_COVERAGE_PLAN = null;"),
@@ -555,11 +1873,12 @@ final class BiomeProviderSelectionPolicyTest {
                 "world/context cleanup clears birth-locked cave coverage");
         assertTrue(state.contains("policy == WorldgenPolicyVersion.PROVIDER_TICKET_V1")
                         && state.contains("policy == WorldgenPolicyVersion.PROVIDER_TICKET_V2_COVERAGE")
-                        && state.contains("policy == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE"),
-                "saved V1/V2/V3 profiles remain readable without adopting V4 behavior");
+                        && state.contains("policy == WorldgenPolicyVersion.PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE")
+                        && state.contains("policy == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE"),
+                "saved V1/V2/V3/V4 profiles remain readable without adopting new V5 behavior");
         assertTrue(mod.contains(
-                        "WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE"),
-                "only freshly UI-created worlds opt into V4 size-aware coverage");
+                        "WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION"),
+                "only freshly UI-created worlds opt into V5 size-aware coverage");
         assertTrue(mod.contains("randomState().sampler()"),
                 "fresh and reloaded V2 plans use the live world climate sampler");
         assertTrue(mod.contains("donorBiomeSource(generator)"),
@@ -698,13 +2017,15 @@ final class BiomeProviderSelectionPolicyTest {
                 "src/main/java/com/example/globe/world/LatitudeWorldState.java"));
         String mod = Files.readString(Path.of("src/main/java/com/example/globe/GlobeMod.java"));
         assertTrue(state.contains("vanilla_representation_profile")
-                        && state.contains("PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE"),
-                "V3 profile and policy are persisted without changing legacy/V1/V2 identities");
+                        && state.contains("PROVIDER_TICKET_V3_SIZE_AWARE_COVERAGE")
+                        && state.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE")
+                        && state.contains("PROVIDER_TICKET_V5_FINAL_ADMISSION"),
+                "V3/V4 saved profiles remain readable while V5 adds final-admission capture");
         assertTrue(mod.contains("VanillaBiomeRepresentationProfile.capture(captureRadius, seed, profile)")
-                        && mod.contains("PROVIDER_TICKET_V4_CAVE_COVERAGE")
+                        && mod.contains("PROVIDER_TICKET_V5_FINAL_ADMISSION")
                         && mod.contains("boolean creationWindow = world.getGameTime() < 100L;"),
-                "only the birth-locked fresh-world path (create screen OR fresh dedicated world, "
-                        + "inside the creation window) captures the V4 surface/cave profiles");
+                "only the birth-locked fresh-world path (create screen OR adopted fresh dedicated world, "
+                        + "inside the creation window) captures the V5 surface/cave profiles");
         assertThrows(() -> VanillaBiomeRepresentationProfile.decode(
                         VanillaBiomeRepresentationProfile.FORMAT
                                 + "\nSIZE|ITTY_BITTY\nLAND|TEMPERATE_LOWLAND|REPRESENTATION_FAMILY|terralith:caldera"),
@@ -915,7 +2236,8 @@ final class BiomeProviderSelectionPolicyTest {
                     ARID_LOWLAND, ARID_UPLAND -> latitudeFraction >= 0.27 && latitudeFraction <= 0.39;
             case TEMPERATE_LOWLAND, TEMPERATE_WETLAND, TEMPERATE_UPLAND ->
                     latitudeFraction >= 0.41 && latitudeFraction <= 0.56;
-            case SUBPOLAR_LOWLAND, SUBPOLAR_WETLAND -> latitudeFraction >= 0.59 && latitudeFraction <= 0.73;
+            case SUBPOLAR_LOWLAND, SUBPOLAR_WETLAND, SUBPOLAR_UPLAND ->
+                    latitudeFraction >= 0.59 && latitudeFraction <= 0.73;
             case POLAR_LOWLAND -> latitudeFraction >= 0.77 && latitudeFraction <= 0.91;
             case COLD_UPLAND -> latitudeFraction >= 0.61 && latitudeFraction <= 0.89;
             case CAVE_SHALLOW, CAVE_DEEP -> false;
@@ -924,6 +2246,7 @@ final class BiomeProviderSelectionPolicyTest {
 
     private static boolean isUplandRoute(BiomeRoute route) {
         return route == BiomeRoute.TEMPERATE_UPLAND
+                || route == BiomeRoute.SUBPOLAR_UPLAND
                 || route == BiomeRoute.COLD_UPLAND
                 || route == BiomeRoute.WARM_UPLAND
                 || route == BiomeRoute.ARID_UPLAND;
@@ -949,6 +2272,249 @@ final class BiomeProviderSelectionPolicyTest {
      * classified. This asserts the land routes actually exist and, critically, that they carry
      * REAL climate-consistent placement rather than name-derived guesses.
      */
+    /**
+     * The windswept family belongs to subpolar mountains and nowhere else.
+     *
+     * <p>Measured on the 26.2 line's shipped build with vanilla biomes only:
+     * {@code minecraft:windswept_hills} was 12.78% of all polar land (66.5-90 degrees) and 15.58%
+     * of land above 74.5 — the second most common land biome at the pole, arriving snowless, with
+     * green grass, flowers and passive animals at 80 north. Its route said "subpolar or polar AND
+     * mountain", but the mountain half was enforced nowhere downstream, so the terrain-compatibility
+     * reroll walked into it on ordinary polar shelves.
+     *
+     * <p>Three independent halves are asserted, because each one alone has already been shown to be
+     * bypassable: the ledger route (which band pool may contain it), the extreme-polar cap's
+     * explicit id list (which named only windswept_forest, and read as complete because the path
+     * catch-all matches "forest"), and the legality predicate itself (which nothing upstream can
+     * outvote once the reroll consults it).
+     *
+     * <p>SCOPE, stated rather than implied: this suite asserts the tables, the saved-roster
+     * migration, the enforcement source text and the legality predicate. It does NOT drive
+     * {@code LatitudeBiomes.pick} across the polar and subpolar bands the way the 26.2 twin does —
+     * that sweep needs a picker band-index hook this line does not carry, and its column and hit
+     * floors were measured against the 26.2 generator, so importing those numbers unmeasured would
+     * assert something nobody on this line has checked. Until it is ported and re-measured here,
+     * the behavioural claim "no green windswept grass at 80 north" rests on the ban being stated in
+     * every gate below rather than on a map measured on this line.
+     */
+    private static void windsweptFamilyIsSubpolarMountainOnly() throws Exception {
+        String[] windswept = {
+                "minecraft:windswept_hills",
+                "minecraft:windswept_forest",
+                "minecraft:windswept_gravelly_hills"};
+
+        // 1. Ledger and coverage plan agree, and both say subpolar.
+        Map<String, BiomeRoute> required = VanillaBiomeCoveragePlan.requiredRoutes();
+        for (String id : windswept) {
+            BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
+            assertTrue(descriptor != null, "windswept identity must stay ledger-admitted: " + id);
+            assertEquals(Set.of(BiomeRoute.SUBPOLAR_UPLAND), descriptor.routes(),
+                    "the windswept family owns SUBPOLAR_UPLAND and only that (2026-08-18): " + id);
+            assertEquals(BiomeRoute.SUBPOLAR_UPLAND, required.get(id),
+                    "the vanilla coverage guarantee must name the SAME route as the ledger, or it "
+                            + "anchors a province in a band the picker will never choose it in: " + id);
+        }
+        // windswept_savanna is a hot savanna variant, not a member of this family. Any fix that
+        // matched on the substring "windswept" would move it too.
+        assertFalse(BiomeDescriptorLedger.descriptor("minecraft:windswept_savanna")
+                        .routes().contains(BiomeRoute.SUBPOLAR_UPLAND),
+                "minecraft:windswept_savanna is a warm biome and must not follow the cold windswept "
+                        + "family into the subpolar uplands");
+
+        // 2. A vanilla-only world still gets every guaranteed identity after the re-route.
+        BiomeSelectionProfile vanilla = BiomeSelectionProfile.capture(registryFor(Set.of()));
+        for (String id : windswept) {
+            assertTrue(vanilla.contains(BiomeRoute.SUBPOLAR_UPLAND, id),
+                    "a vanilla-only birth roster must carry the windswept family on its new route: " + id);
+        }
+        for (int radius : new int[]{3_750, 10_000, 20_000}) {
+            for (long seed : new long[]{3L, 131L, 461L}) {
+                VanillaBiomeCoveragePlan plan = VanillaBiomeCoveragePlan.build(
+                        radius, seed, vanilla,
+                        (id, route, x, z) -> insideSyntheticRoute(route, x, z, radius));
+                assertTrue(plan.missingBiomeIds().isEmpty(),
+                        "the narrower subpolar latitude window must not make any guaranteed identity "
+                                + "unplaceable at radius=" + radius + " seed=" + seed
+                                + " missing=" + plan.missingBiomeIds());
+                for (VanillaBiomeCoveragePlan.Anchor anchor : plan.anchors()) {
+                    if (anchor.route() != BiomeRoute.SUBPOLAR_UPLAND) continue;
+                    double latitudeFraction = Math.abs(anchor.blockZ()) / (double) radius;
+                    assertTrue(latitudeFraction <= 0.73,
+                            "a guaranteed windswept province must stay out of the polar band: "
+                                    + anchor.biomeId() + " at latitudeFraction=" + latitudeFraction);
+                }
+            }
+        }
+
+        // 3. An existing world born under the 2026-08-10 route still loads. The decoder throws on
+        // the first row it cannot explain, so without the migration the whole birth roster — every
+        // provider-ticket decision, not just windswept — would be silently discarded.
+        BiomeSelectionProfile legacy = BiomeSelectionProfile.decode(
+                "provider_ticket_v1\nCOLD_UPLAND|minecraft:windswept_hills");
+        assertTrue(legacy.contains(BiomeRoute.SUBPOLAR_UPLAND, "minecraft:windswept_hills"),
+                "a saved COLD_UPLAND windswept row must be readable, and must be read at the route "
+                        + "the ruling moved it to");
+        assertFalse(legacy.contains(BiomeRoute.COLD_UPLAND, "minecraft:windswept_hills"),
+                "the legacy row must NOT stay eligible on COLD_UPLAND — that route reaches the "
+                        + "polar band, which is exactly what the re-route forbids");
+
+        // 3b. The OTHER legacy route, which is the bigger population: every jar on this line built
+        // before the windswept family moved to COLD_UPLAND wrote TEMPERATE_UPLAND rows, so those
+        // worlds — TEST jars included — are the ones most likely to exist, and they are ALREADY
+        // roster-less: the re-route made savedRouteRemainsValid reject their rows the moment the
+        // ledger stopped listing TEMPERATE_UPLAND for these ids. Both saved profiles are exercised
+        // whole, built by rewriting a real capture, because a hand-written two-line profile would
+        // not prove the rest of the roster survives alongside the migrated rows.
+        List<String> vanillaIds = registryFor(Set.of());
+        BiomeSelectionProfile current = BiomeSelectionProfile.capture(vanillaIds);
+        for (BiomeRoute legacyRoute : List.of(BiomeRoute.TEMPERATE_UPLAND, BiomeRoute.COLD_UPLAND)) {
+            String aged = current.encode();
+            for (String id : windswept) {
+                aged = aged.replace(BiomeRoute.SUBPOLAR_UPLAND.name() + "|" + id,
+                        legacyRoute.name() + "|" + id);
+            }
+            BiomeSelectionProfile reopened = BiomeSelectionProfile.decode(aged);
+            for (String id : windswept) {
+                assertTrue(reopened.contains(BiomeRoute.SUBPOLAR_UPLAND, id),
+                        "a world saved with " + legacyRoute + "|" + id + " must still open, and "
+                                + "must read that row at the route the ruling moved it to");
+                assertFalse(reopened.contains(legacyRoute, id),
+                        "the legacy row must not stay eligible on " + legacyRoute + ": " + id);
+            }
+            assertEquals(current.encode(), reopened.encode(),
+                    "migrating the windswept rows must leave the REST of the birth roster byte "
+                            + "identical — the failure this repairs is not losing windswept, it is "
+                            + "losing the whole roster to one unreadable row (legacyRoute="
+                            + legacyRoute + ")");
+
+            // The representation profile decodes its own LAND rows and must accept the same set,
+            // or the coverage plan queries a route the roster no longer lists the biome under.
+            VanillaBiomeRepresentationProfile currentRepresentation =
+                    VanillaBiomeRepresentationProfile.capture(10_000, 131L, current);
+            String agedRepresentation = currentRepresentation.encode();
+            for (String id : windswept) {
+                agedRepresentation = agedRepresentation.replace(
+                        "LAND|" + BiomeRoute.SUBPOLAR_UPLAND.name(),
+                        "LAND|" + legacyRoute.name());
+            }
+            assertEquals(currentRepresentation.encode(),
+                    VanillaBiomeRepresentationProfile.decode(agedRepresentation).encode(),
+                    "the representation profile must migrate the same legacy routes as the "
+                            + "provider ticket, or one of the two rejects a saved world the other "
+                            + "accepts (legacyRoute=" + legacyRoute + ")");
+        }
+
+        // 4. Enforcement in LatitudeBiomes: the extreme-polar cap now names all three ids, and the
+        // family predicate stays an exact-id match.
+        String source = read("src/main/java/com/example/globe/world/LatitudeBiomes.java");
+        String leakMethod = method(source, "isExtremePolarSoftColdLeak(Holder<Biome> candidate) {");
+        for (String id : windswept) {
+            assertTrue(leakMethod.contains("\"" + id + "\""),
+                    "the extreme-polar cap must name every windswept identity explicitly — "
+                            + "windswept_hills and windswept_gravelly_hills match none of the "
+                            + "\"forest\"/\"taiga\"/\"grove\" catch-alls and passed straight "
+                            + "through: " + id);
+        }
+        String legality = method(source, "isWindsweptFamilyLegal(int bandIndex,");
+        // Truncated at the first statement terminator on purpose. method() runs to the next
+        // "private static", so the slice also swallows the package-private
+        // windsweptFamilyLegalForPolicyTest hook that sits directly below — whose parameter list
+        // names all three evidence terms and would satisfy every contains() below on its own.
+        String legalityBody = legality.substring(legality.indexOf("return "));
+        String legalityReturn = legalityBody.substring(0, legalityBody.indexOf(';') + 1);
+        assertTrue(legalityReturn.startsWith("return bandIndex == BAND_SUBPOLAR && (")
+                        && legalityReturn.contains("mountainLike")
+                        && legalityReturn.contains("mountainNoiseLike")
+                        && legalityReturn.contains("rawMountainTruth"),
+                "the reroll's legality predicate must demand BOTH the subpolar band and real "
+                        + "mountain evidence — the band alone is what the old COLD_UPLAND route "
+                        + "effectively enforced, and it is how flat polar shelves got windswept; "
+                        + "it must also still consult rawMountainTruth, the raw isMountainLike "
+                        + "read, which is the only one of the three terms that can ever be true in "
+                        + "this band: " + legalityReturn.trim());
+        String family = method(source, "isColdWindsweptFamilyBiome(Holder<Biome> candidate) {");
+        assertFalse(family.contains("contains(\"windswept\")") || family.contains("getPath()"),
+                "the family predicate must match exact ids, never the substring \"windswept\" — "
+                        + "that would drag minecraft:windswept_savanna out of the warm bands");
+        // The late ownership veto must read the family's CURRENT route. Reading COLD_UPLAND here
+        // would condemn windswept on the subpolar mountains that are now its only legal home while
+        // still waving it through at the pole.
+        String ownership = method(source,
+                "clampTemperateWindsweptMountainOwnership(Registry<Biome> biomes,");
+        assertTrue(ownership.contains("bandIndex == BAND_SUBPOLAR")
+                        && ownership.contains("BiomeRoute.SUBPOLAR_UPLAND"),
+                "the mountain-ownership veto must key off SUBPOLAR_UPLAND and the subpolar band");
+        assertFalse(ownership.contains("BiomeRoute.COLD_UPLAND"),
+                "the mountain-ownership veto must no longer read COLD_UPLAND, which still spans "
+                        + "the polar band the re-route removed windswept from");
+
+        // The veto's own body is not the whole escape. It delegates the exact-preservation question
+        // to VanillaCoverageFinalAdmissionPolicy, which lives in ANOTHER FILE -- so the assertion
+        // above, a substring check on this method only, cannot see a hardcoded route over there.
+        // It was hardcoded to COLD_UPLAND, and decide() rejects any descriptor that does not carry
+        // the route it is handed, so the escape was dead for the one family it guards: a reserved
+        // windswept column reading UPLAND terrain but not raw-mountain lost its guaranteed identity
+        // to the band fallback. Pin the RESOLVED route, not a substring.
+        String admissionSource = normalize(read(
+                "src/main/java/com/example/globe/world/VanillaCoverageFinalAdmissionPolicy.java"));
+        String exactUpland = method(admissionSource,
+                "static Decision decideExactColdUplandPreservation(");
+        assertTrue(exactUpland.contains("BiomeRoute.SUBPOLAR_UPLAND")
+                        && exactUpland.contains("descriptor.routes().contains("),
+                "the exact-upland preservation escape must resolve the descriptor's OWN upland "
+                        + "route, or it can never preserve the windswept family it guards");
+        assertEquals(2,
+                occurrences(normalize(source), "out = clampPolarWindsweptOutput(biomes, out, landBandIndex);"),
+                "both picker overloads must run the final polar windswept clamp");
+
+        // 5. The polar staple must be allowed on a raised shelf, or the reroll fires band-wide and
+        // this whole failure mode comes back through some other biome.
+        String terrainCompat = method(source,
+                "isBiomeCompatibleWithTerrain(Holder<Biome> candidate,");
+        assertTrue(terrainCompat.contains("bandIndex == BAND_POLAR")
+                        && terrainCompat.contains("TERRAIN_CLASS_RAISED_SHOULDER")
+                        && terrainCompat.contains("minecraft:snowy_plains"),
+                "snowy_plains must be accepted on a polar raised shoulder; rejecting the polar "
+                        + "band's staple on any column 4 blocks above the sea is what forced the "
+                        + "terrain reroll on nearly every polar column");
+
+        // 6. THE LEVER ITSELF, asserted directly on the predicate.
+        //
+        // The defect this closes: isWindsweptFamilyLegal could not return true on ANY subpolar
+        // column, mountain or not. It read only mountainNoiseLike — computed at the call site as
+        // landBandIndex == BAND_TEMPERATE && ... — and mountainLike, which comes from
+        // temperateMountainTerrainAuthority and is force-set true only under
+        // landBandIndex >= BAND_POLAR. The subpolar band sits between the two and received
+        // neither, so the family's one legal home was locked shut. The fix adds rawMountainTruth,
+        // the raw isMountainLike read — deliberately the SAME signal the late ownership clamp uses,
+        // so gate and veto agree by construction and the gate cannot admit a column the veto will
+        // then silently overwrite.
+        //
+        // Asserted through a dedicated hook rather than through pick(), because the public picker
+        // is called here with a null chunk generator: preview terrain is synthetic, every subpolar
+        // column classifies flat, the incoming pick is already terrain-compatible, and the reroll
+        // walk this predicate steers never runs. These four cases are the whole truth table that
+        // matters, and every one of them fails if the rawMountainTruth term is removed or the band
+        // test is loosened.
+        // 3 == BAND_SUBPOLAR, 4 == BAND_POLAR, 2 == BAND_TEMPERATE.
+        assertTrue(LatitudeBiomes.windsweptFamilyLegalForPolicyTest(3, false, false, true),
+                "a subpolar column that the raw isMountainLike read calls a mountain must be "
+                        + "legal windswept ground — this is the entire lever, and with the two "
+                        + "band-scoped signals structurally false in this band it is the only "
+                        + "term that can ever open the gate");
+        assertFalse(LatitudeBiomes.windsweptFamilyLegalForPolicyTest(3, false, false, false),
+                "a subpolar column with NO mountain evidence must stay illegal — the family is "
+                        + "a mountain identity in this band, not merely a subpolar one");
+        assertFalse(LatitudeBiomes.windsweptFamilyLegalForPolicyTest(4, true, true, true),
+                "the polar band must stay illegal for the windswept family on every terrain, "
+                        + "including a confirmed mountain; the raw mountain read must not have "
+                        + "reopened the pole that the 2026-08-18 re-route closed");
+        assertFalse(LatitudeBiomes.windsweptFamilyLegalForPolicyTest(2, false, false, true),
+                "the temperate band must not become legal windswept ground — the family's "
+                        + "route is SUBPOLAR_UPLAND, and a raw mountain read is true on plenty "
+                        + "of temperate mountains");
+    }
+
     private static void cliffTreeLandAndOceanAreActuallyReachable() throws Exception {
         // biome id -> {temperature, expected route}. Temperatures are ground truth from the
         // shipped CliffTree datapack JSON.
@@ -1081,11 +2647,17 @@ final class BiomeProviderSelectionPolicyTest {
         // Both overloads (registry-source and collection-source) must keep the roll. Asserting mere
         // presence was NOT enough: a teeth check that removed it from one overload still passed,
         // because the other overload's copy satisfied a contains() check.
-        assertEquals(2, occurrences(source, "0xBEEFBEEF"),
+        assertEquals(3, occurrences(source, "0xBEEFBEEF"),
                 "the cold-beach category roll must survive in BOTH pickBeachForBand overloads — it "
                         + "decides snowy vs rocky, and only the identity within that category is "
                         + "tag-driven; losing it in either path silently rerolls every polar "
-                        + "coastline on vanilla-only worlds");
+                        + "coastline on vanilla-only worlds. The third sanctioned site is "
+                        + "vanillaBeachIdForBand: the quarantine's beach-identity restore must use "
+                        + "the SAME roll, or a restored cold shoreline lands on the wrong "
+                        + "snowy/rocky side of its own neighbours");
+        assertTrue(method(source, "String vanillaBeachIdForBand(int blockX, int blockZ, int bandIndex)").contains("0xBEEFBEEF"),
+                "the quarantine beach-identity restore must reuse the cold-beach category roll, "
+                        + "not invent its own salt");
         String beachMethod = method(source, "pickBeachForBand(Registry<Biome> biomes,");
         assertTrue(beachMethod.contains("LAT_BEACH_COLD_SNOWY") && beachMethod.contains("LAT_BEACH_COLD_ROCKY"),
                 "both cold categories resolve through their own tag");
@@ -1097,6 +2669,40 @@ final class BiomeProviderSelectionPolicyTest {
         assertTrue(source.contains("shouldFreezeRiver(blockX, blockZ)")
                         && source.contains("LAT_RIVER_FROZEN"),
                 "shouldFreezeRiver still decides frozen vs liquid; the tag only decides identity");
+
+        // The mesic clamp is the third true-latitude ramp (siblings: ARID_POLEWARD_RAMP,
+        // FROZEN_RIVER_RAMP). Band jitter + blend + warp promoted true-33degN desert-belt columns
+        // to the TEMPERATE pool (maple/seasonal-forest islands in erg desert, live 2026-08-24);
+        // the clamp must gate that promotion from TRUE latitude inside the blend resolution and
+        // must run BEFORE temperate/subpolar ownership enforcement so the ramp cannot be undone.
+        String blendMethod = method(source, "latitudeBandIndexWithBlend(int blockX, int blockZ, int radius,");
+        assertTrue(blendMethod.contains("TEMPERATE_EQUATORWARD_RAMP_LOW_DEG")
+                        && blendMethod.contains("TEMPERATE_EQUATORWARD_RAMP_HIGH_DEG"),
+                "temperate promotion out of the subtropical belt is gated by the true-latitude "
+                        + "equatorward ramp inside the blend resolution");
+        assertTrue(blendMethod.indexOf("TEMPERATE_EQUATORWARD_RAMP_LOW_DEG")
+                        < blendMethod.indexOf("enforceTemperateSubpolarOwnership(canonicalBandIndex, resolvedBandIndex)"),
+                "the mesic clamp must resolve before ownership enforcement, not after it");
+        assertTrue(source.contains("latitude.temperateEquatorwardRampLow"),
+                "the mesic clamp stays -D tunable like its two sibling ramps");
+
+        // The riparian water sweep answers with a DISTANCE, and the bank taper consumes it
+        // directly, so the probe table must be ordered by true distance. Rounding rings onto the
+        // block grid does not preserve ring order — whether a later ring holds a column nearer
+        // than an earlier ring's farthest depends on the arithmetic of (direction count x radius
+        // set), and the current table is inversion-free only by that coincidence. Pin the sort so
+        // a future edit to either constant cannot silently return the wrong distance.
+        String riparian = read("src/main/java/com/example/globe/world/feature/RiparianPlacement.java");
+        assertTrue(riparian.contains("offsets.sort(java.util.Comparator.comparingInt(offset -> offset[2]))"),
+                "the riparian probe table is sorted by true squared distance, not left in ring "
+                        + "order — the taper reads this distance and a ring-ordered walk can "
+                        + "report a farther column than the nearest one sampled");
+        assertTrue(riparian.contains("return Math.sqrt(offset[2]);"),
+                "the sweep returns the hit column's true distance, not its nominal ring radius "
+                        + "(rounding puts those up to 0.69 blocks apart)");
+        assertFalse(riparian.contains("hasWaterNearby"),
+                "the 16-point compass stencil must stay gone: it missed a bank column one block "
+                        + "from a narrow river because both probes on its ray overshot the far bank");
 
         // Shores are a beach authority, never ledger land. Latitude's own isBeachLike() matches any
         // path containing "shore", so routing one as land would place a coastal identity inland.
@@ -1216,12 +2822,13 @@ final class BiomeProviderSelectionPolicyTest {
                 "evaluateSwamp's continentalness floor is the condition this protects; if it moves, "
                         + "this test's premise needs rechecking");
 
-        // Both wetland routes must actually be gated on the swamp evaluation.
+        // Both wetland routes must be gated on the dry-province law AND the swamp evaluation
+        // (26.2 parity port, authorized 2026-08-16 — matches the 26.2 line's own pin).
         String eligible = source.replaceAll("\\s+", " ");
-        assertTrue(eligible.contains("case TEMPERATE_WETLAND -> band == BAND_TEMPERATE && !mountain && evaluateSwamp("),
-                "temperate wetland stays swamp-gated");
-        assertTrue(eligible.contains("case SUBPOLAR_WETLAND -> band == BAND_SUBPOLAR && !mountain && evaluateSwamp("),
-                "subpolar wetland stays swamp-gated");
+        assertTrue(eligible.contains("case TEMPERATE_WETLAND -> band == BAND_TEMPERATE && !mountain && wetlandProvinceEligible(blockX, blockZ) && evaluateSwamp("),
+                "temperate wetland stays province- and swamp-gated");
+        assertTrue(eligible.contains("case SUBPOLAR_WETLAND -> band == BAND_SUBPOLAR && !mountain && wetlandProvinceEligible(blockX, blockZ) && evaluateSwamp("),
+                "subpolar wetland stays province- and swamp-gated");
     }
 
     /**
@@ -1266,12 +2873,13 @@ final class BiomeProviderSelectionPolicyTest {
             assertTrue(reachesTemperate,
                     "cohesion-gate pool member must hold a temperate-band ledger route — the gate "
                             + "paints AFTER enforceLandBandPool with no re-check, so an entry routed "
-                            + "elsewhere (windswept -> COLD_UPLAND) is smuggled into temperate "
+                            + "elsewhere (windswept -> SUBPOLAR_UPLAND) is smuggled into temperate "
                             + "through the back door: " + id);
         }
         assertFalse(arrayBlock.contains("windswept"),
-                "windswept must not return to the temperate cohesion-gate pool (maintainer ruling, "
-                        + "2026-08-10: the windswept family belongs at 50+ degrees)");
+                "windswept must not return to the temperate cohesion-gate pool (maintainer rulings, "
+                        + "2026-08-10 and 2026-08-18: the windswept family belongs to subpolar "
+                        + "mountains, 50-66.5 degrees)");
     }
 
     private static String read(String path) throws Exception {
@@ -1374,6 +2982,259 @@ final class BiomeProviderSelectionPolicyTest {
                 "the constant this javadoc describes must still be 74.5, or the corrected javadoc "
                         + "(fixed 2026-08-10; previously claimed 85 against this same 74.5 constant) "
                         + "is itself now wrong");
+    }
+
+
+    /**
+     * The warm belt has one answer per province, and this pins it.
+     *
+     * <p>Four rulings from 2026-08-18 land here as one shape. In the DRY province desert is the
+     * staple and badlands is the country inside it, so every path that resolves a dry warm column
+     * must try desert first. In the MEDIUM province savanna is a country plus the dry fringe hugging
+     * an arid province, and forest is the belt around both. And the two paths that can still hand
+     * out arid AFTER applyFinalSavannaClimateClamp has run must re-apply that clamp's three latitude
+     * demotes themselves, or a gate-made desert stands at the equator with nothing downstream left
+     * to take it back.
+     *
+     * <p>STRUCTURAL BY DESIGN, and the scope limit is worth stating rather than rediscovering. Every
+     * defect in this chain was a rewrite stage disagreeing with its own twin, or with the province
+     * authority, about what a column IS -- and every admission, descriptor and route assertion in
+     * this file passed for the whole life of all four. A share census would be the stronger
+     * instrument, but the shares that would give it teeth were measured on the 26.2 generator, and
+     * this line carries desert levers 26.2 does not (ProvinceAuthority's subtropical dry belt), so
+     * its arid balance starts somewhere else. Numbers from there would be assertions about a
+     * different world. These pins hold the SHAPE until this line has its own atlas census; see the
+     * port report for the specific 26.2 thresholds deliberately not carried over.
+     */
+    private static void warmBeltIdentityIsProvinceOrdered() throws Exception {
+        String source = read("src/main/java/com/example/globe/world/LatitudeBiomes.java");
+
+        // 1. THE DRY PROVINCE ORDERS DESERT FIRST, in both picker overloads. These two had disagreed
+        //    since they were written -- registry badlands -> savanna -> desert against collection
+        //    desert -> badlands -- which is live chunk generation and the atlas drawing two
+        //    different worlds from the same seed.
+        for (String overload : new String[]{"Registry<Biome> biomes,", "Collection<Holder<Biome>> biomes,"}) {
+            String arm = warmProvinceArm(
+                    memberBody(source, "private static Holder<Biome> enforceWarmProvinceFamily(" + overload),
+                    "case WARM_DRY ->");
+            int desert = arm.indexOf("\"minecraft:desert\"");
+            int badlands = arm.indexOf("\"minecraft:badlands\"");
+            int savanna = arm.indexOf("\"minecraft:savanna\"");
+            assertTrue(desert >= 0 && badlands >= 0 && savanna >= 0,
+                    "the dry province's chain must still name all three identities (" + overload
+                            + "): " + arm);
+            assertTrue(desert < badlands && badlands < savanna,
+                    "the dry warm province resolves desert, THEN badlands, THEN savanna as the last "
+                            + "resort (maintainer ruling, 2026-08-18) -- badlands is placed by "
+                            + "badlandsProvinceAuthorityHit, not by being the fallback for everything "
+                            + "dry, and the two overloads must name them in the same order or the "
+                            + "world stops matching the map (" + overload + "): " + arm);
+        }
+
+        // 2. THE MEDIUM PROVINCE ASKS THE COUNTRY AND THE FRINGE, in both overloads, and answers
+        //    forest outside both. An arm that resolves to savanna without consulting either is the
+        //    monoculture this slice removed.
+        for (String overload : new String[]{"Registry<Biome> biomes,", "Collection<Holder<Biome>> biomes,"}) {
+            String arm = warmProvinceArm(
+                    memberBody(source, "private static Holder<Biome> enforceWarmProvinceFamily(" + overload),
+                    "case WARM_MEDIUM ->");
+            assertTrue(arm.contains("savannaOwnsColumnAt(blockX, blockZ)"),
+                    "savanna has TWO homes in the warm-medium belt -- its countries and the dry "
+                            + "fringe hugging an arid province -- and this arm must consult "
+                            + "ownership before it hands a column savanna (" + overload + "): " + arm);
+            assertTrue(arm.indexOf("warmMediumForestStaple(biomes)")
+                            < arm.indexOf("\"minecraft:savanna\""),
+                    "outside a country and outside the fringe the warm-medium staple is forest, and "
+                            + "it must be reached BEFORE the savanna chain, or the belt re-derives "
+                            + "its old identity (" + overload + "): " + arm);
+            assertTrue(arm.contains("isBiomeId(pick, \"minecraft:windswept_savanna\")"),
+                    "windswept_savanna stays exempt from the country rule in both directions -- it "
+                            + "is the mountain identity with exactly one legal home, not the flat "
+                            + "staple this country governs (" + overload + "): " + arm);
+        }
+
+        // 3. THE TWO LATE ARID PRODUCERS RE-APPLY THE LATITUDE LAW. Both of these run downstream of
+        //    applyFinalSavannaClimateClamp, which is where "no arid in the tropics, none past the
+        //    temperate line" lives. Producing sand here and stopping would leave desert standing at
+        //    the equator. Neither may name an identity itself: the province helper is the one
+        //    answer, and the three demotes have to follow it in the clamp's own order.
+        for (String gate : new String[]{"gateDryWarmIdentity", "gateWarmJungleSurvival"}) {
+            String registryGate = memberBody(source,
+                    "private static Holder<Biome> " + gate + "(Registry<Biome> biomes,");
+            String collectionGate = memberBody(source,
+                    "private static Holder<Biome> " + gate + "(Collection<Holder<Biome>> biomes,");
+            for (String body : new String[]{normalize(registryGate), normalize(collectionGate)}) {
+                assertFalse(body.contains("pickDryWarmFallback("),
+                        gate + " must not answer a dry warm column with the hardcoded fallback -- "
+                                + "that path returns arid with no latitude law at all, which is how "
+                                + "desert reached the equator: " + body);
+                int enforce = body.indexOf("ProvinceAuthority.Province.WARM_DRY, blockX, blockZ)");
+                int badlands = body.indexOf("demoteEquatorialBadlands(");
+                int desert = body.indexOf("demoteEquatorialDesert(");
+                int poleward = body.indexOf("demotePolewardArid(");
+                assertTrue(enforce >= 0,
+                        gate + " must resolve its dry answer through the same helper every other "
+                                + "dry province column resolves through: " + body);
+                assertTrue(badlands > enforce && desert > badlands && poleward > desert,
+                        gate + " runs after applyFinalSavannaClimateClamp, so it must re-apply that "
+                                + "clamp's three latitude demotes, in the clamp's order, to whatever "
+                                + "it answers -- without them a gate-made desert stands at the "
+                                + "equator with nothing downstream left to take it back: " + body);
+            }
+            // The two overloads have to be the same world, not merely both correct. Everything from
+            // the dry reroute onward is compared literally.
+            String marker = "enforceWarmProvinceFamily(";
+            assertEquals(
+                    normalize(registryGate.substring(registryGate.lastIndexOf(marker))),
+                    normalize(collectionGate.substring(collectionGate.lastIndexOf(marker))),
+                    gate + "'s two overloads must resolve identically, call for call -- a divergence "
+                            + "here is live generation parting company with the map the atlas drew");
+        }
+
+        // 3b. OWNERSHIP MEANS COUNTRY *OR* FRINGE. The call sites above ask one memoised question
+        //     instead of naming both predicates inline, so the "both homes are consulted" claim now
+        //     lives in that one definition -- pin it there, or a memo that quietly dropped the
+        //     fringe would satisfy every call-site check above.
+        String ownershipBody = normalize(memberBody(source,
+                "private static boolean savannaOwnsColumnAt("));
+        assertTrue(ownershipBody.contains(
+                        "savannaCountryHere(blockX, blockZ) || savannaDryFringeHere(blockX, blockZ)"),
+                "savanna ownership must remain the country OR the dry fringe: " + ownershipBody);
+        assertTrue(ownershipBody.contains("authority == candidateAuthority")
+                        || normalize(source).contains("authority == candidateAuthority"),
+                "the ownership memo must invalidate on province-authority IDENTITY, or a swapped "
+                        + "authority in a proof could read a stale answer");
+
+        // 4. THE JUNGLE GATE IS WHERE THE COUNTRY IS DECISIVE. It runs AFTER enforceLandBandPool,
+        //    and minecraft:savanna is not pool-legal in the tropical band, so every tropical savanna
+        //    reaching the surface from a jungle donor comes through here. A gate that "looks wired"
+        //    because the enforcer downstream knows about countries would still stamp savanna.
+        for (String overload : new String[]{"Registry<Biome> biomes,", "Collection<Holder<Biome>> biomes,"}) {
+            String body = normalize(memberBody(source,
+                    "private static Holder<Biome> gateWarmJungleSurvival(" + overload));
+            assertTrue(body.contains("savannaOwnsColumnAt(blockX, blockZ)"),
+                    "the jungle-survival gate must consult savanna ownership HERE, explicitly -- it "
+                            + "is the largest single savanna producer in the pipeline and the only "
+                            + "one downstream of the band-pool gate (" + overload + "): " + body);
+            assertTrue(body.contains("warmMediumOutsideCountryStaple(biomes, out)"),
+                    "outside both homes this gate answers the forest staple (" + overload + "): "
+                            + body);
+        }
+
+        // 5. THE PROVINCE IS THE AUTHORITY OUTSIDE ITS OWN COUNTRY. Both arid fallbacks must resolve
+        //    desert DIRECTLY out here rather than handing `base` to the province enforcer, which
+        //    returns any badlands-family pick untouched -- that is how a column where vanilla had
+        //    already placed badlands re-admitted badlands outside its own province, no matter what
+        //    the province said.
+        for (String overload : new String[]{"Registry<Biome> biomes,", "Collection<Holder<Biome>> biomes,"}) {
+            String body = normalize(memberBody(source,
+                    "private static Holder<Biome> pickAridRegionFallback(" + overload));
+            int outsideGate = body.indexOf("BADLANDS_OUTSIDE_PROVINCE_THRESHOLD");
+            int outsideDesert = body.indexOf("\"minecraft:desert\"");
+            int enforcerHandoff = body.indexOf("enforceWarmProvinceFamily(");
+            assertTrue(outsideGate >= 0 && outsideDesert > outsideGate,
+                    "outside a badlands province the arid belt must resolve to desert (" + overload
+                            + "): " + body);
+            assertTrue(outsideDesert < enforcerHandoff,
+                    "the outside-province answer must be desert resolved DIRECTLY, before any "
+                            + "handoff to the province enforcer -- the enforcer returns an incoming "
+                            + "badlands untouched, which re-admits mesa outside its own country ("
+                            + overload + "): " + body);
+        }
+        assertTrue(normalize(source).contains("BADLANDS_OUTSIDE_PROVINCE_THRESHOLD = 0.06"),
+                "the outlier-mesa allowance stays narrow (0.34 -> 0.06, maintainer ruling "
+                        + "2026-08-18). At 0.34 this was not an outlier allowance, it was a second "
+                        + "badlands province covering a third of everything outside the first one");
+
+        // 6. THE EQUATORIAL GATES ARE A PAIR, AND THE LAW IS NOT LOOSENED. Desert leaves the
+        //    badlands predicate so it is gated once rather than twice, which is what gives it the
+        //    23.5-27 degree phase-in -- but only because its own gate reads the same tropical ban
+        //    and the same ramp edge, where smoothstep clamps the gate to zero.
+        String badlandsPredicate = normalize(memberBody(source,
+                "private static boolean shouldDemoteEquatorialBadlands(Holder<Biome> pick,"));
+        assertTrue(badlandsPredicate.contains("isBiomeId(pick, \"minecraft:desert\")"),
+                "vanilla desert must be handed to its own gate here, not gated twice: "
+                        + badlandsPredicate);
+        assertTrue(badlandsPredicate.contains("isAridFamily(pick)"),
+                "modded arid variants must STAY in this predicate -- the desert gate matches a "
+                        + "literal vanilla id and would never catch them: " + badlandsPredicate);
+        String desertPredicate = normalize(memberBody(source,
+                "private static boolean shouldDemoteEquatorialDesert(Holder<Biome> pick,"));
+        assertTrue(desertPredicate.contains("authoritativeTropicalAridBan(blockX, blockZ, radius)")
+                        && desertPredicate.contains("DESERT_LAT_RAMP_LOW_DEG"),
+                "splitting the pair is only lawful because the desert gate enforces the SAME "
+                        + "tropical ban over the SAME ramp edge -- if either goes, the tropics can "
+                        + "grow desert: " + desertPredicate);
+
+        // 7. FOREST HAS TO BE POOL-LEGAL IN THE TROPICS or the belt's new staple is rerolled away
+        //    by enforceLandBandPool and the old identity comes straight back.
+        String extras = memberBody(source,
+                "private static List<String> allowedExtraBiomeIdsForBand(int bandIndex) {");
+        String tropicalExtras = extras.substring(extras.indexOf("case BAND_TROPICAL ->"),
+                extras.indexOf("case BAND_SUBTROPICAL ->"));
+        assertTrue(tropicalExtras.contains("\"minecraft:forest\""),
+                "minecraft:forest is a deliberate tropical band-pool seed (the swamp precedent) -- "
+                        + "without it the warm-medium staple cannot survive the pool gate: "
+                        + tropicalExtras);
+
+        // 8. THE FRINGE READS THE PROVINCE'S OWN ARITHMETIC, and this line's dry-belt levers are
+        //    still there. A wholesale copy of 26.2's ProvinceAuthority would silently delete them:
+        //    26.2's release line has no subtropical dry belt, and that belt is one of this line's
+        //    two desert levers.
+        String province = read("src/main/java/com/example/globe/world/ProvinceAuthority.java");
+        for (String lever : new String[]{
+                "SUBTROPICAL_DRY_BELT_START_DEG", "SUBTROPICAL_DRY_BELT_PEAK_LOW_DEG",
+                "SUBTROPICAL_DRY_BELT_PEAK_HIGH_DEG", "SUBTROPICAL_DRY_BELT_END_DEG",
+                "SUBTROPICAL_DRY_BIAS"}) {
+            assertTrue(province.contains(lever + " ="),
+                    "this line's subtropical dry-belt lever must survive every port from 26.2 -- the "
+                            + "26.2 release line does not have it, so a file-level copy reverts it "
+                            + "without a diff anyone reads: " + lever);
+        }
+        String fringe = normalize(province.substring(
+                province.indexOf("public boolean warmDryFringeForBand(")));
+        assertTrue(fringe.contains("warmDryMoisture("),
+                "the fringe must measure the SAME quantity classifyWarm thresholds against for "
+                        + "WARM_DRY -- on this line that is the dry-belt-biased moisture, so a "
+                        + "fringe read off the plain moisture would sit at a different distance "
+                        + "from the province edge than the edge itself: " + fringe);
+        assertTrue(fringe.contains("WARM_DRY_THRESHOLD + WARM_DRY_FRINGE_WIDTH"),
+                "the fringe is the shell immediately outside the dry threshold, expressed in the "
+                        + "code's own constants rather than a copied number: " + fringe);
+        String classifyWarm = normalize(memberBody(province,
+                "private Province classifyWarm(int blockX, int blockZ) {"));
+        assertTrue(classifyWarm.contains("dryMoisture < WARM_DRY_THRESHOLD")
+                        && classifyWarm.contains("moisture > WARM_WET_THRESHOLD"),
+                "extracting warmMoisture must not merge this line's two moisture quantities: the "
+                        + "dry boundary reads the dry-belt-biased value and the wet boundary reads "
+                        + "the plain one, and collapsing them would move the humid tier the "
+                        + "dry-belt lever was written never to touch: " + classifyWarm);
+    }
+
+    /**
+     * A member's source text, from its signature to its own closing brace.
+     *
+     * <p>Deliberately not {@link #method}: that helper slices to the next {@code private static}
+     * declaration, so it runs past the end of a method whose neighbour is declared any other way
+     * and can pick up matches from the method after it. Every nested closer in this codebase is
+     * indented at least eight spaces, so the first four-space {@code }} after the signature is the
+     * member's own.
+     */
+    private static String memberBody(String source, String signature) {
+        int start = source.indexOf(signature);
+        if (start < 0) throw new AssertionError("missing member: " + signature);
+        int end = source.indexOf("\n    }", start + signature.length());
+        if (end < 0) throw new AssertionError("unterminated member: " + signature);
+        return source.substring(start, end + "\n    }".length());
+    }
+
+    /** One arrow-switch arm of a warm-province enforcer, from its label to the next label. */
+    private static String warmProvinceArm(String methodBody, String label) {
+        int start = methodBody.indexOf(label);
+        if (start < 0) throw new AssertionError("missing province arm: " + label);
+        int next = methodBody.indexOf("\n            case ", start + label.length());
+        int end = next >= 0 ? next : methodBody.indexOf("\n            default ->", start);
+        return normalize(methodBody.substring(start, end >= 0 ? end : methodBody.length()));
     }
 
     private static void assertWithinFourSigma(Map<String, Integer> counts, String key, int samples, double expected, String message) {

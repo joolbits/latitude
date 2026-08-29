@@ -1,8 +1,10 @@
 package com.example.globe.mixin.client;
 
+import com.example.globe.client.create.VanillaOnlyWorldCreationState;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -17,7 +19,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.levelgen.presets.WorldPreset;
 
 @Mixin(WorldCreationUiState.class)
-public abstract class WorldCreatorMixin {
+public abstract class WorldCreatorMixin implements VanillaOnlyWorldCreationState {
     private static final Identifier GLOBE_WORLD_PRESET_ID = Identifier.fromNamespaceAndPath("globe", "globe");
 
     @Shadow
@@ -29,8 +31,32 @@ public abstract class WorldCreatorMixin {
     @Shadow
     public abstract java.util.List<WorldCreationUiState.WorldTypeEntry> getAltPresetList();
 
+    @Unique
+    private boolean globe$vanillaOnly;
+
+    @Override
+    public boolean globe$isVanillaOnly() {
+        return this.globe$vanillaOnly;
+    }
+
+    @Override
+    public void globe$setVanillaOnly(boolean vanillaOnly) {
+        this.globe$vanillaOnly = vanillaOnly;
+        if (vanillaOnly) {
+            // The lists were already built for a normal session by the time the handoff is
+            // claimed, so flipping the flag has to re-apply the policy rather than wait for the
+            // next updatePresetLists — otherwise Globe stays listed for this screen's lifetime.
+            globe$applyPresetPolicy();
+        }
+    }
+
     @Inject(method = "updatePresetLists", at = @At("TAIL"))
     private void globe$ensureGlobePresetIsListed(CallbackInfo ci) {
+        globe$applyPresetPolicy();
+    }
+
+    @Unique
+    private void globe$applyPresetPolicy() {
         Registry<WorldPreset> presets = this.settings
                 .worldgenLoadContext()
                 .lookupOrThrow(Registries.WORLD_PRESET);
@@ -40,16 +66,13 @@ public abstract class WorldCreatorMixin {
             WorldCreationUiState.WorldTypeEntry globeType = new WorldCreationUiState.WorldTypeEntry((Holder<WorldPreset>) entry);
 
             var normalWorldTypes = this.getNormalPresetList();
-            if (!normalWorldTypes.contains(globeType)) {
-                int idx = normalWorldTypes.isEmpty() ? 0 : 1;
-                normalWorldTypes.add(idx, globeType);
+            var altWorldTypes = this.getAltPresetList();
+            if (this.globe$vanillaOnly) {
+                VanillaOnlyWorldCreationState.removeFromBothPresetLists(normalWorldTypes, altWorldTypes, globeType);
+                return;
             }
 
-            var altWorldTypes = this.getAltPresetList();
-            if (!altWorldTypes.contains(globeType)) {
-                int idx = altWorldTypes.isEmpty() ? 0 : 1;
-                altWorldTypes.add(idx, globeType);
-            }
+            VanillaOnlyWorldCreationState.ensureInBothPresetLists(normalWorldTypes, altWorldTypes, globeType);
         });
     }
 }

@@ -1,5 +1,92 @@
 # Changelog
 
+## Latitude 1.5.1 Beta 3 (Minecraft 1.21.11)
+
+A focused follow-up to Beta 1, bringing this line level with the 26.2 line's Beta 2 and then
+past it. Most of that release was adopted *from* this line and was already here; these are the
+parts that were not, plus the fixes that came out of live testing afterwards.
+
+*There is no Beta 2 on this Minecraft version. This work was prepared under that number but
+never released; it ships as Beta 3 so that a given Latitude version number means the same
+thing on every Minecraft version it is published for.*
+
+### World generation
+
+*The percentages below, like Beta 1's, were measured with **no biome packs installed**. With Biomes
+O' Plenty, Terralith or similar, those packs supply many of the biomes and the shares will differ.*
+
+- **Badlands is no longer a seed lottery.** The noise that decides where mesa country sits scaled with
+  world size, so the whole map got about seven coin-flips no matter how big it was — one unlucky roll
+  could hand most of the dry belt to badlands and squeeze desert almost out of existence. Measured on
+  this line across twelve seeds, badlands covered anywhere from 24% to 71% of the dry belt. It now
+  covers 11% to 30%, in many more, smaller regions. Badlands reads as rare country inside a
+  desert-dominant belt, which is how it looks on Earth.
+- **Autumn forest no longer wanders into the desert belt.** The soft, wobbled band boundaries could
+  promote a spot deep inside the 23.5–35° dry belt (observed at 30–33°N) to the temperate biome
+  pool — which is full of maple and autumn forests — planting lush forest islands in open desert.
+  A third true-latitude clamp now mirrors the two that already guard the other directions: full
+  temperate eligibility from 35.5° poleward, a soft thinning ramp across 34.5–35.5°, and never
+  equatorward of 34.5°. The dry belt keeps its own biomes to its true edge; autumn country starts
+  where it should.
+- **Desert riverbank greenery hugs the water now.** The green banks from earlier in Beta 2 could sit
+  up to four blocks above the waterline and their lush/bare rhythm was fine-grained enough to read
+  as speckle, with every desert pond seeding its own patch. Banks now stay within two blocks of
+  water level, and the verdant stretches are longer, rarer, and more deliberate — lush reaches
+  along a river with honest bare desert between them.
+- **A green reach is a bank, not a row of dots.** Deciding whether a spot was near water meant
+  feeling around at sixteen fixed points, a stencil with holes wide enough that ground seven blocks
+  from a river could read as dry — so even a stretch marked verdant came out as scattered blobs.
+  The check now sweeps outward from the spot and stops at the water it finds, so it knows the real
+  distance to the bank, and greenery thins out smoothly as it climbs away from the water instead of
+  ending at a hard rim. Same reaches, same rhythm of lush and bare; each reach now reads as a
+  continuous, soft-edged ribbon along the water.
+- **With biome packs installed, the shoreline stays a shoreline.** When Biomes O' Plenty, Terralith
+  or similar are installed, a safety net reroutes unrecognized pack biomes into the climate band's
+  ordinary land pool. That reroute could land on biomes that carry their own strict placement rules —
+  it painted landlocked Mangrove Swamp onto cliffed beaches at 27°N — outside mangrove's real
+  placement window (within 25 degrees of the equator, near open ocean, at sea level). Rerouted beach columns now stay beaches, and the
+  reroute can never hand out mangrove or swamp at all; those only appear through their own validated
+  placement. Found in live testing with the full pack set.
+- **Deep ocean no longer starts at the beach.** Outside the tropics, the ocean's identity (ocean vs
+  deep ocean, and their pack variants) was rolled by map noise with no regard for how deep the water
+  actually is, so the first water block off a coast could be labeled Deep Ocean. The tropics already
+  respected true depth; every other band now does too: shallow shelf water gets shallow identities,
+  true deep water gets the deep ones.
+- **Loading the Nether can no longer briefly disarm world generation.** An ordering quirk at world
+  load let the Nether's own load step clear the Globe overworld's generation authority for a moment;
+  chunks generated in exactly that window would silently fall back to vanilla painting. The window is
+  closed.
+- **Desert riverbanks can be green now.** Where an arid biome meets fresh water, the bank sometimes
+  grows a strip of grass and wildflowers instead of running bare sand to the waterline. Deliberately
+  not everywhere: long stretches stay bare, and which stretches green up is fixed by the world seed.
+  The biome itself is unchanged — still desert, still desert mobs, still desert structures; only the
+  planting is different. New terrain only.
+
+### World creation
+
+- **You can reach Minecraft's own world-creation screen again.** The Rules panel has a new
+  "Other World Types & Datapacks..." option that opens Minecraft's full setup, so modded world
+  types, Superflat customization, and datapack selection are available from inside Latitude. The
+  world name and seed you have already typed carry across, so nothing is retyped. That screen runs
+  as plain Minecraft — the Globe world type is deliberately not offered there, because a Latitude
+  world made on that screen would never have been asked for Latitude's settings. Creating an
+  ordinary Latitude world is unchanged. Ported from the 2.0 line (PR #21, addressing issue #19).
+- **Ctrl+Tab moves between panels** on the narrow (tabbed) create screen, and switching panels no
+  longer leaves keyboard focus on a control the old panel owned.
+
+- **Each climate zone spawns you at the middle of its own band.** This line already had the fix; Beta 2
+  adds the regression test that pins it, with every zone's target latitude recomputed from this line's
+  own band boundaries.
+
+### Known limitations
+
+- The badlands rebalance moves a lot on seeds that previously rolled badlands-heavy. On the reference
+  seed, desert went from about 12.5% to about 27.5% of subtropical land and badlands from about 23% to
+  about 8%. The point of the change is that the seed-to-seed swing collapses, not the share on any one
+  seed — but if badlands reads too rare for your taste in play, say so and it is a one-value tune.
+- Green banks are new and their density is a first-pass value. They have not yet been tuned against
+  live play on this line.
+
 ## Latitude 1.5.1 Beta 1 (Minecraft 1.21.11)
 
 This is a beta release. Back up important worlds before testing, and use the optional retrofit command
@@ -18,14 +105,24 @@ Latitude 1.5 targets **Minecraft 1.21.11**, the same Minecraft version as 1.3.0.
 - **This is a same-Minecraft-version upgrade.** 1.3.0 and 1.5.1 Beta 1 both target 1.21.11, so there is no
   save-format conversion to cross going from one to the other — unlike jumping here from an older
   Minecraft version.
-- **Existing worlds keep their original biome selection**, including in chunks you have not visited
-  yet, so the climate-model and custom-biome work below applies to **newly created worlds**. This is
-  deliberate: it stops terrain you have already explored from changing underneath you.
+- **Terrain you have already explored will not change.** Already-generated chunks are never rewritten,
+  and an existing world keeps the custom-biome roster and world-generation policy it was created with.
+- **But newly generated chunks in an existing world DO get this release's placement fixes.** That is
+  deliberate (maintainer ruling, 2026-08-18): a legality fix applies to all new terrain rather than
+  being frozen out of older saves. The practical effect is a seam at the frontier of where you have
+  explored — beyond it, windswept, desert and savanna follow the new rules. To see this release as
+  intended end to end, make a new world.
 
 ### The climate map reads like a real world now
 
 This is the headline of the 1.3 → 1.5 span, and it is not a tuning pass — it is a rebuilt model of
 how climate is decided.
+
+*About the percentages below:* they were measured on a Regular world with **no biome packs
+installed**, sampling roughly 98,000 columns on one seed. They describe how Latitude's own model
+behaves in isolation. With Biomes O' Plenty, Terralith or similar installed, those packs supply many
+of the biomes and the shares will differ — often substantially. The direction of every change holds
+either way; the exact numbers are vanilla-only.
 
 - **Deserts no longer swallow the tropics.** The warm-side moisture model was latitude-independent, so
   arid pockets scattered evenly across every warm latitude, equator included. An Earth-analog latitude
@@ -40,10 +137,24 @@ how climate is decided.
   counts halved or better.
 - **Badlands left the equator.** Mesa is a subtropical landform on Earth, never an equatorial one; it
   now fades in toward the subtropics where it belongs, with savanna clearings taking its place at the
-  deep equator. The subtropical arid belt is untouched.
+  deep equator. The subtropical arid belt's own desert/badlands/savanna mix changed too — covered
+  just below.
+- **Desert is the staple of the arid belt again.** Badlands had been crowding it out — this line
+  measured almost nine badlands patches for every desert patch in the subtropics. The pick order now
+  favors desert first, with badlands generating as coherent regional patches inside a desert-dominant
+  belt rather than spreading everywhere: subtropical badlands-to-desert eased from about 8.8:1 to
+  under 1.9:1, and subtropical desert coverage more than tripled, from about 3.5% to about 12.5% of
+  subtropical land.
+- **Savanna is a place again, not the default fallback.** It now forms its own bordered regions across
+  the warm belt, plus a dry fringe hugging every arid province — the transition between desert and
+  forest, the way it works on Earth — instead of standing in wherever dry-warm terrain used to fall
+  back to it. Its share eased from about 48% to about 38% of subtropical land, and from about 54% to
+  about 30% of tropical land, while ordinary tropical forest — previously almost absent — now covers
+  close to a quarter of tropical land. Jungle itself is unchanged.
+- **Eroded badlands can actually generate now.** It was structurally unplaceable before this release —
+  the game would select it, fail to place it, and log a warning on every world load. That's fixed.
 - **Cross-province bleed reduced** — jungles marooned in desert, desert specks inside jungle.
-- **Temperate boundaries and coastal beaches** tightened, mountain-class beach ridges rejected, and
-  windswept temperate mountains restored after a regression.
+- **Temperate boundaries and coastal beaches** tightened, and mountain-class beach ridges rejected.
 - **Pale Garden** is consolidated into one coherent, reachable inland region rather than fragments.
 - **Mushroom Fields is real land.** A biome label could previously reserve open water without ever
   materializing its planned island terrain; placement now reaches the actual chunk-writing path.
@@ -58,8 +169,8 @@ how climate is decided.
 - **Provider selection was rebuilt in 1.5.** Selection had effectively been driven by a fixed seed and
   a single tag-size-weighted roll, which let large packs crowd out whole provider families and made
   different worlds repeat the same choices. Latitude now picks a coherent provider namespace first,
-  then an exact biome within it, using the live world seed — so provider choice no longer depends on
-  how many biomes a provider happens to contribute.
+  then an exact biome within it, using the live world seed. This reduces crowding from large packs, but
+  does not guarantee that every installed provider or biome appears in every world.
 - In sampled worlds with both packs installed, land share came out roughly a fifth Biomes O' Plenty,
   a quarter to a third Terralith, and about half vanilla, with dozens of distinct custom biomes
   present. Terralith's orchid swamp, amethyst canyon, amethyst rainforest and tropical jungle, and
@@ -73,6 +184,10 @@ how climate is decided.
 - Biome-source wrapping was made robust: structure and surface placement follow the latitude biome map,
   and wrapping defers safely when a source mod's biome registry isn't ready yet — fixing a class of
   world-load crashes with source-side biome mods.
+- **TerraBlender compatibility.** TerraBlender — installed automatically as a dependency of Biomes O'
+  Plenty — was silently overriding Latitude's own surface painting, so badlands rendered with
+  TerraBlender's untuned look instead of Latitude's terracotta whenever it was present. Latitude's
+  surface rules now take precedence again.
 
 ### The poles feel like the poles
 
@@ -80,6 +195,11 @@ how climate is decided.
   broken screen.
 - Final-zone frost damage was steadied, and polar foliage is suppressed beyond 80°.
 - Polar warnings and zone titles were reworked, including a sand-haze tint correction.
+- **Windswept hills no longer cover the pole.** Windswept hills, forest, and gravelly mountains are
+  confined to subpolar mountains where they belong, instead of spreading across the true polar band as
+  flat, snowless grey-green terrain — measured at roughly 15% of polar land before this fix, and
+  effectively none after. Trees and other woody plant growth are also now blocked at or above the tree
+  line, closing a rare gap that could place them somewhere they shouldn't grow.
 
 ### World edges
 
@@ -140,11 +260,16 @@ excluded from public builds by policy and cannot be reached from a release jar.
 
 - Villages are rejected from climate-mismatched starts, and polar village "ghosts" are prevented.
 - Villages are allowed through 80° where appropriate rather than blanket-banned.
-- **Structure siting now judges the same final biome the game shows you**, not the raw biome
-  underneath it — fixing both a structure generating in a biome it doesn't belong in, and
-  `/locate structure` reporting a structure that was never actually going to appear. On this port,
-  `/locate structure` was also extended to cover structures at all — vanilla's own search is blind to
-  Latitude's repainted biomes and has no world-border awareness; both are fixed.
+- Structure siting and `/locate structure` now use Latitude's final biome rather than the raw biome
+  underneath it, and the port's search is bounded by the world border. These changes reduce false
+  results, but not every structure-placement interaction is represented by the search; verify the
+  destination and report a locate result whose structure does not appear.
+- `/locate` now returns the **nearest** match instead of the first one it finds along the search path
+  — biome, structure, wetland, and cave searches all share this. A biome the world's final picker moved
+  away from a search's exact centre is still findable, and a cave-biome search that used to come up
+  empty now falls back to the nearest match too instead of reporting nothing.
+- The coordinate `/locate` prints is now clickable — click it to teleport straight there.
+- Woodland mansions no longer site inside biomes added by other packs.
 
 ### Performance
 
@@ -155,19 +280,22 @@ excluded from public builds by policy and cannot be reached from a release jar.
 - Sodium fog-culling reachability restored for this target's Sodium line
   (0.8.13+mc1.21.11): fog tightening happens before Sodium's own culling snapshot, so distant terrain
   Latitude fogs out is still culled rather than rendered and hidden behind fog.
+- Log output is quieter: a duplicate per-player join message no longer prints by default, and a
+  render-overlay fault can no longer flood the log every frame.
 
 ### World entry
 
 - The bespoke loading screen holds until the world around you has actually finished rendering, so you
   no longer drop into a half-loaded frame.
-- New worlds place your spawn in a latitude-appropriate zone before pregeneration, and keep spawn out
-  of the east/west edge warning band.
-- **Zone spawn targets now land inside the zone you actually picked.** A Subtropical spawn could land
-  one degree past its own boundary, into Temperate — every zone's spawn target is now the true
-  midpoint of its latitude band, not a hand-picked value that was never checked against it.
+- New worlds use latitude-aware spawn targeting before pregeneration and aim to keep spawn out of the
+  east/west edge warning band.
+- Zone spawn targets now use checked latitude-band midpoints. Fallback placement remains a Beta 1 test
+  target: report any new world that lands outside the selected zone.
 - Zone and hemisphere titles are measured from the world's equator rather than a fixed line, fixing an
   inverted or offset hemisphere readout, and no longer fire spuriously after a long teleport or a
   backward world-clock change.
+- The loading screen's climate-zone label now appears when you join a remote or LAN-hosted server, not
+  only when you're hosting your own world.
 
 ### Existing worlds
 
@@ -179,17 +307,29 @@ correctly through a world reload on this Minecraft version.
 
 - **With large custom biome packs installed, not every biome will appear.** Each latitude band draws
   from a finite weighted pool, so the more biomes you add, the smaller each one's share — rarer accent
-  biomes from big stacks can fall below visible frequency. 1.5 substantially improves *which* biomes
-  appear and stops whole providers being crowded out, but it does not make coverage complete. This is
-  expected behaviour, not a bug. Per-pack representation weighting is on the roadmap.
+  biomes from big stacks can fall below visible frequency. 1.5 improves *which* biomes appear and
+  reduces provider crowding, but it does not guarantee every provider or biome in every world. One rare
+  biome missing from one world is expected; repeated loss of a whole installed provider is reportable.
+  Per-pack representation weighting is on the roadmap.
+- **Warm-belt village density has eased somewhat.** Forest doesn't spawn villages — vanilla behavior,
+  unchanged here — and savanna, where villages are common, now covers less of the warm belt than before
+  this release in favor of a more varied mix. Villages remain common inside savanna regions; there is
+  simply less savanna overall for them to appear in.
+- **A rare seam where a lush temperate biome directly borders an arid subtropical one at the exact band
+  boundary.** Uncommon, already understood, and a smoother transition is designed for a later pass.
+- **Savanna can still occasionally turn up a short distance outside the region it belongs to,** through
+  a fallback substitution path that does not re-check the region boundary. This is minor, accepted
+  dilution rather than a bug, and is also present on Latitude's Minecraft 26.2 release line.
 
 ### Worldgen parity with the other 1.5 lines
 
-Compared directly against Minecraft 26.2 on an identical seed, over a 1.565-million-sample climate
-census, Latitude's own band assignment came back bit-identical — all ten band counters matched
-exactly, no biome present on one side and absent on the other, and the only residual was a pair of
-zero-sum swaps between vanilla biomes inside the same band (Minecraft's own cross-version terrain
-placement, not a Latitude difference).
+Latitude's climate model and biome rules are the same design across every Minecraft version this mod
+targets, and worldgen fixes are ported between this line and Minecraft 26.2 in both directions so
+neither line is left behind — several of the fixes above came from 26.2 this round. The two lines are
+not expected to be byte-for-byte identical, since 1.21.11 and 26.2 compute terrain differently
+underneath and the same rules can land a biome one block to either side of a boundary, but they are
+intended to agree on the shape of the climate model: which biomes belong in which latitude band, and
+roughly how much of each.
 
 
 ## Latitude 1.5.0 (Minecraft 26.2)

@@ -10,6 +10,22 @@ import net.minecraft.nbt.NbtIo;
 
 public final class WorldgenAuthorityPolicyTest {
     public static void main(String[] args) throws Exception {
+        if (args.length == 1 && "humid-coverage".equals(args[0])) {
+            landCoveragePrecedesEveryFinalAdmissionAuthority();
+            BiomeProviderSelectionPolicyTest.runHumidCoverageProof();
+            System.out.println("HUMID_COVERAGE_PROOF_PASS");
+            return;
+        }
+        if (args.length == 1 && "warm-upland".equals(args[0])) {
+            BiomeProviderSelectionPolicyTest.runWarmUplandProof();
+            finalSubtropicalUplandAuthorityIsShared();
+            BiomeProviderSelectionPolicyTest.explainDisclosesTheAridHotspotOverride();
+            System.out.println("WARM_UPLAND_PROOF_PASS");
+            return;
+        }
+        if (args.length != 0) {
+            throw new IllegalArgumentException("expected no arguments, humid-coverage, or warm-upland");
+        }
         contextLifecycleIsExplicitAndClearsAllAuthority();
         ordinarySettersDoNotActivateGlobalGuards();
         inlineGeneratorAuthorityIsBoundToTheExactOverworld();
@@ -18,6 +34,7 @@ public final class WorldgenAuthorityPolicyTest {
         frozenRiverVegetationIsScopedWithoutMutatingVanillaBiomes();
         generationScopeIsDimensionIsolatedAndNestSafe();
         generationScopeCleansUpOnFailureAndAcrossThreads();
+        landCoveragePrecedesEveryFinalAdmissionAuthority();
         finalAridLatitudeLawCannotBeBypassedByLateGates();
         paleGardenCoreClearanceCoversTheWholeWobblingCore();
         paleGardenCoreCannotOverwriteOceanBiomes();
@@ -25,12 +42,18 @@ public final class WorldgenAuthorityPolicyTest {
         terrainBiomeCohesionUsesRealSurfaceEvidence();
         recreatedLatitudeWorldKeepsItsWorldTypeAndSize();
         coastalSwampUsesMangroveIdentity();
+        onlyWetProvincesAdmitWetlandClaims();
+        aridHotspotsAreWorldSizeStableAndPresentOnEverySeed();
+        badlandsCountriesAreWorldSizeStableAndEarthlikeRare();
+        warmDryProvinceShareMatchesTheEarthAnalogBelt();
         wetlandLocateFilterMatchesFinalIdentityLaw();
         biomeLocateServiceClaimsAllSupportedTargets();
         structureLocateUsesTheLatitudeBossBarSurface();
+        woodlandMansionKeepsVanillaBiomeSiting();
         customSurfaceLocatePreviewUsesRegistryAuthority();
         profileAdoptionRefusesWorldsLatitudeDidNotGenerate();
         offDiskStateReaderDerivesItsPathFromTheSavedDataId();
+        terraBlenderSweepKeepsLatitudeSurfaceIdentity();
         LatitudeLocateBudgetPolicyTest.main(new String[0]);
         BiomeProviderSelectionPolicyTest.run();
         registeredHookIntegrationIsClosed();
@@ -63,10 +86,38 @@ public final class WorldgenAuthorityPolicyTest {
                         true, seaLevel + 8,
                         TerrainBiomeCohesionPolicy.RUGGED_RELIEF_BLOCKS, seaLevel),
                 "a steep warm-band shoulder is forced into the dedicated upland family too");
+        assertTrue(
+                TerrainBiomeCohesionPolicy.shouldUseWarmUplandFamily(
+                        true, highTerrain, 0, seaLevel),
+                "a real measured warm/subtropical surface at the high-terrain threshold is physical upland");
         assertFalse(
                 TerrainBiomeCohesionPolicy.shouldUseWarmUplandFamily(
                         true, seaLevel + 2, 0, seaLevel),
                 "ordinary flat warm ground still keeps its lowland family");
+        VanillaCoverageFinalAdmissionPolicy.Facts subtropicalUplandFacts =
+                new VanillaCoverageFinalAdmissionPolicy.Facts(
+                        VanillaCoverageFinalAdmissionPolicy.LatitudeZone.SUBTROPICAL,
+                        VanillaCoverageFinalAdmissionPolicy.LatitudeZone.SUBTROPICAL,
+                        ProvinceAuthority.Province.WARM_DRY,
+                        VanillaCoverageFinalAdmissionPolicy.PhysicalTerrain.UPLAND,
+                        false,
+                        false,
+                        true,
+                        false);
+        assertSame(
+                VanillaCoverageFinalAdmissionPolicy.Decision.DEFER_TO_PHYSICAL_TERRAIN,
+                VanillaCoverageFinalAdmissionPolicy.decide(
+                        BiomeDescriptorLedger.descriptor("minecraft:desert"),
+                        BiomeRoute.ARID_LOWLAND,
+                        subtropicalUplandFacts),
+                "an arid lowland reservation defers to measured subtropical upland terrain");
+        assertSame(
+                VanillaCoverageFinalAdmissionPolicy.Decision.PRESERVE_EXACT,
+                VanillaCoverageFinalAdmissionPolicy.decide(
+                        BiomeDescriptorLedger.descriptor("clifftree:desert_cliff"),
+                        BiomeRoute.ARID_UPLAND,
+                        subtropicalUplandFacts),
+                "a descriptor-owned arid upland reservation survives the same measured terrain");
         assertTrue(
                 TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland(true, false),
                 "a late lowland rewrite cannot survive the physical upland authority");
@@ -117,8 +168,31 @@ public final class WorldgenAuthorityPolicyTest {
         assertEquals(
                 2,
                 occurrences(source, "PreviewTerrain gateProbe = onDemandGateTerrain("),
-                "both picker paths probe real terrain on demand so the gate is not inert under the"
-                        + " worldgen preview fast path");
+                "both picker paths derive non-reentrant terrain evidence under the worldgen fast path");
+        assertTrue(
+                source.contains(
+                        "if (\"MIXIN\".equals(normalized) || \"CAVE_CLAMP\".equals(normalized)) { return true; }"),
+                "MIXIN and CAVE_CLAMP unconditionally skip generator-reentrant terrain previews");
+        String onDemandGate = methodBody(
+                source, "private static PreviewTerrain onDemandGateTerrain(", "on-demand gate terrain");
+        String nonReentrantEvidence = methodBody(
+                source, "private static PreviewTerrain nonReentrantTerrainEvidence(",
+                "non-reentrant terrain evidence");
+        for (String criticalPath : new String[]{onDemandGate, nonReentrantEvidence}) {
+            assertFalse(
+                    criticalPath.contains("previewTerrain(")
+                            || criticalPath.contains("previewHeight(")
+                            || criticalPath.contains("getBaseHeight("),
+                    "live on-demand terrain classification cannot re-enter the chunk generator");
+        }
+        assertTrue(
+                onDemandGate.contains("nonReentrantTerrainEvidence("),
+                "live terrain classification reuses cached height plus sampler relief");
+        assertTrue(
+                nonReentrantEvidence.contains("new PreviewTerrain(")
+                        && nonReentrantEvidence.contains(
+                                "ruggedNoiseLike ? TerrainBiomeCohesionPolicy.RUGGED_RELIEF_BLOCKS : 0"),
+                "the terminal live evidence contains only cached height and the sampler ruggedness proxy");
         assertEquals(
                 2,
                 occurrences(
@@ -139,7 +213,215 @@ public final class WorldgenAuthorityPolicyTest {
                 "the final physical-upland clamp runs after every late arid/wetland rewrite");
         assertTrue(
                 source.contains("isBiomeId(candidate, \"minecraft:sunflower_plains\")"),
-                "the exact lowland biome visible in TEST 19 is classified with the plains family");
+                "sunflower plains remains classified with the plains family");
+        assertFinalAdmissionPhysicalTerrainWiring(registryPicker(source), "registry");
+        assertFinalAdmissionPhysicalTerrainWiring(collectionPicker(source), "collection");
+    }
+
+    private static String registryPicker(String source) {
+        return pickerBody(
+                source,
+                "public static Holder<Biome> pick(Registry<Biome> biomeRegistry",
+                "public static Holder<Biome> pick(Collection<Holder<Biome>> biomePool");
+    }
+
+    private static String collectionPicker(String source) {
+        return pickerBody(
+                source,
+                "public static Holder<Biome> pick(Collection<Holder<Biome>> biomePool",
+                "private static Holder<Biome> applyFinalAridLatitudeLaw(");
+    }
+
+    private static void assertFinalAdmissionPhysicalTerrainWiring(String picker, String label) {
+        // polarMountainNoiseLike was renamed rawMountainTruth: the value is the raw, ungated
+        // isMountainLike sample, and calling it "polar" hid that the windswept legality gate and the
+        // late ownership veto both read it outside the polar band. Same definition, same coordinates.
+        String physicalUpland = "boolean finalAdmissionPhysicalUpland = rawMountainTruth || "
+                + "TerrainBiomeCohesionPolicy.shouldUseWarmUplandFamily( gateEvidence, gateHeight, gateDelta, seaLevel);";
+        assertEquals(
+                1,
+                occurrences(picker, "boolean finalAdmissionPhysicalUpland ="),
+                label + " picker computes one shared V5 final-admission physical-upland fact");
+        assertTrue(
+                picker.contains(physicalUpland),
+                label + " picker derives V5 physical upland from climate mountain or measured gate evidence");
+        assertEquals(
+                2,
+                occurrences(picker, "sampler, finalAdmissionPhysicalUpland)"),
+                label + " picker passes the same physical-upland fact to V5 coverage and exact-admission facts");
+    }
+
+    private static void finalSubtropicalUplandAuthorityIsShared() throws Exception {
+        String source = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeBiomes.java"));
+        String registryPicker = registryPicker(source);
+        String collectionPicker = collectionPicker(source);
+        assertFinalSubtropicalUplandAuthorityOrder(registryPicker, "registry");
+        assertFinalSubtropicalUplandAuthorityOrder(collectionPicker, "collection");
+    }
+
+    private static void assertFinalSubtropicalUplandAuthorityOrder(String picker, String label) {
+        String authority = "out = enforceFinalSubtropicalUplandAuthority(";
+        int wetlandIdentity = picker.indexOf("out = applyFinalWetlandIdentityLaw(");
+        int authorityAt = picker.indexOf(authority);
+        int legacy = picker.indexOf("if (ACTIVE_WORLDGEN_POLICY != "
+                + "WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION)");
+        assertEquals(1, occurrences(picker, authority),
+                label + " picker applies the one shared V5 subtropical physical-upland authority");
+        assertTrue(wetlandIdentity >= 0 && authorityAt > wetlandIdentity && legacy > authorityAt,
+                label + " picker applies subtropical physical-upland admission after wetland identity "
+                        + "and before the V4-and-older legacy coverage tail");
+    }
+
+    private static void landCoveragePrecedesEveryFinalAdmissionAuthority() throws Exception {
+        String source = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeBiomes.java"));
+        String registryPicker = pickerBody(
+                source,
+                "public static Holder<Biome> pick(Registry<Biome> biomeRegistry",
+                "public static Holder<Biome> pick(Collection<Holder<Biome>> biomePool");
+        String collectionPicker = pickerBody(
+                source,
+                "public static Holder<Biome> pick(Collection<Holder<Biome>> biomePool",
+                "private static Holder<Biome> applyFinalAridLatitudeLaw(");
+
+        assertV5FinalLandCoverageOrder(registryPicker, "registry");
+        assertV5FinalLandCoverageOrder(collectionPicker, "collection");
+        assertCoverageAdmissionOwnerIsShared(source);
+        assertEquals(
+                2,
+                occurrences(source, "if (hasExactTemperateLowlandCoverageAdmission(out)) {"),
+                "both final taiga gates preserve an exact TEMPERATE_LOWLAND coverage identity");
+        // The late wetland authorities are the only post-jungle-gate steps that re-pick from band
+        // pools; without warm-province enforcement their tropical re-picks re-mint jungle-family
+        // after every province gate has already run.
+        //
+        // The trailing blockX/blockZ are load-bearing, not plumbing: since 2026-08-18 the enforcer's
+        // WARM_MEDIUM arm asks the savanna country and the dry fringe where the column IS before it
+        // answers, so an overload that cannot see the column cannot answer correctly.
+        assertEquals(
+                2,
+                occurrences(source, "out = enforceWarmProvinceFamily(biomes,"
+                        + " pickSwampFallback(biomes, base, blockX, blockZ, t, bandIndex),"
+                        + " warmProvinceClass(blockX, blockZ, bandIndex), blockX, blockZ);"),
+                "both late swamp fallbacks honor the warm-province family");
+        assertEquals(
+                2,
+                occurrences(source, "out = enforceWarmProvinceFamily(biomes,"
+                        + " pickMangroveFallback(biomes, base, blockX, blockZ, t, bandIndex),"
+                        + " warmProvinceClass(blockX, blockZ, bandIndex), blockX, blockZ);"),
+                "both late mangrove fallbacks honor the warm-province family");
+        assertEquals(
+                2,
+                occurrences(source, "return enforceWarmProvinceFamily(biomes, fallback,"
+                        + " warmProvinceClass(blockX, blockZ, landBandIndex), blockX, blockZ);"),
+                "both final wetland authorities honor the warm-province family");
+    }
+
+    private static String pickerBody(String source, String signature, String nextSignature) {
+        int wrapper = source.indexOf(signature);
+        int implementation = source.indexOf(signature, wrapper + signature.length());
+        int end = source.indexOf(nextSignature, implementation + signature.length());
+        if (wrapper < 0 || implementation < 0 || end < 0) {
+            throw new AssertionError("missing picker boundary for " + signature);
+        }
+        return source.substring(implementation, end);
+    }
+
+    private static void assertV5FinalLandCoverageOrder(String picker, String label) {
+        String coverage = "out = applyVanillaCoverage(";
+        String v5 = "WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION";
+        String v5Guard = "if (ACTIVE_WORLDGEN_POLICY == " + v5 + ")";
+        String legacyGuard = "if (ACTIVE_WORLDGEN_POLICY != " + v5 + ")";
+        String cherryGuard = "if (ACTIVE_WORLDGEN_POLICY != " + v5
+                + " && isBiomeId(chosen, \"minecraft:cherry_grove\")";
+        int v5At = picker.indexOf(v5Guard);
+        int cherryAt = picker.indexOf(cherryGuard);
+        assertTrue(v5At >= 0,
+                label + " picker has an explicit V5 final-admission branch");
+        assertTrue(cherryAt >= 0,
+                label + " picker preserves the V4-and-older Cherry Grove shortcut behind a non-V5 guard");
+        String v5Admission = conditionalBody(picker, v5At, label + " V5 final-admission branch");
+        assertEquals(1, occurrences(v5Admission, coverage),
+                label + " V5 branch applies vanilla coverage exactly once");
+
+        int savanna = picker.indexOf("out = applyFinalSavannaClimateClamp(");
+        int coverageAt = picker.indexOf(coverage, v5At);
+        int preClamp = picker.indexOf("Holder<Biome> preClampOut = out;");
+        int polar = picker.indexOf("out = clampFinalPolarNonMountainAlpineOutput(", preClamp);
+        int jungle = picker.indexOf("out = gateWarmJungleSurvival(", polar);
+        int sparse = picker.indexOf("out = gateWarmWetSparseJungleSurvival(", jungle);
+        int dry = picker.indexOf("out = gateDryWarmIdentity(", sparse);
+        int taiga = picker.indexOf("out = gatePolarTaigaSurvival(", dry);
+        int wetland = picker.indexOf("out = clampLateWetlandSurvival(", taiga);
+        int arid = picker.indexOf("out = applyFinalAridLatitudeLaw(", wetland);
+        int wetlandAuthority = picker.indexOf("out = enforceFinalWetlandAuthority(", arid);
+        int wetlandIdentity = picker.indexOf("out = applyFinalWetlandIdentityLaw(", wetlandAuthority);
+        int physicalTerrain = picker.indexOf(
+                "TerrainBiomeCohesionPolicy.shouldEnforceFinalTemperateUpland(", wetlandIdentity);
+        int legacyAt = picker.indexOf(legacyGuard, physicalTerrain);
+        assertTrue(legacyAt >= 0,
+                label + " picker keeps V4 and older worlds on their explicitly separate late legacy path");
+        String legacyAdmission = conditionalBody(picker, legacyAt, label + " late legacy final-admission branch");
+        assertEquals(1, occurrences(legacyAdmission, coverage),
+                label + " V4-and-older branch retains exactly one late vanilla-coverage application");
+
+        assertTrue(cherryAt < v5At && cherryAt < preClamp,
+                label + " V4-and-older Cherry Grove shortcut remains before V5 final admission");
+        assertTrue(savanna >= 0 && savanna < coverageAt && coverageAt < preClamp,
+                label + " V5 picker completes ordinary warm composition before its early land admission");
+        assertTrue(preClamp < polar,
+                label + " V5 picker applies land coverage before every final admission authority");
+        assertTrue(polar < jungle && jungle < sparse && sparse < dry && dry < taiga
+                        && taiga < wetland && wetland < arid && arid < wetlandAuthority
+                        && wetlandAuthority < wetlandIdentity && wetlandIdentity < physicalTerrain,
+                label + " picker preserves the shared polar/humidity/taiga/wetland/arid/terrain order");
+        int legacyCoverageAt = legacyAdmission.indexOf(coverage);
+        assertTrue(legacyCoverageAt >= 0,
+                label + " legacy V4-and-older branch retains its late land coverage application");
+        assertTrue(legacyAt > physicalTerrain,
+                label + " legacy V4-and-older land coverage remains at the committed return tail");
+    }
+
+    private static void assertCoverageAdmissionOwnerIsShared(String source) {
+        String policy = "VanillaCoverageFinalAdmissionPolicy";
+        String registryCoverage = methodBody(
+                source,
+                "private static Holder<Biome> applyVanillaCoverage( Registry<Biome> biomes,",
+                "registry applyVanillaCoverage");
+        String collectionCoverage = methodBody(
+                source,
+                "private static Holder<Biome> applyVanillaCoverage( Collection<Holder<Biome>> biomes,",
+                "collection applyVanillaCoverage");
+        assertTrue(registryCoverage.contains(policy),
+                "registry applyVanillaCoverage consults the shared final-admission policy");
+        assertTrue(collectionCoverage.contains(policy),
+                "collection applyVanillaCoverage consults the shared final-admission policy");
+
+        int plannerStart = source.indexOf("boolean exactV2 =");
+        int plannerEnd = source.indexOf("if (ACTIVE_VANILLA_COVERAGE_PLAN != null", plannerStart);
+        assertTrue(plannerStart >= 0 && plannerEnd > plannerStart,
+                "missing vanilla-coverage planner eligibility boundary");
+        assertTrue(source.substring(plannerStart, plannerEnd).contains(policy),
+                "V5 vanilla-coverage planner eligibility consults the shared final-admission policy");
+    }
+
+    private static String methodBody(String source, String signature, String label) {
+        int methodAt = source.indexOf(signature);
+        if (methodAt < 0) throw new AssertionError("missing " + label + " method");
+        return conditionalBody(source, methodAt, label + " method");
+    }
+
+    private static String conditionalBody(String source, int conditionalAt, String label) {
+        int openBrace = source.indexOf('{', conditionalAt);
+        if (openBrace < 0) throw new AssertionError("missing opening brace for " + label);
+        int depth = 0;
+        for (int index = openBrace; index < source.length(); index++) {
+            char current = source.charAt(index);
+            if (current == '{') depth++;
+            if (current == '}' && --depth == 0) return source.substring(openBrace, index + 1);
+        }
+        throw new AssertionError("missing closing brace for " + label);
     }
 
     private static void recreatedLatitudeWorldKeepsItsWorldTypeAndSize() throws Exception {
@@ -322,6 +604,16 @@ public final class WorldgenAuthorityPolicyTest {
                 service.contains("latitudeSource.isPotentialWetlandLocateSourceCandidate("),
                 "the live tick job must use the terrain-free registry preview before exact resolution");
         assertTrue(
+                occurrences(source, "LatitudeBiomes.isPotentialDirectMangroveLocateCandidate(") >= 1
+                        && source.contains("isPotentialWetlandLocateSourceCandidate( quartX, quartY, quartZ, sampler)"),
+                "the direct locator must retain the same direct-mangrove and shoreline-promotable candidates as the tick job");
+        int directWetlandCandidate = source.indexOf(
+                "LatitudeBiomes.isPotentialWetlandLocateCandidate( blockX, blockZ, borderRadiusBlocks");
+        int directWetlandExit = source.indexOf("if (wetlandOnlyTarget) {", directWetlandCandidate);
+        assertTrue(
+                directWetlandCandidate >= 0 && directWetlandExit > directWetlandCandidate,
+                "direct wetland locate may stop only after the complete shared broad phase");
+        assertTrue(
                 service.contains("tickExactProbes < LatitudeLocateBudgetPolicy.MAX_WETLAND_EXACT_PROBES_PER_TICK")
                         && service.contains("tickExactProbes++;"),
                 "the live scheduler must enforce and consume the one-exact-probe tick budget");
@@ -355,6 +647,16 @@ public final class WorldgenAuthorityPolicyTest {
                 service.contains("LatitudeLocateBudgetPolicy.fullWorldSearchRadius(")
                         && service.contains("isWithinLatitudeWorld(blockX, blockZ)"),
                 "a boss-bar locate must cover the playable Latitude world without reporting outside it");
+        String biomeSource = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeBiomeSource.java"));
+        assertTrue(
+                occurrences(biomeSource, "findPlannedCaveCoverage(") >= 2
+                        && biomeSource.contains("Holder<Biome> exact = getNoiseBiome(quartX, quartY, quartZ, sampler)")
+                        && biomeSource.contains("anchor.biomeId().equals(LatitudeBiomes.biomeIdPublic(exact))"),
+                "a direct cave locate miss may use a planned anchor only after final-output identity verification");
+        assertTrue(
+                service.contains("latitudeSource.findPlannedCaveCoverage( matching, origin, searchRadius, target, sampler)"),
+                "the tick-sliced cave route shares the same verified planned fallback");
     }
 
     private static void customSurfaceLocatePreviewUsesRegistryAuthority() throws Exception {
@@ -386,6 +688,344 @@ public final class WorldgenAuthorityPolicyTest {
         assertTrue(
                 !service.contains("commands.latitude.locate.structure.searching"),
                 "Latitude structure searches must not retain a separate legacy chat acknowledgement");
+
+        // The answer must be the generated structure's own settled footprint, not the placement
+        // cell's min corner at getLocatePos()'s hardcoded Y=0.
+        assertTrue(
+                service.contains("BlockPos center = start.getBoundingBox().getCenter()")
+                        && service.contains("start.getBoundingBox().maxY() + 2")
+                        && service.contains("ringBest = Pair.of(generatedTarget, candidate.holder())")
+                        && !service.contains("getLocatePos(candidateChunk)"),
+                "a structure locate must report the generated start's center, lifted above its top");
+
+        // The coordinate is clickable through a player-bound, expiring, single-use token rather
+        // than a raw /tp, and the teleport can never descend below the reported top.
+        String tools = normalize(read(
+                "src/main/java/com/example/globe/tools/LatitudeToolsCommand.java"));
+        assertTrue(
+                service.contains("showTeleportLocateResult(source, target, origin, result)")
+                        && service.contains("new ClickEvent.RunCommand(\"/latitude_locate_teleport \" + token)")
+                        && service.contains("pending == null || !pending.token().equals(token)")
+                        && service.contains("Util.getMillis() > pending.expiresAtMs()")
+                        && service.contains("serverTeleports.remove(player.getUUID())")
+                        && !service.contains("new ClickEvent.RunCommand(\"/tp ")
+                        && service.contains("\"commands.locate.structure.not_found\""),
+                "the coordinate click must use a player-bound, expiring, single-use action");
+
+        // SAFE LANDING. The previous pin here asserted the literal
+        // Math.max(player.getY(), pending.minimumY()) -- which proved the formula existed, not that
+        // it was safe, and it was not: a buried pyramid's top-plus-two sits inside the dune above it
+        // (arrive encased in sand), and a player who happened to be flying kept that altitude and
+        // fell. Pin the two properties that actually make the landing safe, so restoring either
+        // hazard fails here.
+        assertTrue(
+                service.contains("Heightmap.Types.MOTION_BLOCKING_NO_LEAVES")
+                        && service.contains("Math.max(surfaceY, pending.minimumY())"),
+                "the locate teleport must land on the surface column, never at a computed altitude");
+        assertFalse(
+                service.contains("Math.max(player.getY(), pending.minimumY())"),
+                "the locate teleport must not preserve the player's own altitude -- that is the "
+                        + "long-fall hazard this landing rule replaced");
+        assertTrue(
+                tools.contains("Commands.literal(\"latitude_locate_teleport\")")
+                        && tools.contains("LatitudeStructureLocateService.runPendingTeleport("),
+                "the warning-free locate action must be registered only inside the audited shipping command surface");
+        assertTrue(
+                service.contains("PENDING_TELEPORTS.remove(server)")
+                        && service.contains("clearPendingTeleport(server, handler.player)"),
+                "disconnect and server stop must clear outstanding locate teleport tokens");
+        assertTrue(
+                service.contains("Centered above the generated desert pyramid")
+                        && service.contains("Desert pyramids may be buried"),
+                "a buried desert pyramid must say so instead of reading as an empty destination");
+    }
+
+    /**
+     * A woodland mansion must come to rest in a vanilla biome. A third-party pack can add its own
+     * biome to the mansion's very small biome tag; Latitude never classified that column, so the
+     * mansion lands somewhere that reads as a placement bug. The rule lives in the shared siting
+     * policy so the generation guard and the locate evaluator cannot drift apart.
+     */
+    private static void woodlandMansionKeepsVanillaBiomeSiting() throws Exception {
+        String policy = normalize(read(
+                "src/main/java/com/example/globe/world/StructureSitingPolicy.java"));
+        String guard = normalize(read(
+                "src/main/java/com/example/globe/mixin/ExtremePolarVillageStartGuardMixin.java"));
+        String service = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeStructureLocateService.java"));
+
+        assertTrue(
+                policy.contains("\"minecraft\".equals(structureNamespace) && \"mansion\".equals(structurePath)")
+                        && !policy.contains("\"woodland_mansion\".equals(structurePath)"),
+                "the mansion rule must name the structure id minecraft:mansion, not its biome tag");
+        assertTrue(
+                policy.contains("&& !\"minecraft\".equals(biomeNamespace)"),
+                "the mansion rule must refuse by biome namespace so every vanilla mansion biome stays legal");
+        assertTrue(
+                guard.contains("StructureSitingPolicy.requiresVanillaBiomeSiting(")
+                        && guard.contains("StructureSitingPolicy.shouldRejectCustomBiomeSiting(")
+                        && guard.contains("return StructureStart.INVALID_START;"),
+                "real generation must refuse a mansion whose settled center is a custom biome");
+        assertTrue(
+                service.contains("StructureSitingPolicy.requiresVanillaBiomeSiting(")
+                        && service.contains("CandidateVerdict.REJECTED_CUSTOM_BIOME_SITING"),
+                "locate must mirror the mansion rule so it never reports a mansion the guard refuses");
+    }
+
+    /** Wetland claims require a genuinely wet province; mangrove remains separately governed. */
+    private static void onlyWetProvincesAdmitWetlandClaims() throws Exception {
+        int radius = 10_000;
+        ProvinceAuthority probe = new ProvinceAuthority(7L, radius);
+        int[] warmDry = findProvinceColumn(probe, ProvinceAuthority.Province.WARM_DRY, radius);
+        int[] coldDry = findProvinceColumn(probe, ProvinceAuthority.Province.COLD_DRY, radius);
+        int[] warmMedium = findProvinceColumn(probe, ProvinceAuthority.Province.WARM_MEDIUM, radius);
+        int[] coldMedium = findProvinceColumn(probe, ProvinceAuthority.Province.COLD_MEDIUM, radius);
+        int[] warmWet = findProvinceColumn(probe, ProvinceAuthority.Province.WARM_WET, radius);
+        int[] coldWet = findProvinceColumn(probe, ProvinceAuthority.Province.COLD_WET, radius);
+
+        ProvinceAuthority original = LatitudeBiomes.swapProvinceAuthorityForTest(probe);
+        try {
+            assertFalse(LatitudeBiomes.wetlandProvinceEligible(warmDry[0], warmDry[1]),
+                    "an explicit WARM_DRY province refuses wetland admission");
+            assertFalse(LatitudeBiomes.wetlandProvinceEligible(coldDry[0], coldDry[1]),
+                    "an explicit COLD_DRY province refuses wetland admission");
+            assertFalse(LatitudeBiomes.wetlandProvinceEligible(warmMedium[0], warmMedium[1]),
+                    "WARM_MEDIUM lacks the moisture required for wetland admission");
+            assertFalse(LatitudeBiomes.wetlandProvinceEligible(coldMedium[0], coldMedium[1]),
+                    "COLD_MEDIUM lacks the moisture required for wetland admission");
+            assertTrue(LatitudeBiomes.wetlandProvinceEligible(warmWet[0], warmWet[1]),
+                    "a WARM_WET province keeps its wetland eligibility");
+            assertTrue(LatitudeBiomes.wetlandProvinceEligible(coldWet[0], coldWet[1]),
+                    "a COLD_WET province keeps its wetland eligibility");
+        } finally {
+            LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+        }
+
+        original = LatitudeBiomes.swapProvinceAuthorityForTest(null);
+        try {
+            assertTrue(LatitudeBiomes.wetlandProvinceEligible(warmDry[0], warmDry[1]),
+                    "a missing/uninitialized authority keeps the intended compatibility behavior");
+        } finally {
+            LatitudeBiomes.restoreProvinceAuthorityForTest(original);
+        }
+
+        String source = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeBiomes.java"));
+        assertEquals(7, occurrences(source, "&& wetlandProvinceEligible(blockX, blockZ)"),
+                "all wetland planners, facts, final authorities, and locate share the wet-province law");
+        assertTrue(source.contains("|| !wetlandProvinceEligible(blockX, blockZ)"),
+                "the coverage guard's wetland protection yields at dry-province columns");
+        assertTrue(source.contains("!paleGardenCoreAuthorityHit( WORLD_SEED, x, z"),
+                "V5 coverage planning refuses anchors owned by the stronger Pale Garden core");
+        assertTrue(source.contains(
+                        "case TEMPERATE_WETLAND -> band == BAND_TEMPERATE && !mountain"
+                                + " && wetlandProvinceEligible(blockX, blockZ)"),
+                "the temperate wetland route arm shares the final wet-province law");
+        assertTrue(source.contains(
+                        "case SUBPOLAR_WETLAND -> band == BAND_SUBPOLAR && !mountain"
+                                + " && wetlandProvinceEligible(blockX, blockZ)"),
+                "the subpolar wetland route arm shares the final wet-province law");
+    }
+
+    /**
+     * The desert-oasis mechanism must exist on every seed and at every world size (maintainer
+     * ruling, 2026-08-16, desert-abundance lever 1). The census proved the previous behavior:
+     * the hotspot noise scale grew with the radius, so the field always had ~3 cells across the
+     * whole map and two of three measured seeds had literally ZERO hotspot area — the ruled-in
+     * oasis exception never fired. This pins the repaired geometry: the scale is capped, every
+     * seed in a fixed list carries at least one hotspot, and a flood ceiling keeps the tuning
+     * honest in both directions.
+     */
+    private static void aridHotspotsAreWorldSizeStableAndPresentOnEverySeed() {
+        assertEquals(2250, LatitudeBiomes.aridHotspotScaleBlocks(3_750),
+                "small worlds keep their proportional hotspot scale");
+        assertEquals(3000, LatitudeBiomes.aridHotspotScaleBlocks(5_000),
+                "the proportional scale still applies below the cap");
+        assertEquals(3072, LatitudeBiomes.aridHotspotScaleBlocks(10_000),
+                "regular worlds hit the cap, giving a world-size-stable cell count");
+        assertEquals(3072, LatitudeBiomes.aridHotspotScaleBlocks(20_000),
+                "massive worlds hit the same cap instead of scaling the cells up with the map");
+
+        for (int radius : new int[] {10_000, 20_000}) {
+            double aggregate = 0.0;
+            for (long seed = 41L; seed <= 52L; seed++) {
+                int samples = 0;
+                int hits = 0;
+                for (int blockZ = -radius; blockZ < radius; blockZ += 250) {
+                    for (int blockX = -radius; blockX < radius; blockX += 250) {
+                        samples++;
+                        if (LatitudeBiomes.aridHotspotHere(seed, radius, blockX, blockZ)) {
+                            hits++;
+                        }
+                    }
+                }
+                double fraction = (double) hits / samples;
+                aggregate += fraction;
+                assertTrue(hits >= 1,
+                        "seed " + seed + " at radius " + radius + " carries at least one arid "
+                                + "hotspot — a seed with zero oases leaves the desert-oasis "
+                                + "ruling inert");
+                assertTrue(fraction <= 0.08,
+                        "seed " + seed + " at radius " + radius + " stays under the hotspot "
+                                + "flood ceiling (got " + fraction + ")");
+            }
+            double mean = aggregate / 12.0;
+            assertTrue(mean >= 0.004 && mean <= 0.05,
+                    "mean hotspot area at radius " + radius + " stays in the oasis band "
+                            + "(got " + mean + ")");
+        }
+    }
+
+    /**
+     * The badlands country is a capped, world-size-stable field, not a per-seed coin flip
+     * (maintainer ruling, 2026-08-19: badlands is an earthlike-rare accent of the dry belt and
+     * desert is the staple). The positive control mirrors the arid-hotspot one directly above,
+     * because the defect was the same one: a noise scale that grew WITH the world radius, so the
+     * map held ~7 primary cells at any size and the whole belt was decided by a handful of lattice
+     * draws. Measured on this line before the cap, as a share of the geometric 23.5-35 degree belt
+     * over these same twelve seeds, radius 10000 swung 24%-71% -- a seed lottery that on the
+     * heavy rolls squeezed desert, the ruled staple, down to a sliver.
+     *
+     * <p>SCOPE, and it is deliberately narrow. This asserts the NOISE FIELD's own coverage of a
+     * geometric latitude band, which is arithmetic every Latitude line shares: identical
+     * ValueNoise2D, identical band boundaries, identical latitude-to-z mapping. It says nothing
+     * about badlands' share of subtropical LAND, and it must not be widened into such a claim
+     * here. This line carries a subtropical dry-belt widening in ProvinceAuthority that 26.2 has
+     * no equivalent of, so the same country coverage lands on a different amount of ground; the
+     * in-world share is a question only this line's own atlas census can answer. The numbers below
+     * were re-measured against this line's arithmetic, not quoted from the other generator.
+     */
+    private static void badlandsCountriesAreWorldSizeStableAndEarthlikeRare() {
+        assertEquals(512, LatitudeBiomes.badlandsCountryScaleBlocks(3_000),
+                "small worlds keep the coherence floor");
+        assertEquals(600, LatitudeBiomes.badlandsCountryScaleBlocks(3_750),
+                "the proportional scale still applies below the cap");
+        assertEquals(640, LatitudeBiomes.badlandsCountryScaleBlocks(10_000),
+                "regular worlds hit the cap, giving a world-size-stable cell count");
+        assertEquals(640, LatitudeBiomes.badlandsCountryScaleBlocks(20_000),
+                "massive worlds hit the same cap instead of scaling the countries up with the map");
+
+        for (int radius : new int[] {10_000, 20_000}) {
+            int dryLowAbsZ = com.example.globe.util.LatitudeMath.zForLatitudeDeg(23.5, radius);
+            int dryHighAbsZ = com.example.globe.util.LatitudeMath.zForLatitudeDeg(35.0, radius);
+            double aggregate = 0.0;
+            for (long seed = 41L; seed <= 52L; seed++) {
+                int samples = 0;
+                int hits = 0;
+                for (int blockZ = dryLowAbsZ; blockZ < dryHighAbsZ; blockZ += 64) {
+                    for (int blockX = -radius; blockX < radius; blockX += 64) {
+                        samples++;
+                        if (LatitudeBiomes.badlandsCountryNoiseHit(seed, radius, blockX, blockZ)) {
+                            hits++;
+                        }
+                    }
+                }
+                double fraction = (double) hits / samples;
+                aggregate += fraction;
+                assertTrue(hits >= 1,
+                        "seed " + seed + " at radius " + radius + " carries at least one badlands "
+                                + "country — a seed with zero badlands starves the biome");
+                assertTrue(fraction <= 0.35,
+                        "seed " + seed + " at radius " + radius + " stays under the badlands "
+                                + "flood ceiling (got " + fraction + ") — the pre-fix lottery let "
+                                + "single seeds hand badlands most of the dry belt");
+            }
+            double mean = aggregate / 12.0;
+            assertTrue(mean >= 0.08 && mean <= 0.22,
+                    "mean badlands-country coverage of the dry belt at radius " + radius
+                            + " stays in the earthlike-rare band (got " + mean + ")");
+        }
+    }
+
+    /**
+     * The subtropical dry belt carries an Earth-analog share of WARM_DRY (maintainer ruling,
+     * 2026-08-16, desert-abundance lever 2). The census measured WARM_DRY at 6.06% of the world
+     * — a ~23% share of the subtropical band against WARM_MEDIUM's dominance — because the
+     * composite moisture signal (two averaged noises) concentrates around 0.5 and the 0.38
+     * threshold only caught its tail. Desert itself is healthy INSIDE WARM_DRY (~17%); the
+     * province was simply rare. This pins the widened belt, and pins two older rulings so this
+     * lever cannot disturb them: the deep tropics stay humid (the 1.4 wet-bias law), and the
+     * WARM_WET share is untouched (the jungle belt is not this lever's business).
+     */
+    private static void warmDryProvinceShareMatchesTheEarthAnalogBelt() {
+        int radius = 10_000;
+        double dryAggregate = 0.0;
+        double wetAggregate = 0.0;
+        double tropicalDryAggregate = 0.0;
+        for (long seed = 41L; seed <= 52L; seed++) {
+            ProvinceAuthority authority = new ProvinceAuthority(seed, radius);
+            int subtropical = 0;
+            int subtropicalDry = 0;
+            int subtropicalWet = 0;
+            int tropical = 0;
+            int tropicalDry = 0;
+            for (int blockZ = -radius; blockZ < radius; blockZ += 250) {
+                for (int blockX = -radius; blockX < radius; blockX += 250) {
+                    int band = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radius);
+                    if (band > 1) {
+                        continue;
+                    }
+                    ProvinceAuthority.Province province = authority.classify(blockX, blockZ);
+                    if (band == 1) {
+                        subtropical++;
+                        if (province == ProvinceAuthority.Province.WARM_DRY) {
+                            subtropicalDry++;
+                        } else if (province == ProvinceAuthority.Province.WARM_WET) {
+                            subtropicalWet++;
+                        }
+                    } else {
+                        tropical++;
+                        if (province == ProvinceAuthority.Province.WARM_DRY) {
+                            tropicalDry++;
+                        }
+                    }
+                }
+            }
+            double dryShare = (double) subtropicalDry / Math.max(1, subtropical);
+            double wetShare = (double) subtropicalWet / Math.max(1, subtropical);
+            double tropicalDryShare = (double) tropicalDry / Math.max(1, tropical);
+            dryAggregate += dryShare;
+            wetAggregate += wetShare;
+            tropicalDryAggregate += tropicalDryShare;
+            assertTrue(dryShare >= 0.20,
+                    "seed " + seed + " keeps a real subtropical dry belt (got " + dryShare + ")");
+            // Ceiling raised 0.55 -> 0.57 with the mesic equatorward clamp (2026-08-24): the
+            // clamp returns the 34.5-35.5deg ring — previously leaking to TEMPERATE picks via
+            // jitter+blend+warp — to subtropical band accounting. ProvinceAuthority.classify is
+            // untouched, so the WARM_DRY province itself did not grow; the band DENOMINATOR now
+            // honestly includes the dry belt's own poleward edge, which lifts the worst-seed
+            // share to 0.559. The monoculture law still binds: the ceiling stays a hard cap.
+            assertTrue(dryShare <= 0.57,
+                    "seed " + seed + " does not flip the subtropics into a desert monoculture "
+                            + "(got " + dryShare + ")");
+        }
+        double dryMean = dryAggregate / 12.0;
+        double wetMean = wetAggregate / 12.0;
+        double tropicalDryMean = tropicalDryAggregate / 12.0;
+        assertTrue(dryMean >= 0.32 && dryMean <= 0.45,
+                "mean subtropical WARM_DRY share sits in the Earth-analog belt band "
+                        + "(got " + dryMean + ")");
+        assertTrue(wetMean >= 0.15 && wetMean <= 0.35,
+                "the subtropical WARM_WET share stays in its pre-lever range — this lever must "
+                        + "not eat the humid belt (got " + wetMean + ")");
+        assertTrue(tropicalDryMean <= 0.10,
+                "the deep tropics stay humid — the 1.4 wet-bias law is untouched "
+                        + "(got " + tropicalDryMean + ")");
+    }
+
+    /** First column the given authority classifies as the wanted province; deterministic scan. */
+    private static int[] findProvinceColumn(
+            ProvinceAuthority authority,
+            ProvinceAuthority.Province wanted,
+            int radius) {
+        for (int blockZ = 2_400; blockZ <= 7_000; blockZ += 200) {
+            for (int blockX = -9_600; blockX <= 9_600; blockX += 400) {
+                if (authority.classify(blockX, blockZ) == wanted) {
+                    return new int[] {blockX, blockZ};
+                }
+            }
+        }
+        throw new AssertionError("no column classifies as " + wanted + " in the probe scan");
     }
 
     private static void raisedTerrainCannotKeepAnOceanBiome() throws Exception {
@@ -654,8 +1294,8 @@ public final class WorldgenAuthorityPolicyTest {
                 mod.contains("LatitudeWorldState worldState = isGlobe ? LatitudeWorldState.get(overworld) : null;"),
                 "joining a vanilla world cannot create Latitude saved state");
         assertTrue(
-                mod.contains("LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE"),
-                "new UI-created Latitude worlds explicitly lock size-aware V4 coverage before generation");
+                mod.contains("LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION"),
+                "new UI-created Latitude worlds explicitly lock V5 final admission before generation");
         assertTrue(
                 mod.indexOf("worldState.setProviderTicketProfile(profile);")
                         < mod.indexOf("worldState.setVanillaRepresentationProfile(")
@@ -800,8 +1440,11 @@ public final class WorldgenAuthorityPolicyTest {
 
     private static void generationScopeIsDimensionIsolatedAndNestSafe() {
         assertFalse(LatitudeWorldgenScope.isActive(), "scope starts inactive");
+        assertFalse(LatitudeWorldgenScope.isFeatureActive(), "feature scope starts inactive");
         try (LatitudeWorldgenScope.Scope overworld = LatitudeWorldgenScope.enter(true)) {
             assertTrue(LatitudeWorldgenScope.isActive(), "authorized overworld scope is active");
+            assertFalse(LatitudeWorldgenScope.isFeatureActive(),
+                    "ordinary structure/surface authority does not authorize decoration block filtering");
             try (LatitudeWorldgenScope.Scope nether = LatitudeWorldgenScope.enter(false)) {
                 assertFalse(LatitudeWorldgenScope.isActive(), "nested non-overworld generation cannot inherit authority");
                 try (LatitudeWorldgenScope.Scope nestedNether = LatitudeWorldgenScope.enter(false)) {
@@ -812,6 +1455,23 @@ public final class WorldgenAuthorityPolicyTest {
             assertTrue(LatitudeWorldgenScope.isActive(), "closing non-overworld scope restores authorized outer scope");
         }
         assertFalse(LatitudeWorldgenScope.isActive(), "outer close removes all authority");
+
+        try (LatitudeWorldgenScope.Scope features = LatitudeWorldgenScope.enterFeatures(true)) {
+            assertTrue(LatitudeWorldgenScope.isFeatureActive(),
+                    "the explicit biome-decoration scope authorizes vegetation block filtering");
+            try (LatitudeWorldgenScope.Scope nested = LatitudeWorldgenScope.enter(true)) {
+                assertTrue(LatitudeWorldgenScope.isFeatureActive(),
+                        "nested generator queries inherit the active decoration phase");
+            }
+            try (LatitudeWorldgenScope.Scope inactive = LatitudeWorldgenScope.enter(false)) {
+                assertFalse(LatitudeWorldgenScope.isFeatureActive(),
+                        "an inactive nested dimension cannot inherit decoration authority");
+            }
+            assertTrue(LatitudeWorldgenScope.isFeatureActive(),
+                    "closing an inactive nested frame restores decoration authority");
+        }
+        assertFalse(LatitudeWorldgenScope.isFeatureActive(),
+                "closing the decoration scope clears its phase marker");
     }
 
     private static void generationScopeCleansUpOnFailureAndAcrossThreads() throws Exception {
@@ -836,6 +1496,42 @@ public final class WorldgenAuthorityPolicyTest {
         }
         assertFalse(workerSawAuthority.get(), "authority is thread-local");
         assertFalse(LatitudeWorldgenScope.isActive(), "thread-isolation test cleans up owner scope");
+    }
+
+    /**
+     * TerraBlender re-owns surface painting for every minecraft-namespace biome of any overworld
+     * noise settings it claims, answering from its own bundled copy of the vanilla rules before
+     * the settings' real rules are ever consulted. That copy is a stale snapshot — it still bands
+     * badlands off the vanilla y=74 start check and caps orange terracotta at y=256, where
+     * Latitude's shipped globe rules band off 84 with no cap — so any claim on globe: settings
+     * buries Latitude's tuned surface in an unreachable fallback. The sweep must stay wired,
+     * fail-open, reflection-only, and a pass-through rather than a re-injection.
+     */
+    private static void terraBlenderSweepKeepsLatitudeSurfaceIdentity() throws Exception {
+        String mod = normalize(read("src/main/java/com/example/globe/GlobeMod.java"));
+        assertTrue(mod.contains("LatitudeTerraBlenderBridge.install()"),
+                "the TerraBlender surface sweep must be installed during common mod init");
+
+        String bridge = normalize(read(
+                "src/main/java/com/example/globe/compat/LatitudeTerraBlenderBridge.java"));
+        assertTrue(bridge.contains("isModLoaded(\"terrablender\")"),
+                "the sweep must only engage when TerraBlender is actually present");
+        assertTrue(bridge.contains("latitude.terrablenderBridge.disable"),
+                "the sweep must keep its kill switch for live diagnosis");
+        assertTrue(bridge.contains("catch (Throwable t)")
+                        && bridge.contains("failed to install"),
+                "a sweep failure must degrade to TerraBlender's stock behavior, never a crash");
+        assertTrue(bridge.contains("setDefaultSurfaceRules"),
+                "the sweep must replace TerraBlender's default minecraft-namespace rules");
+        assertTrue(bridge.contains("{\\\"type\\\":\\\"minecraft:sequence\\\",\\\"sequence\\\":[]}"),
+                "the replacement must be the canonical always-null empty sequence, so every "
+                        + "minecraft-namespace biome falls through to the real noise-settings rules");
+        assertTrue(bridge.contains("getDefaultSurfaceRuleAdditionsForStage")
+                        && bridge.contains("\"BEFORE_BEDROCK\"") && bridge.contains("\"AFTER_BEDROCK\""),
+                "stage additions other mods registered must be woven in, not silently dropped");
+        assertTrue(bridge.contains("Class.forName(\"terrablender.api.SurfaceRuleManager\"")
+                        && !bridge.contains("import terrablender"),
+                "TerraBlender must stay a reflective soft dependency, never a compile-time one");
     }
 
     private static void registeredHookIntegrationIsClosed() throws Exception {
@@ -866,19 +1562,49 @@ public final class WorldgenAuthorityPolicyTest {
                     file + " requires the current generator-owned scope");
         }
 
+        String protoVegetation = normalize(read(
+                "src/main/java/com/example/globe/mixin/ProtoChunkPolarVegetationGuardMixin.java"));
+        assertTrue(
+                protoVegetation.contains("LatitudeWorldgenScope.isFeatureActive()"),
+                "the block-write foliage backstop is restricted to decoration, not structures");
+
         String features = normalize(read(
                 "src/main/java/com/example/globe/mixin/ChunkGeneratorGenerateFeaturesBiomeSetMixin.java"));
         assertTrue(
                 occurrences(features, "LatitudeWorldgenScope.isActive()") >= 2,
                 "both feature-index and retainAll mutations fail open outside an authorized scope");
+        assertTrue(
+                features.contains("LATITUDE_CUSTOM_INDEX_FAILURE_WARNED.compareAndSet(false, true)")
+                        && features.contains("indexExpansion result=blocked exceptionType={}"),
+                "a custom feature-index failure emits one bounded warning instead of silently disabling retention");
 
         String generatorScope = normalize(read(
                 "src/main/java/com/example/globe/mixin/ChunkGeneratorWorldgenAuthorityMixin.java"));
         String noiseScope = normalize(read(
                 "src/main/java/com/example/globe/mixin/NoiseChunkGeneratorWorldgenAuthorityMixin.java"));
+        int decorationWrapperStart = generatorScope.indexOf("private void globe$withFeatureAuthority(");
+        int placedFeatureWrapperStart = generatorScope.indexOf("private boolean globe$withPlacedFeatureAuthority(");
+        int structureWrapperStart = generatorScope.indexOf("private void globe$withStructureAuthority(");
         assertTrue(
-                occurrences(generatorScope, "try (LatitudeWorldgenScope.Scope") >= 2,
-                "feature and structure paths close authority through try-with-resources");
+                decorationWrapperStart >= 0
+                        && placedFeatureWrapperStart > decorationWrapperStart
+                        && structureWrapperStart > placedFeatureWrapperStart,
+                "feature, placed-feature, and structure authority boundaries stay independently reviewable");
+        String decorationWrapper = generatorScope.substring(
+                decorationWrapperStart, placedFeatureWrapperStart);
+        String placedFeatureWrapper = generatorScope.substring(
+                placedFeatureWrapperStart, structureWrapperStart);
+        assertTrue(
+                decorationWrapper.contains("LatitudeWorldgenScope.enter(active)")
+                        && !decorationWrapper.contains("enterFeatures("),
+                "the whole decoration method must not classify its earlier structure-placement phase as foliage");
+        assertTrue(
+                generatorScope.contains("PlacedFeature;placeWithBiomeCheck")
+                        && placedFeatureWrapper.contains("LatitudeWorldgenScope.enterFeatures(active)"),
+                "only the actual placed-feature invocation may authorize vegetation block filtering");
+        assertTrue(
+                occurrences(generatorScope, "try (LatitudeWorldgenScope.Scope") >= 3,
+                "feature and structure paths use distinct authority phases and both close through try-with-resources");
         assertTrue(
                 occurrences(noiseScope, "try (LatitudeWorldgenScope.Scope") >= 2,
                 "surface and carver paths close authority through try-with-resources");

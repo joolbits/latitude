@@ -233,10 +233,27 @@ public final class ZoneTitlePolicyTest {
 
     /** The public repo carries no process narrative or personal attribution in source comments. */
     private static void noProcessAttributionInShippedSource() throws Exception {
-        for (String path : new String[]{
-                "src/main/java/com/example/globe/client/GlobeWarningOverlay.java",
-                "src/main/java/com/example/globe/client/ZoneTitlePolicy.java"}) {
-            String source = read(path);
+        // Walks EVERY shipped .java rather than a named list. The 2026-08-26 release audit found
+        // two "LAW (<name>):" comments in LatitudeBiomes.java — exactly what this test already
+        // forbade — because the old form enumerated two files by name and so could not see the
+        // largest source file in the project. Adding a third name would have closed the instance
+        // and left the class open; a walk closes the class. (The 26.2 line reached the same
+        // conclusion independently and landed it first.)
+        java.util.List<java.nio.file.Path> shipped;
+        try (java.util.stream.Stream<java.nio.file.Path> walk =
+                     java.nio.file.Files.walk(java.nio.file.Path.of("src/main/java"))) {
+            shipped = walk.filter(f -> f.toString().endsWith(".java"))
+                    .sorted()
+                    .collect(java.util.stream.Collectors.toList());
+        }
+        // Floor: a walk that silently scans nothing reports a pass, which is worse than no guard
+        // at all. If the tree is ever restructured so this resolves to a stub, fail loudly.
+        assertTrue(shipped.size() >= 100,
+                "attribution guard must actually walk the shipped tree (found " + shipped.size()
+                        + " .java files; expected >= 100)");
+        for (java.nio.file.Path file : shipped) {
+            String path = file.toString();
+            String source = java.nio.file.Files.readString(file);
             assertFalse(source.contains("Peetsa"),
                     "no personal attribution in shipped source: " + path);
             assertFalse(source.contains(" ask)") || source.contains(" ask:"),

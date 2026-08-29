@@ -9,9 +9,21 @@ This closes most of that gap without a client: it reads `globe.mixins.json`, res
 `@Mixin` target and every injector's `method = "..."` and `@At(target = "L...;name(...)...")`
 against the *remapped* Minecraft jar Loom built for this target, and reports anything missing.
 
+It also checks that every `@Shadow` names a member the target class DECLARES. Mixin does not
+resolve a shadow through the inheritance chain, so shadowing an inherited member compiles clean,
+passes `check`, and then fails at apply time -- the class never loads and the client wedges on a
+screen that simply never appears. That gap was described in this file for a while before it was
+covered; it cost a frozen test build on the sibling line first.
+
+Scope is per registered CLASS, never per file: one file may hold several top-level mixins with
+different targets, and pooling their members lets a member declared on one target satisfy a
+`@Shadow`, injector, or `@At` belonging to another. That is a false negative in exactly the shape
+above, so `@Mixin` targets, `@Shadow`s, injectors and `@At`s are all read from the class body.
+
 It is not a substitute for a boot: it cannot prove an injection point exists *inside* a method
-(a `@At("INVOKE")` whose target call was removed), nor that `@Shadow` members resolve through an
-inheritance chain. Run it first, then boot. `defaultRequire: 1` remains the backstop.
+(a `@At("INVOKE")` whose target call was removed). Run it first, then boot. And assert the boot
+actually reached the screen -- "zero mixin errors" from a run that never loaded the class is
+worth nothing. `defaultRequire: 1` remains the backstop.
 
 Usage:
     python3 tools/verify_mixin_targets.py --classpath <remapped classpath> [--source-root .]
@@ -99,6 +111,111 @@ def javap_members(javap_bin: str, jar: str, binary_name: str,
     return names
 
 
+def javap_declared_members(javap_bin: str, jar: str, binary_name: str) -> set[str] | None:
+    """Members DECLARED by a class -- deliberately not the inherited set.
+
+    `@Shadow` is the one case where inheritance must NOT be followed. Mixin resolves a shadow
+    against the target class's own members; a shadow of a method the target merely INHERITS
+    compiles clean, passes a `check`, and then fails at APPLY time, which kills the class load.
+    That is not a crash -- the screen simply never appears and the client wedges.
+
+    Checking the inherited set would pass exactly the case that breaks the game, so this is a
+    separate function from `javap_members` rather than a flag on it. (Verified live: a
+    `@Shadow` of `addRenderableWidget` -- declared on `Screen`, inherited by `CreateWorldScreen`
+    -- froze a test build on the world list with "was not located in the target class".)
+    """
+    result = subprocess.run(
+        [javap_bin, "-classpath", jar, "-p", binary_name],
+        check=False, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return None
+    names: set[str] = set()
+    for line in result.stdout.splitlines():
+        stripped = line.strip()
+        if re.match(r"^(?:public |private |protected |final |abstract |static )*(?:class|interface) ",
+                    stripped):
+            continue
+        match = re.search(r"([A-Za-z_$][A-Za-z0-9_$]*)\s*[(;]", stripped)
+        if match:
+            names.add(match.group(1))
+    return names
+
+
+def strip_comments(source: str) -> str:
+    """Blank out comments, preserving offsets so slicing stays aligned with the original text.
+
+    Javadoc that merely MENTIONS `@Shadow` -- including a comment explaining why one was removed --
+    would otherwise be parsed as a declaration. A guard that reports phantoms gets switched off.
+    """
+    out = re.sub(r"/\*.*?\*/", lambda m: re.sub(r"[^\n]", " ", m.group(0)), source, flags=re.DOTALL)
+    return re.sub(r"//[^\n]*", lambda m: " " * len(m.group(0)), out)
+
+
+def mixin_classes(source: str) -> dict[str, tuple[str, str]]:
+    """{simple class name: (its own @Mixin annotation, its own body)} for every mixin in the file.
+
+    Scoping must be per CLASS, not per FILE. A single file may legally hold several top-level
+    mixins with different targets -- this repo has one holding `@Mixin(LevelLoadingScreen.class)`
+    and `@Mixin(Minecraft.class)`. Pooling a file's targets and checking members against the union
+    lets a member declared on EITHER target satisfy a shadow belonging to the OTHER, which is a
+    false negative in precisely the shape described in `javap_declared_members`.
+    """
+    text = strip_comments(source)
+    found: dict[str, tuple[str, str]] = {}
+    for annotation in re.finditer(r"@Mixin\s*\(", text):
+        open_paren = text.index("(", annotation.start())
+        depth = 0
+        end = open_paren
+        for index in range(open_paren, len(text)):
+            if text[index] == "(":
+                depth += 1
+            elif text[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    end = index
+                    break
+        declaration = re.search(r"\b(?:class|interface)\s+([A-Za-z_$][\w$]*)", text[end:])
+        if not declaration:
+            continue
+        try:
+            body_start = text.index("{", end + declaration.end())
+        except ValueError:
+            continue
+        depth = 0
+        body_end = body_start
+        for index in range(body_start, len(text)):
+            if text[index] == "{":
+                depth += 1
+            elif text[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    body_end = index
+                    break
+        found[declaration.group(1)] = (text[annotation.start():end + 1], text[body_start:body_end + 1])
+    return found
+
+
+def shadow_members(body: str) -> list[str]:
+    """Every member name claimed by a `@Shadow` in this class body."""
+    names: list[str] = []
+    for match in re.finditer(r"@Shadow\b([^;{]*)[;{]", body):
+        declaration = re.sub(r"@\w+(?:\([^)]*\))?", " ", match.group(1))
+        previous = None
+        while previous != declaration:                      # nested generics need repeated passes
+            previous = declaration
+            declaration = re.sub(r"<[^<>]*>", " ", declaration)
+        if "(" in declaration:
+            method = re.findall(r"([A-Za-z_$][\w$]*)\s*\(", declaration)
+            if method:
+                names.append(method[0])
+            continue
+        tokens = re.findall(r"[A-Za-z_$][\w$]*", declaration.split("=")[0])
+        if tokens:
+            names.append(tokens[-1])
+    return names
+
+
 def resolve_import(simple: str, source: str, mixin_package_hint: str) -> str | None:
     """Map a simple class name to a fully-qualified one using the file's own imports."""
     if "." in simple:
@@ -109,9 +226,14 @@ def resolve_import(simple: str, source: str, mixin_package_hint: str) -> str | N
     return None
 
 
-def mixin_targets(source: str) -> list[str]:
-    """Every class named by the @Mixin annotation, fully qualified where resolvable."""
-    header = source
+def mixin_targets(header: str, source: str) -> list[str]:
+    """Every class named by ONE @Mixin annotation, fully qualified where resolvable.
+
+    `header` is a single annotation; `source` is the whole file, passed separately purely so
+    imports still resolve. Slicing a class out of its file leaves the slice without the file's
+    `import` lines, so resolving against the slice yields a bare name, javap cannot find it, and
+    every shadow in the class is reported missing on a class that does declare them.
+    """
     targets: list[str] = []
 
     # @Mixin(targets = "a.b.Outer$Inner") — already fully qualified.
@@ -177,7 +299,9 @@ def main() -> int:
     problems: list[str] = []
     checked_classes = 0
     checked_methods = 0
+    checked_shadows = 0
     member_cache: dict[str, set[str] | None] = {}
+    declared_cache: dict[str, set[str] | None] = {}
 
     def members(binary_name: str) -> set[str] | None:
         if binary_name not in member_cache:
@@ -201,7 +325,16 @@ def main() -> int:
                 continue
         source = path.read_text()
 
-        targets = mixin_targets(source)
+        # Scope to THIS registered class, not the whole file -- see mixin_classes().
+        simple_name = entry.rsplit(".", 1)[-1]
+        classes = mixin_classes(source)
+        if simple_name not in classes:
+            problems.append(
+                f"{entry}: no @Mixin-annotated class named '{simple_name}' found in {path.name}")
+            continue
+        annotation, body = classes[simple_name]
+
+        targets = mixin_targets(annotation, source)
         if not targets:
             problems.append(f"{entry}: no @Mixin target could be parsed")
             continue
@@ -215,16 +348,37 @@ def main() -> int:
             else:
                 resolved_members |= found
 
+        # @Shadow resolves against DECLARED members only, and per target rather than pooled.
+        for shadow in shadow_members(body):
+            checked_shadows += 1
+            declared_anywhere = False
+            queried: list[str] = []
+            for target in targets:
+                if target not in declared_cache:
+                    declared_cache[target] = javap_declared_members(javap_bin, jar, target)
+                declared = declared_cache[target]
+                queried.append(target)
+                if declared and shadow in declared:
+                    declared_anywhere = True
+                    break
+            if not declared_anywhere:
+                # Name the class actually queried. Reporting some other name in scope produces a
+                # message that contradicts itself -- "'x' does not exist on <class where x exists>".
+                problems.append(
+                    f"{entry}: @Shadow '{shadow}' is not DECLARED on {', '.join(queried)} "
+                    f"(inherited members do not satisfy @Shadow; it fails at apply time and wedges "
+                    f"the class load -- use @Invoker/@Accessor on the declaring class instead)")
+
         if not resolved_members:
             continue
 
-        for method in injector_methods(source):
+        for method in injector_methods(body):
             checked_methods += 1
             if method not in resolved_members:
                 problems.append(
                     f"{entry}: injector targets '{method}', absent from {', '.join(targets)}")
 
-        for owner, method in at_targets(source):
+        for owner, method in at_targets(body):
             if owner.startswith("net.minecraft"):
                 checked_methods += 1
                 found = members(owner)
@@ -240,7 +394,8 @@ def main() -> int:
         return 1
 
     print(f"MIXIN_TARGET_VERIFY_PASS mixins={len(registered)} "
-          f"targetClasses={checked_classes} targetMethods={checked_methods}")
+          f"targetClasses={checked_classes} targetMethods={checked_methods} "
+          f"shadowMembers={checked_shadows}")
     print(f" classpathEntries={len(jar.split(':'))}")
     return 0
 

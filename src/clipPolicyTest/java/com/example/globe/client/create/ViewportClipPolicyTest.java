@@ -6,7 +6,7 @@ public final class ViewportClipPolicyTest {
     private ViewportClipPolicyTest() {
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws java.io.IOException {
         acceptsFullyVisibleWidgetClick();
         acceptsVisiblePartOfTopClippedWidget();
         acceptsVisiblePartOfBottomClippedWidget();
@@ -14,6 +14,13 @@ public final class ViewportClipPolicyTest {
         rejectsFullyHiddenWidget();
         honorsHalfOpenClipEdges();
         System.out.println("PASS ViewportClipPolicyTest assertions=" + assertions);
+        // This source set is the create-world screen's policy suite; its JavaExec entry point is
+        // this class, so sibling policies run from here. The registry gate fails any test class
+        // that no reachable entry point invokes.
+        CreateWorldScreenUiPolicyTest.run();
+        VanillaCreateWorldHandoffTest.run();
+        VanillaOnlyWorldCreationStateTest.run();
+        VanillaHandoffCostPolicyTest.run();
     }
 
     private static void acceptsFullyVisibleWidgetClick() {

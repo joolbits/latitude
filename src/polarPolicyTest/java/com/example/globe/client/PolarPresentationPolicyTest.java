@@ -21,6 +21,9 @@ public final class PolarPresentationPolicyTest {
         EwPresentationPolicyTest.runAll();
         LoadingPresentationPolicyTest.runAll();
         ZoneTitlePolicyTest.runAll();
+        WorldListZoneFitPolicyTest.runAll();
+        com.example.globe.client.create.VanillaFooterLayoutPolicyTest.run();
+        com.example.globe.client.create.VanillaWorldListDoorPolicyTest.run();
         CreateWorldIntroClockPolicyTest.runAll();
         System.out.println("POLAR_PRESENTATION_POLICY_TEST_PASS");
     }

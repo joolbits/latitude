@@ -29,9 +29,9 @@ Legend: check a box once coverage is verified in a new world.
 | [ ] | minecraft:savanna | band tag: `lat_tropical`, `lat_trans_arid_tropics_2` |
 | [ ] | minecraft:savanna_plateau | band tag: `lat_tropical`, `lat_trans_arid_tropics_2` |
 | [ ] | minecraft:windswept_savanna | band tag: `lat_tropical` |
-| [ ] | minecraft:windswept_hills | band tag: `lat_temperate` |
-| [ ] | minecraft:windswept_forest | band tag: `lat_temperate` |
-| [ ] | minecraft:windswept_gravelly_hills | band tag: `lat_temperate` |
+| [ ] | minecraft:windswept_hills | ledger route `SUBPOLAR_UPLAND` (subpolar mountains only) |
+| [ ] | minecraft:windswept_forest | ledger route `SUBPOLAR_UPLAND` (subpolar mountains only) |
+| [ ] | minecraft:windswept_gravelly_hills | ledger route `SUBPOLAR_UPLAND` (subpolar mountains only) |
 | [ ] | minecraft:jungle | band tag: `lat_tropical`, `lat_tropics` |
 | [ ] | minecraft:sparse_jungle | band tag: `lat_tropical`, `lat_tropics`, `lat_trans_arid_tropics_2` |
 | [ ] | minecraft:bamboo_jungle | band tag: `lat_tropical`, `lat_tropics` |

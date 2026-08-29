@@ -1,0 +1,28 @@
+{
+  "feature": "globe:riparian/desert_bank_soil",
+  "placement": [
+    {
+      "type": "minecraft:count",
+      "count": 12
+    },
+    {
+      "type": "minecraft:in_square"
+    },
+    {
+      "type": "minecraft:heightmap",
+      "heightmap": "WORLD_SURFACE_WG"
+    },
+    {
+      "type": "globe:riparian",
+      "search_radius": 10,
+      "bank_height": 2,
+      "noise_scale": 1280,
+      "verdant_threshold": 0.45
+    },
+    {
+      "type": "minecraft:random_offset",
+      "xz_spread": 0,
+      "y_spread": -1
+    }
+  ]
+}

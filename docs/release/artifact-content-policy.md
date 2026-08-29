@@ -43,7 +43,7 @@ coordinators, and any pause/resume/status surface that exists to manage such a w
 ### Excluded class 3 — Auto-harness
 
 Anything that arms itself without an explicit player command. The test: **can it start without a player
-typing a command in this change?**
+typing a command in the current session?**
 
 Includes auto-create/auto-close probes, client-side audit harnesses and bridges, keybind-triggered
 capture, and `-D` system-property-driven headless runners.

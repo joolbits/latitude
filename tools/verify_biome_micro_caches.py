@@ -231,11 +231,6 @@ def main() -> int:
             "latitude.skipPreviewHeightForBiomePng",
             2,
         ),
-        "SKIP_PREVIEW_HEIGHT_FOR_WORLDGEN": (
-            'Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForWorldgen", "true"))',
-            "latitude.skipPreviewHeightForWorldgen",
-            2,
-        ),
     }
     for field, (expression, key, expected_uses) in property_fields.items():
         field_occurrences = len(re.findall(rf"\b{field}\b", source))
@@ -266,9 +261,12 @@ def main() -> int:
     )
     check(
         "only_admitted_property_caches",
-        len(re.findall(r"private static final boolean (?:DISABLE_RADIUS_OVERRIDE|SKIP_PREVIEW_HEIGHT_FOR_BIOME_PNG|SKIP_PREVIEW_HEIGHT_FOR_WORLDGEN)", source))
-        == 3,
-        "exactly three admitted cached flags",
+        len(re.findall(r"private static final boolean (?:DISABLE_RADIUS_OVERRIDE|SKIP_PREVIEW_HEIGHT_FOR_BIOME_PNG)", source))
+        == 2,
+        # SKIP_PREVIEW_HEIGHT_FOR_WORLDGEN was dropped when live worldgen stopped being allowed to
+        # re-enter the chunk generator for a terrain preview: MIXIN/CAVE_CLAMP now skip it as an
+        # invariant, not as a launch-time tuning flag, so there is no property left to cache.
+        "exactly two admitted cached flags",
     )
 
     if baseline is not None:
@@ -294,7 +292,7 @@ def main() -> int:
         f"active_constant_id_calls={len(active_ids)} "
         f"identifier_parse_sites={source.count('Identifier.parse(')} "
         f"launch_property_key_reads="
-        f"{source.count('latitude.disableRadiusOverride') + source.count('latitude.skipPreviewHeightForBiomePng') + source.count('latitude.skipPreviewHeightForWorldgen')}"
+        f"{source.count('latitude.disableRadiusOverride') + source.count('latitude.skipPreviewHeightForBiomePng')}"
     )
     for name, detail in failed:
         print(f"FAIL {name}: {detail}")

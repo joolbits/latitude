@@ -114,7 +114,7 @@ public final class LatitudeBiomeLocateService {
                     searchRadius, randomState.sampler(), matching, includesMangrove);
         } else {
             job = new ThreeDimensionalLocateJob(source, target, origin, latitudeSource, worldRadius,
-                    searchRadius, randomState.sampler(), level);
+                    searchRadius, randomState.sampler(), level, matching);
         }
         ACTIVE_JOBS.put(server, job);
         GlobeMod.LOGGER.info("[Latitude] started tick-sliced biome locate target={} route={} origin={} radius={} worldRadius={}",
@@ -160,6 +160,9 @@ public final class LatitudeBiomeLocateService {
         private final ServerBossEvent bossBar;
         private long nextProgressNanos;
         private boolean finished;
+        private Pair<BlockPos, Holder<Biome>> bestCandidate;
+        private long bestHorizontalDistanceSq = Long.MAX_VALUE;
+        private int completionRingLimit = Integer.MAX_VALUE;
 
         private BiomeLocateJob(
                 CommandSourceStack source,
@@ -205,6 +208,37 @@ public final class LatitudeBiomeLocateService {
         final boolean isWithinLatitudeWorld(int blockX, int blockZ) {
             return Math.abs((long) blockX) <= worldRadius
                     && Math.abs((long) blockZ) <= worldRadius;
+        }
+
+        /**
+         * Keeps the nearest match seen so far and narrows how far the spiral still has to run.
+         * Distance is horizontal because that is the distance the locate result reports.
+         */
+        final void recordCandidate(Pair<BlockPos, Holder<Biome>> candidate, int stepBlocks) {
+            BlockPos found = candidate.getFirst();
+            long dx = (long) found.getX() - origin.getX();
+            long dz = (long) found.getZ() - origin.getZ();
+            long distanceSq = dx * dx + dz * dz;
+            if (bestCandidate != null && distanceSq >= bestHorizontalDistanceSq) {
+                return;
+            }
+            bestCandidate = candidate;
+            bestHorizontalDistanceSq = distanceSq;
+            completionRingLimit = LatitudeLocateBudgetPolicy.nearestCompletionRingLimit(
+                    Math.sqrt((double) distanceSq), stepBlocks);
+        }
+
+        final boolean hasCandidate() {
+            return bestCandidate != null;
+        }
+
+        /** True once no unvisited ring can hold anything nearer than the match already found. */
+        final boolean ringExceedsCandidateBound(int ring) {
+            return bestCandidate != null && ring > completionRingLimit;
+        }
+
+        final Pair<BlockPos, Holder<Biome>> bestCandidate() {
+            return bestCandidate;
         }
 
         final void updateProgress(int completed, int total) {
@@ -303,6 +337,12 @@ public final class LatitudeBiomeLocateService {
                     && tickExactProbes < LatitudeLocateBudgetPolicy.MAX_WETLAND_EXACT_PROBES_PER_TICK
                     && !deadlineExceeded(tickStarted)) {
                 BlockPos.MutableBlockPos offset = offsets.next();
+                if (ringExceedsCandidateBound(
+                        LatitudeLocateBudgetPolicy.spiralRing(offset.getX(), offset.getZ()))) {
+                    finish(bestCandidate());
+                    log(true);
+                    return true;
+                }
                 tickGridProbes++;
                 gridProbes++;
 
@@ -335,17 +375,16 @@ public final class LatitudeBiomeLocateService {
                 exact = latitudeSource.getNoiseBiome(
                         quartX, QuartPos.fromBlock(surfaceY), quartZ, sampler);
                 if (target.test(exact)) {
-                    finish(Pair.of(LatitudeBiomeSource.centerQuartPosition(
-                            new BlockPos(blockX, surfaceY, blockZ)), exact));
-                    log(true);
-                    return true;
+                    recordCandidate(Pair.of(LatitudeBiomeSource.centerQuartPosition(
+                            new BlockPos(blockX, surfaceY, blockZ)), exact),
+                            COMMAND_HORIZONTAL_STEP);
                 }
             }
             updateProgress(gridProbes, LatitudeLocateBudgetPolicy.worstCaseSamples(
                     searchRadius, COMMAND_HORIZONTAL_STEP, 1));
             if (!offsets.hasNext()) {
-                finish(null);
-                log(false);
+                finish(bestCandidate());
+                log(hasCandidate());
                 return true;
             }
             return false;
@@ -418,6 +457,12 @@ public final class LatitudeBiomeLocateService {
                         && tickPreviewProbes < LatitudeLocateBudgetPolicy.MAX_SURFACE_PREVIEW_PROBES_PER_TICK
                         && !deadlineExceeded(tickStarted)) {
                     BlockPos.MutableBlockPos offset = previewOffsets.next();
+                    if (ringExceedsCandidateBound(
+                            LatitudeLocateBudgetPolicy.spiralRing(offset.getX(), offset.getZ()))) {
+                        finish(bestCandidate());
+                        log(true);
+                        return true;
+                    }
                     tickPreviewProbes++;
                     previewProbes++;
                     int quartX = QuartPos.fromBlock(origin.getX() + offset.getX() * previewStep);
@@ -436,6 +481,13 @@ public final class LatitudeBiomeLocateService {
                         continue;
                     }
                     if (exactCandidateChecks >= LatitudeLocateBudgetPolicy.MAX_SURFACE_EXACT_VERIFICATIONS) {
+                        // Verification budget spent: return the nearest match already confirmed
+                        // rather than dropping it and restarting on the coarser fallback grid.
+                        if (hasCandidate()) {
+                            finish(bestCandidate());
+                            log(true);
+                            return true;
+                        }
                         previewComplete = true;
                         break;
                     }
@@ -443,15 +495,20 @@ public final class LatitudeBiomeLocateService {
                     Holder<Biome> exact = latitudeSource.getNoiseBiome(
                             quartX, QuartPos.fromBlock(surfaceY), quartZ, sampler);
                     if (target.test(exact)) {
-                        finish(resultAt(quartX, quartZ, exact));
-                        log(true);
-                        return true;
+                        recordCandidate(resultAt(quartX, quartZ, exact), previewStep);
                     }
                     // One terrain-aware classification per surface tick keeps a bad terrain sample
                     // from recreating the old integrated-server stall.
                     break;
                 }
                 if (!previewOffsets.hasNext()) {
+                    // The preview grid is exhausted; a match found on it is already the nearest
+                    // preview candidate, so the coarser fallback sweep has nothing to add.
+                    if (hasCandidate()) {
+                        finish(bestCandidate());
+                        log(true);
+                        return true;
+                    }
                     previewComplete = true;
                 }
                 updateProgress(previewProbes, previewTotal + fallbackTotal);
@@ -462,6 +519,12 @@ public final class LatitudeBiomeLocateService {
 
             if (fallbackOffsets.hasNext()) {
                 BlockPos.MutableBlockPos offset = fallbackOffsets.next();
+                if (ringExceedsCandidateBound(
+                        LatitudeLocateBudgetPolicy.spiralRing(offset.getX(), offset.getZ()))) {
+                    finish(bestCandidate());
+                    log(true);
+                    return true;
+                }
                 fallbackChecks++;
                 int quartX = QuartPos.fromBlock(origin.getX() + offset.getX() * fallbackStep);
                 int quartZ = QuartPos.fromBlock(origin.getZ() + offset.getZ() * fallbackStep);
@@ -474,15 +537,19 @@ public final class LatitudeBiomeLocateService {
                 Holder<Biome> exact = latitudeSource.getNoiseBiome(
                         quartX, QuartPos.fromBlock(surfaceY), quartZ, sampler);
                 if (target.test(exact)) {
-                    finish(resultAt(quartX, quartZ, exact));
-                    log(true);
-                    return true;
+                    recordCandidate(resultAt(quartX, quartZ, exact), fallbackStep);
                 }
                 updateProgress(previewTotal + fallbackChecks, previewTotal + fallbackTotal);
                 return false;
             }
 
-            Pair<BlockPos, Holder<Biome>> planned = latitudeSource.findPlannedSurfaceWaterCoverage(
+            if (hasCandidate()) {
+                finish(bestCandidate());
+                log(true);
+                return true;
+            }
+
+            Pair<BlockPos, Holder<Biome>> planned = latitudeSource.findPlannedSurfaceCoverage(
                     matching, new BlockPos(origin.getX(), surfaceY, origin.getZ()), target, sampler);
             finish(planned);
             log(planned != null);
@@ -506,6 +573,7 @@ public final class LatitudeBiomeLocateService {
         private final int horizontalStep;
         private final Iterator<BlockPos.MutableBlockPos> offsets;
         private final int totalSamples;
+        private final Set<Holder<Biome>> matching;
         private BlockPos currentOffset;
         private int verticalIndex;
         private int sampled;
@@ -518,7 +586,8 @@ public final class LatitudeBiomeLocateService {
                 int worldRadius,
                 int searchRadius,
                 Climate.Sampler sampler,
-                ServerLevel level) {
+                ServerLevel level,
+                Set<Holder<Biome>> matching) {
             super(source, target, origin, latitudeSource, worldRadius, searchRadius, sampler);
             this.verticalSamples = Mth.outFromOrigin(origin.getY(),
                     level.getMinY() + 1, level.getMaxY() + 1, COMMAND_VERTICAL_STEP).toArray();
@@ -528,6 +597,7 @@ public final class LatitudeBiomeLocateService {
                     searchRadius / horizontalStep, Direction.EAST, Direction.SOUTH).iterator();
             this.totalSamples = LatitudeLocateBudgetPolicy.worstCaseSamples(
                     searchRadius, horizontalStep, Math.max(1, verticalSamples.length));
+            this.matching = matching;
         }
 
         @Override
@@ -543,11 +613,24 @@ public final class LatitudeBiomeLocateService {
                     && !deadlineExceeded(tickStarted)) {
                 if (currentOffset == null) {
                     if (!offsets.hasNext()) {
-                        finish(null);
-                        log(false);
+                        if (hasCandidate()) {
+                            finish(bestCandidate());
+                            log(true);
+                            return true;
+                        }
+                        Pair<BlockPos, Holder<Biome>> planned = latitudeSource.findPlannedCaveCoverage(
+                                matching, origin, searchRadius, target, sampler);
+                        finish(planned);
+                        log(planned != null);
                         return true;
                     }
                     BlockPos.MutableBlockPos offset = offsets.next();
+                    if (ringExceedsCandidateBound(
+                            LatitudeLocateBudgetPolicy.spiralRing(offset.getX(), offset.getZ()))) {
+                        finish(bestCandidate());
+                        log(true);
+                        return true;
+                    }
                     currentOffset = new BlockPos(offset.getX(), offset.getY(), offset.getZ());
                     verticalIndex = 0;
                 }
@@ -566,11 +649,13 @@ public final class LatitudeBiomeLocateService {
                 }
                 Holder<Biome> exact = latitudeSource.getNoiseBiome(quartX, quartY, quartZ, sampler);
                 if (target.test(exact)) {
-                    finish(Pair.of(LatitudeBiomeSource.centerQuartPosition(new BlockPos(
+                    recordCandidate(Pair.of(LatitudeBiomeSource.centerQuartPosition(new BlockPos(
                             QuartPos.toBlock(quartX) + 2, QuartPos.toBlock(quartY) + 2,
-                            QuartPos.toBlock(quartZ) + 2)), exact));
-                    log(true);
-                    return true;
+                            QuartPos.toBlock(quartZ) + 2)), exact), horizontalStep);
+                    // Remaining heights in this column share its horizontal distance, so they
+                    // cannot improve on the match just recorded.
+                    currentOffset = null;
+                    continue;
                 }
                 if (verticalIndex >= verticalSamples.length) {
                     currentOffset = null;

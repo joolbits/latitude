@@ -52,6 +52,11 @@ def method_body(source: str, signature: str) -> str:
 
 PERMITTED_TOOLS_LITERALS = {
     "latitude",
+    # The clickable coordinate a structure locate prints. Deliberately a separate, non-elevated
+    # root: an operator-gated command makes Minecraft warn on every click, which would make the
+    # coordinate useless to a non-operator who legitimately ran /locate. Its authorization is the
+    # player-bound expiring token, not a permission level.
+    "latitude_locate_teleport",
     "help",
     "here",
     "explainHere",
@@ -68,6 +73,7 @@ PERMITTED_TOOLS_LITERALS = {
 }
 
 PERMITTED_TOOLS_ARGUMENTS = {
+    "token",
     "level",
     "signedDegrees",
     "x",
@@ -133,17 +139,18 @@ def verify_tools_sources(failures: list[str]) -> None:
         if needle in combined:
             failures.append(f"shipping tools source couples to an excluded package: {needle!r}")
 
-    # T6 operator gating, applied exactly once at the root.
+    # T6 operator gating, applied exactly once at the /latitude root. The separate locate action
+    # is authorized by an expiring player-bound token instead of an elevated command requirement.
     require(command, ".requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))",
             "shipping operator permission gate", failures)
     if command.count(".requires(") != 1:
         failures.append(
             f"shipping tools must gate exactly once at the root: found {command.count('.requires(')}")
 
-    # T7 exactly one registration.
-    if command.count("dispatcher.register(") != 1:
+    # T7 exactly two reviewed roots: the operator tree and its token-bound locate action.
+    if command.count("dispatcher.register(") != 2:
         failures.append(
-            f"shipping tools must register exactly one root: found {command.count('dispatcher.register(')}")
+            f"shipping tools must register exactly two roots: found {command.count('dispatcher.register(')}")
 
     # T8/T9 EXACT literal and argument sets - fail closed, so an unknown new subcommand is a
     # failure rather than a silent widening. Compare counts as well as sets so that a duplicate
@@ -167,15 +174,19 @@ def verify_tools_sources(failures: list[str]) -> None:
         if needle in command:
             failures.append(f"shipping tools must not statically import command builders: {needle!r}")
 
-    # T10 executable count: the historical 10 plus the four /latitude retrofit nodes
-    # (status root, enable, confirm, disable).
-    if command.count(".executes(") != 14:
+    # T10 executable count: the historical 10, plus the four /latitude retrofit nodes
+    # (status root, enable, confirm, disable), plus the token-bound locate teleport action.
+    if command.count(".executes(") != 15:
         failures.append(
-            f"shipping tools must expose exactly 14 executable nodes: found {command.count('.executes(')}")
+            f"shipping tools must expose exactly 15 executable nodes: found {command.count('.executes(')}")
 
     # T11 SHIPPED LATITUDE LAW - the shipped commands must obey the same coordinate laws as dev.
     require(command, "DoubleArgumentType.doubleArg(-90.0, 90.0)", "shipping latitude domain", failures)
     require(command, "targetZ + 0.5", "shipping block-center teleport", failures)
+    require(command, 'Commands.literal("latitude_locate_teleport")',
+            "token-bound locate teleport root", failures)
+    require(command, "LatitudeStructureLocateService.runPendingTeleport(",
+            "token-bound locate teleport delegation", failures)
     tp_lat_body = method_body(command, "private static int tpLat(")
     require(tp_lat_body, "LatitudeMath.worldRadiusBlocks(border)", "shipping tpLat border radius", failures)
     forbid(tp_lat_body, "authoritativeRadius(source)", "shipping tpLat authority radius misuse", failures)
@@ -839,8 +850,8 @@ def parse_metadata(payload: bytes, label: str, failures: list[str]) -> dict[str,
 def reject_local_paths(entries: dict[str, bytes], label: str, failures: list[str]) -> None:
     local_markers = (
         b"<home>/",
-        b"/" + b"Users" + b"/" + b"example" + b"/",
-        b"C:" + b"\\" + b"Users" + b"\\" + b"example" + b"\\",
+        b"/" + b"Users/",           # split so this guard's own source is not itself a match
+        b"C:\\" + b"Users\\",
         str(ROOT).encode("utf-8"),
     )
     for name, payload in entries.items():

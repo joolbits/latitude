@@ -23,7 +23,90 @@ public final class DevToolPolicyTest {
         movementAndTransitionSamplingAreDeterministic();
         traceClockPreservesSameDimensionContinuity();
         caseSessionIsAppendOnlyOrderedAndExplicitlyClosed();
+        structureAtlasExporterStaysDevOnlyAndSharesTheLocateEvaluators();
         System.out.println("DEV_TOOL_POLICY_TEST_PASS assertions=" + assertions);
+    }
+
+    /**
+     * The structure atlas exporter must stay dev-only and must judge candidates through the same
+     * evaluators the locate command and placement guard use — a second evaluator would drift, and
+     * a dot on the atlas would stop meaning what a locate answer means.
+     */
+    private static void structureAtlasExporterStaysDevOnlyAndSharesTheLocateEvaluators()
+            throws Exception {
+        String exporter = java.nio.file.Files.readString(java.nio.file.Path.of(
+                "src/main/java/com/example/globe/dev/StructureAtlasExporter.java"))
+                .replaceAll("\\s+", " ");
+        expectTrue(exporter.contains("package com.example.globe.dev;"),
+                "exporter lives in the dev package, which release artifacts exclude");
+        expectTrue(exporter.contains("System.getProperty(PROP_KEY) == null"),
+                "exporter registers nothing unless its property is set");
+        expectTrue(exporter.contains(
+                "LatitudeStructureLocateService.sweepStructureCandidatesForAtlas("),
+                "exporter judges candidates through the shared locate admission sweep");
+
+        String census = java.nio.file.Files.readString(java.nio.file.Path.of(
+                "src/main/java/com/example/globe/dev/DistributionCensusExporter.java"))
+                .replaceAll("\\s+", " ");
+        expectTrue(census.contains("package com.example.globe.dev;"),
+                "the distribution census lives in the release-excluded dev package");
+        expectTrue(census.contains("System.getProperty(PROP_KEY) == null"),
+                "the distribution census registers nothing unless its property is set");
+        expectTrue(census.contains("distribution census REFUSED: Latitude does not own"),
+                "a census on a non-Latitude world refuses with a reason rather than reporting "
+                        + "vanilla's distribution as Latitude's");
+        expectTrue(census.contains("bandProvinceBiome"),
+                "the census emits per-band per-province counts, not just global shares — the "
+                        + "global figure alone cannot say WHERE a biome fails to appear");
+        expectTrue(census.contains("hotspotByBand") && census.contains("hotspotBiomes"),
+                "the census measures arid-hotspot area against what that area actually became");
+
+        String globeMod = java.nio.file.Files.readString(java.nio.file.Path.of(
+                "src/main/java/com/example/globe/GlobeMod.java")).replaceAll("\\s+", " ");
+        expectTrue(globeMod.contains(
+                "invokeDevRegister(\"com.example.globe.dev.DistributionCensusExporter\")"),
+                "the distribution census registers only through the dev-only reflective path");
+        expectTrue(globeMod.contains(
+                "invokeDevRegister(\"com.example.globe.dev.StructureAtlasExporter\")"),
+                "exporter registers only through the dev-environment-only reflective path");
+
+        String build = java.nio.file.Files.readString(java.nio.file.Path.of("build.gradle"))
+                .replaceAll("\\s+", " ");
+        expectTrue(build.contains("path == 'com/example/globe/dev'")
+                        && build.contains("path.startsWith('com/example/globe/dev/')"),
+                "release artifact exclusion still covers the whole dev package");
+
+        String locate = java.nio.file.Files.readString(java.nio.file.Path.of(
+                "src/main/java/com/example/globe/world/LatitudeStructureLocateService.java"))
+                .replaceAll("\\s+", " ");
+        expectTrue(locate.contains("public static AtlasSweep sweepStructureCandidatesForAtlas(")
+                        && locate.contains("applyVerdictTally(tally, verdict)"),
+                "locate and the sweep share one verdict vocabulary and one tally mapping");
+        expectTrue(locate.contains("Latitude does not own worldgen in this overworld"),
+                "a sweep on a non-Latitude world refuses with a reason rather than reporting "
+                        + "vanilla's placement as Latitude's");
+        expectTrue(exporter.contains("sweep.refusalReason() != null")
+                        && exporter.contains("structure atlas REFUSED"),
+                "a refused sweep is logged loudly, so an empty artifact is never read as an "
+                        + "empty world");
+        expectTrue(exporter.contains("MAX_CANDIDATE_ROWS")
+                        && exporter.contains("rejectedSampleStride")
+                        && exporter.contains("candidatesTotal"),
+                "the artifact is bounded, and records the total and the sampling stride so a "
+                        + "thinned layer cannot be mistaken for a complete one");
+        expectTrue(exporter.contains("Files.createTempDirectory(outputRoot, runScope + \"_\")")
+                        && exporter.contains("\"_R\" + radius"),
+                "every sweep gets a unique world/radius-prefixed directory — world name and "
+                        + "radius alone still collide across seeds and concurrent reruns");
+        expectTrue(exporter.contains("System.getProperty(\"latdev.biomePng\") != null")
+                        && exporter.contains("System.getProperty(\"latdev.biomeSearch\") != null")
+                        && exporter.contains("structure atlas REFUSED: run it without"),
+                "the structure sweep refuses the biome exporters whose shutdown and radius "
+                        + "ownership made combined evidence invalid");
+        expectTrue(exporter.contains("can take tens of minutes")
+                        && exporter.contains("structure-incidence counter"),
+                "the dev-tool contract states the measured runtime and candidate-level evidence "
+                        + "boundary instead of promising a seconds-long incidence measurement");
     }
 
     private static void packagedTestIdentityAndProbePolicyFailClosed() {

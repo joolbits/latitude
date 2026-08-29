@@ -23,6 +23,7 @@
     "ChunkRegionWarmSnowTrapMixin",
     "TreeLineVegetationGuardMixin",
     "AlpineSurfaceMixin",
+    "AlpineSnowVegetationGuardMixin",
     "SurfaceDripstoneLawnmowerMixin",
     "ExtremePolarVillageStartGuardMixin",
     "ExtremePolarVegetationGuardMixin",
@@ -32,7 +33,10 @@
   "client": [
     "client.CreateWorldScreenMixin",
     "client.CreateWorldScreenInitRedirectMixin",
+    "client.ScreenAddRenderableWidgetInvoker",
+    "client.SelectWorldScreenVanillaDoorMixin",
     "client.WorldSelectionListEntryMixin",
+    "client.StringWidgetMaxWidthAccessor",
     "client.WorldCreatorMixin",
     "client.WorldRendererWorldBorderMixin",
     "client.MinecraftClientStartIntegratedMixin",

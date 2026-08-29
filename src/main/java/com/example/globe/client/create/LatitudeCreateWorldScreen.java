@@ -15,11 +15,14 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.GenericMessageScreen;
 import net.minecraft.client.gui.screens.Screen;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.client.gui.screens.worldselection.DataPackReloadCookie;
 import net.minecraft.client.gui.screens.worldselection.EditGameRulesScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContextMapper;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.registries.Registries;
@@ -35,6 +38,7 @@ import net.minecraft.world.Difficulty;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.level.DataPackConfig;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.WorldDataConfiguration;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.WorldGenSettings;
@@ -174,6 +178,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private Button worldTypeNextBtn;
     private Button modePrevBtn;
     private Button modeNextBtn;
+    private Button otherWorldTypesBtn;
     private Button gameRulesBtn;
     private Button hudStudioBtn;
 
@@ -298,6 +303,35 @@ public class LatitudeCreateWorldScreen extends Screen {
         openLoaded(client, onClose, parent, initialState, recreated, null);
     }
 
+    /**
+     * Vanilla's game-mode enum to this screen's mode-stepper index. One owner, because both the
+     * inbound hydrate and the escape hatch's return path translate it and a drift between them
+     * would show the player a mode other than the one actually set.
+     */
+    private static int modeIndexFor(WorldCreationUiState.SelectedGameMode gameMode) {
+        return switch (gameMode) {
+            case HARDCORE -> 1;
+            case CREATIVE -> 2;
+            default -> 0;
+        };
+    }
+
+    /**
+     * Takes vanilla's live creation state back after the escape hatch. Mirrors exactly the fields
+     * carried outbound, so an edit made on either screen survives in both directions; the text
+     * fields are rebuilt from these values when init() runs on the way back in.
+     */
+    private void absorbVanillaCreateState(WorldCreationUiState state) {
+        this.worldNameInput = state.getName();
+        this.seedInput = state.getSeed();
+        this.allowCommands = state.isAllowCommands();
+        this.selectedDifficulty = state.getDifficulty();
+        this.bonusChest = state.isBonusChest();
+        this.generateStructures = state.isGenerateStructures();
+        this.gameRules = state.getGameRules();
+        this.selectedModeIdx = modeIndexFor(state.getGameMode());
+    }
+
     private void hydrateInitialState(WorldCreationUiState initialState, boolean recreated,
                                      @Nullable String recreatedPresetId) {
         this.worldNameInput = initialState.getName();
@@ -307,11 +341,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.bonusChest = initialState.isBonusChest();
         this.generateStructures = initialState.isGenerateStructures();
         this.gameRules = initialState.getGameRules();
-        this.selectedModeIdx = switch (initialState.getGameMode()) {
-            case HARDCORE -> 1;
-            case CREATIVE -> 2;
-            default -> 0;
-        };
+        this.selectedModeIdx = modeIndexFor(initialState.getGameMode());
 
         int loadedWorldType = worldTypeIndex(initialState, recreated, recreatedPresetId);
         if (loadedWorldType < 0) {
@@ -682,6 +712,15 @@ public class LatitudeCreateWorldScreen extends Screen {
                     .bounds(settBtnX, panelTop, settBtnW, btnH)
                     .build();
             addSettingsScrollWidget(hudStudioBtn);
+
+            otherWorldTypesBtn = Button.builder(
+                            Component.literal("Other World Types & Datapacks..."), b -> openOtherWorldTypes())
+                    .bounds(settBtnX, panelTop, settBtnW, btnH)
+                    .build();
+            otherWorldTypesBtn.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(
+                    "Open Minecraft's full setup for modded world types, Superflat presets, and datapacks. "
+                            + "The world name and seed you have entered carry over.")));
+            addSettingsScrollWidget(otherWorldTypesBtn);
             updateSettingsLayout();
         }
 
@@ -1032,10 +1071,13 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (hudStudioBtn != null) {
             hudStudioBtn.active = hudStudioBtn.visible;
         }
+        if (otherWorldTypesBtn != null) {
+            otherWorldTypesBtn.active = otherWorldTypesBtn.visible;
+        }
     }
 
     private void updateSettingsLayout() {
-        if (worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || structuresBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
+        if (worldTypePrevBtn == null || worldTypeNextBtn == null || otherWorldTypesBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || structuresBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
             settingsViewportTop = 0;
             settingsViewportBottom = 0;
             settingsContentHeight = 0;
@@ -1061,7 +1103,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         int viewportHeight = Math.max(0, settingsViewportBottom - settingsViewportTop);
         int contentTop = settingsViewportTop + scaledUi(4);
         int blockHeight = labelGap + btnH;
-        int rulesRowCount = tabbedMode ? 4 : 8;
+        int rulesRowCount = tabbedMode ? 5 : 9;
         // Leave a little trailing room so the HUD Studio row can scroll fully into view
         // on short windows instead of sitting flush against the viewport edge.
         settingsContentHeight = blockHeight * rulesRowCount + rowGap * (rulesRowCount - 1) + scaledUi(12);
@@ -1075,6 +1117,11 @@ public class LatitudeCreateWorldScreen extends Screen {
             modeRowY = y;
             positionSettingsStepper(worldTypePrevBtn, worldTypeNextBtn, settBtnX, settingsColumnW, y, btnH);
             positionSettingsStepper(modePrevBtn, modeNextBtn, settingsRightColumnX, settingsColumnW, y, btnH);
+
+            // Full width on its own row: the label is long, and pairing it into a half-width
+            // column would truncate it where every other tabbed row reads cleanly.
+            y += btnH + rowGap + labelGap;
+            positionSettingsButton(otherWorldTypesBtn, settBtnX, settBtnW, y, btnH);
 
             y += btnH + rowGap + labelGap;
             commandsRowY = y;
@@ -1095,6 +1142,9 @@ public class LatitudeCreateWorldScreen extends Screen {
             positionSettingsButton(hudStudioBtn, settingsRightColumnX, settingsColumnW, y, btnH);
         } else {
             positionSettingsStepper(worldTypePrevBtn, worldTypeNextBtn, settBtnX, settBtnW, y, btnH);
+
+            y += btnH + rowGap + labelGap;
+            positionSettingsButton(otherWorldTypesBtn, settBtnX, settBtnW, y, btnH);
 
             y += btnH + rowGap + labelGap;
             modeRowY = y;
@@ -1144,6 +1194,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         boolean showRules = activeTab == 1;
         setTabbedWidgetVisible(worldTypePrevBtn, showRules);
         setTabbedWidgetVisible(worldTypeNextBtn, showRules);
+        setTabbedWidgetVisible(otherWorldTypesBtn, showRules);
         setTabbedWidgetVisible(modePrevBtn, showRules);
         setTabbedWidgetVisible(modeNextBtn, showRules);
         setTabbedWidgetVisible(commandsBtn, showRules);
@@ -1189,6 +1240,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         setTabbedWidgetVisible(worldTypePrevBtn, false);
         setTabbedWidgetVisible(worldTypeNextBtn, false);
+        setTabbedWidgetVisible(otherWorldTypesBtn, false);
         setTabbedWidgetVisible(modePrevBtn, false);
         setTabbedWidgetVisible(modeNextBtn, false);
         setTabbedWidgetVisible(commandsBtn, false);
@@ -1281,6 +1333,9 @@ public class LatitudeCreateWorldScreen extends Screen {
     private void switchTab(int tab) {
         if (tab == activeTab) return;
         activeTab = tab;
+        // Focus must not stay on a widget the outgoing tab owned: it is hidden now, and a hidden
+        // focused widget keeps taking keystrokes the visible tab should be getting.
+        clearFocus();
         applyTabbedVisibility();
     }
 
@@ -1343,6 +1398,79 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.minecraft.setScreen(new LatitudeHudStudioScreen(this));
     }
 
+    /**
+     * Hands off to Minecraft's own create-world screen for the world types, Superflat presets and
+     * datapacks this screen does not offer. The name and seed already typed here travel with the
+     * handoff so the player does not retype them, and that screen runs vanilla-only: Globe is
+     * withheld from its world-type lists, because a Latitude world created there would never have
+     * collected Latitude's own settings.
+     */
+    private void openOtherWorldTypes() {
+        if (this.minecraft == null) return;
+        this.worldNameInput = this.worldNameField == null ? this.worldNameInput : this.worldNameField.getValue();
+        this.seedInput = this.seedField == null ? this.seedInput : this.seedField.getValue();
+        // Read vanilla's LIVE state on the way back, not a snapshot taken now. The outbound carry
+        // below cannot see anything the player changes on vanilla's own controls afterwards, so
+        // without this the round trip is one-way and their edits are silently discarded -- reported
+        // live on the sibling line as "Hardcore does not survive; have to change it again when you
+        // go back".
+        //
+        // Safe to read here because CreateWorldScreen.popScreen() is
+        //     this.onClose.run(); this.removeTempDataPackDir();
+        // -- it runs this callback FIRST and never replaces the screen itself, so vanilla's screen
+        // is still minecraft.screen at this point. The interface cast is deliberate: casting to the
+        // @Mixin class instead compiles clean and throws IllegalClassLoadError the first time it
+        // runs, because a registered mixin class cannot be classloaded from ordinary code.
+        Runnable returnToLatitude = () -> {
+            if (this.minecraft.screen instanceof VanillaCreateWorldUiStateCarrier carrier) {
+                absorbVanillaCreateState(carrier.globe$getVanillaUiState());
+            }
+            this.minecraft.setScreen(this);
+        };
+        // Abandons the whole flow from wherever vanilla's screen is showing when the exit button is
+        // clicked -- not "now", since capturing minecraft.screen eagerly would name THIS screen
+        // (Latitude's), and leaveCreateFlowFrom's guard would then never match at click time.
+        Runnable exitCreateFlow = () -> leaveCreateFlowFrom(this.minecraft == null ? null : this.minecraft.screen);
+        // The Runnable is the claim key: the next screen is constructed with this exact instance,
+        // so only that screen can take the payload.
+        VanillaCreateWorldHandoff.armNext(returnToLatitude, this.worldNameInput, this.seedInput, exitCreateFlow);
+        try {
+            // createFromExisting rather than openFresh, deliberately. openFresh runs a full
+            // WorldLoader pass -- vanilla's "Preparing world data" screen, a fresh PackRepository,
+            // and every recipe and advancement re-read and APPLIED ON THE RENDER THREAD. That is a
+            // visible freeze (measured live: ~1800 recipes and ~1950 advancements with packs
+            // enabled), and this screen already holds the very context that load would rebuild.
+            // createFromExisting takes that context and performs no load at all.
+            //
+            // Safe because `holder` is always built from vanilla's NORMAL dimensions -- both the
+            // redirect path (vanilla's own openFresh context) and the datapack-loading path use
+            // WorldPresets.createNormalWorldDimensions -- so the vanilla screen opens on the same
+            // world type openFresh would have given it. Globe's own dimensions are built at world
+            // creation, in LatitudeWorldLauncher, never into this context. If the player changes
+            // packs over there, vanilla's own datapack flow reloads then, which is the only time
+            // the cost is actually owed.
+            //
+            // Mode mapping matches beginExpedition exactly; the two must not drift.
+            GameType gameMode = this.selectedModeIdx == 2 ? GameType.CREATIVE : GameType.SURVIVAL;
+            boolean hardcore = this.selectedModeIdx == 1;
+            Difficulty difficulty = hardcore ? Difficulty.HARD : this.selectedDifficulty;
+            LevelSettings carried = new LevelSettings(
+                    this.worldNameInput, gameMode, hardcore, difficulty,
+                    this.allowCommands, this.gameRules, this.holder.dataConfiguration());
+            // null temp datapack dir: vanilla creates one on demand, and unlike Re-Create there is
+            // no extracted world folder to carry over.
+            CreateWorldScreen vanillaScreen = CreateWorldScreen.createFromExisting(
+                    this.minecraft, returnToLatitude, carried, this.holder, null);
+            this.minecraft.setScreen(vanillaScreen);
+        } catch (RuntimeException exception) {
+            // Never leave a payload armed for a screen that failed to open; the next create-world
+            // screen from any other path would otherwise claim it.
+            VanillaCreateWorldHandoff.cancelNext();
+            this.minecraft.setScreen(this);
+            throw exception;
+        }
+    }
+
     // ── Begin Expedition ──
 
     private void beginExpedition() {
@@ -1390,8 +1518,24 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     @Override
     public void onClose() {
+        leaveCreateFlowFrom(this);
+    }
+
+    /**
+     * Abandons the whole create-world flow, landing wherever this screen's own {@code onClose}
+     * would have -- title screen or world list, whichever this screen's {@code parent} actually is.
+     *
+     * <p>{@code expectedCurrent} is the screen this call believes is showing. The guard only
+     * navigates when that belief still holds (or nothing is showing at all), so a call arriving
+     * after some other screen has already taken over is a no-op rather than a fight over
+     * {@code minecraft.screen}. {@link #onClose()} passes {@code this}; the escape-hatch exit button
+     * -- called while vanilla's own create screen is showing, not this one -- passes whatever is
+     * showing at the moment it is clicked.</p>
+     */
+    private void leaveCreateFlowFrom(@Nullable Screen expectedCurrent) {
         this.onClose.run();
-        if (this.minecraft != null && (this.minecraft.screen == this || this.minecraft.screen == null)) {
+        if (this.minecraft != null
+                && (this.minecraft.screen == expectedCurrent || this.minecraft.screen == null)) {
             this.minecraft.setScreen(this.parent);
         }
     }
@@ -1515,6 +1659,10 @@ public class LatitudeCreateWorldScreen extends Screen {
     public boolean keyPressed(net.minecraft.client.input.KeyEvent input) {
         if (introActive()) {
             skipIntro();
+            return true;
+        }
+        if (tabbedMode && input.key() == InputConstants.KEY_TAB && input.hasControlDown()) {
+            switchTab(CreateWorldScreenUiPolicy.cyclePanel(activeTab, TAB_LABELS.length, input.hasShiftDown()));
             return true;
         }
         return super.keyPressed(input);

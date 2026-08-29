@@ -128,6 +128,20 @@ loom {
             vmArg "-Dlatdev.biomePng=${System.getProperty('latdev.biomePng', 'enabled')}"
             vmArg "-Dlatdev.locateBoundary=${System.getProperty('latdev.locateBoundary', '')}"
             vmArg "-Dlatitude.debugWorldgenPath=${System.getProperty('latitude.debugWorldgenPath', 'false')}"
+            // Terrain-aware atlas was reachable in code but not from the command line:
+            // BiomePreviewExporter reads this system property, and without forwarding it the preview
+            // JVM never saw it. A non-terrain-aware run nulls noiseConfig/heightView, so every column
+            // classifies flat and any terrain-gated rule is invisible to the map -- a census that
+            // silently cannot see what it claims to measure. Defaults false, so ordinary runs stay
+            // byte-identical.
+            vmArg "-Dlatitude.atlasTerrainAware=${System.getProperty('latitude.atlasTerrainAware', 'false')}"
+            // The build-marker fallback reads these, and without them a headless atlas logs
+            // commit=? -- an evidence artefact that cannot be tied to the source that produced it,
+            // which is the whole point of the marker.
+            vmArg "-Dlatitude.dev.gitCommit=${latitudeGitCommit}"
+            vmArg "-Dlatitude.dev.gitBranch=${latitudeGitBranch}"
+            vmArg "-Dlatitude.dev.buildDirty=${latitudeGitDirty}"
+            vmArg "-Dlatitude.dev.buildTime=${latitudeBuildTime}"
         }
         biomeSeedSearch {
             server()
@@ -144,6 +158,16 @@ loom {
             vmArg "-Xms2G"
             vmArg "-Xmx8G"
             vmArg "-Dlatdev.bandAudit=${System.getProperty('latdev.bandAudit', 'enabled')}"
+        }
+        structureAtlas {
+            server()
+            name "Structure Atlas (Headless)"
+            runDir latitudePreviewRunDir
+            vmArg "-Xms2G"
+            vmArg "-Xmx8G"
+            // Deliberately no latdev.biomePng/biomeSearch: the structure sweep refuses them
+            // (their exporters own server shutdown and sampling radius).
+            vmArg "-Dlatdev.structureAtlas=${System.getProperty('latdev.structureAtlas', 'true')}"
         }
     }
 }
@@ -655,6 +679,32 @@ tasks.named('check').configure {
     dependsOn tasks.named('latitudePolarFoliagePolicyTest')
 }
 
+def latitudeRiverBandPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeRiverBandPolicyTest')
+
+tasks.register('compileLatitudeRiverBandPolicyTest', JavaCompile) {
+    group = 'verification'
+    description = 'Compile the river band-pool split regression'
+    source = fileTree('src/riverBandPolicyTest/java') {
+        include '**/*.java'
+    }
+    classpath = sourceSets.main.output
+    destinationDirectory.set(latitudeRiverBandPolicyTestClasses)
+    options.release = 21
+    dependsOn classes
+}
+
+tasks.register('latitudeRiverBandPolicyTest', JavaExec) {
+    group = 'verification'
+    description = 'Prove tropical rivers stay out of the subtropical pool without launching Minecraft'
+    classpath = files(latitudeRiverBandPolicyTestClasses) + sourceSets.main.output
+    mainClass = 'com.example.globe.world.RiverBandPolicyTest'
+    dependsOn tasks.named('compileLatitudeRiverBandPolicyTest')
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudeRiverBandPolicyTest')
+}
+
 def latitudeWorldgenAuthorityPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeWorldgenAuthorityPolicyTest')
 
 tasks.register('compileLatitudeWorldgenAuthorityPolicyTest', JavaCompile) {
@@ -679,6 +729,31 @@ tasks.register('latitudeWorldgenAuthorityPolicyTest', JavaExec) {
 
 tasks.named('check').configure {
     dependsOn tasks.named('latitudeWorldgenAuthorityPolicyTest')
+}
+
+// The bootstrapped proof variants were previously manual-only, so their regressions (arid-hotspot
+// desert preservation, humid coverage, explain hotspot disclosure) never gated a build.
+tasks.register('latitudeWarmUplandProof', JavaExec) {
+    group = 'verification'
+    description = 'Prove warm-upland terrain authority, the arid-hotspot desert exception, and its explain disclosure'
+    classpath = files(latitudeWorldgenAuthorityPolicyTestClasses) + sourceSets.main.runtimeClasspath
+    mainClass = 'com.example.globe.world.WorldgenAuthorityPolicyTest'
+    args 'warm-upland'
+    dependsOn tasks.named('compileLatitudeWorldgenAuthorityPolicyTest')
+}
+
+tasks.register('latitudeHumidCoverageProof', JavaExec) {
+    group = 'verification'
+    description = 'Prove humid coverage precedes and survives every final admission authority'
+    classpath = files(latitudeWorldgenAuthorityPolicyTestClasses) + sourceSets.main.runtimeClasspath
+    mainClass = 'com.example.globe.world.WorldgenAuthorityPolicyTest'
+    args 'humid-coverage'
+    dependsOn tasks.named('compileLatitudeWorldgenAuthorityPolicyTest')
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudeWarmUplandProof')
+    dependsOn tasks.named('latitudeHumidCoverageProof')
 }
 
 def latitudeDevToolPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeDevToolPolicyTest')
@@ -826,6 +901,16 @@ tasks.register('syncBiomePreviewMods', Copy) {
 tasks.named('runBiomePreview').configure {
     workingDir file(latitudePreviewRunDir)
     dependsOn tasks.named('prepareBiomePreviewRunDir')
+    // Forward the dev structure-atlas trigger into the game JVM; the latdev option translation
+    // below only covers the biomePng key set.
+    if (System.getProperty('latdev.structureAtlas') != null) {
+        systemProperty 'latdev.structureAtlas', System.getProperty('latdev.structureAtlas')
+    }
+    ['latdev.distributionCensus', 'latdev.distributionCensus.step'].each { key ->
+        if (System.getProperty(key) != null) {
+            systemProperty key, System.getProperty(key)
+        }
+    }
     if (project.hasProperty('latdev.syncPreviewMods') && project.property('latdev.syncPreviewMods').toString().toBoolean()) {
         dependsOn tasks.named('syncBiomePreviewMods')
     }
@@ -991,6 +1076,11 @@ tasks.named('runBiomeSeedSearch').configure {
             setArgs(rawArgs)
         }
     }
+}
+
+tasks.named('runStructureAtlas').configure {
+    workingDir file(latitudePreviewRunDir)
+    dependsOn tasks.named('prepareBiomePreviewRunDir')
 }
 
 tasks.named('runBandAudit').configure {

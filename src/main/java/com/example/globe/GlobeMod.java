@@ -77,6 +77,8 @@ public class GlobeMod implements ModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     private static final String SPAWN_CHOSEN_TAG = "globe_spawn_chosen";
+    // Duplicates vanilla's own join logging once per player join; opt-in only (maintainer ruling, 2026-08-18).
+    private static final boolean DEBUG_JOIN = Boolean.getBoolean("latitude.debugJoin");
 
     public static final int BORDER_RADIUS = 7500;
     public static final int POLE_BAND_START_ABS_Z = 12000;
@@ -89,6 +91,16 @@ public class GlobeMod implements ModInitializer {
     private static final int EW_SPAWN_PADDING_BLOCKS = 64;
     private static final long SPAWN_SALT = 0x7A3E21B5D4C1F7A9L;
     private static final Set<String> PROVIDER_PROFILE_WARNINGS = ConcurrentHashMap.newKeySet();
+
+    public static final class InitialSpawnSelectionException extends IllegalStateException {
+        public InitialSpawnSelectionException(String message) {
+            super(message);
+        }
+
+        public InitialSpawnSelectionException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
 
     public static final int POLE_START = 12000; // Legacy constant, use activePoleBandStartAbsZ for dynamic logic
 
@@ -127,6 +139,12 @@ public class GlobeMod implements ModInitializer {
 
         logBuildMetadata("server");
 
+        com.example.globe.compat.LatitudeTerraBlenderBridge.install();
+
+        // Placement modifier behind Latitude's lush desert riverbanks. Registered unconditionally
+        // so the placed-feature JSON still parses when the banks themselves are switched off.
+        com.example.globe.world.feature.LatitudeRiparianBanks.registerPlacementType();
+
         GlobeNet.registerPayloads();
         com.example.globe.world.LatitudeDecorationRetrofit.init();
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
@@ -154,12 +172,36 @@ public class GlobeMod implements ModInitializer {
             }
 
             boolean isGlobe = isGlobeOverworld(overworld);
-            LOGGER.info("JOIN: player={}, isGlobeOverworld={}", handler.player.getName().getString(), isGlobe);
-            ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe));
+            if (DEBUG_JOIN) {
+                LOGGER.info("JOIN: player={}, isGlobeOverworld={}", handler.player.getName().getString(), isGlobe);
+            }
 
-            LatitudeWorldState worldState = isGlobe ? LatitudeWorldState.get(overworld) : null;
             boolean isBrandNewWorld = overworld.getGameTime() < 100L;
             boolean spawnAlreadyChosen = handler.player.getTags().contains(SPAWN_CHOSEN_TAG);
+            // On a brand-new world the player is still standing at vanilla's spawn -- Latitude's own
+            // spawn selection runs further down THIS handler. Snapshotting here would record the
+            // equatorial default and then ship it as the loading label, so a player who asked for
+            // polar would be told "Equatorial" on the way in. No label beats a wrong one; the
+            // throttled tick records the real band once the player is where they belong.
+            boolean spawnStillToBeChosen = isBrandNewWorld && !spawnAlreadyChosen;
+
+            LatitudeWorldState worldState = isGlobe ? LatitudeWorldState.get(overworld) : null;
+            if (worldState != null && !spawnStillToBeChosen) {
+                // A fresh world can cross the join boundary before borderUxTick's next throttled
+                // pass, or a returning player can rejoin far from where they last quit. Snapshot the
+                // actual band now so the loading-label payload just below, and the next world-list
+                // row, both reflect where the player really is instead of stale or absent data.
+                recordLastKnownBand(overworld, overworld.getWorldBorder(), handler.player);
+            }
+            // LatitudeWorldLauncher (fresh creation) and the resumed-world mixins already set the
+            // loading label from LOCAL, network-free state -- but only on the HOST's own client,
+            // which is the only client either of them ever runs on. Send the real id to every
+            // client unconditionally; the receiver on the other end is the one responsible for
+            // ignoring it on the host (see GlobeModClient), so a remote join -- dedicated or a
+            // friend joining an opened-to-LAN world -- gets a label none of those three mechanisms
+            // could ever have given it.
+            String loadingBandId = worldState == null ? "" : worldState.getLastKnownBandId().orElse("");
+            ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe, loadingBandId));
 
             String pendingZone = server.isDedicatedServer() ? null : GlobePending.consume();
 
@@ -178,9 +220,8 @@ public class GlobeMod implements ModInitializer {
             }
 
             if (isGlobe && !spawnAlreadyChosen && !worldState.isSpawnPickerDismissed() && isBrandNewWorld) {
-                // Initial creation either set a terrain-validated Latitude spawn or intentionally
-                // delegated to vanilla's safe-spawn routine. Never repeat a synchronous globe scan
-                // on the first player join: that can strand the client on the loading overlay.
+                // Initial creation already set a terrain-validated Latitude spawn. Never repeat a
+                // synchronous globe scan on first join: that can strand the loading overlay.
                 LOGGER.info("[Latitude] Suppressing legacy post-load spawn relocation; retaining the initial safe spawn");
                 worldState.setSpawnPickerDismissed(true);
             }
@@ -216,6 +257,8 @@ public class GlobeMod implements ModInitializer {
             return;
         }
         invokeDevRegister("com.example.globe.dev.BiomePreviewHeadlessRunner");
+        invokeDevRegister("com.example.globe.dev.StructureAtlasExporter");
+        invokeDevRegister("com.example.globe.dev.DistributionCensusExporter");
     }
 
     private static void invokeDevRegister(String className, Object... args) {
@@ -261,7 +304,7 @@ public class GlobeMod implements ModInitializer {
         worldState.setCaveRepresentationProfile(
                 CaveBiomeRepresentationProfile.capture(captureRadius, profile));
         worldState.setWorldgenPolicy(
-                LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE);
+                LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V5_FINAL_ADMISSION);
         LOGGER.info("[Latitude] Recorded Globe world: border radius {} ({})", captureRadius, origin);
     }
 
@@ -351,8 +394,15 @@ public class GlobeMod implements ModInitializer {
         }
 
         if (!isGlobeOverworld(world)) {
-            activeLatitudeOverworldGenerator = null;
-            LatitudeBiomes.clearWorldgenContext();
+            // ServerWorldEvents.LOAD fires for EVERY dimension. Only a non-Globe OVERWORLD may
+            // disarm the process-global Latitude authority (a vanilla world opened after a Globe
+            // one). The nether/end loading right after the overworld must never null the just-armed
+            // generator identity: chunks generated in that window would silently fall back to
+            // vanilla painting (found 2026-08-24 while tracing pack-world biome leaks).
+            if (world.dimension() == net.minecraft.world.level.Level.OVERWORLD) {
+                activeLatitudeOverworldGenerator = null;
+                LatitudeBiomes.clearWorldgenContext();
+            }
             return;
         }
         LatitudeWorldState worldState = LatitudeWorldState.get(world);
@@ -560,8 +610,8 @@ public class GlobeMod implements ModInitializer {
 
     /**
      * Persists the latitude band a player currently occupies, so the loading screen and the
-     * world-selection list can show it the next time this save is opened. Called on a throttled
-     * tick cadence while playing and once more, authoritatively, on disconnect.
+     * world-selection list can show it the next time this save is opened. Called at JOIN, on a
+     * throttled tick cadence while playing, and once more, authoritatively, on disconnect.
      */
     private static void recordLastKnownBand(ServerLevel overworld, WorldBorder border, ServerPlayer player) {
         double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, player.getZ());
@@ -668,12 +718,12 @@ public class GlobeMod implements ModInitializer {
                 loadListener.finish(LevelLoadListener.Stage.PREPARE_GLOBAL_SPAWN);
             }
             return true;
+        } catch (InitialSpawnSelectionException e) {
+            throw e;
         } catch (RuntimeException e) {
-            // No unchecked Latitude coordinate is returned. Vanilla now performs its own normal
-            // safe-spawn selection, and the first join must not retry the expensive globe search.
-            LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
-            LOGGER.warn("[Latitude] Immediate terrain-validated initial spawn unavailable; delegating to vanilla safe spawn without post-join relocation", e);
-            return false;
+            throw new InitialSpawnSelectionException(
+                    "Latitude could not establish a safe initial spawn in the selected climate zone.",
+                    e);
         }
     }
 
@@ -812,12 +862,86 @@ public class GlobeMod implements ModInitializer {
     }
 
     private static SpawnChoice resolveInitialSpawnChoice(ServerLevel world, String id) {
-        return resolveSpawnChoice(
-                world,
-                id,
-                SpawnSafetyPolicy.INITIAL_SPAWN_TERRAIN_VALIDATION_BUDGET,
-                false,
-                true);
+        String zoneId = id;
+        long seed = world.getServer().getWorldData().worldGenOptions().seed();
+        if (zoneId != null && zoneId.equals("RANDOM")) {
+            zoneId = resolveSpawnZoneId(zoneId, seed);
+            LOGGER.info("Resolved RANDOM initial spawn zone: seed={}, chosen={}", seed, zoneId);
+        }
+        if (zoneId == null) {
+            zoneId = "TEMPERATE";
+        }
+
+        int radius = LatitudeBiomes.getActiveRadiusBlocks();
+        if (radius <= 0) {
+            WorldBorder border = world.getWorldBorder();
+            radius = (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(border));
+        }
+
+        double directionChoice = hash01(seed, 1, 0, SPAWN_SALT);
+        double spawnAbsLatFrac = com.example.globe.util.LatitudeMath.spawnFracForZoneKey(zoneId);
+        int targetZ = (int) Math.round(radius * spawnAbsLatFrac);
+        if (directionChoice < 0.5) {
+            targetZ = -targetZ;
+        }
+        int warnStartZ = Math.max(0, radius - POLE_WARNING_DISTANCE_BLOCKS);
+        int maxAbsZ = Math.max(0, warnStartZ - 500);
+        targetZ = Mth.clamp(targetZ, -maxAbsZ, maxAbsZ);
+
+        final int terrainMargin = 320;
+        SpawnSafetyPolicy.CompactCohort cohort;
+        try {
+            SamplerTemplate template = BiomeSamplerTools.createTemplate(world);
+            RandomState noiseConfig = RandomState.create(
+                    template.settings().value(), template.noiseParameters(), seed);
+            Climate.Sampler sampler = noiseConfig.sampler();
+            int radiusBlocks = LatitudeBiomes.getActiveRadiusBlocks();
+            if (radiusBlocks <= 0) {
+                radiusBlocks = radius;
+            }
+            int classifyY = LatitudeBiomes.SURFACE_CLASSIFY_Y;
+            LatitudeBiomes.setWorldSeed(seed);
+            int finalRadiusBlocks = radiusBlocks;
+            cohort = SpawnSafetyPolicy.compactValidationCohort(
+                    radius,
+                    targetZ,
+                    terrainMargin,
+                    EW_WARNING_DISTANCE_BLOCKS,
+                    EW_SPAWN_PADDING_BLOCKS,
+                    (x, z) -> isLandBiome(
+                            template, sampler, x, z, classifyY, finalRadiusBlocks));
+            if (cohort.terrainOnlyFallback()) {
+                LOGGER.warn("[Latitude] Initial spawn biome classification failed; using the central compact terrain-only cohort.");
+            }
+        } catch (RuntimeException samplerFailure) {
+            LOGGER.warn(
+                    "[Latitude] Initial spawn biome sampler unavailable; using the central compact terrain-only cohort.",
+                    samplerFailure);
+            cohort = SpawnSafetyPolicy.centralCompactValidationCohort(
+                    radius,
+                    targetZ,
+                    terrainMargin,
+                    EW_WARNING_DISTANCE_BLOCKS,
+                    EW_SPAWN_PADDING_BLOCKS);
+        }
+
+        BlockPos spawnPos = SpawnSafetyPolicy.firstValidatedCandidate(
+                cohort.validationCandidates(),
+                candidate -> {
+                    try {
+                        return placeSafeY(world, candidate.x(), candidate.z(), false);
+                    } catch (RuntimeException validationFailure) {
+                        LOGGER.warn(
+                                "[Latitude] Initial spawn terrain validation failed; continuing the bounded compact cohort.",
+                                validationFailure);
+                        return null;
+                    }
+                }).orElse(null);
+        if (spawnPos == null) {
+            throw new InitialSpawnSelectionException(
+                    "Latitude could not find a safe initial spawn in the selected climate zone after nine bounded attempts.");
+        }
+        return new SpawnChoice(zoneId, spawnPos, radius);
     }
 
     private static SpawnChoice resolveSpawnChoice(ServerLevel world, String id) {
@@ -926,7 +1050,23 @@ public class GlobeMod implements ModInitializer {
             }
         }
 
+        // A dev run has no packaged manifest, so every field above stays "?" and the marker cannot
+        // name the source it was built from. Loom passes the same identity as system properties;
+        // a release jar carries the manifest and never sees them, so the manifest still wins.
+        commit = devBuildProperty(commit, "latitude.dev.gitCommit");
+        branch = devBuildProperty(branch, "latitude.dev.gitBranch");
+        dirty = devBuildProperty(dirty, "latitude.dev.buildDirty");
+        time = devBuildProperty(time, "latitude.dev.buildTime");
+
         LOGGER.info("[LAT][BUILD] side={} version={} commit={} branch={} dirty={} time={}", side, version, commit, branch, dirty, time);
+    }
+
+    private static String devBuildProperty(String current, String key) {
+        if (!"?".equals(current)) {
+            return current;
+        }
+        String value = System.getProperty(key);
+        return value == null || value.isBlank() ? current : value.trim();
     }
 
 

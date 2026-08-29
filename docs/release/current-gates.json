@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "historicalRecord": false,
-  "updated": "2026-08-11",
+  "updated": "2026-08-17",
   "releaseReadiness": "preparation_in_progress",
   "releaseAuthorized": false,
   "minecraftVersion": "1.21.11",
@@ -14,7 +14,7 @@
   "candidateJarSha256": null,
   "candidateJarStaged": false,
   "liveAcceptance": "pending exact verified JAR",
-  "activeBlocker": "A final clean canonical commit, verified runtime JAR, and owner-run live acceptance are still required. Public-history closure and publication each require separate approval.",
+  "activeBlocker": "Final accepted selected-zone spawn and structure-locate behavior, a clean canonical commit, a verified runtime JAR, and owner-run live acceptance are still required. Public-history closure and publication each require separate approval.",
   "gates": [
     {
       "id": "release_identity",
@@ -23,8 +23,8 @@
     },
     {
       "id": "public_release_copy",
-      "status": "green",
-      "evidence": "README.md, CHANGELOG.md, and docs/release/release-text-1.5.1-beta.1+1.21.11.md describe the Beta 1 release line."
+      "status": "pending",
+      "evidence": "The public beta guide and report form are present, but final release copy must be rechecked against accepted spawn and structure-locate behavior and provider known limitations before publication."
     },
     {
       "id": "final_clean_build_and_artifact_certificate",

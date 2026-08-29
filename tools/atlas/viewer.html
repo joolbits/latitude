@@ -75,6 +75,16 @@
     <button id="clearBiome" type="button">clear biome mask</button>
     <button id="loadSecondSeed" type="button">Load Second Seed</button>
     <input id="secondSeedPicker" type="file" webkitdirectory directory multiple style="display:none;" />
+    <button id="loadStructures" type="button">Load structures.json</button>
+    <input id="structuresPicker" type="file" accept=".json" style="display:none;" />
+    <label><input id="showStructures" type="checkbox" checked /> Structures</label>
+    <label>Filter <input id="structureFilter" type="text" size="14" placeholder="e.g. village" /></label>
+    <label>Verdicts <select id="structureVerdictMode">
+      <option value="all">all</option>
+      <option value="accepted" selected>accepted only</option>
+      <option value="rejected">rejected only</option>
+    </select></label>
+    <span class="muted" id="structuresStatus">Structures: not loaded</span>
     <button id="reload" type="button">reload legend</button>
     <span class="muted" id="status"></span>
     <span class="muted" id="datasetBStatus">Dataset B: not loaded</span>
@@ -89,6 +99,7 @@
         <canvas id="temperatureThresholdCanvas" class="mask-hidden"></canvas>
         <canvas id="humidityThresholdCanvas" class="mask-hidden"></canvas>
         <canvas id="bandViolationCanvas" class="mask-hidden"></canvas>
+        <canvas id="structuresCanvas"></canvas>
         <canvas id="differenceCanvas" class="mask-hidden"></canvas>
         <canvas id="maskCanvas" class="mask-hidden"></canvas>
       </div>
@@ -1984,6 +1995,91 @@ async function init() {
 init().catch((error) => {
   status.textContent = `Failed to load atlas viewer. ${error.message || error}`;
 });
+</script>
+<script>
+// ---- Structure atlas overlay (dev) -------------------------------------------------------------
+// Self-contained layer over the biome atlas. Data comes from the mod's dev-only exporter
+// (-Dlatdev.structureAtlas with runBiomePreview -> structures.json). Coordinates map through the
+// SAME legend the base map uses: pixel = (block + radiusBlocks) / step. Dots are candidate-level
+// verdicts from the shared locate/guard evaluators; an accepted dot is a site the guards would
+// admit, not a promise the jigsaw succeeded.
+(function () {
+  const canvas = document.getElementById("structuresCanvas");
+  const status = document.getElementById("structuresStatus");
+  const picker = document.getElementById("structuresPicker");
+  const button = document.getElementById("loadStructures");
+  const show = document.getElementById("showStructures");
+  const filter = document.getElementById("structureFilter");
+  const verdictMode = document.getElementById("structureVerdictMode");
+  let data = null;
+
+  const VERDICT_COLORS = {
+    accepted: "#19c81e",
+    rejected_placement: "#9e9e9e",
+    rejected_climate_or_polar: "#3f7fff",
+    rejected_terrain: "#8d5a2b",
+    rejected_variant_mismatch: "#ff9d00",
+    rejected_badlands_policy: "#e00303",
+    rejected_biome: "#c400c4",
+    pick_failed: "#000000"
+  };
+
+  function legendMapping() {
+    const legend = (typeof datasetA === "object" && datasetA && datasetA.legend) || null;
+    if (!legend) return null;
+    const radius = Number(legend.radiusBlocks);
+    const step = Number(legend.step || datasetA.step);
+    if (!Number.isFinite(radius) || radius <= 0 || !Number.isFinite(step) || step <= 0) return null;
+    return { radius, step };
+  }
+
+  function draw() {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    canvas.classList.toggle("mask-hidden", !show.checked || !data);
+    if (!data) return;
+    const mapping = legendMapping();
+    if (!mapping) {
+      status.textContent = "Structures: loaded, waiting for a base dataset (legend)";
+      return;
+    }
+    canvas.width = datasetA.width;
+    canvas.height = datasetA.height;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const needle = (filter.value || "").trim().toLowerCase();
+    const mode = verdictMode.value;
+    let drawn = 0;
+    for (const row of data.candidates || []) {
+      if (needle && !String(row.id).toLowerCase().includes(needle)) continue;
+      const accepted = row.verdict === "accepted";
+      if (mode === "accepted" && !accepted) continue;
+      if (mode === "rejected" && accepted) continue;
+      const px = Math.round((row.x + mapping.radius) / mapping.step);
+      const py = Math.round((row.z + mapping.radius) / mapping.step);
+      if (px < 0 || py < 0 || px >= canvas.width || py >= canvas.height) continue;
+      ctx.fillStyle = VERDICT_COLORS[row.verdict] || "#ffffff";
+      const size = accepted ? 3 : 2;
+      ctx.fillRect(px - (size >> 1), py - (size >> 1), size, size);
+      drawn++;
+    }
+    status.textContent = `Structures: ${drawn} shown / ${(data.candidates || []).length} candidates`;
+  }
+
+  button.addEventListener("click", () => picker.click());
+  picker.addEventListener("change", () => {
+    const file = picker.files && picker.files[0];
+    if (!file) return;
+    file.text().then((text) => {
+      data = JSON.parse(text);
+      draw();
+    }).catch((err) => {
+      status.textContent = `Structures: failed to parse (${err.message})`;
+    });
+  });
+  show.addEventListener("change", draw);
+  filter.addEventListener("input", draw);
+  verdictMode.addEventListener("change", draw);
+})();
 </script>
 </body>
 </html>

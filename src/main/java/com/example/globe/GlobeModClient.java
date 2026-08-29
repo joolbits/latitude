@@ -15,6 +15,7 @@ import com.example.globe.client.EwPresentationPolicy;
 import com.example.globe.dev.DevCaptureKeybind;
 import com.example.globe.dev.client.SeamAuditClientBridge;
 import com.example.globe.dev.client.audit.SeamAuditHarness;
+import com.example.globe.util.LatitudeBands;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.api.ClientModInitializer;
@@ -60,6 +61,21 @@ public class GlobeModClient implements ClientModInitializer {
             if (payload.isGlobe()) {
                 // Flip the bespoke loading flag as soon as the handshake packet arrives (network thread).
                 LatitudeClientState.activateLatitudeLoading();
+                // LatitudeWorldLauncher (fresh creation) and the resumed-world mixins run ONLY on the
+                // client hosting its own IntegratedServer -- hasSingleplayerServer() is exactly that
+                // check (true from the moment doWorldLoad spins the server; unlike isSingleplayer(),
+                // it stays true after opening to LAN, so the host keeps ignoring this payload even
+                // then). On that one client, applying this id could race or overwrite a label -- or a
+                // deliberate null for a random spawn zone -- those local mechanisms already set. Every
+                // other client (a remote dedicated-server join, or a friend joining an opened-to-LAN
+                // world) never had any of those three mechanisms touch it, so there's nothing to
+                // clobber: apply freely there.
+                if (!context.client().hasSingleplayerServer()) {
+                    LatitudeBands.Band band = LatitudeBands.fromCanonicalId(payload.loadingBandId());
+                    if (band != null) {
+                        LatitudeClientState.setLoadingZoneLabel(band.displayName());
+                    }
+                }
             } else if (LatitudeClientState.isLatitudeWorldLoading()) {
                 LatitudeClientState.clearLatitudeLoadingState();
             }

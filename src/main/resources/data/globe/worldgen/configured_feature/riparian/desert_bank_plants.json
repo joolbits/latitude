@@ -1,0 +1,25 @@
+{
+  "type": "minecraft:random_selector",
+  "config": {
+    "default": {
+      "feature": "minecraft:patch_grass",
+      "placement": []
+    },
+    "features": [
+      {
+        "chance": 0.18,
+        "feature": {
+          "feature": "minecraft:patch_tall_grass",
+          "placement": []
+        }
+      },
+      {
+        "chance": 0.12,
+        "feature": {
+          "feature": "minecraft:flower_plain",
+          "placement": []
+        }
+      }
+    ]
+  }
+}

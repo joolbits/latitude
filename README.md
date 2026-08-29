@@ -4,7 +4,7 @@ A globe-style world + latitude-based biome bands with a customizable compass HUD
 
 ## Current release line
 
-Latitude `1.5.1-beta.1+1.21.11` targets Minecraft `1.21.11` on Fabric and requires Java 21. It is a beta: back up important worlds before testing, especially before using the optional retrofit command on an older world.
+Latitude `1.5.1-beta.3+1.21.11` targets Minecraft `1.21.11` on Fabric and requires Java 21. It is a beta: back up important worlds before testing, especially before using the optional retrofit command on an older world.
 
 ## Features
 
@@ -56,7 +56,7 @@ On Windows, use `.\gradlew.bat clean build`.
 
 The remapped runtime JAR is:
 
-- `build/libs/latitude-1.5.1-beta.1+1.21.11.jar`
+- `build/libs/latitude-1.5.1-beta.3+1.21.11.jar`
 
 Do not upload development or sources JARs as the playable release file.
 
@@ -66,4 +66,6 @@ Latitude is available under the [GNU General Public License v3.0 or later](LICEN
 
 ## Support
 
-[Support Latitude on Ko-fi](https://ko-fi.com/peetsa)
+- [Beta testing guide](docs/testing-beta.md)
+- [Report a bug](../../issues/new?template=bug_report.yml)
+- [Support Latitude on Ko-fi](https://ko-fi.com/peetsa)

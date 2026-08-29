@@ -81,9 +81,7 @@ public final class VanillaBiomeRepresentationProfile {
         TEMPERATE_WETLAND(BiomeRoute.TEMPERATE_WETLAND, Compromise.REPRESENTATION_FAMILY,
                 ids("minecraft:swamp")),
         TEMPERATE_UPLAND(BiomeRoute.TEMPERATE_UPLAND, Compromise.REPRESENTATION_FAMILY,
-                ids("minecraft:grove", "minecraft:meadow",
-                        "minecraft:stony_peaks", "minecraft:windswept_forest",
-                        "minecraft:windswept_gravelly_hills", "minecraft:windswept_hills")),
+                ids("minecraft:grove", "minecraft:meadow", "minecraft:stony_peaks")),
         WARM_SAVANNA(BiomeRoute.WARM_TRANSITION, Compromise.REPRESENTATION_FAMILY,
                 ids("minecraft:savanna"), ids("biomesoplenty:lush_savanna")),
         WARM_SAVANNA_VARIANTS(BiomeRoute.WARM_TRANSITION, Compromise.REPRESENTATION_FAMILY,
@@ -101,7 +99,24 @@ public final class VanillaBiomeRepresentationProfile {
         POLAR_LOWLAND(BiomeRoute.POLAR_LOWLAND, Compromise.REPRESENTATION_FAMILY,
                 ids("minecraft:ice_spikes", "minecraft:snowy_plains")),
         COLD_UPLAND(BiomeRoute.COLD_UPLAND, Compromise.REPRESENTATION_FAMILY,
-                ids("minecraft:frozen_peaks", "minecraft:jagged_peaks", "minecraft:snowy_slopes"));
+                ids("minecraft:frozen_peaks", "minecraft:jagged_peaks", "minecraft:snowy_slopes")),
+        /**
+         * The windswept family owns its own group because it owns its own route.
+         *
+         * <p>It sat in TEMPERATE_UPLAND, which was already one ruling stale when its ledger route
+         * was COLD_UPLAND and is two stale now that the route is SUBPOLAR_UPLAND. The mismatch was
+         * inert rather than harmless: chooseRepresentative filters on {@code contains(role.route,
+         * id)}, so windswept could never be picked as its own group's representative, and a compact
+         * world resolved all three to grove -- a temperate meadow-line biome standing in for a
+         * subpolar mountain one. Grouped here, the family represents itself.
+         *
+         * <p>Appended LAST deliberately: {@code ordinal()} is a selection salt for every role's
+         * representative, so inserting mid-enum would silently re-roll unrelated groups on compact
+         * worlds.
+         */
+        SUBPOLAR_UPLAND(BiomeRoute.SUBPOLAR_UPLAND, Compromise.REPRESENTATION_FAMILY,
+                ids("minecraft:windswept_forest", "minecraft:windswept_gravelly_hills",
+                        "minecraft:windswept_hills"));
 
         private final BiomeRoute route;
         private final Compromise compromise;
@@ -296,7 +311,7 @@ public final class VanillaBiomeRepresentationProfile {
             switch (parts[0]) {
                 case "LAND" -> {
                     if (parts.length != 4) throw new IllegalArgumentException("malformed LAND row");
-                    putUnique(land, parts[3], BiomeRoute.valueOf(parts[1]));
+                    putUnique(land, parts[3], migrateSavedLandRoute(BiomeRoute.valueOf(parts[1]), parts[3]));
                     putUnique(tiers, parts[3], Tier.valueOf(parts[2]));
                 }
                 case "WATER" -> {
@@ -312,6 +327,29 @@ public final class VanillaBiomeRepresentationProfile {
             }
         }
         return new VanillaBiomeRepresentationProfile(size, land, water, omitted, tiers);
+    }
+
+    /**
+     * Reads a legacy windswept LAND row at its current route. Twin of
+     * {@code BiomeSelectionProfile.migrateSavedRoute} — see that method for why these three ids
+     * are migrated rather than tolerated, and why BOTH legacy routes are named. Both methods must
+     * accept the same set, or the coverage plan asks the birth roster about a route the roster no
+     * longer lists the biome under and reports it unplaceable.
+     *
+     * <p>{@code TEMPERATE_UPLAND} is the larger legacy population: it is what every jar built
+     * before this line moved the family to {@code COLD_UPLAND} wrote, against COLD_UPLAND's own
+     * short window between the 2026-08-10 and 2026-08-18 rulings. A saved LAND row on either route
+     * would otherwise fail {@link #validate()}'s "the ledger still routes this representative here"
+     * check and take the whole representation profile down with it.
+     */
+    private static BiomeRoute migrateSavedLandRoute(BiomeRoute route, String biomeId) {
+        if (route != BiomeRoute.COLD_UPLAND && route != BiomeRoute.TEMPERATE_UPLAND) return route;
+        return switch (biomeId) {
+            case "minecraft:windswept_hills",
+                 "minecraft:windswept_forest",
+                 "minecraft:windswept_gravelly_hills" -> BiomeRoute.SUBPOLAR_UPLAND;
+            default -> route;
+        };
     }
 
     private void validate() {
