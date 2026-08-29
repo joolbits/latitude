@@ -210,6 +210,7 @@ Do not call a backport complete until every relevant row is explicitly marked in
 | Custom-biome source wrapping and tags | 26.1.2 custom-biome expansion docs | Do not drag into a smaller Stage 1 worldgen port unless authorized | Mod-present atlas proof. |
 | `/latdev` and proof commands | Port-specific code and cruise-control docs | Verify per target; keybinds and commands may drift | Command availability in live or branch-client proof. |
 | HUD, overlays, warning timing, loading overlays | Client docs and port handoffs | Keep separate from worldgen backports unless scoped | Modrinth live proof. |
+| Vanilla world-creation escape hatch | 26.2 issue #19 implementation (`CreateWorldScreenInitRedirectMixin`, `WorldCreatorMixin`, and `LatitudeCreateWorldScreen`) | Carry to every supported version; recheck each target's screen lifecycle, preset APIs, and modded world-type registration | For each target Minecraft/Latitude pair: create a non-Latitude modded world (including the reported One Dimension case when available), customize a non-default Superflat preset, enable a datapack and create a world, then create an ordinary Latitude world and confirm its bespoke flow is unchanged. |
 | Release metadata and profile jar | `gradle.properties`, `fabric.mod.json`, Modrinth profile | Must match target MC version | Jar scan, active profile truth table, and build output path. |
 
 ## Mapping And API Rule
