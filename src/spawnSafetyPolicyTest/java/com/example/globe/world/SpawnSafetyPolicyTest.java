@@ -190,14 +190,33 @@ public final class SpawnSafetyPolicyTest {
         int acceptedRequest = initialMethod.indexOf("if (pendingZone == null) { return false; }");
         assertTrue(acceptedRequest >= 0,
                 "ordinary no-pending-zone creation retains its vanilla precondition exit");
-        assertFalse(
-                initialMethod.substring(acceptedRequest
-                                + "if (pendingZone == null) { return false; }".length())
-                        .contains("return false;"),
-                "an accepted selected-zone request cannot return false to vanilla after exhaustion");
+        // LAW CHANGED 2026-08-30, and the old pin here is the reason this comment exists. The
+        // previous design chose crash-over-wrong-zone: after exhaustion the method was REQUIRED to
+        // rethrow InitialSpawnSelectionException rather than return false, so a player never
+        // silently spawned outside the selected zone. Live measurement on the certified beta.3 jar
+        // falsified that trade: 41/240 create-world attempts crashed (40 seeds x 6 zones; Polar
+        // 12/40, default Temperate 5/40), with Latitude alone as well as under the full provider
+        // stack. The 26.2 line already ships the replacement, ported here verbatim: contain the
+        // failure, warn, delegate to vanilla's own safe-spawn selection, and never crash the
+        // server at Create World.
+        String afterAcceptance = initialMethod.substring(acceptedRequest
+                + "if (pendingZone == null) { return false; }".length());
         assertTrue(
-                initialMethod.contains("throw new InitialSpawnSelectionException("),
-                "accepted initial-spawn failure is surfaced as Latitude's dedicated exception");
+                afterAcceptance.contains("} catch (RuntimeException e) {"),
+                "an accepted selected-zone request must CONTAIN resolver failure, not let it escape");
+        assertFalse(
+                afterAcceptance.contains("throw"),
+                "nothing after acceptance may rethrow -- the escaped exception is what crashed 41 of "
+                        + "240 measured world creations on the certified beta.3 jar");
+        assertTrue(
+                afterAcceptance.contains("setSpawnPickerDismissed(true); LOGGER.warn("),
+                "the delegation path must dismiss the picker BEFORE returning false, so the first "
+                        + "join cannot retry the expensive globe search it just watched fail");
+        assertTrue(
+                source.contains(
+                        "throw new InitialSpawnSelectionException( \"Latitude could not find a safe initial spawn in the selected climate zone after nine bounded attempts.\");"),
+                "the resolver still surfaces exhaustion as the dedicated exception -- it is an "
+                        + "internal signal now, caught by the wrapper, never a server crash");
         assertTrue(
                 source.contains(
                         "private static SpawnChoice resolveSpawnChoice(ServerLevel world, String id) { return resolveSpawnChoice(world, id, Integer.MAX_VALUE, true, true); }"),
