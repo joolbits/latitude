@@ -110,11 +110,11 @@ public class ProtoChunkPolarVegetationGuardMixin {
                 pos.getZ(), activeRadius, GlobeMod.BORDER_RADIUS);
 
         // Dependent-support integrity. Stripping woody blocks per-block leaves the REST of a
-        // custom feature standing: biomesoplenty:fallen_fir_log places its log, has the log turned
-        // to air by this guard, then decorates the phantom log with mushrooms it never
-        // support-checks -- observed live as floating mushrooms at 79 degrees (maintainer report,
-        // 2026-08-31). So wherever this guard can have removed a block (beyond the woody latitude,
-        // or above the elevation tree line), a FLOOR PLANT being placed over air is refused too.
+        // custom feature standing: biomesoplenty:fallen_fir_log places its log, this guard turns
+        // that log to air on the write path mid-feature, and the feature's own decorations then
+        // land on nothing -- observed live as floating mushrooms at 79 degrees (maintainer
+        // report, 2026-08-31). So wherever this guard can have removed a block (beyond the woody
+        // latitude, or above the elevation tree line), a FLOOR PLANT placed over air is refused.
         //
         // Scoped to VegetationBlock deliberately, not the polar_foliage tag: VegetationBlock
         // subclasses are floor-supported by vanilla contract, while the tag also carries
