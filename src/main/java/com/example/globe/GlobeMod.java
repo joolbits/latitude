@@ -718,12 +718,21 @@ public class GlobeMod implements ModInitializer {
                 loadListener.finish(LevelLoadListener.Stage.PREPARE_GLOBAL_SPAWN);
             }
             return true;
-        } catch (InitialSpawnSelectionException e) {
-            throw e;
         } catch (RuntimeException e) {
-            throw new InitialSpawnSelectionException(
-                    "Latitude could not establish a safe initial spawn in the selected climate zone.",
-                    e);
+            // No unchecked Latitude coordinate is returned. Vanilla now performs its own normal
+            // safe-spawn selection, and the first join must not retry the expensive globe search.
+            //
+            // This replaces the previous fail-loudly design, which rethrew here as
+            // InitialSpawnSelectionException and crashed the whole server before the world opened.
+            // Measured on the certified beta.3 jar (2026-08-30): 41/240 create-world attempts
+            // crashed across 40 seeds x 6 zones (Polar 12/40, and the default Temperate 5/40),
+            // with Latitude alone as well as under the full provider stack. The old design chose
+            // crash-over-wrong-zone; live rates showed that trade backwards -- a vanilla spawn
+            // with a logged warning is recoverable, a crash at "Create World" is not. Ported from
+            // the 26.2 line, which ships this exact delegation.
+            LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
+            LOGGER.warn("[Latitude] Immediate terrain-validated initial spawn unavailable; delegating to vanilla safe spawn without post-join relocation", e);
+            return false;
         }
     }
 

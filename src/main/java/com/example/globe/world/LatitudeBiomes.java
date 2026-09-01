@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import net.fabricmc.fabric.api.tag.convention.v2.ConventionalBiomeTags;
 import net.minecraft.core.Holder;
+import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
@@ -931,6 +932,7 @@ public final class LatitudeBiomes {
         WORLD_SEED = 0L;
         OCEAN_DISTANCE_FIELD = null;
         clearTagSelectionCaches();
+        TREED_VEGETAL_CACHE.clear();
         PALE_GARDEN_ANCHOR_CACHE = null;
         PROVINCE_AUTHORITY = null;
         ACTIVE_WORLDGEN_POLICY = WorldgenPolicyVersion.MODERN_1_3;
@@ -9118,7 +9120,106 @@ public final class LatitudeBiomes {
         }
         // Path-based catch-all for any unlisted biome whose ID path contains "forest" or "taiga".
         String path = candidate.unwrapKey().map(key -> key.identifier().getPath()).orElse("");
-        return path.contains("forest") || path.contains("taiga") || path.contains("grove");
+        if (path.contains("forest") || path.contains("taiga") || path.contains("grove")) {
+            return true;
+        }
+        // Name lists twice failed to keep treed biomes off the cap (windswept 2026-08-18,
+        // biomesoplenty:snowy_fir_clearing 2026-08-31 -- a fir biome whose NAME says "clearing"
+        // reached 79 degrees intact). The name checks above stay as a fast path; the deciding
+        // signal is now DISCOVERED from the biome's own generation settings: a biome whose
+        // vegetal decoration places trees is treed, whatever it is called.
+        return hasTreedVegetalDecoration(candidate);
+    }
+
+    /**
+     * Biomes that place trees per ground truth but keep their polar-cap identity by explicit
+     * decision (maintainer ruling recorded in the extreme-polar-cap javadoc above: whether a
+     * tundra-family biome belongs at the pole is a roster-composition call, not a mechanical
+     * bug). Feature discovery must never overturn that ruling, so these are exempt from
+     * {@link #hasTreedVegetalDecoration}'s verdict. Additions and removals here are maintainer
+     * roster decisions, not code cleanups.
+     */
+    private static final Set<String> TREED_CAP_BIOMES_KEPT_BY_RULING = Set.of(
+            "biomesoplenty:tundra",
+            "biomesoplenty:auroral_garden",
+            "biomesoplenty:wintry_origin_valley",
+            "terralith:cold_shrubland",
+            "terralith:wintry_lowlands");
+
+    private static final ConcurrentHashMap<String, Boolean> TREED_VEGETAL_CACHE =
+            new ConcurrentHashMap<>();
+
+    /**
+     * Does this biome's own vegetal decoration place trees? Derived from the biome's generation
+     * settings rather than its name, so a provider biome named "clearing", "thicket" or anything
+     * else cannot slip a treed identity past the extreme-polar-cap clamp. Cached per biome id:
+     * this sits behind the picker hot path, and a biome's decoration is immutable for the life of
+     * the loaded pack set (the cache is dropped with the rest of the worldgen context).
+     *
+     * <p>Fails open: any registry surprise returns false, which leaves the name checks above as
+     * the only clamp signal -- exactly the pre-discovery behavior, never a wider clamp by
+     * accident.</p>
+     */
+    /** The maintainer's own polar roster: biomes she placed in the polar pools by hand. */
+    private static final List<TagKey<Biome>> POLAR_ROSTER_TAGS = List.of(
+            TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_polar")),
+            TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_polar_primary")),
+            TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_polar_secondary")),
+            TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", "lat_polar_accent")));
+
+    private static boolean hasTreedVegetalDecoration(Holder<Biome> candidate) {
+        String id = candidate.unwrapKey().map(key -> key.identifier().toString()).orElse(null);
+        if (id == null || TREED_CAP_BIOMES_KEPT_BY_RULING.contains(id)) {
+            return false;
+        }
+        // Discovery must not evict the maintainer's own polar roster. Vanilla's cap staples
+        // genuinely place token snow spruces (snowy_plains and ice_spikes both carry
+        // minecraft:trees_snowy), so a bare treed-ness verdict would clamp ice spikes off the
+        // pole and self-map the clamp's own snowy_plains fallback. A biome she put in the
+        // lat_polar pools by hand is cap-legitimate whatever its decoration says -- the roster
+        // tags are her data, so this exemption is discovered too, not another name list.
+        for (TagKey<Biome> roster : POLAR_ROSTER_TAGS) {
+            if (candidate.is(roster)) {
+                return false;
+            }
+        }
+        // Aquatic biomes are outside this clamp's ecology entirely -- vanilla's frozen ocean and
+        // frozen river both place minecraft:trees_water, and rewriting a river or ocean pick into
+        // snowy_plains would delete water, not trees. Vanilla's own tags say which biomes those
+        // are, so this exemption is discovered as well.
+        if (candidate.is(net.minecraft.tags.BiomeTags.IS_OCEAN)
+                || candidate.is(net.minecraft.tags.BiomeTags.IS_DEEP_OCEAN)
+                || candidate.is(net.minecraft.tags.BiomeTags.IS_RIVER)) {
+            return false;
+        }
+        Boolean cached = TREED_VEGETAL_CACHE.get(id);
+        if (cached != null) {
+            return cached;
+        }
+        boolean treed = false;
+        try {
+            var steps = candidate.value().getGenerationSettings().features();
+            int vegetal = net.minecraft.world.level.levelgen.GenerationStep.Decoration
+                    .VEGETAL_DECORATION.ordinal();
+            if (vegetal < steps.size()) {
+                outer:
+                for (Holder<net.minecraft.world.level.levelgen.placement.PlacedFeature> placed
+                        : steps.get(vegetal)) {
+                    var nested = placed.value().getFeatures().iterator();
+                    while (nested.hasNext()) {
+                        if (nested.next().feature()
+                                instanceof net.minecraft.world.level.levelgen.feature.TreeFeature) {
+                            treed = true;
+                            break outer;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            return false;
+        }
+        TREED_VEGETAL_CACHE.put(id, treed);
+        return treed;
     }
 
     private static boolean isMountainCodedColdPick(Holder<Biome> candidate) {

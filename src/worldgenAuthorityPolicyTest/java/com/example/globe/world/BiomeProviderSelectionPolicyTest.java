@@ -1022,6 +1022,43 @@ final class BiomeProviderSelectionPolicyTest {
         assertTrue(!VanillaBiomeCoveragePlan.hasDistinctVisibleCore(
                         occupiedRidge, BiomeRoute.TEMPERATE_UPLAND, 16, 0),
                 "a later same-route reservation cannot be hidden inside an earlier province");
+        // Wetlands are the same story as the ridges above, on a different field. An anchor needs
+        // the centre AND four probes at +/-radius/2 to hold together, so a sparse, fast-varying
+        // wetland field cannot support a fourteen-chunk-radius disk: measured on certified beta.3
+        // bytes, the swamp province failed to anchor on 3 of 12 real seeds at the 224 default
+        // (4 of 12 on the 26.2 line) and on 12 of 12 at 112.
+        //
+        // Pinned as a RELATIONSHIP, not a number: a wetland reservation must fit inside a field
+        // whose eligible band is narrower than the default province, whatever radius the code
+        // chooses to achieve that. A future change to a different sufficient radius passes; a
+        // change back to the default-width disk fails.
+        int wetlandBandHalfWidth = 128;
+        VanillaBiomeCoveragePlan narrowWetlandPlan = VanillaBiomeCoveragePlan.build(
+                liveRadius,
+                liveSeed,
+                vanilla,
+                (id, route, x, z) -> {
+                    if (!insideSyntheticRoute(route, x, z, liveRadius)) return false;
+                    if (route != BiomeRoute.TEMPERATE_WETLAND
+                            && route != BiomeRoute.SUBPOLAR_WETLAND) return true;
+                    int stripe = Math.floorMod(x, 1_024);
+                    return stripe <= wetlandBandHalfWidth
+                            || stripe >= 1_024 - wetlandBandHalfWidth;
+                });
+        assertTrue(narrowWetlandPlan.complete(),
+                "a wetland province must fit a band narrower than the default disk rather than "
+                        + "omitting the identity: " + narrowWetlandPlan.missingBiomeIds());
+        for (VanillaBiomeCoveragePlan.Anchor anchor : narrowWetlandPlan.anchors()) {
+            if (anchor.route() == BiomeRoute.TEMPERATE_WETLAND
+                    || anchor.route() == BiomeRoute.SUBPOLAR_WETLAND) {
+                assertTrue(anchor.radiusBlocks() <= wetlandBandHalfWidth,
+                        "wetland reservations fit inside the eligible band they must hold, so the "
+                                + "centre-plus-four-shoulder test can actually be satisfied");
+                assertTrue(anchor.radiusBlocks() >= 64,
+                        "and remain a province rather than shrinking to a token");
+            }
+        }
+
         VanillaBiomeCoveragePlan impossibleLand = VanillaBiomeCoveragePlan.build(
                 liveRadius, liveSeed, vanilla, (id, route, x, z) -> false);
         VanillaBiomeCoveragePlan.SearchStats landStats =

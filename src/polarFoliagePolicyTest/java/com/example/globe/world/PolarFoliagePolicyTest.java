@@ -18,6 +18,8 @@ public final class PolarFoliagePolicyTest {
         theWoodyAndFoliageTagsDoNotOverlap();
         windsweptSnowLineDescendsPolewardAndCannotOrphanSnowyGrass();
         alpineSnowLineCutsVegetationAtTheWarpLine();
+        capClampDiscoversTreedBiomesFromTheirOwnFeatures();
+        strippedSupportCannotStrandFloorPlants();
         System.out.println("POLAR_FOLIAGE_POLICY_TEST_PASS");
     }
 
@@ -535,6 +537,115 @@ public final class PolarFoliagePolicyTest {
                         && guard.contains("!GlobeMod.shouldApplyLatitudeWorldgen(noise)")
                         && suppression > generatorGate,
                 label + " must fail open for non-Latitude generators before checking latitude");
+    }
+
+
+    /**
+     * The extreme-polar-cap clamp must decide treed-ness from the biome's OWN generation
+     * settings, not only from its name. Name enumeration failed twice: windswept identities the
+     * "forest" catch-all missed (2026-08-18), then biomesoplenty:snowy_fir_clearing -- a fir
+     * biome whose name says "clearing" -- standing intact at 79 degrees (2026-08-31). The pins
+     * here assert the RELATIONSHIPS (discovery is consulted, derives from vegetal features,
+     * honors the recorded roster ruling, and has a bounded cache lifetime), never the spelling
+     * of any statement, so a correct rewrite passes and only removing the property fails.
+     */
+    private static void capClampDiscoversTreedBiomesFromTheirOwnFeatures() throws Exception {
+        String biomes = normalize(read(
+                "src/main/java/com/example/globe/world/LatitudeBiomes.java"));
+
+        String leak = methodSection(biomes, "private static boolean isExtremePolarSoftColdLeak(");
+        assertTrue(leak.contains("hasTreedVegetalDecoration(candidate)"),
+                "the soft-cold-leak matcher consults feature discovery, not names alone");
+
+        String discovery = methodSection(biomes, "private static boolean hasTreedVegetalDecoration(");
+        assertTrue(discovery.contains("VEGETAL_DECORATION"),
+                "discovery reads the biome's vegetal decoration step");
+        assertTrue(discovery.contains("instanceof")
+                        && discovery.contains("TreeFeature"),
+                "treed-ness is decided by the feature TYPE the biome actually places");
+        assertTrue(discovery.contains("TREED_CAP_BIOMES_KEPT_BY_RULING"),
+                "discovery cannot overturn the recorded tundra-family roster ruling");
+        assertTrue(discovery.contains("POLAR_ROSTER_TAGS"),
+                "discovery cannot evict the maintainer's own polar roster tags -- vanilla cap"
+                        + " staples (snowy_plains, ice_spikes) place token snow spruces and must"
+                        + " keep their cap identity");
+        assertTrue(discovery.contains("IS_OCEAN") && discovery.contains("IS_RIVER"),
+                "discovery exempts aquatic biomes -- frozen ocean and frozen river place"
+                        + " minecraft:trees_water, and clamping them would delete water, not trees");
+        assertTrue(discovery.contains("catch") && discovery.contains("return false"),
+                "discovery fails open to the pre-discovery name-only behavior");
+
+        for (String ruled : new String[]{
+                "biomesoplenty:tundra",
+                "biomesoplenty:auroral_garden",
+                "biomesoplenty:wintry_origin_valley",
+                "terralith:cold_shrubland",
+                "terralith:wintry_lowlands"}) {
+            assertTrue(biomes.contains("\"" + ruled + "\""),
+                    "ruling keep-list carries " + ruled + " (maintainer roster ruling)");
+        }
+
+        String clear = methodSection(biomes, "public static synchronized void clearWorldgenContext(");
+        assertTrue(clear.contains("TREED_VEGETAL_CACHE.clear()"),
+                "the discovery cache dies with the worldgen context -- a new pack set re-derives");
+    }
+
+    /**
+     * Per-block woody stripping must not strand the stripped block's dependents. Observed live:
+     * biomesoplenty:fallen_fir_log's mushrooms floating where this guard turned the log to air
+     * (2026-08-31). The law: wherever the guard can have removed support (woody latitude tier or
+     * the elevation tree line), a floor plant being placed over air is refused -- and the check
+     * is scoped to the floor-supported block CONTRACT (VegetationBlock), never the foliage tag,
+     * which legitimately contains wall- and ceiling-attached blocks such as glow lichen.
+     */
+    private static void strippedSupportCannotStrandFloorPlants() throws Exception {
+        String guard = normalize(read(
+                "src/main/java/com/example/globe/mixin/ProtoChunkPolarVegetationGuardMixin.java"));
+        String method = methodSection(guard, "private void globe$suppressPolarVegetation(");
+
+        assertTrue(method.contains("pos.below()")
+                        && method.contains("isAir()"),
+                "the guard inspects the support block under a dependent placement");
+
+        java.util.regex.Matcher supportGate = java.util.regex.Pattern
+                .compile("if\\s*\\(([^{]*?)\\)\\s*\\{[^}]*pos\\.below\\(\\)")
+                .matcher(method);
+        boolean gatedOnVegetation = false;
+        while (supportGate.find()) {
+            String condition = supportGate.group(1);
+            if (condition.contains("vegetation")) {
+                gatedOnVegetation = true;
+                assertFalse(condition.contains("foliage"),
+                        "the support check keys on the floor-plant contract, not the foliage tag"
+                                + " -- the tag carries glow lichen, for which air below is legal");
+            }
+        }
+        assertTrue(gatedOnVegetation,
+                "the support check is reachable only for VegetationBlock placements");
+
+        int supportAt = method.indexOf("pos.below()");
+        int woodyReturnAt = method.indexOf("if (!beyondWoody)");
+        assertTrue(supportAt >= 0 && woodyReturnAt > supportAt,
+                "support integrity runs before the below-woody-latitude early return, so the"
+                        + " elevation tree line tier is covered too");
+    }
+
+    /**
+     * Bounds a member's normalized source from its signature to the next member signature.
+     * Works on normalize()d text, where line structure no longer exists.
+     */
+    private static String methodSection(String source, String signature) {
+        String needle = normalize(signature).trim();
+        int start = source.indexOf(needle);
+        assertTrue(start >= 0, "expected to find " + signature);
+        int end = source.length();
+        for (String boundary : new String[]{" private static ", " public static ", " private final ", " /** "}) {
+            int next = source.indexOf(boundary, start + needle.length());
+            if (next >= 0 && next < end) {
+                end = next;
+            }
+        }
+        return source.substring(start, end);
     }
 
     private static void assertNear(double expected, double actual, String message) {

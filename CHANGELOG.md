@@ -12,6 +12,31 @@ thing on every Minecraft version it is published for.*
 
 ### World generation
 
+- **Trees no longer half-appear at the pole.** The far polar cap turns away biomes that grow trees,
+  but it recognised them by *name* — an explicit list, plus anything called "forest", "taiga" or
+  "grove". A fir biome whose name says "clearing" walked straight through, generated in the cap,
+  and then had its trees stripped by a later check: grass, ferns and mushrooms standing in a
+  snowfield with no trees at all. The cap now also works out whether a biome grows trees by looking
+  at what it actually plants, rather than what it is called. Biomes that belong at the pole and
+  happen to place a token spruce — Snowy Plains and Ice Spikes among them — keep their place, as do
+  the tundra-family biomes ruled in earlier, and frozen oceans and rivers. Found in live testing at
+  79° north.
+- **Nothing is left floating in mid-air any more.** Where the pole removed a fallen log, whatever
+  that log was carrying stayed exactly where it was, hanging unsupported — most visibly mushrooms.
+  Anything that needs a floor beneath it is now refused when its floor has been taken away. Plants
+  that legitimately attach to walls and ceilings, like glow lichen, are untouched, because open air
+  below those is normal. Found in the same live test.
+- **Fresh worlds nearly always get their reserved swamp now.** Latitude sets aside a patch of the
+  map for each of a handful of vanilla biomes, so a new world is meant to contain one of each. The
+  swamp reservation asked for a patch 224 blocks across and required swamp conditions to hold at
+  its centre *and* at four points spread right across that width at once — which swamp's
+  quick-changing, patchy ground rarely manages. It now asks for a patch sized to fit what swamp
+  actually looks like. Measured over twelve worlds it went from failing on 3 to failing on none;
+  measured again over forty fresh worlds it failed on 1 of 40. A large improvement rather than a
+  cure. Note that **swamps were never missing from worlds** — ordinary swamp generation was
+  untouched throughout. What was at stake is the guaranteed reserved province, plus two error lines
+  in the log at world creation.
+
 *The percentages below, like Beta 1's, were measured with **no biome packs installed**. With Biomes
 O' Plenty, Terralith or similar, those packs supply many of the biomes and the shares will differ.*
 
@@ -64,6 +89,20 @@ O' Plenty, Terralith or similar, those packs supply many of the biomes and the s
 
 ### World creation
 
+- **Creating a world no longer crashes.** Latitude picks your starting point by testing candidate
+  spots inside the climate zone you chose. When none of them passed, it gave up by crashing at the
+  Create World screen. Measured across 240 fresh worlds — 40 seeds in each of the six climate zones
+  — that happened on 41 of them, about one world in six. It was worst in Polar (12 of 40) and
+  mildest in Tropical (2 of 40), and 25 of the 40 seeds hit it in at least one zone. Removing the
+  biome packs did not change the rate, so this was Latitude's own, not a pack interaction. When the
+  search comes up empty it now hands the job back to Minecraft's ordinary safe-spawn picker and
+  notes it in the log, instead of failing. Re-measured on the same 240 worlds: all of them create,
+  and the hand-off fired on exactly the 41 worlds that used to crash and on none of the other 199 —
+  so the new path is demonstrably doing the work, rather than the crash merely not reproducing. A
+  further 40 fresh worlds in the Polar zone on the final build: no crashes. The trade is that on
+  those seeds you may start a little off the exact middle of your band, which is recoverable in a
+  way a crash is not.
+
 - **You can reach Minecraft's own world-creation screen again.** The Rules panel has a new
   "Other World Types & Datapacks..." option that opens Minecraft's full setup, so modded world
   types, Superflat customization, and datapack selection are available from inside Latitude. The
@@ -79,6 +118,17 @@ O' Plenty, Terralith or similar, those packs supply many of the biomes and the s
   own band boundaries.
 
 ### Known limitations
+
+- **The reserved-biome system can still miss.** Across forty fresh worlds on the final build, 3 came
+  out with at least one biome failing to claim its reserved patch: one lost swamp, and two lost
+  members of the mountain/windswept family. An earlier twelve-world run instead showed Windswept
+  Savanna and Savanna Plateau. So this is not specific to swamp or to one family — it is a general
+  weakness in how a reserved patch is tested, and sizing the patch better only reduces how often it
+  bites. As with swamp, **the biomes themselves generate normally**; it is the reservation that
+  fails, and the visible symptom is error lines in the log rather than anything missing in play. The
+  proper repair is to test the ground proportionally over many points, the way the sibling
+  water-coverage code already does, instead of demanding four spread-out points all pass at once.
+  That is planned rather than done.
 
 - The badlands rebalance moves a lot on seeds that previously rolled badlands-heavy. On the reference
   seed, desert went from about 12.5% to about 27.5% of subtropical land and badlands from about 23% to
