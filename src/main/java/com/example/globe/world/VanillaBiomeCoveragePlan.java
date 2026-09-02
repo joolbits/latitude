@@ -252,12 +252,12 @@ public final class VanillaBiomeCoveragePlan {
             // conjunction survives. The defect stays latent for any future route whose field is
             // sparser than swamp's -- this is the third occurrence in this file already (uplands,
             // eroded_badlands per the ARID_UPLAND note, now wetland), each cured by shrinking a
-            // radius. The principled form already exists one file over:
+            // radius. The principled form already exists one branch over:
             // VanillaSurfaceWaterCoveragePlan.hasSubstantialTopology samples a dense 16-block grid
             // and requires PROPORTIONAL eligibility plus a multi-chunk span, explicitly because
-            // linear features are not circular disks -- and that plan has no instance of this bug.
-            // Occurrence four should convert this test to that shape rather than shrink a fourth
-            // radius.
+            // linear features are not circular disks -- but ONLY for shore, river, mangrove and
+            // deep-ocean routes. Every other family there falls through to this same four-point
+            // AND. Occurrence four extends that branch to the rest; it does not shrink a radius.
             case TEMPERATE_WETLAND, SUBPOLAR_WETLAND -> Math.min(112, Math.max(96, Math.min(224, worldRadius / 30)));
             case CAVE_SHALLOW, CAVE_DEEP -> throw new IllegalArgumentException("cave routes use CaveBiomeCoveragePlan");
             default -> Math.max(96, Math.min(224, worldRadius / 30));
