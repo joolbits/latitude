@@ -235,6 +235,30 @@ public final class VanillaBiomeCoveragePlan {
             case ARID_LOWLAND -> compactRepresentation
                     ? Math.max(96, Math.min(160, worldRadius / 30))
                     : Math.max(96, Math.min(224, worldRadius / 30));
+            // Wetlands answer the same disease the upland branch above records, for the same
+            // reason: an anchor requires the centre AND four probes at +/-radius/2 to satisfy the
+            // route together, so a wide disk demands rare, fast-oscillating noise hold across 224
+            // blocks in four directions at once. Measured on certified beta.3 bytes, 12 seeds,
+            // end-to-end fresh-world boots reading the plan's own diagnostics: at the 224 default
+            // the swamp province fails to anchor on 4 of 12 seeds on this line and 3 of 12 on the
+            // 1.21.11 line; at 112 it anchors on every seed tested on both lines. 112 is the
+            // LARGEST radius that clears the sample -- the smallest departure from the shipped
+            // geometry that fixes it, chosen over 64 (which also clears) to keep the province
+            // substantial.
+            //
+            // BE CLEAR ABOUT WHAT THIS IS: a geometry MITIGATION, not the principled fix. The
+            // actual defect is that findAnchor's topology test is a four-point AND over a sparse
+            // field; shrinking the radius only makes those four shoulders more correlated so the
+            // conjunction survives. The defect stays latent for any future route whose field is
+            // sparser than swamp's -- this is the third occurrence in this file already (uplands,
+            // eroded_badlands per the ARID_UPLAND note, now wetland), each cured by shrinking a
+            // radius. The principled form already exists one branch over:
+            // VanillaSurfaceWaterCoveragePlan.hasSubstantialTopology samples a dense 16-block grid
+            // and requires PROPORTIONAL eligibility plus a multi-chunk span, explicitly because
+            // linear features are not circular disks -- but ONLY for shore, river, mangrove and
+            // deep-ocean routes. Every other family there falls through to this same four-point
+            // AND. Occurrence four extends that branch to the rest; it does not shrink a radius.
+            case TEMPERATE_WETLAND, SUBPOLAR_WETLAND -> Math.min(112, Math.max(96, Math.min(224, worldRadius / 30)));
             case CAVE_SHALLOW, CAVE_DEEP -> throw new IllegalArgumentException("cave routes use CaveBiomeCoveragePlan");
             default -> Math.max(96, Math.min(224, worldRadius / 30));
         };

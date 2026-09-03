@@ -108,6 +108,24 @@ public class ProtoChunkPolarVegetationGuardMixin {
         // line can finish its canopy instead of losing leaves across the latitude boundary.
         boolean beyondWoody = PolarFoliagePolicy.isBeyondWoodyCompletionLimit(
                 pos.getZ(), activeRadius, GlobeMod.BORDER_RADIUS);
+        // Dependent-support integrity. Stripping woody blocks per-block leaves the REST of a
+        // custom feature standing: biomesoplenty:fallen_fir_log places its log, THIS guard turns
+        // that log to air on the write path mid-feature, and the feature's own decorations then
+        // land on nothing -- observed live as floating mushrooms at 79 degrees (maintainer
+        // report, 2026-08-31). So wherever this guard can have removed a block (beyond the woody
+        // latitude, or above the elevation tree line), a FLOOR PLANT over air is refused too.
+        //
+        // Scoped to VegetationBlock deliberately, not the polar_foliage tag: VegetationBlock
+        // subclasses are floor-supported by vanilla contract, while the tag also carries
+        // wall- and ceiling-attached blocks (glow lichen) for which air below is legitimate.
+        if (vegetation && (beyondWoody || pos.getY() >= LatitudeBiomes.TREE_LINE_Y)) {
+            ProtoChunk self = (ProtoChunk) (Object) this;
+            if (pos.getY() > self.getMinY() && self.getBlockState(pos.below()).isAir()) {
+                cir.setReturnValue(AIR_STATE);
+                return;
+            }
+        }
+
         if (!beyondWoody) {
             // Below the tree line neither tier applies; the foliage limit is strictly higher.
             return;
