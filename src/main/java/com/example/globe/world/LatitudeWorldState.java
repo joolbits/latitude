@@ -2,6 +2,8 @@ package com.example.globe.world;
 
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.mojang.serialization.Codec;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.resources.Identifier;
@@ -40,13 +42,19 @@ public final class LatitudeWorldState extends SavedData {
                             .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.vanillaRepresentationProfile)),
                     Codec.STRING.optionalFieldOf("cave_representation_profile")
                             .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.caveRepresentationProfile)),
+                    Codec.INT.optionalFieldOf("content_roster_revision", 0)
+                            .forGetter(LatitudeWorldState::getContentRosterRevision),
+                    Codec.STRING.listOf().optionalFieldOf("content_roster_additions", List.of())
+                            .forGetter(LatitudeWorldState::getContentRosterAdditions),
                     Codec.STRING.optionalFieldOf("last_known_band")
                             .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.lastKnownBandId))
             ).apply(instance, (spawnPickerDismissed, worldgenPolicy, globeRadius, providerTicketProfile,
-                                vanillaRepresentationProfile, caveRepresentationProfile, lastKnownBandId) ->
+                                vanillaRepresentationProfile, caveRepresentationProfile,
+                                contentRosterRevision, contentRosterAdditions, lastKnownBandId) ->
                     new LatitudeWorldState(spawnPickerDismissed, normalizeWorldgenPolicy(worldgenPolicy),
                             globeRadius, providerTicketProfile.orElse(null),
                             vanillaRepresentationProfile.orElse(null), caveRepresentationProfile.orElse(null),
+                            contentRosterRevision, contentRosterAdditions,
                             lastKnownBandId.orElse(null)))),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
     );
@@ -57,15 +65,18 @@ public final class LatitudeWorldState extends SavedData {
     private String providerTicketProfile;
     private String vanillaRepresentationProfile;
     private String caveRepresentationProfile;
+    private int contentRosterRevision;
+    private List<String> contentRosterAdditions;
     private String lastKnownBandId;
 
     public LatitudeWorldState() {
-        this(false, Optional.empty(), 0, null, null, null, null);
+        this(false, Optional.empty(), 0, null, null, null, 0, List.of(), null);
     }
 
     private LatitudeWorldState(boolean spawnPickerDismissed, Optional<WorldgenPolicyVersion> worldgenPolicy,
                                int globeRadius, String providerTicketProfile,
                                String vanillaRepresentationProfile, String caveRepresentationProfile,
+                               int contentRosterRevision, List<String> contentRosterAdditions,
                                String lastKnownBandId) {
         this.spawnPickerDismissed = spawnPickerDismissed;
         this.worldgenPolicy = normalizeWorldgenPolicy(worldgenPolicy).orElse(null);
@@ -73,6 +84,9 @@ public final class LatitudeWorldState extends SavedData {
         this.providerTicketProfile = providerTicketProfile;
         this.vanillaRepresentationProfile = vanillaRepresentationProfile;
         this.caveRepresentationProfile = caveRepresentationProfile;
+        this.contentRosterRevision = contentRosterRevision;
+        this.contentRosterAdditions = List.copyOf(
+                contentRosterAdditions == null ? List.of() : contentRosterAdditions);
         this.lastKnownBandId = lastKnownBandId;
     }
 
@@ -194,6 +208,77 @@ public final class LatitudeWorldState extends SavedData {
         String encoded = profile == null ? null : profile.encode();
         if (!java.util.Objects.equals(caveRepresentationProfile, encoded)) {
             caveRepresentationProfile = encoded;
+            setDirty();
+        }
+    }
+
+    public int getContentRosterRevision() {
+        return contentRosterRevision;
+    }
+
+    public List<String> getContentRosterAdditions() {
+        return contentRosterAdditions;
+    }
+
+    /** Fresh worlds already captured the current registry in their immutable birth roster. */
+    public void markContentRosterCurrent() {
+        setContentRosterStamp(ContentRosterUpgradePolicy.CURRENT_REVISION, List.of());
+    }
+
+    /**
+     * Adds the current content stamp only to a structurally complete 26.2-style V4 world.
+     * Missing or damaged state, older policies, and altered saved additions remain untouched.
+     */
+    public boolean tryUpgradeContentRoster(Collection<String> activeRegistryIds) {
+        Optional<BiomeSelectionProfile> birthProfile = getProviderTicketProfile();
+        boolean completeV4ProviderState = getWorldgenPolicy()
+                == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                && globeRadius > 0
+                && birthProfile.isPresent()
+                && getVanillaRepresentationProfile().isPresent()
+                && getCaveRepresentationProfile().isPresent();
+        boolean birthHasDappled = birthProfile
+                .map(profile -> profile.contains(
+                        BiomeRoute.TEMPERATE_LOWLAND,
+                        DappledForestPlacementPolicy.BIOME_ID))
+                .orElse(false);
+        ContentRosterUpgradePolicy.Decision decision = ContentRosterUpgradePolicy.evaluate(
+                contentRosterRevision,
+                contentRosterAdditions,
+                completeV4ProviderState,
+                activeRegistryIds,
+                birthHasDappled);
+        if (!decision.changed()) return false;
+        setContentRosterStamp(decision.revision(), decision.additions());
+        return true;
+    }
+
+    /** Runtime-only roster; the encoded provider ticket remains the world's original birth roster. */
+    public Optional<BiomeSelectionProfile> getRuntimeProviderTicketProfile(
+            Collection<String> activeRegistryIds) {
+        Optional<BiomeSelectionProfile> birthProfile = getProviderTicketProfile();
+        if (birthProfile.isEmpty()) return Optional.empty();
+        boolean completeV4ProviderState = getWorldgenPolicy()
+                == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
+                && globeRadius > 0
+                && getVanillaRepresentationProfile().isPresent()
+                && getCaveRepresentationProfile().isPresent();
+        if (!completeV4ProviderState) return birthProfile;
+        List<String> additions = ContentRosterUpgradePolicy.validRuntimeAdditions(
+                contentRosterRevision, contentRosterAdditions, activeRegistryIds);
+        return additions.isEmpty()
+                ? birthProfile
+                : Optional.of(birthProfile.get().withRuntimeAdditions(additions));
+    }
+
+    private void setContentRosterStamp(int revision, Collection<String> additions) {
+        int normalizedRevision = Math.max(0, revision);
+        List<String> normalizedAdditions = List.copyOf(
+                additions == null ? List.of() : additions);
+        if (contentRosterRevision != normalizedRevision
+                || !contentRosterAdditions.equals(normalizedAdditions)) {
+            contentRosterRevision = normalizedRevision;
+            contentRosterAdditions = normalizedAdditions;
             setDirty();
         }
     }

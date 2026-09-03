@@ -46,6 +46,36 @@ public final class BiomeSelectionProfile {
     public List<String> entries(BiomeRoute route) { return entries.getOrDefault(route, List.of()); }
     public boolean contains(BiomeRoute route, String id) { return entries(route).contains(id); }
 
+    /**
+     * Creates an in-memory selection roster with reviewed additions while leaving this saved
+     * birth roster untouched. Callers must pass additions validated by
+     * {@link ContentRosterUpgradePolicy}.
+     */
+    BiomeSelectionProfile withRuntimeAdditions(Collection<String> additions) {
+        if (additions == null || additions.isEmpty()) return this;
+        EnumMap<BiomeRoute, List<String>> augmented = new EnumMap<>(BiomeRoute.class);
+        for (BiomeRoute route : BiomeRoute.values()) {
+            augmented.put(route, new ArrayList<>(entries(route)));
+        }
+        TreeSet<String> augmentedProviders = new TreeSet<>(providers);
+        for (String id : additions) {
+            BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(id);
+            if (descriptor == null) continue;
+            for (BiomeRoute route : descriptor.routes()) {
+                List<String> routeEntries = augmented.get(route);
+                if (!routeEntries.contains(id)) routeEntries.add(id);
+            }
+            augmentedProviders.add(descriptor.provider());
+        }
+        EnumMap<BiomeRoute, List<String>> sorted = new EnumMap<>(BiomeRoute.class);
+        for (BiomeRoute route : BiomeRoute.values()) {
+            List<String> routeEntries = augmented.get(route);
+            routeEntries.sort(Comparator.naturalOrder());
+            sorted.put(route, List.copyOf(routeEntries));
+        }
+        return new BiomeSelectionProfile(List.copyOf(augmentedProviders), sorted);
+    }
+
     /** Ordered active providers for one final geography route. */
     public List<String> providers(BiomeRoute route) {
         TreeSet<String> routeProviders = new TreeSet<>();

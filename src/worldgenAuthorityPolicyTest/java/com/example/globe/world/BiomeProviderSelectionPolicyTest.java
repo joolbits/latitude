@@ -46,6 +46,7 @@ final class BiomeProviderSelectionPolicyTest {
     static void run() throws Exception {
         descriptorAdmissionIsClosedAndCanonical();
         dappledForestHasOneCoolBorderHome();
+        existingWorldDappledUpgradeIsOneTimeAndAdditive();
         wetlandRoutesMatchRealBiomeClimate();
         climateLowlandDescriptorsRemainRouteBounded();
         everySupportedStackGetsEqualRouteTickets();
@@ -314,6 +315,275 @@ final class BiomeProviderSelectionPolicyTest {
                 "the guarantee search calls the shared Dappled rule");
         assertEquals(2, occurrences(source, "out = enforceDappledForestPlacement("),
                 "both final picker overloads enforce the shared Dappled rule");
+    }
+
+    private static void existingWorldDappledUpgradeIsOneTimeAndAdditive() throws Exception {
+        String dappled = DappledForestPlacementPolicy.BIOME_ID;
+        List<String> activeIds = registryFor(Set.of("biomesoplenty", "terralith"));
+        BiomeSelectionProfile currentBirth = BiomeSelectionProfile.capture(activeIds);
+        String preDappledBirthBytes = currentBirth.encode().lines()
+                .filter(line -> !line.endsWith("|" + dappled))
+                .collect(java.util.stream.Collectors.joining("\n"));
+        BiomeSelectionProfile preDappledBirth =
+                BiomeSelectionProfile.decode(preDappledBirthBytes);
+        assertFalse(preDappledBirth.contains(BiomeRoute.TEMPERATE_LOWLAND, dappled),
+                "the migration fixture is a real pre-Dappled birth roster");
+
+        int radius = 10_000;
+        long seed = 131L;
+        VanillaBiomeRepresentationProfile currentRepresentation =
+                VanillaBiomeRepresentationProfile.capture(radius, seed, currentBirth);
+        VanillaBiomeRepresentationProfile preDappledRepresentation =
+                preDappledRepresentation(currentRepresentation, dappled);
+        String preDappledRepresentationBytes = preDappledRepresentation.encode();
+        CaveBiomeRepresentationProfile caveRepresentation =
+                CaveBiomeRepresentationProfile.capture(radius, preDappledBirth);
+
+        LatitudeWorldState oldWorld = completeV4State(
+                radius, preDappledBirth, preDappledRepresentation, caveRepresentation);
+        assertEquals(0, oldWorld.getContentRosterRevision(),
+                "a 26.2-style state begins without a content revision");
+        assertTrue(oldWorld.getContentRosterAdditions().isEmpty(),
+                "a 26.2-style state begins without additions");
+        assertTrue(oldWorld.tryUpgradeContentRoster(activeIds),
+                "a complete V4 provider-ticket world receives the one-time stamp");
+        assertEquals(ContentRosterUpgradePolicy.CURRENT_REVISION,
+                oldWorld.getContentRosterRevision(),
+                "the old world advances to the current content revision");
+        assertEquals(List.of(dappled), oldWorld.getContentRosterAdditions(),
+                "Dappled is the only saved additive identity");
+        assertEquals(preDappledBirthBytes,
+                oldWorld.getProviderTicketProfile().orElseThrow().encode(),
+                "the world's original provider roster remains byte-for-byte unchanged");
+        assertEquals(preDappledRepresentationBytes,
+                oldWorld.getVanillaRepresentationProfile().orElseThrow().encode(),
+                "the world's original representation profile remains byte-for-byte unchanged");
+
+        BiomeSelectionProfile runtimeProfile = oldWorld
+                .getRuntimeProviderTicketProfile(activeIds).orElseThrow();
+        assertTrue(runtimeProfile.contains(BiomeRoute.TEMPERATE_LOWLAND, dappled),
+                "new terrain sees Dappled through the runtime-only roster");
+        assertEquals(1L, runtimeProfile.entries(BiomeRoute.TEMPERATE_LOWLAND).stream()
+                        .filter(dappled::equals).count(),
+                "the runtime roster contains Dappled exactly once");
+        assertFalse(oldWorld.tryUpgradeContentRoster(activeIds),
+                "loading the stamped world again is a no-op");
+        assertEquals(List.of(dappled), oldWorld.getContentRosterAdditions(),
+                "the second load cannot duplicate the addition");
+        assertEquals(preDappledBirthBytes,
+                oldWorld.getProviderTicketProfile().orElseThrow().encode(),
+                "idempotence includes preserving the birth roster");
+
+        for (int compactRadius : new int[]{3_750, 5_000, 7_500}) {
+            VanillaBiomeRepresentationProfile compactCurrent =
+                    VanillaBiomeRepresentationProfile.capture(
+                            compactRadius, seed, currentBirth);
+            VanillaBiomeRepresentationProfile compactOld =
+                    preDappledRepresentation(compactCurrent, dappled);
+            String compactOldBytes = compactOld.encode();
+            LatitudeWorldState compactState = completeV4State(
+                    compactRadius,
+                    preDappledBirth,
+                    compactOld,
+                    CaveBiomeRepresentationProfile.capture(compactRadius, preDappledBirth));
+            assertTrue(compactState.tryUpgradeContentRoster(activeIds),
+                    "every valid compact 26.2-style profile receives the additive stamp");
+            assertEquals(compactOldBytes,
+                    compactState.getVanillaRepresentationProfile().orElseThrow().encode(),
+                    "the compact representation profile remains byte-for-byte unchanged");
+            assertFalse(compactState.getVanillaRepresentationProfile().orElseThrow()
+                            .landTargets().containsKey(dappled),
+                    "an upgraded compact world receives no retroactive Dappled guarantee");
+            assertTrue(compactState.getRuntimeProviderTicketProfile(activeIds).orElseThrow()
+                            .contains(BiomeRoute.TEMPERATE_LOWLAND, dappled),
+                    "the compact old world still receives new-terrain Dappled availability");
+        }
+
+        LatitudeWorldState freshWorld = completeV4State(
+                radius,
+                currentBirth,
+                currentRepresentation,
+                CaveBiomeRepresentationProfile.capture(radius, currentBirth));
+        freshWorld.markContentRosterCurrent();
+        assertFalse(freshWorld.tryUpgradeContentRoster(activeIds),
+                "a fresh 26.3 world does not receive a redundant runtime addition");
+        assertEquals(ContentRosterUpgradePolicy.CURRENT_REVISION,
+                freshWorld.getContentRosterRevision(),
+                "fresh worlds are stamped current at birth");
+        assertTrue(freshWorld.getContentRosterAdditions().isEmpty(),
+                "fresh worlds already carry Dappled in their birth roster");
+
+        LatitudeWorldState legacy = new LatitudeWorldState();
+        legacy.setGlobeRadius(radius);
+        assertFalse(legacy.tryUpgradeContentRoster(activeIds),
+                "legacy and profile-less worlds fail closed");
+        assertEquals(0, legacy.getContentRosterRevision(),
+                "a rejected legacy world is not stamped");
+
+        LatitudeWorldState incompleteV4 = new LatitudeWorldState();
+        incompleteV4.setWorldgenPolicy(
+                LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE);
+        incompleteV4.setGlobeRadius(radius);
+        incompleteV4.setProviderTicketProfile(preDappledBirth);
+        assertFalse(incompleteV4.tryUpgradeContentRoster(activeIds),
+                "a V4 world missing its saved representation profiles fails closed");
+        assertEquals(0, incompleteV4.getContentRosterRevision(),
+                "incomplete V4 state remains unchanged");
+
+        List<String> registryWithoutDappled = activeIds.stream()
+                .filter(id -> !dappled.equals(id))
+                .toList();
+        LatitudeWorldState missingRegistryIdentity = completeV4State(
+                radius, preDappledBirth, preDappledRepresentation, caveRepresentation);
+        assertFalse(missingRegistryIdentity.tryUpgradeContentRoster(registryWithoutDappled),
+                "a runtime registry without Dappled is not modified");
+        assertEquals(0, missingRegistryIdentity.getContentRosterRevision(),
+                "missing runtime content leaves the save untouched");
+
+        ContentRosterUpgradePolicy.Decision damaged = ContentRosterUpgradePolicy.evaluate(
+                ContentRosterUpgradePolicy.CURRENT_REVISION,
+                List.of("minecraft:forest"),
+                true,
+                activeIds,
+                false);
+        assertFalse(damaged.changed(), "unknown saved additions are never repaired by guessing");
+        assertTrue(ContentRosterUpgradePolicy.validRuntimeAdditions(
+                        damaged.revision(), damaged.additions(), activeIds).isEmpty(),
+                "unknown saved additions fail closed at runtime");
+        ContentRosterUpgradePolicy.Decision future = ContentRosterUpgradePolicy.evaluate(
+                ContentRosterUpgradePolicy.CURRENT_REVISION + 1,
+                List.of(),
+                true,
+                activeIds,
+                false);
+        assertFalse(future.changed(), "an unknown future revision is never downgraded or rewritten");
+        ContentRosterUpgradePolicy.Decision damagedNegative = ContentRosterUpgradePolicy.evaluate(
+                -1,
+                List.of(),
+                true,
+                activeIds,
+                false);
+        assertFalse(damagedNegative.changed() || damagedNegative.revision() != -1,
+                "a damaged negative revision remains unknown and is never treated as revision zero");
+
+        net.minecraft.SharedConstants.tryDetectVersion();
+        net.minecraft.server.Bootstrap.bootStrap();
+        MappedRegistry<Biome> registry = testBiomeRegistry();
+        List<Holder<Biome>> pool = registry.listElements()
+                .map(entry -> (Holder<Biome>) entry)
+                .toList();
+        Holder<Biome> donor = testBiomeHolder(registry, "minecraft:plains");
+        int registryHits = 0;
+        int collectionHits = 0;
+        for (long runtimeSeed : new long[]{3L, 131L, 461L}) {
+            WetlandEvidence wetland = new WetlandEvidence();
+            try {
+                LatitudeBiomes.activateWorldgenContext(
+                        radius,
+                        runtimeSeed,
+                        LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE,
+                        runtimeProfile,
+                        preDappledRepresentation,
+                        caveRepresentation,
+                        coverageSampler(null),
+                        null,
+                        63);
+                VanillaBiomeCoveragePlan.Anchor swamp =
+                        LatitudeBiomes.activeVanillaCoveragePlanForPolicyTest().anchors().stream()
+                                .filter(anchor -> anchor.route() == BiomeRoute.TEMPERATE_WETLAND)
+                                .findFirst()
+                                .orElseThrow();
+                wetland.add(new WetlandFootprint(
+                        swamp.blockX(), swamp.blockZ(), swamp.radiusBlocks()));
+            } finally {
+                LatitudeBiomes.clearWorldgenContext();
+            }
+            Climate.Sampler sampler = coverageSampler(wetland);
+            try {
+                LatitudeBiomes.activateWorldgenContext(
+                        radius,
+                        runtimeSeed,
+                        LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE,
+                        runtimeProfile,
+                        preDappledRepresentation,
+                        caveRepresentation,
+                        sampler,
+                        null,
+                        63);
+                VanillaBiomeCoveragePlan coverage =
+                        LatitudeBiomes.activeVanillaCoveragePlanForPolicyTest();
+                assertTrue(coverage != null && coverage.complete()
+                                && coverage.anchors().stream()
+                                .noneMatch(anchor -> dappled.equals(anchor.biomeId())),
+                        "an upgraded old world gains availability, not a new guaranteed province");
+                for (int absZ = 4_600; absZ <= 5_600; absZ += 16) {
+                    for (int hemisphere : new int[]{-1, 1}) {
+                        int z = absZ * hemisphere;
+                        for (int x = -8_000; x <= 8_000; x += 32) {
+                            if ((long) x * x + (long) z * z >= (long) radius * radius) continue;
+                            if (dappled.equals(LatitudeBiomes.biomeIdPublic(LatitudeBiomes.pick(
+                                    registry, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER")))) {
+                                registryHits++;
+                            }
+                            if (dappled.equals(LatitudeBiomes.biomeIdPublic(LatitudeBiomes.pick(
+                                    pool, donor, x, z, 80, radius, sampler, "ATLAS_SAMPLER")))) {
+                                collectionHits++;
+                            }
+                        }
+                    }
+                }
+            } finally {
+                LatitudeBiomes.clearWorldgenContext();
+            }
+        }
+        assertTrue(registryHits > 0 && collectionHits > 0,
+                "newly generated eligible territory can select the runtime Dappled addition");
+
+        String stateSource = Files.readString(Path.of(
+                "src/main/java/com/example/globe/world/LatitudeWorldState.java"));
+        String modSource = Files.readString(Path.of(
+                "src/main/java/com/example/globe/GlobeMod.java"));
+        assertTrue(stateSource.contains("content_roster_revision")
+                        && stateSource.contains("content_roster_additions"),
+                "both optional saved roster fields are wired into Latitude state");
+        assertTrue(modSource.contains("markContentRosterCurrent()")
+                        && occurrences(modSource, "tryUpgradeContentRoster(activeBiomeIds)") == 2
+                        && occurrences(modSource, "getRuntimeProviderTicketProfile(activeBiomeIds)") == 2,
+                "fresh capture and both world activation paths use the content-roster stamp");
+        String upgradeMethod = method(
+                stateSource,
+                "public boolean tryUpgradeContentRoster(Collection<String> activeRegistryIds)");
+        assertFalse(upgradeMethod.contains("Chunk") || upgradeMethod.contains("setBiome"),
+                "the saved-state upgrade cannot rewrite generated chunk biome data");
+    }
+
+    private static LatitudeWorldState completeV4State(
+            int radius,
+            BiomeSelectionProfile providerProfile,
+            VanillaBiomeRepresentationProfile representationProfile,
+            CaveBiomeRepresentationProfile caveProfile) {
+        LatitudeWorldState state = new LatitudeWorldState();
+        state.setWorldgenPolicy(
+                LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE);
+        state.setGlobeRadius(radius);
+        state.setProviderTicketProfile(providerProfile);
+        state.setVanillaRepresentationProfile(representationProfile);
+        state.setCaveRepresentationProfile(caveProfile);
+        return state;
+    }
+
+    private static VanillaBiomeRepresentationProfile preDappledRepresentation(
+            VanillaBiomeRepresentationProfile current,
+            String dappled) {
+        String encoded = current.encode().lines()
+                .filter(line -> !(line.startsWith("LAND|")
+                        && line.endsWith("|" + dappled)))
+                .map(line -> line.startsWith("OMIT|") && line.endsWith("|" + dappled)
+                        ? line.substring(0, line.length() - dappled.length())
+                        + "minecraft:dark_forest"
+                        : line)
+                .collect(java.util.stream.Collectors.joining("\n"));
+        return VanillaBiomeRepresentationProfile.decode(encoded);
     }
 
     /**

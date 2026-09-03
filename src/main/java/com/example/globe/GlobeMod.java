@@ -332,6 +332,10 @@ public class GlobeMod implements ModInitializer {
         }
         LatitudeWorldState worldState = LatitudeWorldState.get(world);
         long seed = server.getWorldGenSettings().options().seed();
+        net.minecraft.core.Registry<Biome> biomeRegistry =
+                world.registryAccess().lookupOrThrow(Registries.BIOME);
+        java.util.List<String> activeBiomeIds = biomeRegistry.keySet().stream()
+                .map(Identifier::toString).toList();
         // Provider-ticket profile capture. pendingRadius > 0 was the only trigger here, which made
         // the capture a create-screen-only event: a dedicated server (or a vanilla create flow that
         // selects the globe preset without Latitude's screen) never has a pending radius, so its
@@ -354,9 +358,7 @@ public class GlobeMod implements ModInitializer {
         if (worldState.getProviderTicketProfile().isEmpty() && creationWindow
                 && (clientCreated || !dedicatedCaptureDisabled)) {
             int captureRadius = clientCreated ? pendingRadius : borderRadiusForGlobeOverworld(world);
-            BiomeSelectionProfile profile = BiomeSelectionProfile.capture(
-                    world.registryAccess().lookupOrThrow(Registries.BIOME).keySet().stream()
-                            .map(Identifier::toString).toList());
+            BiomeSelectionProfile profile = BiomeSelectionProfile.capture(activeBiomeIds);
             worldState.setProviderTicketProfile(profile);
             worldState.setVanillaRepresentationProfile(
                     VanillaBiomeRepresentationProfile.capture(captureRadius, seed, profile));
@@ -364,6 +366,7 @@ public class GlobeMod implements ModInitializer {
                     CaveBiomeRepresentationProfile.capture(captureRadius, profile));
             worldState.setWorldgenPolicy(
                     LatitudeWorldState.WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE);
+            worldState.markContentRosterCurrent();
             if (!clientCreated && worldState.getGlobeRadius() <= 0) {
                 // Same state-based recognition resilience 68716f22 gave client-created worlds:
                 // captureRadius is borderRadiusForGlobeOverworld's own settings-derived answer
@@ -375,6 +378,11 @@ public class GlobeMod implements ModInitializer {
             LOGGER.info("[Latitude] Recorded Globe world: border radius {} ({})", captureRadius,
                     clientCreated ? "from create-world selection" : "fresh dedicated/vanilla-created world");
         }
+        if (worldState.tryUpgradeContentRoster(activeBiomeIds)) {
+            LOGGER.info("[Latitude] Added current Minecraft biome content to new, unexplored terrain in this existing world.");
+        }
+        BiomeSelectionProfile runtimeProviderProfile =
+                worldState.getRuntimeProviderTicketProfile(activeBiomeIds).orElse(null);
         ChunkGenerator generator = world.getChunkSource().getGenerator();
         activeLatitudeOverworldGenerator = generator instanceof NoiseBasedChunkGenerator noise
                 ? noise
@@ -383,10 +391,8 @@ public class GlobeMod implements ModInitializer {
         warnForProviderProfileDrift(world, worldState);
         RandomState randomState = world.getChunkSource().randomState();
         Climate.Sampler sampler = randomState.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
-        net.minecraft.core.Registry<Biome> biomeRegistry =
-                world.registryAccess().lookupOrThrow(Registries.BIOME);
         LatitudeBiomes.activateWorldgenContext(radius, seed, worldState.getWorldgenPolicy(),
-                worldState.getProviderTicketProfile().orElse(null),
+                runtimeProviderProfile,
                 worldState.getVanillaRepresentationProfile().orElse(null),
                 worldState.getCaveRepresentationProfile().orElse(null),
                 sampler,
@@ -417,13 +423,20 @@ public class GlobeMod implements ModInitializer {
 
         int borderRadiusBlocks = borderRadiusForGlobeOverworld(overworld);
         long seed = overworld.getServer().getWorldGenSettings().options().seed();
+        net.minecraft.core.Registry<Biome> biomeRegistry =
+                overworld.registryAccess().lookupOrThrow(Registries.BIOME);
+        java.util.List<String> activeBiomeIds = biomeRegistry.keySet().stream()
+                .map(Identifier::toString).toList();
+        if (worldState.tryUpgradeContentRoster(activeBiomeIds)) {
+            LOGGER.info("[Latitude] Added current Minecraft biome content to new, unexplored terrain in this existing world.");
+        }
+        BiomeSelectionProfile runtimeProviderProfile =
+                worldState.getRuntimeProviderTicketProfile(activeBiomeIds).orElse(null);
         warnForProviderProfileDrift(overworld, worldState);
         RandomState randomState = overworld.getChunkSource().randomState();
         Climate.Sampler sampler = randomState.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
-        net.minecraft.core.Registry<Biome> biomeRegistry =
-                overworld.registryAccess().lookupOrThrow(Registries.BIOME);
         LatitudeBiomes.activateWorldgenContext(borderRadiusBlocks, seed, worldState.getWorldgenPolicy(),
-                worldState.getProviderTicketProfile().orElse(null),
+                runtimeProviderProfile,
                 worldState.getVanillaRepresentationProfile().orElse(null),
                 worldState.getCaveRepresentationProfile().orElse(null),
                 sampler,
