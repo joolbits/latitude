@@ -25,6 +25,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
 import re
 import shutil
@@ -50,6 +51,28 @@ class Failure(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class ExplicitInjectSpec:
+    target_method: str
+    target_descriptor: str
+    handler_method: str
+
+
+JAVAP_OUTPUT_CACHE: dict[tuple[str, str, str], str | None] = {}
+
+
+def javap_output(javap_bin: str, classpath: str, binary_name: str) -> str | None:
+    """One cached javap read per classpath/class pair for all verifier lanes."""
+    key = (javap_bin, classpath, binary_name)
+    if key not in JAVAP_OUTPUT_CACHE:
+        result = subprocess.run(
+            [javap_bin, "-classpath", classpath, "-p", "-s", binary_name],
+            check=False, capture_output=True, text=True,
+        )
+        JAVAP_OUTPUT_CACHE[key] = result.stdout if result.returncode == 0 else None
+    return JAVAP_OUTPUT_CACHE[key]
+
+
 def javap_members(javap_bin: str, jar: str, binary_name: str,
                   _seen: set[str] | None = None) -> set[str] | None:
     """Method names declared by a class *or inherited from its supertypes*, or None if absent.
@@ -64,15 +87,12 @@ def javap_members(javap_bin: str, jar: str, binary_name: str,
         return set()
     _seen.add(binary_name)
 
-    result = subprocess.run(
-        [javap_bin, "-classpath", jar, "-p", binary_name],
-        check=False, capture_output=True, text=True,
-    )
-    if result.returncode != 0:
+    output = javap_output(javap_bin, jar, binary_name)
+    if output is None:
         return None
     names: set[str] = set()
     supertypes: list[str] = []
-    for line in result.stdout.splitlines():
+    for line in output.splitlines():
         stripped = line.strip()
         header = re.match(r"^(?:public |final |abstract |static )*(?:class|interface) ([\w.$]+)(.*)$",
                           stripped)
@@ -113,14 +133,11 @@ def javap_declared_members(javap_bin: str, jar: str, binary_name: str) -> set[st
     class", taking the whole class-load down with it. Checking a shadow against the inherited set
     would therefore pass exactly the case that breaks the game.
     """
-    result = subprocess.run(
-        [javap_bin, "-classpath", jar, "-p", binary_name],
-        check=False, capture_output=True, text=True,
-    )
-    if result.returncode != 0:
+    output = javap_output(javap_bin, jar, binary_name)
+    if output is None:
         return None
     names: set[str] = set()
-    for line in result.stdout.splitlines():
+    for line in output.splitlines():
         stripped = line.strip()
         if not stripped.endswith(";") or stripped.startswith(("public class", "class", "interface")):
             continue
@@ -135,6 +152,112 @@ def javap_declared_members(javap_bin: str, jar: str, binary_name: str) -> set[st
         if field:
             names.add(field.group(1))
     return names
+
+
+def javap_method_descriptors(javap_bin: str, classpath: str,
+                             binary_name: str) -> dict[str, set[str]] | None:
+    """JVM descriptors for methods declared by one class, keyed by method name."""
+    output = javap_output(javap_bin, classpath, binary_name)
+    if output is None:
+        return None
+    descriptors: dict[str, set[str]] = {}
+    current_method: str | None = None
+    for line in output.splitlines():
+        stripped = line.strip()
+        method = re.search(r"([A-Za-z_$][A-Za-z0-9_$]*)\s*\(", stripped)
+        if method and stripped.endswith(";"):
+            current_method = jvm_method_name(method.group(1), binary_name)
+            continue
+        descriptor = re.match(r"descriptor:\s*(\(.*\).+)$", stripped)
+        if descriptor and current_method is not None:
+            descriptors.setdefault(current_method, set()).add(descriptor.group(1))
+            current_method = None
+    return descriptors
+
+
+def jvm_method_name(javap_name: str, binary_name: str) -> str:
+    """Translate javap's constructor spelling back to the JVM's <init> name."""
+    binary_simple = binary_name.rsplit(".", 1)[-1]
+    constructor_names = {binary_simple, binary_simple.rsplit("$", 1)[-1]}
+    return "<init>" if javap_name in constructor_names else javap_name
+
+
+def annotation_block(source: str, open_paren: int) -> tuple[str, int] | None:
+    """Return one balanced annotation argument block, ignoring parentheses inside strings."""
+    depth = 0
+    quote = False
+    escaped = False
+    for index in range(open_paren, len(source)):
+        char = source[index]
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quote = False
+            continue
+        if char == '"':
+            quote = True
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return source[open_paren + 1:index], index + 1
+    return None
+
+
+def explicit_inject_specs(source: str) -> list[ExplicitInjectSpec]:
+    """Explicit @Inject target descriptors paired with their Java handler method names."""
+    clean = strip_comments(source)
+    specs: list[ExplicitInjectSpec] = []
+    for match in re.finditer(r"@Inject\s*\(", clean):
+        block_result = annotation_block(clean, clean.find("(", match.start()))
+        if block_result is None:
+            continue
+        block, end = block_result
+        method_value = re.search(r'method\s*=\s*"([^"]+)"', block)
+        if method_value is None or "(" not in method_value.group(1):
+            continue
+        encoded = method_value.group(1)
+        target_method, target_descriptor = encoded.split("(", 1)
+        target_descriptor = "(" + target_descriptor
+        declaration = re.search(
+            r"\b(?:private|protected|public)\s+(?:static\s+)?[\w.$<>?, \[\]]+\s+"
+            r"([A-Za-z_$][A-Za-z0-9_$]*)\s*\(",
+            clean[end:])
+        if declaration is None:
+            continue
+        specs.append(ExplicitInjectSpec(
+            target_method.strip(), target_descriptor, declaration.group(1)))
+    return specs
+
+
+def expected_inject_handler_descriptor(target_descriptor: str) -> str:
+    """Mixin @Inject handler descriptor for one exact target method descriptor."""
+    close = target_descriptor.find(")")
+    if close < 0:
+        raise ValueError(f"invalid JVM method descriptor: {target_descriptor}")
+    callback = ("Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;"
+                if target_descriptor[close + 1:] == "V"
+                else "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;")
+    return target_descriptor[:close] + callback + ")V"
+
+
+def explicit_inject_descriptor_errors(spec: ExplicitInjectSpec,
+                                      target_descriptors: dict[str, set[str]],
+                                      handler_descriptors: dict[str, set[str]]) -> list[str]:
+    """Return exact-target and handler-shape mismatches for one explicit @Inject."""
+    errors: list[str] = []
+    if spec.target_descriptor not in target_descriptors.get(spec.target_method, set()):
+        errors.append(
+            f"target '{spec.target_method}{spec.target_descriptor}' is absent")
+    expected_handler = expected_inject_handler_descriptor(spec.target_descriptor)
+    if expected_handler not in handler_descriptors.get(spec.handler_method, set()):
+        errors.append(
+            f"handler '{spec.handler_method}' must have descriptor {expected_handler}")
+    return errors
 
 
 def class_block(source: str, simple_name: str) -> str | None:
@@ -318,6 +441,7 @@ def main() -> int:
     # A full classpath string, not a single file: Minecraft may be split across jars,
     # and letting javap resolve the whole path avoids guessing which one holds a class.
     parser.add_argument("--classpath", required=True)
+    parser.add_argument("--mixin-classpath", required=True)
     parser.add_argument("--source-root", default=Path("."), type=Path)
     args = parser.parse_args()
 
@@ -340,6 +464,9 @@ def main() -> int:
     mixin_class_names: set[str] = set()
     member_cache: dict[str, set[str] | None] = {}
     declared_cache: dict[str, set[str] | None] = {}
+    descriptor_cache: dict[str, dict[str, set[str]] | None] = {}
+    mixin_descriptor_cache: dict[str, dict[str, set[str]] | None] = {}
+    checked_descriptors = 0
 
     def members(binary_name: str) -> set[str] | None:
         if binary_name not in member_cache:
@@ -350,6 +477,18 @@ def main() -> int:
         if binary_name not in declared_cache:
             declared_cache[binary_name] = javap_declared_members(javap_bin, jar, binary_name)
         return declared_cache[binary_name]
+
+    def descriptors(binary_name: str) -> dict[str, set[str]] | None:
+        if binary_name not in descriptor_cache:
+            descriptor_cache[binary_name] = javap_method_descriptors(
+                javap_bin, jar, binary_name)
+        return descriptor_cache[binary_name]
+
+    def mixin_descriptors(binary_name: str) -> dict[str, set[str]] | None:
+        if binary_name not in mixin_descriptor_cache:
+            mixin_descriptor_cache[binary_name] = javap_method_descriptors(
+                javap_bin, args.mixin_classpath, binary_name)
+        return mixin_descriptor_cache[binary_name]
 
     for entry in registered:
         rel = (package + "." + entry).replace(".", "/") + ".java"
@@ -402,6 +541,24 @@ def main() -> int:
                 problems.append(
                     f"{entry}: injector targets '{method}', absent from {', '.join(targets)}")
 
+        explicit_specs = explicit_inject_specs(block)
+        if explicit_specs:
+            mixin_binary_name = package + "." + entry
+            compiled_handlers = mixin_descriptors(mixin_binary_name)
+            if compiled_handlers is None:
+                problems.append(
+                    f"{entry}: compiled mixin class not found for descriptor verification")
+            else:
+                for explicit in explicit_specs:
+                    checked_descriptors += 1
+                    for target in targets:
+                        target_methods = descriptors(target)
+                        if target_methods is None:
+                            continue
+                        for error in explicit_inject_descriptor_errors(
+                                explicit, target_methods, compiled_handlers):
+                            problems.append(f"{entry}: {error} on {target}")
+
         # Collected regardless of whether this entry has any @Shadow: the cast-safety scan below
         # cares about every @Mixin CLASS, not just ones this codebase currently shadows a member of.
         simple_name = entry.rsplit(".", 1)[-1]
@@ -445,7 +602,8 @@ def main() -> int:
 
     print(f"MIXIN_TARGET_VERIFY_PASS mixins={len(registered)} "
           f"targetClasses={checked_classes} targetMethods={checked_methods} "
-          f"shadowMembers={checked_shadows} mixinClasses={len(mixin_class_names)}")
+          f"targetDescriptors={checked_descriptors} shadowMembers={checked_shadows} "
+          f"mixinClasses={len(mixin_class_names)}")
     print(f" classpathEntries={len(jar.split(':'))}")
     return 0
 
