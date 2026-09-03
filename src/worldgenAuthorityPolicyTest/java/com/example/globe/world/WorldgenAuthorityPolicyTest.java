@@ -2,6 +2,7 @@ package com.example.globe.world;
 
 import com.example.globe.client.create.RecreatedWorldTypePolicy;
 import com.example.globe.client.create.RecreatedWorldMetadata;
+import com.example.globe.util.BiomeSamplerTools;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -33,6 +34,7 @@ public final class WorldgenAuthorityPolicyTest {
         }
         worldgenFeatureDataUsesCurrentRegistry();
         worldgenTerrainDataUsesCurrentGrammar();
+        inventoryReportsFinalLandBandAsPlacementAuthority();
         contextLifecycleIsExplicitAndClearsAllAuthority();
         ordinarySettersDoNotActivateGlobalGuards();
         inlineGeneratorAuthorityIsBoundToTheExactOverworld();
@@ -63,6 +65,37 @@ public final class WorldgenAuthorityPolicyTest {
         registeredHookIntegrationIsClosed();
         structureAdmissionUsesResolvedLatitudeBiomeSource();
         System.out.println("WORLDGEN_AUTHORITY_POLICY_TEST_PASS");
+    }
+
+    private static void inventoryReportsFinalLandBandAsPlacementAuthority() throws Exception {
+        Path output = Files.createTempFile("latitude-inventory-band-authority", ".json");
+        BiomeSamplerTools.InventoryBiome biome = new BiomeSamplerTools.InventoryBiome(
+                "minecraft:forest",
+                "Forest",
+                0x4A7B4D,
+                true,
+                0,
+                0,
+                "Temperate",
+                "temperate",
+                "subpolar",
+                "temperate",
+                32,
+                1);
+        BiomeSamplerTools.writeInventoryJson(
+                output,
+                new BiomeSamplerTools.InventoryReport(0L, 1000, 32, 64, List.of(biome)));
+
+        JsonObject json = JsonParser.parseString(Files.readString(output)).getAsJsonObject();
+        JsonObject row = json.getAsJsonArray("biomes").get(0).getAsJsonObject();
+        assertEquals("temperate", row.get("placement_band").getAsString(),
+                "inventory placement band must use the final land-band authority");
+        assertEquals("subpolar", row.get("first_seen_chosen_band").getAsString(),
+                "inventory must preserve the pre-rewrite blend choice as a diagnostic");
+        assertTrue(
+                row.get("first_seen_band_note").getAsString().contains(
+                        "placement_band (=first_seen_land_band) is the final Latitude placement authority"),
+                "inventory must explain the final placement authority accurately");
     }
 
     private static void worldgenFeatureDataUsesCurrentRegistry() throws Exception {
