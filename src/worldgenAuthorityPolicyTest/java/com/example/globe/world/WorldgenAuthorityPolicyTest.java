@@ -14,12 +14,19 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
 
 public final class WorldgenAuthorityPolicyTest {
     public static void main(String[] args) throws Exception {
+        if (args.length == 1 && "feature-data".equals(args[0])) {
+            worldgenFeatureDataUsesCurrentRegistry();
+            System.out.println("WORLDGEN_FEATURE_DATA_TEST_PASS");
+            return;
+        }
+        worldgenFeatureDataUsesCurrentRegistry();
         contextLifecycleIsExplicitAndClearsAllAuthority();
         ordinarySettersDoNotActivateGlobalGuards();
         inlineGeneratorAuthorityIsBoundToTheExactOverworld();
@@ -50,6 +57,65 @@ public final class WorldgenAuthorityPolicyTest {
         registeredHookIntegrationIsClosed();
         structureAdmissionUsesResolvedLatitudeBiomeSource();
         System.out.println("WORLDGEN_AUTHORITY_POLICY_TEST_PASS");
+    }
+
+    private static void worldgenFeatureDataUsesCurrentRegistry() throws Exception {
+        Path oldRoot = Path.of("src/main/resources/data/globe/worldgen/configured_feature");
+        assertTrue(jsonFiles(oldRoot).isEmpty(),
+                "26.3 must not retain Latitude JSON in the removed configured_feature registry");
+
+        Path featureRoot = Path.of("src/main/resources/data/globe/worldgen/feature");
+        Set<String> expected = new TreeSet<>(List.of(
+                "riparian/desert_bank_plants.json",
+                "riparian/desert_bank_soil.json",
+                "underground_river/ice.json",
+                "underground_river/lanterns.json"));
+        Set<String> actual = jsonFiles(featureRoot);
+        assertTrue(expected.equals(actual),
+                "26.3 Latitude feature registry must contain exactly its four owned entries: " + actual);
+
+        for (String relative : expected) {
+            JsonObject feature = JsonParser.parseString(
+                    read(featureRoot.resolve(relative).toString())).getAsJsonObject();
+            assertTrue(feature.has("type") && feature.get("type").isJsonPrimitive(),
+                    "feature must retain its registered type: " + relative);
+            assertFalse(feature.has("config"),
+                    "26.3 feature configuration must be inline, not nested under config: " + relative);
+            String encoded = feature.toString();
+            assertFalse(encoded.contains("minecraft:simple_state_provider")
+                            || encoded.contains("minecraft:rule_based_state_provider")
+                            || encoded.contains("minecraft:weighted_state_provider")
+                            || encoded.contains("\"Name\"")
+                            || encoded.contains("\"Properties\""),
+                    "26.3 feature must use current provider types and block-state field names: " + relative);
+        }
+
+        Path placedRoot = Path.of("src/main/resources/data/globe/worldgen/placed_feature");
+        for (String relative : expected) {
+            JsonObject placed = JsonParser.parseString(
+                    read(placedRoot.resolve(relative).toString())).getAsJsonObject();
+            String expectedId = "globe:" + relative.substring(0, relative.length() - ".json".length());
+            assertEquals(expectedId, placed.get("feature").getAsString(),
+                    "placed feature must resolve to the moved 26.3 feature entry: " + relative);
+            assertTrue(placed.has("placement") && placed.get("placement").isJsonArray(),
+                    "placed feature must retain its placement pipeline: " + relative);
+            assertFalse(placed.toString().contains("minecraft:random_offset"),
+                    "26.3 placed feature must not use the removed random_offset type: " + relative);
+        }
+    }
+
+    private static Set<String> jsonFiles(Path root) throws Exception {
+        Set<String> files = new TreeSet<>();
+        if (!Files.exists(root)) {
+            return files;
+        }
+        try (var stream = Files.walk(root)) {
+            stream.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith(".json"))
+                    .forEach(path -> files.add(
+                            root.relativize(path).toString().replace('\\', '/')));
+        }
+        return files;
     }
 
     private static void structureAdmissionUsesResolvedLatitudeBiomeSource() throws Exception {

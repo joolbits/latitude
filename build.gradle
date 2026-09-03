@@ -657,8 +657,18 @@ tasks.register('latitudeWorldgenAuthorityPolicyTest', JavaExec) {
     dependsOn tasks.named('compileLatitudeWorldgenAuthorityPolicyTest')
 }
 
+tasks.register('latitudeWorldgenFeatureDataTest', JavaExec) {
+    group = 'verification'
+    description = 'Prove Latitude feature resources use the current registry and inline grammar'
+    classpath = files(latitudeWorldgenAuthorityPolicyTestClasses) + sourceSets.main.runtimeClasspath
+    mainClass = 'com.example.globe.world.WorldgenAuthorityPolicyTest'
+    args 'feature-data'
+    dependsOn tasks.named('compileLatitudeWorldgenAuthorityPolicyTest')
+}
+
 tasks.named('check').configure {
     dependsOn tasks.named('latitudeWorldgenAuthorityPolicyTest')
+    dependsOn tasks.named('latitudeWorldgenFeatureDataTest')
 }
 
 def latitudeDevToolPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeDevToolPolicyTest')
