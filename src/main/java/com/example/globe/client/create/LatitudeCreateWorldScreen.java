@@ -170,6 +170,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private Button sizePrevBtn;
     private Button sizeNextBtn;
     private final List<ZoneRowWidget> zoneRows = new ArrayList<>();
+    private final List<TabHitboxWidget> tabHitboxes = new ArrayList<>();
     // Settings controls participate in input, focus, and narration through Screen.children(), but have one
     // manual render path inside the Settings scissor so partially visible controls clip instead of popping.
     private final List<AbstractWidget> settingsScrollWidgets = new ArrayList<>();
@@ -252,7 +253,6 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int activeTab; // 0=World + Spawn Zone, 1=Settings
     private static final String[] TAB_LABELS = {"World", "Settings"};
     private static final int TAB_H = 20;
-    private static final int TAB_GAP = 2;
     private int tabStripY;
     private int tabPanelTop; // content area top (below tab strip)
     private long debugSwitchSampleDeadlineMs;
@@ -552,6 +552,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                     this.getClass().getName(), this.holder);
         }
         zoneRows.clear();
+        tabHitboxes.clear();
         // Screen.rebuildWidgets() clears Screen-owned collections, not this private render registry.
         // Clear it on every init so resize/sub-screen return cannot leave a frozen ghost layer.
         settingsScrollWidgets.clear();
@@ -566,9 +567,9 @@ public class LatitudeCreateWorldScreen extends Screen {
                 CreateWorldIntroClock.beginForOwner(this, Util.getMillis());
             }
         }
-        int headerGap = scaledUi(6);
-        int bottomMargin = scaledUi(28);
-        int btnBottomOffset = scaledUi(20);
+        int headerGap = scaledUi(CreateWorldScreenUiPolicy.HEADER_GAP);
+        int bottomMargin = scaledUi(CreateWorldScreenUiPolicy.PANEL_BOTTOM_MARGIN);
+        int btnBottomOffset = scaledUi(CreateWorldScreenUiPolicy.BUTTON_ROW_TOP_FROM_BOTTOM);
         int fieldGap1 = scaledUi(38);
         int labelFieldGap = scaledUi(22);
         int fieldH = Math.max(16, scaledUi(16));
@@ -577,9 +578,11 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         int bottomY = this.height - btnBottomOffset;
         int cx = this.width / 2;
-        paneGap = scaledUi(4);
-        paneStripViewportLeft = 8;
-        paneStripViewportRight = Math.max(paneStripViewportLeft + 1, this.width - 8);
+        paneGap = scaledUi(CreateWorldScreenUiPolicy.PANE_GAP);
+        paneStripViewportLeft = CreateWorldScreenUiPolicy.EDGE_MARGIN;
+        paneStripViewportRight = Math.max(
+                paneStripViewportLeft + 1,
+                this.width - CreateWorldScreenUiPolicy.EDGE_MARGIN);
         paneStripViewportWidth = Math.max(1, paneStripViewportRight - paneStripViewportLeft);
         paneStripContentWidth = paneStripViewportWidth;
         int guiScale = Minecraft.getInstance().getWindow().getGuiScale();
@@ -628,19 +631,31 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (paneStripScroll > maxPaneStripScroll) paneStripScroll = maxPaneStripScroll;
         updatePaneStripLayout();
 
+        if (tabbedMode) {
+            int tabX = paneStripViewportLeft;
+            int[] widths = tabWidths();
+            for (int i = 0; i < widths.length; i++) {
+                TabHitboxWidget hitbox = new TabHitboxWidget(
+                        tabX, tabStripY, widths[i], TAB_H, i);
+                tabHitboxes.add(hitbox);
+                this.addRenderableWidget(hitbox);
+                tabX += widths[i] + CreateWorldScreenUiPolicy.TAB_GAP;
+            }
+        }
+
         // Input field area within left panel
         int inputX = leftX + 4;
         int inputW = leftW - 8;
 
         // ═══════════════════════════════════════════════
         // Frozen tab order — widgets added in exact sequence:
-        // 1. World Name  2. Seed  3. Size ◀  4. Size ▶
-        // 5–9. Zone rows (Tropical → Polar)
-        // 10–18. Settings rail
-        // 17. Begin Expedition  18. Cancel
+        // 1–2. Tabs when present  3. World Name  4. Seed  5. Size ◀  6. Size ▶
+        // 7–11. Zone rows (Tropical → Polar)
+        // 12–20. Settings rail
+        // 21. Begin Expedition  22. Cancel
         // ═══════════════════════════════════════════════
 
-        // ── 1. World Name + 2. Seed (share one row to free up vertical space) ──
+        // ── 3. World Name + 4. Seed (share one row to free up vertical space) ──
         worldFieldY = panelTop + labelFieldGap;
         seedFieldY = worldFieldY;
         int[] nameSeedSplit = nameSeedSplit(inputW);
@@ -658,14 +673,14 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.seedField.setResponder(text -> seedInput = text);
         this.addRenderableWidget(this.seedField);
 
-        // ── 3. Size ◀ ──
+        // ── 5. Size ◀ ──
         sizeFieldY = worldFieldY + fieldGap1;
         sizePrevBtn = Button.builder(Component.literal("\u25C0"), b -> cycleSize(-1))
                 .bounds(inputX, sizeFieldY, stepperBtnW, btnH)
                 .build();
         this.addRenderableWidget(sizePrevBtn);
 
-        // ── 4. Size ▶ ──
+        // ── 6. Size ▶ ──
         sizeNextBtn = Button.builder(Component.literal("\u25B6"), b -> cycleSize(1))
                 .bounds(inputX + inputW - stepperBtnW, sizeFieldY, stepperBtnW, btnH)
                 .build();
@@ -758,7 +773,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             applyTabbedVisibility();
         }
 
-        // ── 17. Create World ──
+        // ── 21. Create World ──
         int btnSpacing = scaledUi(8);
         int beginW = Math.max(120, this.font.width("Create World") + 20);
         int cancelW = Math.max(70, this.font.width("Cancel") + 20);
@@ -769,7 +784,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 .build();
         this.addRenderableWidget(this.createWorldBtn);
 
-        // ── 18. Cancel ──
+        // ── 22. Cancel ──
         this.cancelBtn = Button.builder(Component.literal("Cancel"), b -> onClose())
                 .bounds(btnStartX + beginW + btnSpacing, bottomY, cancelW, btnH)
                 .build();
@@ -1265,6 +1280,10 @@ public class LatitudeCreateWorldScreen extends Screen {
      *  frame the intro is NOT active, or the very first intro playthrough permanently strands the
      *  player with no way to create or cancel the world. */
     private void applyIntroVisibility() {
+        boolean showTabs = tabbedMode && !introActive();
+        for (TabHitboxWidget tab : tabHitboxes) {
+            setTabbedWidgetVisible(tab, showTabs);
+        }
         if (!introActive()) {
             setTabbedWidgetVisible(createWorldBtn, true);
             setTabbedWidgetVisible(cancelBtn, true);
@@ -1719,9 +1738,6 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private boolean globe$dispatchClick(MouseButtonEvent click, boolean doubled) {
-        if (click.button() == 0 && handleTabClick(click.x(), click.y())) {
-            return true;
-        }
         if (click.button() == 0
                 && getPaneStripMaxScroll() > 0
                 && click.x() >= paneStripScrollbarX
@@ -2609,7 +2625,8 @@ public class LatitudeCreateWorldScreen extends Screen {
      *  it is anchored to -- instead of leaving a rounding sliver unmatched by any tab. */
     private int[] tabWidths() {
         int tabCount = TAB_LABELS.length;
-        int totalW = paneStripViewportWidth - TAB_GAP * (tabCount - 1);
+        int totalW = paneStripViewportWidth
+                - CreateWorldScreenUiPolicy.TAB_GAP * (tabCount - 1);
         int baseW = totalW / tabCount;
         int[] widths = new int[tabCount];
         for (int i = 0; i < tabCount; i++) {
@@ -2647,24 +2664,8 @@ public class LatitudeCreateWorldScreen extends Screen {
             int labelX = x + (tabW - labelW) / 2;
             int labelY = tabStripY + (TAB_H - uiFontHeight()) / 2;
             drawUiText(context, label, labelX, labelY, labelColor, active);
-            x += tabW + TAB_GAP;
+            x += tabW + CreateWorldScreenUiPolicy.TAB_GAP;
         }
-    }
-
-    private boolean handleTabClick(double mouseX, double mouseY) {
-        if (!tabbedMode) return false;
-        if (mouseY < tabStripY || mouseY >= tabStripY + TAB_H) return false;
-        int[] tabWidths = tabWidths();
-        int x = paneStripViewportLeft;
-        for (int i = 0; i < tabWidths.length; i++) {
-            int tabW = tabWidths[i];
-            if (mouseX >= x && mouseX < x + tabW) {
-                switchTab(i);
-                return true;
-            }
-            x += tabW + TAB_GAP;
-        }
-        return false;
     }
 
     private void drawHorizontalScrollbar(GuiGraphicsExtractor context) {
@@ -2723,6 +2724,43 @@ public class LatitudeCreateWorldScreen extends Screen {
             this.captionY = captionY;
             this.labelScale = labelScale;
             this.captionScale = captionScale;
+        }
+    }
+
+    private class TabHitboxWidget extends AbstractWidget {
+        private final int tabIndex;
+
+        TabHitboxWidget(int x, int y, int width, int height, int tabIndex) {
+            super(x, y, width, height, Component.literal(TAB_LABELS[tabIndex]));
+            this.tabIndex = tabIndex;
+        }
+
+        @Override
+        public void onClick(MouseButtonEvent click, boolean doubled) {
+            switchTab(tabIndex);
+        }
+
+        @Override
+        public boolean keyPressed(net.minecraft.client.input.KeyEvent input) {
+            if (!this.isActive() || !input.isSelection()) {
+                return false;
+            }
+            this.playDownSound(Minecraft.getInstance().getSoundManager());
+            switchTab(tabIndex);
+            return true;
+        }
+
+        @Override
+        protected void extractWidgetRenderState(
+                GuiGraphicsExtractor context, int mouseX, int mouseY, float deltaTicks) {
+            // The parent screen owns the hand-drawn tab appearance. This widget owns only the
+            // standard Minecraft hitbox, focus, narration, and activation path.
+            this.handleCursor(context);
+        }
+
+        @Override
+        protected void updateWidgetNarration(NarrationElementOutput builder) {
+            this.defaultButtonNarrationText(builder);
         }
     }
 

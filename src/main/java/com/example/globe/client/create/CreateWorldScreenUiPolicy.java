@@ -10,6 +10,13 @@ package com.example.globe.client.create;
  * widget, has no counterpart on this line -- the rules panel here uses plain {@code Button}s.</p>
  */
 final class CreateWorldScreenUiPolicy {
+    static final int EDGE_MARGIN = 4;
+    static final int HEADER_GAP = 2;
+    static final int PANEL_BOTTOM_MARGIN = 24;
+    static final int BUTTON_ROW_TOP_FROM_BOTTOM = 20;
+    static final int PANE_GAP = 2;
+    static final int TAB_GAP = 1;
+
     private CreateWorldScreenUiPolicy() {
     }
 
