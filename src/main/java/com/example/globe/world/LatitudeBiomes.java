@@ -577,6 +577,7 @@ public final class LatitudeBiomes {
         return biome != null && (
                 isBiomeId(biome, "minecraft:dark_forest")
                         || isBiomeId(biome, "minecraft:forest")
+                || isBiomeId(biome, DappledForestPlacementPolicy.BIOME_ID)
                 || isBiomeId(biome, "minecraft:birch_forest")
                 || isBiomeId(biome, "minecraft:old_growth_birch_forest")
                 || isBiomeId(biome, "minecraft:flower_forest")
@@ -1014,7 +1015,10 @@ public final class LatitudeBiomes {
                     && province == ProvinceAuthority.Province.WARM_WET;
             case SUBTROPICAL_HUMID_LOWLAND -> band == BAND_SUBTROPICAL && !mountain
                     && province != ProvinceAuthority.Province.WARM_DRY;
-            case TEMPERATE_LOWLAND -> band == BAND_TEMPERATE && !mountain;
+            case TEMPERATE_LOWLAND -> band == BAND_TEMPERATE && !mountain
+                    && (!DappledForestPlacementPolicy.BIOME_ID.equals(biomeId)
+                    || dappledForestEligible(
+                            blockX, blockZ, ACTIVE_RADIUS_BLOCKS, band, mountain, sampler));
             case TEMPERATE_WETLAND -> band == BAND_TEMPERATE && !mountain
                     && wetlandProvinceEligible(blockX, blockZ)
                     && evaluateSwamp(blockX, blockZ, sampler).allow();
@@ -4486,6 +4490,15 @@ public final class LatitudeBiomes {
                 blockX,
                 blockZ,
                 landBandIndex);
+        out = enforceDappledForestPlacement(
+                biomeRegistry,
+                out,
+                blockX,
+                blockZ,
+                effectiveRadius,
+                landBandIndex,
+                mountainLikeAfterFinalTruth,
+                sampler);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -5240,6 +5253,15 @@ public final class LatitudeBiomes {
                 blockX,
                 blockZ,
                 landBandIndex);
+        out = enforceDappledForestPlacement(
+                biomePool,
+                out,
+                blockX,
+                blockZ,
+                effectiveRadius,
+                landBandIndex,
+                mountainLikeAfterFinalTruth,
+                sampler);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -8048,6 +8070,7 @@ public final class LatitudeBiomes {
         List<Holder<Biome>> filtered = new ArrayList<>(pool.size());
         for (Holder<Biome> entry : pool) {
             if (!isBiomeId(entry, "minecraft:forest")
+                    && !isBiomeId(entry, DappledForestPlacementPolicy.BIOME_ID)
                     && !isBiomeId(entry, "minecraft:birch_forest")
                     && !isBiomeId(entry, "minecraft:flower_forest")
                     && !isBiomeId(entry, "minecraft:dark_forest")
@@ -9911,10 +9934,22 @@ public final class LatitudeBiomes {
     }
 
     private static double subtropicalTemperateBoundaryDeltaBlocks(int blockX, int blockZ, int effectiveRadius) {
+        return warpedBoundaryDeltaBlocks(blockX, blockZ, effectiveRadius, 1);
+    }
+
+    private static double temperateSubpolarBoundaryDeltaBlocks(int blockX, int blockZ, int effectiveRadius) {
+        return warpedBoundaryDeltaBlocks(blockX, blockZ, effectiveRadius, 2);
+    }
+
+    private static double warpedBoundaryDeltaBlocks(
+            int blockX,
+            int blockZ,
+            int effectiveRadius,
+            int boundaryIndex) {
         if (effectiveRadius <= 0) {
             return Double.POSITIVE_INFINITY;
         }
-        int boundaryBlocks = bandBoundaryBlocks(1, effectiveRadius);
+        int boundaryBlocks = bandBoundaryBlocks(boundaryIndex, effectiveRadius);
         double halfWidthBlocks = BLEND_TRANSITION_WIDTH_BLOCKS * 0.5;
         if (!(halfWidthBlocks > 0.0)) {
             return Math.abs(blockZ) - boundaryBlocks;
@@ -9929,6 +9964,119 @@ public final class LatitudeBiomes {
         double maxWarp = Math.min(WARP_AMPLITUDE_BLOCKS, halfWidthBlocks);
         double effectiveBoundary = boundaryBlocks + (warpNoise * maxWarp);
         return Math.abs(blockZ) - effectiveBoundary;
+    }
+
+    private static boolean dappledForestEligible(
+            int blockX,
+            int blockZ,
+            int effectiveRadius,
+            int landBandIndex,
+            boolean mountainLike,
+            Climate.Sampler sampler) {
+        boolean temperateLowland = landBandIndex == BAND_TEMPERATE
+                && !mountainLike
+                && sampler != null
+                && !dappledWetlandConflict(blockX, blockZ, effectiveRadius, sampler)
+                && !paleGardenRegionHit(
+                        WORLD_SEED, blockX, blockZ, effectiveRadius, sampler);
+        return DappledForestPlacementPolicy.isEligible(
+                temperateLowland,
+                temperateSubpolarBoundaryDeltaBlocks(blockX, blockZ, effectiveRadius),
+                BLEND_TRANSITION_WIDTH_BLOCKS * 0.5);
+    }
+
+    /**
+     * True only where the ordinary temperate wetland pre-pass would claim this column before
+     * land coverage runs. General swamp-friendly climate is not enough: excluding every such
+     * column would make Dappled impossible in humid cool country even when no swamp is selected.
+     */
+    private static boolean dappledWetlandConflict(
+            int blockX,
+            int blockZ,
+            int effectiveRadius,
+            Climate.Sampler sampler) {
+        if (sampler == null || effectiveRadius <= 0) {
+            return false;
+        }
+        Climate.TargetPoint point = sampler.sample(
+                blockX >> 2, SURFACE_CLASSIFY_Y >> 2, blockZ >> 2);
+        double continentalness = Climate.unquantizeCoord(point.continentalness());
+        double erosion = Climate.unquantizeCoord(point.erosion());
+        double weirdness = Climate.unquantizeCoord(point.weirdness());
+        double tBase = Math.abs((double) blockZ) / (double) effectiveRadius;
+        double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
+        return swampPatchHere(WORLD_SEED, blockX, blockZ)
+                && swampOkInPatchScaled(continentalness, erosion, weirdness)
+                && wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ)
+                < scaledWetlandThresholdForBand(BAND_TEMPERATE, t);
+    }
+
+    static boolean dappledForestEligibleForPolicyTest(
+            int blockX,
+            int blockZ,
+            int effectiveRadius,
+            int landBandIndex,
+            boolean mountainLike,
+            Climate.Sampler sampler) {
+        return dappledForestEligible(
+                blockX, blockZ, effectiveRadius, landBandIndex, mountainLike, sampler);
+    }
+
+    static double dappledForestBoundaryDeltaForPolicyTest(
+            int blockX,
+            int blockZ,
+            int effectiveRadius) {
+        return temperateSubpolarBoundaryDeltaBlocks(blockX, blockZ, effectiveRadius);
+    }
+
+    private static Holder<Biome> enforceDappledForestPlacement(
+            Registry<Biome> biomes,
+            Holder<Biome> candidate,
+            int blockX,
+            int blockZ,
+            int effectiveRadius,
+            int landBandIndex,
+            boolean mountainLike,
+            Climate.Sampler sampler) {
+        if (!isBiomeId(candidate, DappledForestPlacementPolicy.BIOME_ID)
+                || dappledForestEligible(
+                        blockX, blockZ, effectiveRadius, landBandIndex, mountainLike, sampler)) {
+            return candidate;
+        }
+        for (String fallbackId : new String[]{"minecraft:forest", "minecraft:birch_forest", "minecraft:plains"}) {
+            try {
+                Holder<Biome> fallback = biome(biomes, fallbackId);
+                setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "dappled_cool_border", fallback);
+                return fallback;
+            } catch (Throwable ignored) {
+                // Try the next vanilla temperate lowland identity.
+            }
+        }
+        return candidate;
+    }
+
+    private static Holder<Biome> enforceDappledForestPlacement(
+            Collection<Holder<Biome>> biomes,
+            Holder<Biome> candidate,
+            int blockX,
+            int blockZ,
+            int effectiveRadius,
+            int landBandIndex,
+            boolean mountainLike,
+            Climate.Sampler sampler) {
+        if (!isBiomeId(candidate, DappledForestPlacementPolicy.BIOME_ID)
+                || dappledForestEligible(
+                        blockX, blockZ, effectiveRadius, landBandIndex, mountainLike, sampler)) {
+            return candidate;
+        }
+        for (String fallbackId : new String[]{"minecraft:forest", "minecraft:birch_forest", "minecraft:plains"}) {
+            Holder<Biome> fallback = entryById(biomes, fallbackId);
+            if (fallback != null) {
+                setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "dappled_cool_border", fallback);
+                return fallback;
+            }
+        }
+        return candidate;
     }
 
     private static boolean isTemperateWarmEdgeShoulderCell(int blockX, int blockZ,
@@ -12788,6 +12936,7 @@ public final class LatitudeBiomes {
             }
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
+                    || isBiomeId(pick, DappledForestPlacementPolicy.BIOME_ID)
                     || isBiomeId(pick, "minecraft:birch_forest")
                     || isBiomeId(pick, "minecraft:old_growth_birch_forest")
                     || isBiomeId(pick, "minecraft:flower_forest")) {
@@ -12829,6 +12978,7 @@ public final class LatitudeBiomes {
         if (bandIndex == BAND_SUBPOLAR) {
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
+                    || isBiomeId(pick, DappledForestPlacementPolicy.BIOME_ID)
                     || isBiomeId(pick, "minecraft:birch_forest")
                     || isBiomeId(pick, "minecraft:old_growth_birch_forest")
                     || isBiomeId(pick, "minecraft:flower_forest")) {
@@ -12974,6 +13124,7 @@ public final class LatitudeBiomes {
             }
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
+                    || isBiomeId(pick, DappledForestPlacementPolicy.BIOME_ID)
                     || isBiomeId(pick, "minecraft:birch_forest")
                     || isBiomeId(pick, "minecraft:old_growth_birch_forest")
                     || isBiomeId(pick, "minecraft:flower_forest")) {
@@ -13004,6 +13155,7 @@ public final class LatitudeBiomes {
         if (bandIndex == 3) {
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
+                    || isBiomeId(pick, DappledForestPlacementPolicy.BIOME_ID)
                     || isBiomeId(pick, "minecraft:birch_forest")
                     || isBiomeId(pick, "minecraft:old_growth_birch_forest")
                     || isBiomeId(pick, "minecraft:flower_forest")) {

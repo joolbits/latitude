@@ -45,6 +45,7 @@ final class BiomeProviderSelectionPolicyTest {
 
     static void run() throws Exception {
         descriptorAdmissionIsClosedAndCanonical();
+        dappledForestHasOneCoolBorderHome();
         wetlandRoutesMatchRealBiomeClimate();
         climateLowlandDescriptorsRemainRouteBounded();
         everySupportedStackGetsEqualRouteTickets();
@@ -120,6 +121,199 @@ final class BiomeProviderSelectionPolicyTest {
                 "a descriptorless saved row is rejected");
         assertThrows(() -> BiomeSelectionProfile.decode("provider_ticket_v1\nTEMPERATE_LOWLAND|minecraft:forest\nTEMPERATE_LOWLAND|minecraft:forest"),
                 "duplicate saved route rows are rejected");
+    }
+
+    private static void dappledForestHasOneCoolBorderHome() throws Exception {
+        String dappled = DappledForestPlacementPolicy.BIOME_ID;
+        BiomeDescriptorLedger.Descriptor descriptor = BiomeDescriptorLedger.descriptor(dappled);
+        assertTrue(descriptor != null, "Dappled Forest has a reviewed catalog entry");
+        assertEquals(Set.of(BiomeRoute.TEMPERATE_LOWLAND), descriptor.routes(),
+                "Dappled Forest owns one existing lowland route and no generic cold route");
+        assertEquals(BiomeDescriptorLedger.Terrain.LOWLAND, descriptor.terrain(),
+                "Dappled Forest is lowland terrain");
+        assertEquals(BiomeDescriptorLedger.Water.LAND, descriptor.water(),
+                "Dappled Forest is land");
+        assertEquals(BiomeDescriptorLedger.Family.FOREST, descriptor.family(),
+                "Dappled Forest belongs to the forest family");
+        assertEquals(BiomeRoute.TEMPERATE_LOWLAND,
+                VanillaBiomeCoveragePlan.requiredRoutes().get(dappled),
+                "the guarantee planner uses the catalog route");
+        assertTrue(VanillaBiomeRepresentationProfile.mandatoryLandIds().contains(dappled),
+                "the unique poplar resource keeps Dappled exact in compact worlds");
+
+        String secondaryTag = Files.readString(Path.of(
+                "src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_secondary.json"));
+        assertEquals(1, occurrences(secondaryTag, "\"minecraft:dappled_forest\""),
+                "Dappled Forest appears exactly once in the secondary temperate pool");
+
+        assertTrue(DappledForestPlacementPolicy.isEligible(true, -704.0, 704.0)
+                        && DappledForestPlacementPolicy.isEligible(true, 0.0, 704.0),
+                "the full equatorward half of the transition envelope is eligible");
+        assertFalse(DappledForestPlacementPolicy.isEligible(true, -704.01, 704.0),
+                "ordinary temperate country outside the cool-border envelope is forbidden");
+        assertFalse(DappledForestPlacementPolicy.isEligible(true, 0.01, 704.0),
+                "the poleward half of the warped boundary is forbidden");
+        assertFalse(DappledForestPlacementPolicy.isEligible(false, -200.0, 704.0),
+                "upland or non-temperate terrain cannot borrow the Dappled exception");
+
+        BiomeSelectionProfile providers = BiomeSelectionProfile.capture(
+                registryFor(Set.of("biomesoplenty", "terralith")));
+        List<String> withDappled = providers.entries(BiomeRoute.TEMPERATE_LOWLAND);
+        List<String> withoutDappled = withDappled.stream()
+                .filter(id -> !dappled.equals(id))
+                .toList();
+        BiomeProviderSelectionPolicy.Pool before =
+                BiomeProviderSelectionPolicy.createPool(withoutDappled);
+        BiomeProviderSelectionPolicy.Pool after =
+                BiomeProviderSelectionPolicy.createPool(withDappled);
+        int providerSamples = 0;
+        for (long seed : AUDIT_SEEDS) {
+            for (int x : NONADJACENT_POINTS) {
+                int z = x / 2;
+                String oldWinner = BiomeProviderSelectionPolicy.selectId(
+                        before, seed, x, z, 2, "TEMPERATE_LOWLAND", 0L);
+                String newWinner = BiomeProviderSelectionPolicy.selectId(
+                        after, seed, x, z, 2, "TEMPERATE_LOWLAND", 0L);
+                assertEquals(namespace(oldWinner), namespace(newWinner),
+                        "adding a Minecraft biome cannot move a cell to another provider");
+                if (!oldWinner.startsWith("minecraft:")) {
+                    assertEquals(oldWinner, newWinner,
+                            "a non-Minecraft winner stays byte-for-byte the same");
+                }
+                providerSamples++;
+            }
+        }
+        assertTrue(providerSamples >= 200,
+                "the provider-territory comparison must cover a meaningful coordinate matrix");
+
+        net.minecraft.SharedConstants.tryDetectVersion();
+        net.minecraft.server.Bootstrap.bootStrap();
+        MappedRegistry<Biome> registry = testBiomeRegistry();
+        List<Holder<Biome>> pool = registry.listElements()
+                .map(entry -> (Holder<Biome>) entry)
+                .toList();
+        Holder<Biome> donor = testBiomeHolder(registry, "minecraft:plains");
+        Holder<Biome> dappledDonor = testBiomeHolder(registry, dappled);
+        BiomeSelectionProfile vanilla = BiomeSelectionProfile.capture(
+                registry.keySet().stream().map(Identifier::toString).toList());
+        for (int radius : new int[]{3_750, 5_000, 7_500, 10_000, 15_000, 20_000}) {
+            for (long seed : new long[]{3L, 131L, 461L}) {
+                VanillaBiomeRepresentationProfile representation =
+                        VanillaBiomeRepresentationProfile.capture(radius, seed, vanilla);
+                assertTrue(representation.landTargets().containsKey(dappled),
+                        "every fresh globe size keeps an exact Dappled target");
+                if (representation.worldSize().compact()) {
+                    assertTrue(representation.landTargets().size()
+                                    <= representation.worldSize().compactLandBudget(),
+                            "Dappled uses the existing compact budget instead of enlarging it");
+                }
+                WetlandEvidence wetland = new WetlandEvidence();
+                Climate.Sampler provisionalSampler = coverageSampler(null);
+                try {
+                    LatitudeBiomes.activateWorldgenContext(
+                            radius,
+                            seed,
+                            LatitudeWorldState.WorldgenPolicyVersion
+                                    .PROVIDER_TICKET_V4_CAVE_COVERAGE,
+                            vanilla,
+                            representation,
+                            CaveBiomeRepresentationProfile.capture(radius, vanilla),
+                            provisionalSampler,
+                            null,
+                            63);
+                    VanillaBiomeCoveragePlan.Anchor swamp =
+                            LatitudeBiomes.activeVanillaCoveragePlanForPolicyTest().anchors().stream()
+                                    .filter(value -> value.route() == BiomeRoute.TEMPERATE_WETLAND)
+                                    .findFirst()
+                                    .orElseThrow();
+                    wetland.add(new WetlandFootprint(
+                            swamp.blockX(), swamp.blockZ(), swamp.radiusBlocks()));
+                } finally {
+                    LatitudeBiomes.clearWorldgenContext();
+                }
+                Climate.Sampler sampler = coverageSampler(wetland);
+                try {
+                    LatitudeBiomes.activateWorldgenContext(
+                            radius,
+                            seed,
+                            LatitudeWorldState.WorldgenPolicyVersion
+                                    .PROVIDER_TICKET_V4_CAVE_COVERAGE,
+                            vanilla,
+                            representation,
+                            CaveBiomeRepresentationProfile.capture(radius, vanilla),
+                            sampler,
+                            null,
+                            63);
+                    VanillaBiomeCoveragePlan plan =
+                            LatitudeBiomes.activeVanillaCoveragePlanForPolicyTest();
+                    assertTrue(plan != null && plan.complete(),
+                            "the Dappled guarantee must fit alongside every existing target at radius="
+                                    + radius + " seed=" + seed + " missing="
+                                    + (plan == null ? "<no plan>" : plan.missingBiomeIds()));
+                    assertEquals(dappled,
+                            plan.anchors().get(plan.anchors().size() - 1).biomeId(),
+                            "Dappled reserves space only after every established biome guarantee");
+                    VanillaBiomeCoveragePlan.Anchor anchor = plan.anchors().stream()
+                            .filter(value -> dappled.equals(value.biomeId()))
+                            .findFirst()
+                            .orElseThrow(() -> new AssertionError(
+                                    "the fresh-world Dappled anchor is missing at radius=" + radius
+                                            + " seed=" + seed));
+                    assertTrue(anchor.radiusBlocks() >= 96,
+                            "Dappled receives a province, not a token cell");
+                    if (representation.worldSize().compact()) {
+                        assertEquals(96, anchor.radiusBlocks(),
+                                "compact Dappled keeps a substantial fixed footprint that fits "
+                                        + "inside the cool-border envelope");
+                    }
+                    int coreRadius = DappledForestPlacementPolicy.VISIBLE_CORE_RADIUS_BLOCKS;
+                    for (int offsetZ = -coreRadius; offsetZ <= coreRadius; offsetZ += 16) {
+                        for (int offsetX = -coreRadius; offsetX <= coreRadius; offsetX += 16) {
+                            int x = anchor.blockX() + offsetX;
+                            int z = anchor.blockZ() + offsetZ;
+                            assertTrue(LatitudeBiomes.dappledForestEligibleForPolicyTest(
+                                            x, z, radius, 2, false, sampler),
+                                    "the guarantee and final picker share the cool-border rule");
+                            double delta = LatitudeBiomes.dappledForestBoundaryDeltaForPolicyTest(
+                                    x, z, radius);
+                            assertTrue(delta >= -704.0 && delta <= 0.0,
+                                    "the guaranteed patch stays on the temperate side of the warped boundary");
+                            assertPickerPairReturns(
+                                    registry, pool, donor, x, z, radius, sampler, dappled,
+                                    "Dappled survives both final picker paths inside its guarantee");
+                        }
+                    }
+                } finally {
+                    LatitudeBiomes.clearWorldgenContext();
+                }
+            }
+        }
+
+        int radius = 10_000;
+        long seed = 131L;
+        Climate.Sampler sampler = coverageSampler(new WetlandEvidence());
+        try {
+            LatitudeBiomes.setWorldSeed(seed);
+            LatitudeBiomes.setRadius(radius);
+            assertNeitherPickerReturns(
+                    registry, pool, dappledDonor, 256, 4_000, radius, sampler, dappled,
+                    "Dappled cannot survive in ordinary warmer temperate country");
+            assertNeitherPickerReturns(
+                    registry, pool, dappledDonor, 256, 6_500, radius, sampler, dappled,
+                    "Dappled cannot survive beyond the cool-border window");
+        } finally {
+            LatitudeBiomes.clearWorldgenContext();
+        }
+
+        String source = Files.readString(Path.of(
+                "src/main/java/com/example/globe/world/LatitudeBiomes.java"));
+        String coverageEligibility = method(
+                source,
+                "private static boolean vanillaCoverageRouteEligible(String biomeId");
+        assertTrue(coverageEligibility.contains("dappledForestEligible("),
+                "the guarantee search calls the shared Dappled rule");
+        assertEquals(2, occurrences(source, "out = enforceDappledForestPlacement("),
+                "both final picker overloads enforce the shared Dappled rule");
     }
 
     /**
@@ -1574,8 +1768,8 @@ final class BiomeProviderSelectionPolicyTest {
         Set<String> classifiedSurface = new HashSet<>(VanillaBiomeCoveragePlan.requiredRoutes().keySet());
         classifiedSurface.addAll(VanillaSurfaceWaterCoveragePlan.requirements().keySet());
         classifiedSurface.add("minecraft:pale_garden");
-        assertEquals(51, classifiedSurface.size(),
-                "all 51 vanilla Overworld surface identities are classified by land, water, or Pale Garden authority");
+        assertEquals(52, classifiedSurface.size(),
+                "all 52 vanilla Overworld surface identities are classified by land, water, or Pale Garden authority");
         assertEquals(Set.of("minecraft:deep_dark", "minecraft:dripstone_caves",
                         "minecraft:lush_caves", "minecraft:sulfur_caves"),
                 VanillaBiomeRepresentationProfile.nativeUndergroundIds(),

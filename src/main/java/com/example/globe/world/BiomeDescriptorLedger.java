@@ -206,6 +206,7 @@ public final class BiomeDescriptorLedger {
             d("minecraft:sparse_jungle", r(BiomeRoute.TROPICAL_HUMID_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.JUNGLE),
             d("minecraft:bamboo_jungle", r(BiomeRoute.TROPICAL_HUMID_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.JUNGLE),
             d("minecraft:forest", r(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND, BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
+            d(DappledForestPlacementPolicy.BIOME_ID, r(BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("minecraft:birch_forest", r(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND, BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("minecraft:dark_forest", r(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND, BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),
             d("minecraft:flower_forest", r(BiomeRoute.SUBTROPICAL_HUMID_LOWLAND, BiomeRoute.TEMPERATE_LOWLAND), Terrain.LOWLAND, Water.LAND, Family.FOREST),

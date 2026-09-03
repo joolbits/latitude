@@ -91,7 +91,12 @@ public final class VanillaBiomeCoveragePlan {
         List<Anchor> anchors = new ArrayList<>();
         List<String> missing = new ArrayList<>();
         Map<String, SearchStats> diagnostics = new LinkedHashMap<>();
-        for (Map.Entry<String, BiomeRoute> requirement : targets.entrySet()) {
+        List<Map.Entry<String, BiomeRoute>> orderedTargets = new ArrayList<>(targets.entrySet());
+        orderedTargets.sort(Comparator
+                .comparingInt((Map.Entry<String, BiomeRoute> entry) ->
+                        DappledForestPlacementPolicy.BIOME_ID.equals(entry.getKey()) ? 1 : 0)
+                .thenComparing(Map.Entry::getKey));
+        for (Map.Entry<String, BiomeRoute> requirement : orderedTargets) {
             String biomeId = requirement.getKey();
             BiomeRoute route = requirement.getValue();
             String counterpart = VERIFIED_COUNTERPARTS.get(biomeId);
@@ -101,7 +106,8 @@ public final class VanillaBiomeCoveragePlan {
                 diagnostics.put(biomeId, new SearchStats(0, 0, 0));
                 continue;
             }
-            int provinceRadius = provinceRadius(radiusBlocks, route, compactRepresentation);
+            int provinceRadius = provinceRadius(
+                    radiusBlocks, biomeId, route, compactRepresentation);
             int[] stats = new int[3];
             Anchor anchor = findAnchor(radiusBlocks, provinceRadius, worldSeed, biomeId, route,
                     evaluator, anchors, stats);
@@ -158,6 +164,11 @@ public final class VanillaBiomeCoveragePlan {
     private static Anchor findAnchor(int worldRadius, int provinceRadius, long worldSeed,
                                      String biomeId, BiomeRoute route, CandidateEvaluator evaluator,
                                      List<Anchor> existing, int[] stats) {
+        if (DappledForestPlacementPolicy.BIOME_ID.equals(biomeId)) {
+            return findDappledAnchor(
+                    worldRadius, provinceRadius, worldSeed, biomeId, route,
+                    evaluator, existing, stats);
+        }
         long baseSalt = mix64(worldSeed ^ biomeId.hashCode() * 0x9e3779b97f4a7c15L);
         double[] latRange = latitudeRange(route);
         int margin = provinceRadius + 48;
@@ -186,6 +197,127 @@ public final class VanillaBiomeCoveragePlan {
                     mix64(baseSalt ^ 0x3c6ef372fe94f82bL));
         }
         return null;
+    }
+
+    /**
+     * Exhaustive, seed-rotated search of Dappled's narrow cool-border corridor.
+     *
+     * <p>The general planner spends a fixed number of random attempts across a route's whole
+     * latitude range. That is appropriate for broad routes, but Dappled intentionally owns only
+     * one half of one transition envelope and must also route around wetlands, mountains, Pale
+     * Garden country, and earlier same-route reservations. This sweep visits each aligned center
+     * in that corridor once, in a seed-dependent order, so a valid province cannot be missed by
+     * bad sampling luck.</p>
+     */
+    private static Anchor findDappledAnchor(
+            int worldRadius,
+            int provinceRadius,
+            long worldSeed,
+            String biomeId,
+            BiomeRoute route,
+            CandidateEvaluator evaluator,
+            List<Anchor> existing,
+            int[] stats) {
+        long baseSalt = mix64(worldSeed ^ biomeId.hashCode() * 0x9e3779b97f4a7c15L);
+        double[] latRange = latitudeRange(route);
+        int minimumAbsZ = align16Ceil((int) Math.ceil(worldRadius * latRange[0]));
+        int maximumAbsZ = align16((int) Math.floor(worldRadius * latRange[1]));
+        if (maximumAbsZ < minimumAbsZ) {
+            return null;
+        }
+        int zCount = (maximumAbsZ - minimumAbsZ) / 16 + 1;
+        int firstZ = (int) Long.remainderUnsigned(baseSalt, zCount);
+        int firstHemisphere = (baseSalt & 1L) == 0L ? -1 : 1;
+        int margin = provinceRadius + 48;
+        int usableRadius = worldRadius - margin;
+        if (usableRadius <= 0) {
+            return null;
+        }
+
+        for (int zOffset = 0; zOffset < zCount; zOffset++) {
+            int absZ = minimumAbsZ + ((firstZ + zOffset) % zCount) * 16;
+            for (int hemisphereOffset = 0; hemisphereOffset < 2; hemisphereOffset++) {
+                int hemisphere = hemisphereOffset == 0 ? firstHemisphere : -firstHemisphere;
+                int z = absZ * hemisphere;
+                int maxX = align16((int) Math.floor(Math.sqrt(Math.max(0.0,
+                        (double) usableRadius * usableRadius - (double) z * z))));
+                if (maxX < 0) continue;
+                int xCount = maxX * 2 / 16 + 1;
+                long rowSalt = mix64(baseSalt ^ ((long) z * 0xc2b2ae3d27d4eb4fL));
+                int firstX = (int) Long.remainderUnsigned(rowSalt, xCount);
+                for (int xOffset = 0; xOffset < xCount; xOffset++) {
+                    int x = -maxX + ((firstX + xOffset) % xCount) * 16;
+                    if (!evaluator.isEligible(biomeId, route, x, z)) continue;
+                    stats[0]++;
+                    if (!evaluator.isEligible(biomeId, route, x + provinceRadius / 2, z)
+                            || !evaluator.isEligible(biomeId, route, x - provinceRadius / 2, z)
+                            || !evaluator.isEligible(biomeId, route, x, z + provinceRadius / 2)
+                            || !evaluator.isEligible(biomeId, route, x, z - provinceRadius / 2)
+                            || !hasDappledVisibleCore(evaluator, biomeId, route, x, z)) {
+                        continue;
+                    }
+                    stats[1]++;
+                    if (!hasDappledDistinctVisibleCore(
+                            existing, route, x, z, provinceRadius)) {
+                        stats[2]++;
+                        continue;
+                    }
+                    return new Anchor(biomeId, route, x, z, provinceRadius,
+                            mix64(baseSalt ^ ((long) x << 32) ^ z));
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasDappledVisibleCore(
+            CandidateEvaluator evaluator,
+            String biomeId,
+            BiomeRoute route,
+            int centerX,
+            int centerZ) {
+        int radius = DappledForestPlacementPolicy.VISIBLE_CORE_RADIUS_BLOCKS;
+        for (int offsetZ = -radius; offsetZ <= radius; offsetZ += 16) {
+            for (int offsetX = -radius; offsetX <= radius; offsetX += 16) {
+                if (!evaluator.isEligible(
+                        biomeId, route, centerX + offsetX, centerZ + offsetZ)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static boolean hasDappledDistinctVisibleCore(
+            List<Anchor> existing,
+            BiomeRoute route,
+            int centerX,
+            int centerZ,
+            int provinceRadius) {
+        int radius = DappledForestPlacementPolicy.VISIBLE_CORE_RADIUS_BLOCKS;
+        for (int offsetZ = -radius; offsetZ <= radius; offsetZ += 16) {
+            for (int offsetX = -radius; offsetX <= radius; offsetX += 16) {
+                for (Anchor anchor : existing) {
+                    if (anchor.route() == route
+                            && anchor.contains(centerX + offsetX, centerZ + offsetZ)) {
+                        return false;
+                    }
+                }
+            }
+        }
+        int shoulder = provinceRadius / 2;
+        int[][] shoulderOffsets = {
+                {shoulder, 0}, {-shoulder, 0}, {0, shoulder}, {0, -shoulder}
+        };
+        for (int[] offset : shoulderOffsets) {
+            for (Anchor anchor : existing) {
+                if (anchor.route() == route
+                        && anchor.contains(centerX + offset[0], centerZ + offset[1])) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     static boolean hasDistinctVisibleCore(List<Anchor> existing, BiomeRoute route, int x, int z) {
@@ -221,8 +353,12 @@ public final class VanillaBiomeCoveragePlan {
         };
     }
 
-    private static int provinceRadius(int worldRadius, BiomeRoute route,
+    private static int provinceRadius(int worldRadius, String biomeId, BiomeRoute route,
                                       boolean compactRepresentation) {
+        if (compactRepresentation
+                && DappledForestPlacementPolicy.BIOME_ID.equals(biomeId)) {
+            return 96;
+        }
         return switch (route) {
             // Eight chunks across is still a visibly substantial province, but it fits the width
             // of a coherent vanilla ridge. Requiring the lowland radius here made every sampled
@@ -269,7 +405,7 @@ public final class VanillaBiomeCoveragePlan {
         add(routes, BiomeRoute.TROPICAL_HUMID_LOWLAND,
                 "minecraft:bamboo_jungle", "minecraft:jungle", "minecraft:sparse_jungle");
         add(routes, BiomeRoute.TEMPERATE_LOWLAND,
-                "minecraft:birch_forest", "minecraft:dark_forest", "minecraft:flower_forest",
+                "minecraft:birch_forest", "minecraft:dappled_forest", "minecraft:dark_forest", "minecraft:flower_forest",
                 "minecraft:forest", "minecraft:old_growth_birch_forest",
                 "minecraft:old_growth_pine_taiga", "minecraft:plains",
                 "minecraft:sunflower_plains", "minecraft:taiga");
@@ -322,6 +458,7 @@ public final class VanillaBiomeCoveragePlan {
     }
 
     private static int align16(int value) { return Math.floorDiv(value, 16) * 16; }
+    private static int align16Ceil(int value) { return -Math.floorDiv(-value, 16) * 16; }
     private static double unit(long value) { return (value >>> 11) * 0x1.0p-53; }
     private static long mix64(long value) {
         value = (value ^ (value >>> 30)) * 0xbf58476d1ce4e5b9L;

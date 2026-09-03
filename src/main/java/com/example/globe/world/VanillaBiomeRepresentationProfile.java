@@ -72,7 +72,8 @@ public final class VanillaBiomeRepresentationProfile {
         TEMPERATE_BIRCH(BiomeRoute.TEMPERATE_LOWLAND, Compromise.APPROVED_GAMEPLAY_COUNTERPART,
                 ids("minecraft:birch_forest", "minecraft:old_growth_birch_forest")),
         TEMPERATE_FOREST(BiomeRoute.TEMPERATE_LOWLAND, Compromise.REPRESENTATION_FAMILY,
-                ids("minecraft:dark_forest", "minecraft:flower_forest", "minecraft:forest")),
+                ids("minecraft:dappled_forest", "minecraft:dark_forest",
+                        "minecraft:flower_forest", "minecraft:forest")),
         TEMPERATE_PLAINS(BiomeRoute.TEMPERATE_LOWLAND, Compromise.REPRESENTATION_FAMILY,
                 ids("minecraft:plains", "minecraft:sunflower_plains"),
                 ids("biomesoplenty:pasture", "biomesoplenty:prairie")),
@@ -134,6 +135,12 @@ public final class VanillaBiomeRepresentationProfile {
 
     /** Exact identities whose unique resource/mechanic promise has no approved replacement. */
     private static final Set<String> MANDATORY_LAND = Set.of(
+            "minecraft:bamboo_jungle", "minecraft:dappled_forest", "minecraft:dark_forest",
+            "minecraft:desert", "minecraft:flower_forest", "minecraft:snowy_plains",
+            "minecraft:snowy_slopes", "minecraft:swamp");
+
+    /** The mandatory set encoded by 26.2 profiles, before Dappled Forest existed. */
+    private static final Set<String> PRE_DAPPLED_MANDATORY_LAND = Set.of(
             "minecraft:bamboo_jungle", "minecraft:dark_forest",
             "minecraft:desert", "minecraft:flower_forest", "minecraft:snowy_plains",
             "minecraft:snowy_slopes", "minecraft:swamp");
@@ -350,7 +357,10 @@ public final class VanillaBiomeRepresentationProfile {
                 throw new IllegalArgumentException("missing target tier: " + entry.getKey());
             }
         }
-        if (!landTargets.keySet().containsAll(MANDATORY_LAND)) {
+        boolean dappledRoster = landTargets.containsKey(DappledForestPlacementPolicy.BIOME_ID)
+                || omittedExactIds.containsKey(DappledForestPlacementPolicy.BIOME_ID);
+        Set<String> mandatory = dappledRoster ? MANDATORY_LAND : PRE_DAPPLED_MANDATORY_LAND;
+        if (!landTargets.keySet().containsAll(mandatory)) {
             throw new IllegalArgumentException("mandatory exact land identity omitted");
         }
         if (!hasCherryGameplayRepresentation()) {
@@ -378,7 +388,12 @@ public final class VanillaBiomeRepresentationProfile {
         }
         Set<String> accounted = new LinkedHashSet<>(landTargets.keySet());
         accounted.addAll(omittedExactIds.keySet());
-        if (!accounted.containsAll(VanillaBiomeCoveragePlan.requiredRoutes().keySet())) {
+        Set<String> requiredCoverage = new LinkedHashSet<>(
+                VanillaBiomeCoveragePlan.requiredRoutes().keySet());
+        if (!dappledRoster) {
+            requiredCoverage.remove(DappledForestPlacementPolicy.BIOME_ID);
+        }
+        if (!accounted.containsAll(requiredCoverage)) {
             throw new IllegalArgumentException("unclassified vanilla surface identity");
         }
     }
