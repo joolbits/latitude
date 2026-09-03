@@ -23,6 +23,7 @@ public final class DevToolPolicyTest {
         movementAndTransitionSamplingAreDeterministic();
         traceClockPreservesSameDimensionContinuity();
         caseSessionIsAppendOnlyOrderedAndExplicitlyClosed();
+        recorderLiteBindsPrivateIdentityAndRouteWithoutLeakingSummary();
         System.out.println("DEV_TOOL_POLICY_TEST_PASS assertions=" + assertions);
     }
 
@@ -484,7 +485,11 @@ public final class DevToolPolicyTest {
                                 + "\"event\":\"start\",\"case_id\":\"north-fog\","
                                 + "\"session_id\":\"north-fog\","
                                 + "\"timestamp_utc\":\"2026-07-19T12:00:00Z\","
-                                + "\"a_field\":\"first\",\"z_field\":\"last\""),
+                                + "\"a_field\":\"first\","
+                                + "\"owed_checkpoint_count\":\"0\","
+                                + "\"recorder_plan\":\"unplanned\","
+                                + "\"world_class\":\"unknown\","
+                                + "\"z_field\":\"last\""),
                 "base and extension field ordering is stable");
         expectTrue(lines.get(2).contains("\"event\":\"capture_requested\""),
                 "request event is explicitly named");
@@ -541,6 +546,145 @@ public final class DevToolPolicyTest {
         expectThrows(
                 () -> DevToolPolicy.CloseState.parse("maybe"),
                 "unknown close state is rejected");
+    }
+
+    private static void recorderLiteBindsPrivateIdentityAndRouteWithoutLeakingSummary()
+            throws Exception {
+        Path root = Files.createTempDirectory("latitude-recorder-lite");
+        Clock fixed = Clock.fixed(Instant.parse("2026-09-03T12:00:00Z"), ZoneOffset.UTC);
+        Path planPath = root.resolve("route.properties");
+        Files.writeString(planPath, String.join("\n",
+                "schema=latitude-recorder-plan-v1",
+                "case_id=private-world",
+                "world_class=fresh-control",
+                "checkpoint.registry-load=pass",
+                "checkpoint.atlas-bundle=complete",
+                "atlas.radius=7500",
+                "atlas.step=128",
+                ""));
+        RecorderLitePlan plan = RecorderLitePlan.load(planPath, "private-world");
+
+        Map<String, String> privateIdentity = Map.ofEntries(
+                Map.entry("artifact_sha256", "abc123"),
+                Map.entry("source_commit", "deadbeef"),
+                Map.entry("minecraft_version", "test-minecraft"),
+                Map.entry("latitude_version", "test-latitude"),
+                Map.entry("loader_version", "test-loader"),
+                Map.entry("provider_stack", "minecraft,test-provider"),
+                Map.entry("config_fingerprint", "config123"),
+                Map.entry("datapack_fingerprint", "packs123"));
+        Map<String, String> privateContext = Map.of(
+                "seed", "private-seed",
+                "player", "private-player",
+                "x", "private-x",
+                "machine_path", "/private/machine/path");
+        DevTestSession session = DevTestSession.startActive(
+                root,
+                "private-world",
+                300L,
+                privateContext,
+                plan,
+                privateIdentity,
+                fixed);
+
+        String manifest = Files.readString(session.directory().resolve("manifest.private.json"));
+        for (String required : List.of(
+                "latitude-recorder-private-v1",
+                "artifact_sha256",
+                "source_commit",
+                "minecraft_version",
+                "latitude_version",
+                "loader_version",
+                "provider_stack",
+                "config_fingerprint",
+                "datapack_fingerprint",
+                "fresh-control",
+                "registry-load",
+                "atlas-bundle",
+                "private-seed",
+                "private-player",
+                "/private/machine/path")) {
+            expectTrue(manifest.contains(required),
+                    "private manifest binds required identity/route field " + required);
+        }
+
+        DevTestSession.markActive("registry-load=pass", 301L, Map.of());
+        DevTestSession.requestCaptureActive("overview", true, 302L, Map.of());
+        DevTestSession.recordScreenshotActive(
+                "private/path/screenshot.png", "screen123", 302L, Map.of());
+        DevTestSession.markActive("atlas-bundle=complete", 303L, Map.of());
+        DevTestSession.finishActive(DevToolPolicy.CloseState.PASS, 304L, Map.of());
+
+        String summary = Files.readString(session.directory().resolve("summary.json"));
+        for (String required : List.of(
+                "latitude-recorder-summary-v1",
+                "case_label",
+                "session_label",
+                "registry-load",
+                "atlas-bundle",
+                "\"expected\":\"pass\"",
+                "\"observed\":\"pass\"",
+                "\"expected\":\"complete\"",
+                "\"observed\":\"complete\"",
+                "\"screenshot_count\":1",
+                "screenshot-001",
+                "screen123")) {
+            expectTrue(summary.contains(required),
+                    "shareable summary contains sanitized result field " + required);
+        }
+        for (String forbidden : List.of(
+                "private-world",
+                "private-seed",
+                "private-player",
+                "/private/machine/path",
+                "private/path/screenshot.png")) {
+            expectTrue(!summary.contains(forbidden),
+                    "shareable summary excludes private field " + forbidden);
+        }
+
+        Path missingPlanPath = root.resolve("missing-route.properties");
+        Files.writeString(missingPlanPath, String.join("\n",
+                "schema=latitude-recorder-plan-v1",
+                "case_id=missing-route",
+                "world_class=legacy-new-chunks",
+                "checkpoint.registry-load=pass",
+                "checkpoint.boundary=visible",
+                ""));
+        RecorderLitePlan missingPlan = RecorderLitePlan.load(missingPlanPath, "missing-route");
+        DevTestSession missing = DevTestSession.startActive(
+                root, "missing-route", 400L, Map.of(), missingPlan, Map.of(), fixed);
+        DevTestSession.markActive("registry-load=pass", 401L, Map.of());
+        expectThrows(
+                () -> DevTestSession.finishActive(
+                        DevToolPolicy.CloseState.PASS, 402L, Map.of()),
+                "Recorder Lite rejects PASS while an owed checkpoint is missing");
+        DevTestSession.finishActive(DevToolPolicy.CloseState.HOLD, 403L, Map.of());
+        expectTrue(
+                Files.readString(missing.directory().resolve("summary.json"))
+                        .contains("\"missing_checkpoint_count\":1"),
+                "hold summary reports the missing checkpoint");
+
+        Path mismatchPlanPath = root.resolve("mismatch-route.properties");
+        Files.writeString(mismatchPlanPath, String.join("\n",
+                "schema=latitude-recorder-plan-v1",
+                "case_id=mismatch-route",
+                "world_class=ordinary-control",
+                "checkpoint.registry-load=pass",
+                ""));
+        RecorderLitePlan mismatchPlan = RecorderLitePlan.load(
+                mismatchPlanPath, "mismatch-route");
+        DevTestSession mismatch = DevTestSession.startActive(
+                root, "mismatch-route", 500L, Map.of(), mismatchPlan, Map.of(), fixed);
+        DevTestSession.markActive("registry-load=fail", 501L, Map.of());
+        expectThrows(
+                () -> DevTestSession.finishActive(
+                        DevToolPolicy.CloseState.PASS, 502L, Map.of()),
+                "Recorder Lite rejects PASS when observed evidence disagrees with expected");
+        DevTestSession.finishActive(DevToolPolicy.CloseState.FAIL, 503L, Map.of());
+        expectTrue(
+                Files.readString(mismatch.directory().resolve("summary.json"))
+                        .contains("\"mismatch_count\":1"),
+                "fail summary reports the mismatched checkpoint");
     }
 
     private static void expectTrue(boolean actual, String label) {

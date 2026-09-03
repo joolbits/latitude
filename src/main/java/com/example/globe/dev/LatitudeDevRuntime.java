@@ -4,6 +4,11 @@ import com.example.globe.GlobeMod;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+import java.util.List;
 import java.util.Optional;
 import java.util.jar.Attributes;
 import java.util.jar.Manifest;
@@ -35,6 +40,34 @@ public final class LatitudeDevRuntime {
 
     public static boolean isPackagedTestArtifact() {
         return IDENTITY.packagedTest();
+    }
+
+    /** SHA-256 of the exact packaged Latitude JAR, or an honest non-JAR state label. */
+    public static String artifactSha256() {
+        Optional<ModContainer> container = FabricLoader.getInstance().getModContainer(GlobeMod.MOD_ID);
+        if (container.isEmpty()) {
+            return "unavailable";
+        }
+        List<Path> jars = container.get().getOrigin().getPaths().stream()
+                .filter(Files::isRegularFile)
+                .filter(path -> path.getFileName().toString().endsWith(".jar"))
+                .toList();
+        if (jars.size() != 1) {
+            return IDENTITY.developmentEnvironment() ? "development-classes" : "unavailable";
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (InputStream input = Files.newInputStream(jars.getFirst())) {
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = input.read(buffer)) >= 0) {
+                    digest.update(buffer, 0, count);
+                }
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (IOException | NoSuchAlgorithmException e) {
+            return "unavailable";
+        }
     }
 
     private static BuildIdentity resolve() {

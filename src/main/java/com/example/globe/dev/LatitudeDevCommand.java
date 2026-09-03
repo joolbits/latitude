@@ -20,6 +20,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -27,14 +29,17 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Random;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
@@ -293,11 +298,15 @@ public final class LatitudeDevCommand {
             Path casesRoot = source.getServer().getServerDirectory()
                     .resolve("latdev")
                     .resolve("cases");
-            DevTestSession session = DevTestSession.startActive(
+            RecorderLitePlan recorderPlan = RecorderLitePlan.configuredOrEmpty(rawName);
+            Map<String, String> eventContext = caseContext(source);
+            DevTestSession session = DevTestSession.startRecorderActive(
                     casesRoot,
                     rawName,
                     tick,
-                    caseContext(source));
+                    eventContext,
+                    recorderPlan,
+                    recorderPrivateIdentity(source, eventContext, recorderPlan));
             source.sendSuccess(() -> Component.literal(
                     "[latdev] case started id=" + session.sessionId()
                             + " events=latdev/cases/" + session.sessionId() + "/events.jsonl"),
@@ -498,6 +507,75 @@ public final class LatitudeDevCommand {
             context.put("zone", LatitudeMath.zoneKey(border, player.getZ()));
         }
         return context;
+    }
+
+    private static Map<String, String> recorderPrivateIdentity(
+            CommandSourceStack source,
+            Map<String, String> eventContext,
+            RecorderLitePlan recorderPlan
+    ) {
+        LinkedHashMap<String, String> identity = new LinkedHashMap<>();
+        if (eventContext != null) {
+            identity.putAll(eventContext);
+        }
+        FabricLoader loader = FabricLoader.getInstance();
+        identity.put("artifact_sha256", LatitudeDevRuntime.artifactSha256());
+        identity.put("minecraft_version", modVersion(loader, "minecraft"));
+        identity.put("loader_version", modVersion(loader, "fabricloader"));
+        identity.put("latitude_version", modVersion(loader, GlobeMod.MOD_ID));
+
+        List<String> providers = new ArrayList<>();
+        providers.add("minecraft");
+        for (String provider : List.of(
+                "terrablender", "biomesoplenty", "terralith", "clifftree")) {
+            if (loader.isModLoaded(provider)) {
+                providers.add(provider);
+            }
+        }
+        identity.put("provider_stack", String.join(",", providers));
+
+        TreeSet<String> loadedMods = new TreeSet<>();
+        loader.getAllMods().forEach(container -> loadedMods.add(container.getMetadata().getId()));
+        identity.put("loaded_mods", String.join(",", loadedMods));
+        identity.put("loaded_mods_fingerprint", sha256Text(String.join("\n", loadedMods)));
+
+        TreeSet<String> datapacks = new TreeSet<>(
+                source.getServer().getPackRepository().getSelectedIds());
+        identity.put("datapacks", String.join(",", datapacks));
+        identity.put("datapack_fingerprint", sha256Text(String.join("\n", datapacks)));
+
+        Path config = loader.getConfigDir().resolve("globe_compass_hud.json");
+        identity.put("config_fingerprint", sha256FileOrState(config));
+        identity.put("world_class", recorderPlan.worldClass());
+        identity.put("atlas_fingerprint", sha256Text(recorderPlan.atlasSettings().toString()));
+        return identity;
+    }
+
+    private static String modVersion(FabricLoader loader, String modId) {
+        return loader.getModContainer(modId)
+                .map(container -> container.getMetadata().getVersion().getFriendlyString())
+                .orElse("not-loaded");
+    }
+
+    private static String sha256FileOrState(Path path) {
+        if (!Files.isRegularFile(path)) {
+            return "absent";
+        }
+        try {
+            return HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path)));
+        } catch (IOException | NoSuchAlgorithmException e) {
+            return "unavailable";
+        }
+    }
+
+    private static String sha256Text(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 unavailable", impossible);
+        }
     }
 
     private static Map<String, String> mergeContext(

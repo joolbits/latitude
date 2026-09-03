@@ -6,9 +6,14 @@ import java.nio.file.Files;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
@@ -18,7 +23,10 @@ import java.util.TreeMap;
  */
 public final class DevTestSession {
     public static final String SCHEMA = "latitude-dev-case-v1";
+    public static final String PRIVATE_MANIFEST_SCHEMA = "latitude-recorder-private-v1";
+    public static final String SUMMARY_SCHEMA = "latitude-recorder-summary-v1";
     private static final String EVENTS_FILE = "events.jsonl";
+    private static final String PRIVATE_MANIFEST_FILE = "manifest.private.json";
     private static final String SUMMARY_FILE = "summary.json";
 
     private static DevTestSession active;
@@ -28,6 +36,9 @@ public final class DevTestSession {
     private final Path directory;
     private final Path eventsPath;
     private final Clock clock;
+    private final RecorderLitePlan recorderPlan;
+    private final Map<String, String> checkpointObservations = new TreeMap<>();
+    private final List<Map<String, Object>> screenshots = new ArrayList<>();
     private long sequence;
     private boolean closed;
     private String pendingCaptureLabel;
@@ -38,13 +49,15 @@ public final class DevTestSession {
             String caseId,
             String sessionId,
             Path directory,
-            Clock clock
+            Clock clock,
+            RecorderLitePlan recorderPlan
     ) {
         this.caseId = caseId;
         this.sessionId = sessionId;
         this.directory = directory;
         this.eventsPath = directory.resolve(EVENTS_FILE);
         this.clock = clock;
+        this.recorderPlan = recorderPlan;
     }
 
     public static synchronized DevTestSession startActive(
@@ -63,6 +76,43 @@ public final class DevTestSession {
             Map<String, String> context,
             Clock clock
     ) throws IOException {
+        return startActive(
+                casesRoot,
+                rawCaseId,
+                worldTick,
+                context,
+                RecorderLitePlan.empty(rawCaseId),
+                context,
+                clock);
+    }
+
+    public static synchronized DevTestSession startRecorderActive(
+            Path casesRoot,
+            String rawCaseId,
+            long worldTick,
+            Map<String, String> eventContext,
+            RecorderLitePlan recorderPlan,
+            Map<String, String> privateIdentity
+    ) throws IOException {
+        return startActive(
+                casesRoot,
+                rawCaseId,
+                worldTick,
+                eventContext,
+                recorderPlan,
+                privateIdentity,
+                Clock.systemUTC());
+    }
+
+    static synchronized DevTestSession startActive(
+            Path casesRoot,
+            String rawCaseId,
+            long worldTick,
+            Map<String, String> eventContext,
+            RecorderLitePlan recorderPlan,
+            Map<String, String> privateIdentity,
+            Clock clock
+    ) throws IOException {
         if (active != null && !active.closed) {
             throw new IllegalStateException("case session already active: " + active.sessionId);
         }
@@ -73,8 +123,22 @@ public final class DevTestSession {
         Path directory = DevToolPolicy.resolveContained(normalizedRoot, sessionId);
         Files.createDirectory(directory);
 
-        DevTestSession session = new DevTestSession(caseId, sessionId, directory, clock);
-        session.append("start", worldTick, context);
+        RecorderLitePlan plan = recorderPlan == null
+                ? RecorderLitePlan.empty(rawCaseId)
+                : recorderPlan;
+        if (!caseId.equals(plan.caseId())) {
+            throw new IllegalArgumentException("Recorder Lite route does not match case id");
+        }
+        DevTestSession session = new DevTestSession(caseId, sessionId, directory, clock, plan);
+        session.writePrivateManifest(eventContext, privateIdentity);
+        Map<String, String> startContext = new LinkedHashMap<>();
+        if (eventContext != null) {
+            startContext.putAll(eventContext);
+        }
+        startContext.put("recorder_plan", plan.configured() ? "configured" : "unplanned");
+        startContext.put("world_class", plan.worldClass());
+        startContext.put("owed_checkpoint_count", Integer.toString(plan.checkpoints().size()));
+        session.append("start", worldTick, startContext);
         active = session;
         return session;
     }
@@ -97,7 +161,22 @@ public final class DevTestSession {
         if (fields != null) {
             values.putAll(fields);
         }
-        return session.append("mark", worldTick, values);
+        CheckpointObservation observation = session.parseObservation(rawLabel);
+        if (observation != null) {
+            if (session.checkpointObservations.containsKey(observation.checkpoint())) {
+                throw new IllegalStateException(
+                        "checkpoint already observed: " + observation.checkpoint());
+            }
+            values.put("checkpoint", observation.checkpoint());
+            values.put("expected", observation.expected());
+            values.put("observed", observation.observed());
+            values.put("checkpoint_result", observation.matches() ? "pass" : "fail");
+        }
+        long eventSequence = session.append("mark", worldTick, values);
+        if (observation != null) {
+            session.checkpointObservations.put(observation.checkpoint(), observation.observed());
+        }
+        return eventSequence;
     }
 
     public static synchronized long requestCaptureActive(
@@ -139,6 +218,10 @@ public final class DevTestSession {
             values.putAll(metadata);
         }
         long completionSequence = session.append("capture_completed", requestWorldTick, values);
+        Map<String, Object> screenshot = new LinkedHashMap<>();
+        screenshot.put("label", String.format("screenshot-%03d", session.screenshots.size() + 1));
+        screenshot.put("sha256", sha256 == null ? "unavailable" : sha256);
+        session.screenshots.add(screenshot);
         session.pendingCaptureLabel = null;
         return completionSequence;
     }
@@ -182,6 +265,15 @@ public final class DevTestSession {
         if (session.pendingFinishState != null && session.pendingFinishState != state) {
             throw new IllegalStateException(
                     "finish result was already recorded as " + session.pendingFinishState.id());
+        }
+        if (state == DevToolPolicy.CloseState.PASS && session.recorderPlan.configured()) {
+            List<String> missing = session.missingCheckpoints();
+            List<String> mismatched = session.mismatchedCheckpoints();
+            if (!missing.isEmpty() || !mismatched.isEmpty()) {
+                throw new IllegalStateException(
+                        "Recorder Lite pass requires every checkpoint to match; missing="
+                                + missing + " mismatched=" + mismatched);
+            }
         }
         if (session.pendingFinishState == null) {
             Map<String, String> values = new LinkedHashMap<>();
@@ -247,12 +339,31 @@ public final class DevTestSession {
 
     private void writeSummary(DevToolPolicy.CloseState state, long finishSequence) throws IOException {
         LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
-        summary.put("schema", SCHEMA);
-        summary.put("case_id", caseId);
-        summary.put("session_id", sessionId);
+        summary.put("schema", SUMMARY_SCHEMA);
+        summary.put("case_label", opaqueLabel("case", caseId));
+        summary.put("session_label", opaqueLabel("session", sessionId));
         summary.put("result", state.id());
         summary.put("event_count", finishSequence);
-        summary.put("events_file", EVENTS_FILE);
+        summary.put("recorder_plan", recorderPlan.configured() ? "configured" : "unplanned");
+        summary.put("owed_checkpoint_count", recorderPlan.checkpoints().size());
+        summary.put("observed_checkpoint_count", checkpointObservations.size());
+        summary.put("missing_checkpoint_count", missingCheckpoints().size());
+        summary.put("mismatch_count", mismatchedCheckpoints().size());
+        List<Map<String, Object>> checkpoints = new ArrayList<>();
+        for (Map.Entry<String, String> checkpoint : recorderPlan.checkpoints().entrySet()) {
+            String observed = checkpointObservations.get(checkpoint.getKey());
+            LinkedHashMap<String, Object> row = new LinkedHashMap<>();
+            row.put("checkpoint", checkpoint.getKey());
+            row.put("expected", checkpoint.getValue());
+            row.put("observed", observed == null ? "missing" : observed);
+            row.put("result", observed == null
+                    ? "missing"
+                    : checkpoint.getValue().equals(observed) ? "pass" : "fail");
+            checkpoints.add(row);
+        }
+        summary.put("checkpoints", checkpoints);
+        summary.put("screenshot_count", screenshots.size());
+        summary.put("screenshots", List.copyOf(screenshots));
         Path summaryPath = directory.resolve(SUMMARY_FILE);
         String expected = json(summary) + "\n";
         try {
@@ -267,6 +378,90 @@ public final class DevTestSession {
                 throw exists;
             }
         }
+    }
+
+    private void writePrivateManifest(
+            Map<String, String> eventContext,
+            Map<String, String> privateIdentity
+    ) throws IOException {
+        LinkedHashMap<String, Object> manifest = new LinkedHashMap<>();
+        manifest.put("schema", PRIVATE_MANIFEST_SCHEMA);
+        manifest.put("case_id", caseId);
+        manifest.put("session_id", sessionId);
+        manifest.put("world_class", recorderPlan.worldClass());
+        manifest.put("identity", sortedCopy(privateIdentity));
+        manifest.put("initial_context", sortedCopy(eventContext));
+        manifest.put("atlas_settings", recorderPlan.atlasSettings());
+        manifest.put("owed_checkpoints", recorderPlan.checkpoints());
+        manifest.put("events_file", EVENTS_FILE);
+        Files.writeString(
+                directory.resolve(PRIVATE_MANIFEST_FILE),
+                json(manifest) + "\n",
+                StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE_NEW);
+    }
+
+    private CheckpointObservation parseObservation(String rawLabel) {
+        if (!recorderPlan.configured() || rawLabel == null || !rawLabel.contains("=")) {
+            return null;
+        }
+        String[] parts = rawLabel.split("=", 2);
+        String checkpoint = strictObservationToken(parts[0], "checkpoint");
+        String observed = strictObservationToken(parts[1], "observed");
+        String expected = recorderPlan.checkpoints().get(checkpoint);
+        if (expected == null) {
+            throw new IllegalArgumentException("checkpoint is not owed by this route: " + checkpoint);
+        }
+        return new CheckpointObservation(
+                checkpoint,
+                expected,
+                observed,
+                expected.equals(observed));
+    }
+
+    private static String strictObservationToken(String raw, String label) {
+        String sanitized = DevToolPolicy.sanitizeToken(raw, label);
+        if (raw == null || !sanitized.equals(raw.trim().toLowerCase(java.util.Locale.ROOT))) {
+            throw new IllegalArgumentException(label + " must be a lowercase safe token");
+        }
+        return sanitized;
+    }
+
+    private List<String> missingCheckpoints() {
+        return recorderPlan.checkpoints().keySet().stream()
+                .filter(checkpoint -> !checkpointObservations.containsKey(checkpoint))
+                .toList();
+    }
+
+    private List<String> mismatchedCheckpoints() {
+        return recorderPlan.checkpoints().entrySet().stream()
+                .filter(checkpoint -> checkpointObservations.containsKey(checkpoint.getKey()))
+                .filter(checkpoint -> !checkpoint.getValue().equals(
+                        checkpointObservations.get(checkpoint.getKey())))
+                .map(Map.Entry::getKey)
+                .toList();
+    }
+
+    private static Map<String, String> sortedCopy(Map<String, String> values) {
+        return values == null ? Map.of() : new TreeMap<>(values);
+    }
+
+    private static String opaqueLabel(String kind, String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return kind + "-" + HexFormat.of().formatHex(digest, 0, 6);
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 unavailable", impossible);
+        }
+    }
+
+    private record CheckpointObservation(
+            String checkpoint,
+            String expected,
+            String observed,
+            boolean matches
+    ) {
     }
 
     private LinkedHashMap<String, Object> baseRow(long eventSequence, String event, long worldTick) {
@@ -305,24 +500,45 @@ public final class DevTestSession {
 
     static String json(Map<String, ?> values) {
         StringBuilder out = new StringBuilder();
+        appendJsonValue(out, values);
+        return out.toString();
+    }
+
+    private static void appendJsonValue(StringBuilder out, Object value) {
+        if (value instanceof Map<?, ?> map) {
+            appendJsonMap(out, map);
+        } else if (value instanceof Iterable<?> iterable) {
+            out.append('[');
+            boolean first = true;
+            for (Object entry : iterable) {
+                if (!first) {
+                    out.append(',');
+                }
+                first = false;
+                appendJsonValue(out, entry);
+            }
+            out.append(']');
+        } else if (value instanceof Number || value instanceof Boolean) {
+            out.append(value);
+        } else if (value == null) {
+            out.append("null");
+        } else {
+            out.append('"').append(jsonEscape(value.toString())).append('"');
+        }
+    }
+
+    private static void appendJsonMap(StringBuilder out, Map<?, ?> values) {
         out.append('{');
         boolean first = true;
-        for (Map.Entry<String, ?> entry : values.entrySet()) {
+        for (Map.Entry<?, ?> entry : values.entrySet()) {
             if (!first) {
                 out.append(',');
             }
             first = false;
-            out.append('"').append(jsonEscape(entry.getKey())).append('"').append(':');
-            Object value = entry.getValue();
-            if (value instanceof Number || value instanceof Boolean) {
-                out.append(value);
-            } else if (value == null) {
-                out.append("null");
-            } else {
-                out.append('"').append(jsonEscape(value.toString())).append('"');
-            }
+            out.append('"').append(jsonEscape(entry.getKey().toString())).append('"').append(':');
+            appendJsonValue(out, entry.getValue());
         }
-        return out.append('}').toString();
+        out.append('}');
     }
 
     private static String jsonEscape(String value) {

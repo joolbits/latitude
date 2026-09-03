@@ -248,6 +248,8 @@ def verify_sources(failures: list[str]) -> None:
     test_client = read("src/latitudeTest/java/com/example/globe/dev/LatitudeDevTestClientEntrypoint.java")
     trace = read("src/main/java/com/example/globe/dev/DevPresentationTrace.java")
     session = read("src/main/java/com/example/globe/dev/DevTestSession.java")
+    recorder_plan = read("src/main/java/com/example/globe/dev/RecorderLitePlan.java")
+    recorder_wrapper = read("tools/latitude_recorder.py")
     build = read("build.gradle")
     production_metadata = read("src/main/resources/fabric.mod.json")
 
@@ -458,6 +460,47 @@ def verify_sources(failures: list[str]) -> None:
         require(command, identity_field, f"case identity field {identity_field}", failures)
     forbid(command, 'System.getProperty("latitude.dev.', "ambient packaged case identity", failures)
     require(command, '"run_mode"', "runtime case capability mode", failures)
+    for recorder_field in (
+        '"latitude-recorder-private-v1"',
+        '"latitude-recorder-summary-v1"',
+        '"manifest.private.json"',
+        '"owed_checkpoints"',
+        '"missing_checkpoint_count"',
+        '"mismatch_count"',
+        'opaqueLabel("case", caseId)',
+        'opaqueLabel("session", sessionId)',
+    ):
+        require(session, recorder_field, f"Recorder Lite session field {recorder_field}", failures)
+    require(
+        session,
+        "Recorder Lite pass requires every checkpoint to match",
+        "Recorder Lite complete-route PASS gate",
+        failures,
+    )
+    for plan_field in (
+        '"latitude-recorder-plan-v1"',
+        '"latitude.recorder.plan"',
+        '"checkpoint."',
+        '"atlas."',
+        "WORLD_CLASSES",
+    ):
+        require(recorder_plan, plan_field, f"Recorder Lite plan field {plan_field}", failures)
+    for identity_field in (
+        '"artifact_sha256"',
+        '"minecraft_version"',
+        '"latitude_version"',
+        '"loader_version"',
+        '"provider_stack"',
+        '"loaded_mods_fingerprint"',
+        '"datapack_fingerprint"',
+        '"config_fingerprint"',
+        '"atlas_fingerprint"',
+    ):
+        require(command, identity_field, f"Recorder Lite private identity field {identity_field}", failures)
+    require(command, "RecorderLitePlan.configuredOrEmpty(", "Recorder Lite command route", failures)
+    require(command, "DevTestSession.startRecorderActive(", "Recorder Lite session start", failures)
+    require(recorder_wrapper, "LATITUDE_RECORDER_PLAN_READY", "Recorder Lite local wrapper", failures)
+    require(recorder_wrapper, "-Dlatitude.recorder.plan=", "Recorder Lite JVM handoff", failures)
 
     require(
         build,
@@ -765,6 +808,9 @@ def verify_public_entries(
         b"case started",
         b"capture_requested",
         b"latitude-dev-case-v1",
+        b"latitude-recorder-private-v1",
+        b"latitude-recorder-summary-v1",
+        b"latitude-recorder-plan-v1",
         b"seamAudit",
         b"biomePng",
         b"transect",
