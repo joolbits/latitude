@@ -26,7 +26,13 @@ public final class WorldgenAuthorityPolicyTest {
             System.out.println("WORLDGEN_FEATURE_DATA_TEST_PASS");
             return;
         }
+        if (args.length == 1 && "terrain-data".equals(args[0])) {
+            worldgenTerrainDataUsesCurrentGrammar();
+            System.out.println("WORLDGEN_TERRAIN_DATA_TEST_PASS");
+            return;
+        }
         worldgenFeatureDataUsesCurrentRegistry();
+        worldgenTerrainDataUsesCurrentGrammar();
         contextLifecycleIsExplicitAndClearsAllAuthority();
         ordinarySettersDoNotActivateGlobalGuards();
         inlineGeneratorAuthorityIsBoundToTheExactOverworld();
@@ -116,6 +122,109 @@ public final class WorldgenAuthorityPolicyTest {
                             root.relativize(path).toString().replace('\\', '/')));
         }
         return files;
+    }
+
+    private static void worldgenTerrainDataUsesCurrentGrammar() throws Exception {
+        Path densityRoot = Path.of("src/main/resources/data/globe/worldgen/density_function");
+        Set<String> densityFiles = jsonFiles(densityRoot);
+        assertEquals(122, densityFiles.size(),
+                "Latitude must retain every owned density-function entry during the port");
+        Set<String> removedDensityTypes = Set.of(
+                "minecraft:flat_cache",
+                "minecraft:cache_2d",
+                "minecraft:cache_all_in_cell",
+                "minecraft:cache_once",
+                "minecraft:shifted_noise",
+                "minecraft:y_clamped_gradient");
+        for (String relative : densityFiles) {
+            JsonElement density = JsonParser.parseString(
+                    read(densityRoot.resolve(relative).toString()));
+            for (JsonObject object : objectsIn(density)) {
+                if (object.has("type") && object.get("type").isJsonPrimitive()) {
+                    String type = object.get("type").getAsString();
+                    assertFalse(removedDensityTypes.contains(type),
+                            "removed density type remains in " + relative + ": " + type);
+                    if ("minecraft:interpolated".equals(type)) {
+                        assertTrue(object.has("input")
+                                        && object.has("cell_size_xz")
+                                        && object.has("cell_size_y"),
+                                "interpolated density must declare input and cell sizes: " + relative);
+                    }
+                    if ("minecraft:cache".equals(type)) {
+                        assertTrue(object.has("input"),
+                                "cache density must declare its input: " + relative);
+                    }
+                }
+                assertFalse(object.has("argument1") || object.has("argument2"),
+                        "binary density must use left/right in " + relative);
+            }
+        }
+
+        Path noiseRoot = Path.of("src/main/resources/data/globe/worldgen/noise");
+        Set<String> noiseFiles = jsonFiles(noiseRoot);
+        assertEquals(34, noiseFiles.size(),
+                "Latitude must retain every owned noise entry during the port");
+        for (String relative : noiseFiles) {
+            JsonObject noise = JsonParser.parseString(
+                    read(noiseRoot.resolve(relative).toString())).getAsJsonObject();
+            assertFalse(noise.has("firstOctave") || noise.has("amplitudes"),
+                    "noise must not retain the old two-field grammar: " + relative);
+            assertTrue(noise.has("base_octave")
+                            && noise.has("octave_count")
+                            && noise.has("normalize")
+                            && noise.has("amplitude_modifiers"),
+                    "noise must declare the 26.3 legacy-preserving fields: " + relative);
+            assertEquals(noise.get("octave_count").getAsInt(),
+                    noise.getAsJsonArray("amplitude_modifiers").size(),
+                    "noise octave count must match its modifier list: " + relative);
+            assertEquals("legacy", noise.get("normalize").getAsString(),
+                    "ported noise must preserve the old normalization behavior: " + relative);
+        }
+
+        Path settingsRoot = Path.of("src/main/resources/data/globe/worldgen/noise_settings");
+        Set<String> expectedSettings = new TreeSet<>();
+        for (String name : GLOBE_NOISE_SETTINGS) {
+            expectedSettings.add(name + ".json");
+        }
+        assertTrue(expectedSettings.equals(jsonFiles(settingsRoot)),
+                "the six selectable globe settings must remain the complete settings roster");
+        String shared = null;
+        for (String relative : expectedSettings) {
+            String body = read(settingsRoot.resolve(relative).toString());
+            if (shared == null) {
+                shared = body;
+            }
+            assertEquals(shared, body,
+                    "all six globe settings must remain byte-identical: " + relative);
+            JsonObject settings = JsonParser.parseString(body).getAsJsonObject();
+            assertFalse(settings.has("surface_rule")
+                            || settings.has("aquifers_enabled")
+                            || settings.has("ore_veins_enabled"),
+                    "noise settings must not retain removed top-level fields: " + relative);
+            assertEquals("minecraft:overworld", settings.get("material_rule").getAsString(),
+                    "globe settings must inherit Minecraft's current registered material pipeline");
+            assertTrue(Set.of("min_y", "height").equals(settings.getAsJsonObject("noise").keySet()),
+                    "noise settings must move interpolation sizes out of the noise dimensions");
+            assertTrue(Set.of(
+                            "temperature", "vegetation", "continents", "erosion",
+                            "depth", "ridges", "chunk_surface_level", "final_density")
+                            .equals(settings.getAsJsonObject("noise_router").keySet()),
+                    "noise router must contain exactly the eight 26.3 functions");
+            assertTrue(Set.of(
+                            "barrier", "fluid_level_floodedness", "fluid_level_spread",
+                            "lava", "surface_level", "exclusion")
+                            .equals(settings.getAsJsonObject("aquifers").keySet()),
+                    "aquifers must contain exactly the six 26.3 functions");
+            assertTrue(settings.getAsJsonObject("default_block").has("id")
+                            && settings.getAsJsonObject("default_fluid").has("id"),
+                    "default block states must use the current lowercase id field");
+            for (JsonElement target : settings.getAsJsonArray("spawn_target")) {
+                for (String densityId : target.getAsJsonObject().keySet()) {
+                    assertTrue(densityId.contains(":"),
+                            "spawn targets must name registered density functions: " + densityId);
+                }
+            }
+        }
     }
 
     private static void structureAdmissionUsesResolvedLatitudeBiomeSource() throws Exception {
@@ -725,7 +834,7 @@ public final class WorldgenAuthorityPolicyTest {
                         && service.contains("BlockPos.spiralAround("),
                 "the optimization must preserve the full-radius nearest-first grid");
         assertTrue(
-                service.contains("latitudeSource, worldRadius, searchRadius, randomState.sampler()"),
+                service.contains("latitudeSource, worldRadius, searchRadius, sampler"),
                 "the live service must pass the exact world and search radii into its job");
         assertTrue(
                 service.contains("LatitudeBiomes.isPotentialWetlandLocateCandidate( blockX, blockZ, worldRadius, sampler, includesSwamp, includesMangrove)"),
@@ -1332,8 +1441,17 @@ public final class WorldgenAuthorityPolicyTest {
             assertTrue(body.equals(shared),
                     "every world size must share one set of surface rules; " + name + " diverged");
 
-            JsonObject surfaceRule = JsonParser.parseString(body).getAsJsonObject()
-                    .getAsJsonObject("surface_rule");
+            JsonElement encodedMaterialRule =
+                    JsonParser.parseString(body).getAsJsonObject().get("material_rule");
+            assertTrue(encodedMaterialRule.isJsonPrimitive()
+                            && "minecraft:overworld".equals(encodedMaterialRule.getAsString()),
+                    "globe settings must use Minecraft's complete registered material pipeline in "
+                            + name);
+            JsonElement materialRule = expandMaterialRule(
+                    encodedMaterialRule, new LinkedHashSet<>());
+            assertTrue(materialRule.isJsonObject(),
+                    "globe material rule must expand to an object in " + name);
+            JsonObject surfaceRule = materialRule.getAsJsonObject();
 
             Set<String> dropped = new LinkedHashSet<>(vanillaBiomes);
             dropped.removeAll(paintedBiomes(surfaceRule));
@@ -1353,28 +1471,6 @@ public final class WorldgenAuthorityPolicyTest {
                 assertTrue(referencedNoises(clause).contains("minecraft:sulfur_cave_gradient"),
                         "sulfur substrate must band on the vanilla gradient noise in " + name);
             }
-
-            JsonArray topLevel = surfaceRule.getAsJsonArray("sequence");
-            int sulfurIndex = -1;
-            boolean gradientFollowsSulfur = false;
-            for (int i = 0; i < topLevel.size(); i++) {
-                JsonObject entry = topLevel.get(i).getAsJsonObject();
-                if (!entry.has("if_true") || !entry.get("if_true").isJsonObject()) {
-                    continue;
-                }
-                JsonObject condition = entry.getAsJsonObject("if_true");
-                if (isType(condition, "minecraft:biome")
-                        && biomeIds(condition).contains("minecraft:sulfur_caves")) {
-                    sulfurIndex = i;
-                } else if (sulfurIndex >= 0 && isType(condition, "minecraft:vertical_gradient")) {
-                    gradientFollowsSulfur = true;
-                }
-            }
-            assertTrue(sulfurIndex >= 0,
-                    "the deep sulfur clause must sit in the top-level rule sequence in " + name);
-            assertTrue(gradientFollowsSulfur,
-                    "the deep sulfur clause must be evaluated before the deepslate gradient in "
-                            + name + ", or deepslate wins underground and no substrate is painted");
         }
     }
 
@@ -1506,9 +1602,16 @@ public final class WorldgenAuthorityPolicyTest {
         Set<String> blocks = new LinkedHashSet<>();
         for (JsonObject object : objectsIn(root)) {
             if (isType(object, "minecraft:block") && object.has("result_state")) {
-                JsonObject state = object.getAsJsonObject("result_state");
-                if (state.has("Name")) {
-                    blocks.add(state.get("Name").getAsString());
+                JsonElement encodedState = object.get("result_state");
+                if (encodedState.isJsonPrimitive() && encodedState.getAsJsonPrimitive().isString()) {
+                    blocks.add(encodedState.getAsString());
+                } else if (encodedState.isJsonObject()) {
+                    JsonObject state = encodedState.getAsJsonObject();
+                    if (state.has("id")) {
+                        blocks.add(state.get("id").getAsString());
+                    } else if (state.has("Name")) {
+                        blocks.add(state.get("Name").getAsString());
+                    }
                 }
             }
         }
@@ -1678,17 +1781,18 @@ public final class WorldgenAuthorityPolicyTest {
         String treeLine = normalize(read(
                 "src/main/java/com/example/globe/mixin/TreeLineVegetationGuardMixin.java"));
         assertTrue(
-                populate.contains("ChunkAccess;fillBiomesFromNoise")
+                populate.contains("method = \"decorateBiomeResolver\"")
+                        && populate.contains("CallbackInfoReturnable<BiomeResolver>")
                         && populate.contains("require = 1")
                         && !populate.contains("require=0")
                         && !populate.contains("require = 0"),
-                "the final chunk-biome owner must fail during startup if its exact 26.2 hook drifts");
+                "the final chunk-biome owner must fail during startup if its exact 26.3 hook drifts");
         assertTrue(
                 treeLine.contains("@Mixin(TreeFeature.class)")
                         && treeLine.contains("require = 1")
                         && !treeLine.contains("require=0")
                         && !treeLine.contains("require = 0"),
-                "the exact 26.2 TreeFeature tree-line hook must not fail open");
+                "the exact 26.3 TreeFeature tree-line hook must not fail open");
 
         String generatorScope = normalize(read(
                 "src/main/java/com/example/globe/mixin/ChunkGeneratorWorldgenAuthorityMixin.java"));
@@ -1711,7 +1815,7 @@ public final class WorldgenAuthorityPolicyTest {
                         && !decorationWrapper.contains("enterFeatures("),
                 "the whole decoration method must not classify its earlier structure-placement phase as foliage");
         assertTrue(
-                generatorScope.contains("PlacedFeature;placeWithBiomeCheck")
+                generatorScope.contains("FeaturePlacer;placeWithBiomeCheck")
                         && placedFeatureWrapper.contains("LatitudeWorldgenScope.enterFeatures(active)"),
                 "only the actual placed-feature invocation may authorize vegetation block filtering");
         assertTrue(

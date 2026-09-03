@@ -2,17 +2,17 @@
   "type": "minecraft:clamp",
   "input": {
     "type": "minecraft:add",
-    "argument1": -0.7,
-    "argument2": {
+    "left": -0.7,
+    "right": {
       "type": "minecraft:mul",
-      "argument1": 4,
-      "argument2": {
+      "left": 4,
+      "right": {
         "type": "minecraft:quarter_negative",
-        "argument": {
+        "input": {
           "type": "minecraft:mul",
-          "argument1": {
+          "left": {
             "type": "minecraft:add",
-            "argument1": {
+            "left": {
               "type": "minecraft:spline",
               "spline": {
                 "coordinate": "globe:noise/full_continents",
@@ -40,9 +40,9 @@
                 ]
               }
             },
-            "argument2": "globe:depth"
+            "right": "globe:depth"
           },
-          "argument2": {
+          "right": {
             "type": "minecraft:range_choice",
             "input": "globe:continent_selector",
             "min_inclusive": 0.9,

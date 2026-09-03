@@ -1,38 +1,38 @@
 {
   "type": "minecraft:add",
-  "argument1": {
+  "left": {
     "type": "minecraft:min",
-    "argument1": {
+    "left": {
       "type": "minecraft:squeeze",
-      "argument": {
+      "input": {
         "type": "minecraft:mul",
-        "argument1": 0.64,
-        "argument2": {
+        "left": 0.64,
+        "right": {
           "type": "minecraft:interpolated",
-          "argument": {
+          "input": {
             "type": "minecraft:blend_density",
-            "argument": {
+            "input": {
               "type": "minecraft:add",
-              "argument1": 0.1,
-              "argument2": {
+              "left": 0.1,
+              "right": {
                 "type": "minecraft:mul",
-                "argument1": "globe:__constants/slope_lower",
-                "argument2": {
+                "left": "globe:__constants/slope_lower",
+                "right": {
                   "type": "minecraft:add",
-                  "argument1": -0.1,
-                  "argument2": {
+                  "left": -0.1,
+                  "right": {
                     "type": "minecraft:add",
-                    "argument1": -1,
-                    "argument2": {
+                    "left": -1,
+                    "right": {
                       "type": "minecraft:mul",
-                      "argument1": "globe:__constants/slope_upper",
-                      "argument2": {
+                      "left": "globe:__constants/slope_upper",
+                      "right": {
                         "type": "minecraft:add",
-                        "argument1": 1,
-                        "argument2": {
+                        "left": 1,
+                        "right": {
                           "type": "minecraft:min",
-                          "argument1": "globe:base_terrain",
-                          "argument2": "globe:caves"
+                          "left": "globe:base_terrain",
+                          "right": "globe:caves"
                         }
                       }
                     }
@@ -40,19 +40,21 @@
                 }
               }
             }
-          }
+          },
+          "cell_size_xz": 4,
+          "cell_size_y": 8
         }
       }
     },
-    "argument2": "globe:cave/noodle"
+    "right": "globe:cave/noodle"
   },
-  "argument2": {
+  "right": {
     "type": "minecraft:add",
-    "argument1": {
+    "left": {
       "type": "minecraft:min",
-      "argument1": 0.0002,
-      "argument2": "globe:underground_river/total"
+      "left": 0.0002,
+      "right": "globe:underground_river/total"
     },
-    "argument2": "globe:lava_tunnel/total"
+    "right": "globe:lava_tunnel/total"
   }
 }

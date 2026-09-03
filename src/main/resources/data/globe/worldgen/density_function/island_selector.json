@@ -1,14 +1,24 @@
 {
-  "type": "minecraft:flat_cache",
-  "argument": {
-    "type": "minecraft:cache_2d",
-    "argument": {
-      "type": "minecraft:range_choice",
-      "input": "globe:noise/raw_continents",
-      "min_inclusive": -1,
-      "max_exclusive": -0.5,
-      "when_in_range": 1,
-      "when_out_of_range": 0
+  "type": "minecraft:cache",
+  "input": {
+    "type": "minecraft:slice",
+    "axis": "y",
+    "coordinate": 0,
+    "input": {
+      "type": "minecraft:cache",
+      "input": {
+        "type": "minecraft:slice",
+        "axis": "y",
+        "coordinate": 0,
+        "input": {
+          "type": "minecraft:range_choice",
+          "input": "globe:noise/raw_continents",
+          "min_inclusive": -1,
+          "max_exclusive": -0.5,
+          "when_in_range": 1,
+          "when_out_of_range": 0
+        }
+      }
     }
   }
 }

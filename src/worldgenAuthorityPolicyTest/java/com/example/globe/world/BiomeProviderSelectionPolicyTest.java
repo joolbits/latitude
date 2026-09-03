@@ -1562,7 +1562,7 @@ final class BiomeProviderSelectionPolicyTest {
         assertTrue(mod.contains(
                         "WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE"),
                 "only freshly UI-created worlds opt into V4 size-aware coverage");
-        assertTrue(mod.contains("randomState().sampler()"),
+        assertTrue(mod.contains("randomState.createClimateSampler(SamplerContext.EMPTY_UNCACHED)"),
                 "fresh and reloaded V2 plans use the live world climate sampler");
         assertTrue(mod.contains("donorBiomeSource(generator)"),
                 "surface/water plans resolve against the original donor geography");
@@ -2122,8 +2122,12 @@ final class BiomeProviderSelectionPolicyTest {
         String mixins = Files.readString(Path.of("src/main/resources/globe.mixins.json"));
         assertTrue(densityMixin.contains("LatitudeWorldgenScope.isActive()"),
                 "Mushroom island density is dimension/generator scoped");
-        assertTrue(densityMixin.contains("getInterpolatedState()Lnet/minecraft/world/level/block/state/BlockState;"),
-                "Mushroom island authority reaches the live chunk block-writing path");
+        assertTrue(densityMixin.contains("method = \"doFill(")
+                        && densityMixin.contains("method = \"iterateNoiseColumn(")
+                        && occurrences(densityMixin,
+                                "Aquifer;computeSubstance(IIID)Lnet/minecraft/world/level/block/state/BlockState;") == 2
+                        && occurrences(densityMixin, "require = 1") == 2,
+                "Mushroom island authority reaches both 26.3 density consumers and fails loud");
         for (String owner : List.of("doFill", "getBaseHeight", "getBaseColumn")) {
             assertTrue(authorityMixin.contains(owner), "density authority covers " + owner);
         }

@@ -1,4 +1,4 @@
 {
   "type": "minecraft:abs",
-  "argument": "globe:noise/continent/ridges"
+  "input": "globe:noise/continent/ridges"
 }

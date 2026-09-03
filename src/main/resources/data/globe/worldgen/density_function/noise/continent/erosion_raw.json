@@ -1,4 +1,9 @@
 {
-  "type": "minecraft:flat_cache",
-  "argument": "globe:__constants/noise/erosion"
+  "type": "minecraft:cache",
+  "input": {
+    "type": "minecraft:slice",
+    "axis": "y",
+    "coordinate": 0,
+    "input": "globe:__constants/noise/erosion"
+  }
 }

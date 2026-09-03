@@ -1,14 +1,24 @@
 {
-  "type": "minecraft:flat_cache",
-  "argument": {
-    "type": "minecraft:cache_2d",
-    "argument": {
-      "type": "minecraft:add",
-      "argument1": "globe:mountain_ridges/noiseshift/base",
-      "argument2": {
-        "type": "minecraft:mul",
-        "argument1": 0.6,
-        "argument2": "globe:mountain_ridges/shifteddetail"
+  "type": "minecraft:cache",
+  "input": {
+    "type": "minecraft:slice",
+    "axis": "y",
+    "coordinate": 0,
+    "input": {
+      "type": "minecraft:cache",
+      "input": {
+        "type": "minecraft:slice",
+        "axis": "y",
+        "coordinate": 0,
+        "input": {
+          "type": "minecraft:add",
+          "left": "globe:mountain_ridges/noiseshift/base",
+          "right": {
+            "type": "minecraft:mul",
+            "left": 0.6,
+            "right": "globe:mountain_ridges/shifteddetail"
+          }
+        }
       }
     }
   }

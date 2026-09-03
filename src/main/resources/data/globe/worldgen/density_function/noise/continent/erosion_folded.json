@@ -1,4 +1,4 @@
 {
   "type": "minecraft:abs",
-  "argument": "globe:noise/continent/erosion"
+  "input": "globe:noise/continent/erosion"
 }

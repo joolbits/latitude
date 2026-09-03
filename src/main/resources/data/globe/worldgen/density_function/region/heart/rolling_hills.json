@@ -1,9 +1,9 @@
 {
   "type": "minecraft:mul",
-  "argument1": "globe:__constants/rolling_hills",
-  "argument2": {
+  "left": "globe:__constants/rolling_hills",
+  "right": {
     "type": "minecraft:abs",
-    "argument": {
+    "input": {
       "type": "minecraft:noise",
       "noise": "globe:region/heart/rolling_hills",
       "xz_scale": 0.2,

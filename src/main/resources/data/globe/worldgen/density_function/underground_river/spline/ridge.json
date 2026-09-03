@@ -2,11 +2,11 @@
   "type": "minecraft:clamp",
   "input": {
     "type": "minecraft:add",
-    "argument1": 1,
-    "argument2": {
+    "left": 1,
+    "right": {
       "type": "minecraft:mul",
-      "argument1": "globe:underground_river/noise/roof_sharpness",
-      "argument2": "globe:noise/continent/ridges_folded"
+      "left": "globe:underground_river/noise/roof_sharpness",
+      "right": "globe:noise/continent/ridges_folded"
     }
   },
   "min": 0,

@@ -1,25 +1,25 @@
 {
   "type": "minecraft:mul",
-  "argument1": -3,
-  "argument2": {
+  "left": -3,
+  "right": {
     "type": "minecraft:add",
-    "argument1": -0.333,
-    "argument2": {
+    "left": -0.333,
+    "right": {
       "type": "minecraft:abs",
-      "argument": {
+      "input": {
         "type": "minecraft:add",
-        "argument1": -0.666,
-        "argument2": {
+        "left": -0.666,
+        "right": {
           "type": "minecraft:abs",
-          "argument": {
+          "input": {
             "type": "minecraft:add",
-            "argument1": "globe:noise/island/ridges",
-            "argument2": {
+            "left": "globe:noise/island/ridges",
+            "right": {
               "type": "minecraft:mul",
-              "argument1": 0.3,
-              "argument2": {
+              "left": 0.3,
+              "right": {
                 "type": "minecraft:cube",
-                "argument": "globe:noise/island/ridges"
+                "input": "globe:noise/island/ridges"
               }
             }
           }

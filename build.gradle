@@ -666,9 +666,19 @@ tasks.register('latitudeWorldgenFeatureDataTest', JavaExec) {
     dependsOn tasks.named('compileLatitudeWorldgenAuthorityPolicyTest')
 }
 
+tasks.register('latitudeWorldgenTerrainDataTest', JavaExec) {
+    group = 'verification'
+    description = 'Prove Latitude terrain resources use the current density, noise, and settings grammar'
+    classpath = files(latitudeWorldgenAuthorityPolicyTestClasses) + sourceSets.main.runtimeClasspath
+    mainClass = 'com.example.globe.world.WorldgenAuthorityPolicyTest'
+    args 'terrain-data'
+    dependsOn tasks.named('compileLatitudeWorldgenAuthorityPolicyTest')
+}
+
 tasks.named('check').configure {
     dependsOn tasks.named('latitudeWorldgenAuthorityPolicyTest')
     dependsOn tasks.named('latitudeWorldgenFeatureDataTest')
+    dependsOn tasks.named('latitudeWorldgenTerrainDataTest')
 }
 
 def latitudeDevToolPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeDevToolPolicyTest')

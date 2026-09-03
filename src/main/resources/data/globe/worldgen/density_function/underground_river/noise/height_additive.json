@@ -1,7 +1,17 @@
 {
-  "type": "minecraft:flat_cache",
-  "argument": {
-    "type": "minecraft:cache_2d",
-    "argument": -0.05
+  "type": "minecraft:cache",
+  "input": {
+    "type": "minecraft:slice",
+    "axis": "y",
+    "coordinate": 0,
+    "input": {
+      "type": "minecraft:cache",
+      "input": {
+        "type": "minecraft:slice",
+        "axis": "y",
+        "coordinate": 0,
+        "input": -0.05
+      }
+    }
   }
 }

@@ -1,31 +1,36 @@
 {
-  "type": "minecraft:cache_2d",
-  "argument": {
-    "type": "minecraft:spline",
-    "spline": {
-      "coordinate": {
-        "type": "minecraft:noise",
-        "noise": "globe:region/diamond/dune_offset",
-        "xz_scale": 1,
-        "y_scale": 0
-      },
-      "points": [
-        {
-          "location": -1,
-          "derivative": 0,
-          "value": -1
+  "type": "minecraft:cache",
+  "input": {
+    "type": "minecraft:slice",
+    "axis": "y",
+    "coordinate": 0,
+    "input": {
+      "type": "minecraft:spline",
+      "spline": {
+        "coordinate": {
+          "type": "minecraft:noise",
+          "noise": "globe:region/diamond/dune_offset",
+          "xz_scale": 1,
+          "y_scale": 0
         },
-        {
-          "location": 0,
-          "derivative": 0,
-          "value": 1
-        },
-        {
-          "location": 1,
-          "derivative": 0,
-          "value": -1
-        }
-      ]
+        "points": [
+          {
+            "location": -1,
+            "derivative": 0,
+            "value": -1
+          },
+          {
+            "location": 0,
+            "derivative": 0,
+            "value": 1
+          },
+          {
+            "location": 1,
+            "derivative": 0,
+            "value": -1
+          }
+        ]
+      }
     }
   }
 }

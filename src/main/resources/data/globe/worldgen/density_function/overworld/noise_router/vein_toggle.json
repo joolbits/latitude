@@ -1,6 +1,6 @@
 {
   "type": "minecraft:interpolated",
-  "argument": {
+  "input": {
     "type": "minecraft:range_choice",
     "input": "minecraft:y",
     "max_exclusive": 51.0,
@@ -12,5 +12,7 @@
       "y_scale": 1.5
     },
     "when_out_of_range": 0.0
-  }
+  },
+  "cell_size_xz": 4,
+  "cell_size_y": 8
 }

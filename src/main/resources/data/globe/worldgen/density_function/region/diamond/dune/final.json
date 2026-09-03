@@ -3,36 +3,36 @@
   "spline": {
     "coordinate": {
       "type": "minecraft:mul",
-      "argument1": {
+      "left": {
         "type": "minecraft:mul",
-        "argument1": {
+        "left": {
           "type": "minecraft:add",
-          "argument1": 1,
-          "argument2": "globe:region/diamond/dune/noise"
+          "left": 1,
+          "right": "globe:region/diamond/dune/noise"
         },
-        "argument2": {
+        "right": {
           "type": "minecraft:spline",
           "spline": {
             "coordinate": {
               "type": "minecraft:add",
-              "argument1": "globe:region/diamond/dune/noise",
-              "argument2": {
+              "left": "globe:region/diamond/dune/noise",
+              "right": {
                 "type": "minecraft:abs",
-                "argument": {
-                  "type": "minecraft:shifted_noise",
+                "input": {
+                  "type": "minecraft:noise",
                   "noise": "globe:region/diamond/dune_base",
                   "xz_scale": 1,
                   "y_scale": 0,
                   "shift_x": {
                     "type": "minecraft:mul",
-                    "argument1": 16,
-                    "argument2": "globe:region/diamond/dune/offset_z"
+                    "left": 16,
+                    "right": "globe:region/diamond/dune/offset_z"
                   },
                   "shift_y": 0,
                   "shift_z": {
                     "type": "minecraft:mul",
-                    "argument1": -16,
-                    "argument2": "globe:region/diamond/dune/offset_x"
+                    "left": -16,
+                    "right": "globe:region/diamond/dune/offset_x"
                   }
                 }
               }
@@ -52,29 +52,29 @@
           }
         }
       },
-      "argument2": {
+      "right": {
         "type": "minecraft:spline",
         "spline": {
           "coordinate": {
             "type": "minecraft:add",
-            "argument1": "globe:region/diamond/dune/noise",
-            "argument2": {
+            "left": "globe:region/diamond/dune/noise",
+            "right": {
               "type": "minecraft:abs",
-              "argument": {
-                "type": "minecraft:shifted_noise",
+              "input": {
+                "type": "minecraft:noise",
                 "noise": "globe:region/diamond/dune_base",
                 "xz_scale": 1,
                 "y_scale": 0,
                 "shift_x": {
                   "type": "minecraft:mul",
-                  "argument1": 16,
-                  "argument2": "globe:region/diamond/dune/offset_x"
+                  "left": 16,
+                  "right": "globe:region/diamond/dune/offset_x"
                 },
                 "shift_y": 0,
                 "shift_z": {
                   "type": "minecraft:mul",
-                  "argument1": 16,
-                  "argument2": "globe:region/diamond/dune/offset_z"
+                  "left": 16,
+                  "right": "globe:region/diamond/dune/offset_z"
                 }
               }
             }

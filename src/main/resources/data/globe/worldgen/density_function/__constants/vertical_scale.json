@@ -1,12 +1,12 @@
 {
   "type": "minecraft:add",
-  "argument1": {
+  "left": {
     "type": "minecraft:mul",
-    "argument1": 0,
-    "argument2": {
+    "left": 0,
+    "right": {
       "type": "minecraft:square",
-      "argument": "globe:terrain_spline/offset/continents"
+      "input": "globe:terrain_spline/offset/continents"
     }
   },
-  "argument2": 1.0
+  "right": 1.0
 }
