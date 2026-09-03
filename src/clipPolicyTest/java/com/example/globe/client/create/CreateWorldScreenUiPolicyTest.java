@@ -1,16 +1,43 @@
 package com.example.globe.client.create;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 final class CreateWorldScreenUiPolicyTest {
     private static int assertions;
 
     private CreateWorldScreenUiPolicyTest() {
     }
 
-    static int run() {
+    static int run() throws Exception {
         assertions = 0;
         keyboardTabCycleVisitsEveryPanelInBothDirections();
         keyboardTabCycleRejectsANonPositivePanelCount();
+        highScaleFrameKeepsTightMargins();
+        tabClicksUseRealWidgetOwnership();
         return assertions;
+    }
+
+    private static void highScaleFrameKeepsTightMargins() {
+        expect(4, CreateWorldScreenUiPolicy.EDGE_MARGIN, "screen-edge margin");
+        expect(2, CreateWorldScreenUiPolicy.HEADER_GAP, "top margin");
+        expect(2, CreateWorldScreenUiPolicy.PANE_GAP, "world-panel gap");
+        expect(1, CreateWorldScreenUiPolicy.TAB_GAP, "tab gap");
+        expect(4,
+                CreateWorldScreenUiPolicy.PANEL_BOTTOM_MARGIN
+                        - CreateWorldScreenUiPolicy.BUTTON_ROW_TOP_FROM_BOTTOM,
+                "panel-to-button gap");
+    }
+
+    private static void tabClicksUseRealWidgetOwnership() throws Exception {
+        String source = Files.readString(Path.of(
+                "src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java"));
+        expectTrue(source.contains("class TabHitboxWidget extends AbstractWidget"),
+                "tab hitboxes must be real screen widgets");
+        expectTrue(source.contains("this.addRenderableWidget(hitbox)"),
+                "tab hitboxes must be registered for Minecraft input dispatch");
+        expectTrue(!source.contains("handleTabClick("),
+                "manual tab click dispatch must not compete with widget ownership");
     }
 
     private static void keyboardTabCycleVisitsEveryPanelInBothDirections() {
