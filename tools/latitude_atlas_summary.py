@@ -19,6 +19,7 @@ REQUIRED_FILES = (
     "biome_ids.png",
     "biome_palette.json",
     "chosen_bands.png",
+    "land_bands.png",
     "legend.json",
     "seam_band_legend.txt",
     "world_biome_inventory.json",
@@ -89,15 +90,15 @@ def band_colors(path: Path) -> dict[tuple[int, int, int], str]:
     return result
 
 
-def chosen_bands(path: Path) -> tuple[tuple[int, int], list[str]]:
+def placement_bands(path: Path) -> tuple[tuple[int, int], list[str]]:
     colors = band_colors(path)
-    with Image.open(path / "chosen_bands.png") as image:
+    with Image.open(path / "land_bands.png") as image:
         rgb = image.convert("RGB")
         size = rgb.size
         bands: list[str] = []
         for color in rgb.getdata():
             if color not in colors:
-                raise AtlasSummaryError("chosen-band image uses an unknown color")
+                raise AtlasSummaryError("land-band image uses an unknown color")
             bands.append(colors[color])
     return size, bands
 
@@ -146,10 +147,10 @@ def namespace_counts(biomes: set[str]) -> dict[str, int]:
 
 
 def wrong_band_violations(path: Path, cells: list[str]) -> dict[int, tuple[str, str]]:
-    band_size, bands = chosen_bands(path)
+    band_size, bands = placement_bands(path)
     biome_size, _ = biome_cells(path)
     if band_size != biome_size or len(bands) != len(cells):
-        raise AtlasSummaryError("biome and chosen-band images have different dimensions")
+        raise AtlasSummaryError("biome and land-band images have different dimensions")
     allowed = allowed_bands(path)
     violations: dict[int, tuple[str, str]] = {}
     for index, (biome_id, band) in enumerate(zip(cells, bands)):

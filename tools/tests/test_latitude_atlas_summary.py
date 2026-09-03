@@ -24,6 +24,7 @@ class LatitudeAtlasSummaryTest(unittest.TestCase):
             allowed: dict[str, list[str]],
             bands: list[str],
             include_chosen_bands: bool = True,
+            land_bands: list[str] | None = None,
     ) -> Path:
         path = root / name
         path.mkdir()
@@ -48,6 +49,9 @@ class LatitudeAtlasSummaryTest(unittest.TestCase):
             chosen = Image.new("RGB", (2, 2))
             chosen.putdata([band_colors[band] for band in bands])
             chosen.save(path / "chosen_bands.png")
+        land = Image.new("RGB", (2, 2))
+        land.putdata([band_colors[band] for band in (land_bands or bands)])
+        land.save(path / "land_bands.png")
         (path / "seam_band_legend.txt").write_text(
                 "\n".join(f"{band}=#{r:02X}{g:02X}{b:02X}"
                           for band, (r, g, b) in band_colors.items()) + "\n")
@@ -111,6 +115,20 @@ class LatitudeAtlasSummaryTest(unittest.TestCase):
             self.assertEqual(
                 {"minecraft:desert": 4}, result["wrong_band"]["new_biomes"])
             self.assertEqual("fail", result["verdict"])
+
+    def test_raw_chosen_band_drift_uses_final_land_authority(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            donor = self.bundle(
+                root, "donor", ["minecraft:forest"] * 4,
+                {"minecraft:forest": ["temperate"]}, ["temperate"] * 4)
+            candidate = self.bundle(
+                root, "candidate", ["minecraft:forest"] * 4,
+                {"minecraft:forest": ["temperate"]}, ["polar"] * 4,
+                land_bands=["temperate"] * 4)
+            result = summary_tool.compare(donor, candidate, "donor", "candidate")
+            self.assertEqual(0, result["wrong_band"]["new_count"])
+            self.assertEqual("pass", result["verdict"])
 
     def test_missing_bundle_file_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
