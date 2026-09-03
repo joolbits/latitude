@@ -593,10 +593,11 @@ class LatitudeLoadingClientTickMixin {
         }
         boolean renderQueueEmpty = client.levelRenderer.hasRenderedAllSections();
         int renderedSections = client.levelRenderer.visibleSections().size();
-        boolean playerSectionVisible = client.levelRenderer.isSectionCompiledAndVisible(this.player.blockPosition());
+        boolean playerSectionVisible = client.levelRenderer.isSectionCompiledAndVisible(
+                this.player.blockPosition(), 0L);
         net.minecraft.core.BlockPos feetPos = net.minecraft.core.BlockPos.containing(
                 this.player.getX(), this.player.getY() - 1.0, this.player.getZ());
-        boolean feetSectionVisible = client.levelRenderer.isSectionCompiledAndVisible(feetPos);
+        boolean feetSectionVisible = client.levelRenderer.isSectionCompiledAndVisible(feetPos, 0L);
         boolean ready = (playerSectionVisible || feetSectionVisible)
                 || (renderQueueEmpty && renderedSections > 0);
         return new RenderReadiness(ready, renderedSections, renderQueueEmpty, playerSectionVisible, feetSectionVisible);

@@ -5,16 +5,18 @@ import com.example.globe.world.LatitudeBiomes;
 import com.example.globe.world.LatitudeWorldgenScope;
 import com.example.globe.world.PolarFoliagePolicy;
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.WorldGenLevel;
+import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
-import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
 import net.minecraft.world.level.levelgen.feature.SimpleBlockFeature;
-import net.minecraft.world.level.levelgen.feature.configurations.SimpleBlockConfiguration;
+import net.minecraft.util.RandomSource;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
@@ -28,19 +30,22 @@ public class ExtremePolarSimpleFoliageGuardMixin {
             TagKey.create(Registries.BLOCK, Identifier.fromNamespaceAndPath("globe", "polar_foliage"));
 
     @ModifyExpressionValue(
-            method = "place(Lnet/minecraft/world/level/levelgen/feature/FeaturePlaceContext;)Z",
+            method = "place(Lnet/minecraft/world/level/WorldGenLevel;Lnet/minecraft/world/level/chunk/ChunkGenerator;Lnet/minecraft/util/RandomSource;Lnet/minecraft/core/BlockPos;)Z",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/world/level/levelgen/feature/stateproviders/BlockStateProvider;getOptionalState(Lnet/minecraft/world/level/WorldGenLevel;Lnet/minecraft/util/RandomSource;Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/block/state/BlockState;"))
+                    target = "Lnet/minecraft/world/level/levelgen/feature/stateproviders/BlockStateProvider;getOptionalState(Lnet/minecraft/world/level/LevelAccessor;Lnet/minecraft/util/RandomSource;Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/block/state/BlockState;"))
     private BlockState globe$filterSimpleFoliageBeyondPolarLimit(
             BlockState sampledState,
-            FeaturePlaceContext<SimpleBlockConfiguration> context) {
+            WorldGenLevel level,
+            ChunkGenerator generator,
+            RandomSource random,
+            BlockPos origin) {
         if (sampledState == null) {
             return null;
         }
 
         if (!LatitudeWorldgenScope.isActive()
-                || !(context.chunkGenerator() instanceof NoiseBasedChunkGenerator noise)
+                || !(generator instanceof NoiseBasedChunkGenerator noise)
                 || !GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
             return sampledState;
         }
@@ -51,18 +56,18 @@ public class ExtremePolarSimpleFoliageGuardMixin {
         }
 
         boolean beyondLimit = LatitudeBiomes.isBlockBeyondPolarFoliageLimit(
-                context.origin().getZ(),
+                origin.getZ(),
                 GlobeMod.BORDER_RADIUS);
         boolean fireflyBush = sampledState.is(Blocks.FIREFLY_BUSH);
         boolean snowySubpolarOrPolar = fireflyBush
                 && PolarFoliagePolicy.isSubpolarOrPolar(
-                        context.origin().getZ(),
+                        origin.getZ(),
                         LatitudeBiomes.getActiveRadiusBlocks(),
                         GlobeMod.BORDER_RADIUS)
-                && context.level()
-                        .getBiome(context.origin())
+                && level
+                        .getBiome(origin)
                         .value()
-                        .coldEnoughToSnow(context.origin(), noise.getSeaLevel());
+                        .coldEnoughToSnow(origin, noise.getSeaLevel());
         boolean foliage = sampledState.is(POLAR_FOLIAGE);
         return PolarFoliagePolicy.shouldSuppressSimpleBlock(
                 beyondLimit,

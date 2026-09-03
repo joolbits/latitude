@@ -15,7 +15,6 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.levelgen.placement.PlacedFeature;
-import net.minecraft.world.level.levelgen.placement.PlacementModifierType;
 
 /**
  * "Lush riverbanks in the desert" - the ground beside fresh water inside an arid biome sometimes
@@ -54,7 +53,7 @@ public final class LatitudeRiparianBanks {
     private static final Set<Identifier> ARID_LAND_IDS = aridLandIds();
 
     /** The placement modifier type behind {@code "type": "globe:riparian"} in placed-feature JSON. */
-    public static final PlacementModifierType<RiparianPlacement> RIPARIAN = () -> RiparianPlacement.CODEC;
+    public static final com.mojang.serialization.MapCodec<RiparianPlacement> RIPARIAN = RiparianPlacement.CODEC;
 
     private static volatile boolean registered;
 

@@ -41,6 +41,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.BundleContents;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeResolver;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.border.WorldBorder;
@@ -50,6 +51,7 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
 import net.minecraft.world.RandomizableContainer;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -379,13 +381,19 @@ public class GlobeMod implements ModInitializer {
                 : null;
         int radius = borderRadiusForGlobeOverworld(world);
         warnForProviderProfileDrift(world, worldState);
+        RandomState randomState = world.getChunkSource().randomState();
+        Climate.Sampler sampler = randomState.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
+        net.minecraft.core.Registry<Biome> biomeRegistry =
+                world.registryAccess().lookupOrThrow(Registries.BIOME);
         LatitudeBiomes.activateWorldgenContext(radius, seed, worldState.getWorldgenPolicy(),
                 worldState.getProviderTicketProfile().orElse(null),
                 worldState.getVanillaRepresentationProfile().orElse(null),
                 worldState.getCaveRepresentationProfile().orElse(null),
-                world.getChunkSource().randomState().sampler(),
+                sampler,
                 donorBiomeSource(generator),
-                generator.getSeaLevel());
+                generator.getSeaLevel(),
+                biomeRegistry,
+                randomState);
         LOGGER.info("[Latitude] Early init: province authority seeded before spawn-chunk generation (seed={} radius={})", seed, radius);
         setGlobeBorder(world, radius);
     }
@@ -410,13 +418,19 @@ public class GlobeMod implements ModInitializer {
         int borderRadiusBlocks = borderRadiusForGlobeOverworld(overworld);
         long seed = overworld.getServer().getWorldGenSettings().options().seed();
         warnForProviderProfileDrift(overworld, worldState);
+        RandomState randomState = overworld.getChunkSource().randomState();
+        Climate.Sampler sampler = randomState.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
+        net.minecraft.core.Registry<Biome> biomeRegistry =
+                overworld.registryAccess().lookupOrThrow(Registries.BIOME);
         LatitudeBiomes.activateWorldgenContext(borderRadiusBlocks, seed, worldState.getWorldgenPolicy(),
                 worldState.getProviderTicketProfile().orElse(null),
                 worldState.getVanillaRepresentationProfile().orElse(null),
                 worldState.getCaveRepresentationProfile().orElse(null),
-                overworld.getChunkSource().randomState().sampler(),
+                sampler,
                 donorBiomeSource(generator),
-                generator.getSeaLevel());
+                generator.getSeaLevel(),
+                biomeRegistry,
+                randomState);
 
         setGlobeBorder(overworld, borderRadiusBlocks);
     }
@@ -843,8 +857,8 @@ public class GlobeMod implements ModInitializer {
         try {
             SamplerTemplate template = BiomeSamplerTools.createTemplate(world);
             RandomState noiseConfig = RandomState.create(
-                    template.settings().value(), template.noiseParameters(), seed);
-            Climate.Sampler sampler = noiseConfig.sampler();
+                    template.noiseParameters(), seed, template.settings().value());
+            Climate.Sampler sampler = noiseConfig.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
             resolvedSpawn = findLandSpawn(
                     world,
                     template,
@@ -951,6 +965,7 @@ public class GlobeMod implements ModInitializer {
         int radiusBlocks = LatitudeBiomes.getActiveRadiusBlocks();
         if (radiusBlocks <= 0) radiusBlocks = borderHalf;
         int classifyY = LatitudeBiomes.SURFACE_CLASSIFY_Y;
+        BiomeResolver baseResolver = template.baseSource().createResolver(sampler);
 
         LatitudeBiomes.setWorldSeed(seed);
 
@@ -967,7 +982,7 @@ public class GlobeMod implements ModInitializer {
                                 -maxAbsZ,
                                 maxAbsZ);
 
-                if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) {
+                if (!isLandBiome(template, baseResolver, sampler, x, z, classifyY, radiusBlocks)) {
                     continue;
                 }
 
@@ -1036,6 +1051,7 @@ public class GlobeMod implements ModInitializer {
      * at (blockX, blockZ) is land (not ocean or river).
      */
     private static boolean isLandBiome(SamplerTemplate template,
+                                        BiomeResolver baseResolver,
                                         Climate.Sampler sampler,
                                         int blockX, int blockZ,
                                         int classifyY, int radiusBlocks) {
@@ -1043,7 +1059,7 @@ public class GlobeMod implements ModInitializer {
         int noiseZ = Math.floorDiv(blockZ, 4);
         int noiseY = Math.floorDiv(classifyY, 4);
 
-        Holder<Biome> base = template.baseSource().getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+        Holder<Biome> base = baseResolver.getNoiseBiome(noiseX, noiseY, noiseZ);
         Holder<Biome> picked = LatitudeBiomes.pick(
                 template.biomeRegistry(), base,
                 blockX, blockZ, classifyY, radiusBlocks,

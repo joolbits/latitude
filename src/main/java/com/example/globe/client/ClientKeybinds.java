@@ -15,14 +15,14 @@ public final class ClientKeybinds {
     public static void init() {
         TOGGLE_COMPASS = new KeyMapping(
                 "key.globe.toggle_compass_hud",
-                InputConstants.Type.KEYSYM,
+                InputConstants.Type.KEYBOARD,
                 InputConstants.KEY_COMMA,
                 CATEGORY
         );
 
         OPEN_SETTINGS = new KeyMapping(
                 "key.globe.open_settings",
-                InputConstants.Type.KEYSYM,
+                InputConstants.Type.KEYBOARD,
                 InputConstants.KEY_F9,
                 CATEGORY
         );

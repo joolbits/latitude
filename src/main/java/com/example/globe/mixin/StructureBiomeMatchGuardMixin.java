@@ -15,6 +15,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.structure.Structure;
@@ -23,31 +24,15 @@ import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemp
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Makes vanilla's final structure-biome predicate consult the context source supplied at start
- * generation. Minecraft 26.2 otherwise reaches back to the generator's raw provider source,
- * bypassing Latitude's resolved surface-biome view.
+ * Keeps Latitude's final structure footprint inside the structure's biome law. Minecraft 26.3's
+ * generation context now carries the prepared biome resolver directly, so the 26.2 redirect away
+ * from the generator's raw provider source is no longer needed.
  */
 @Mixin(Structure.class)
 public abstract class StructureBiomeMatchGuardMixin {
-
-    @Redirect(
-            method = "isValidBiome",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/world/level/chunk/ChunkGenerator;getBiomeSource()Lnet/minecraft/world/level/biome/BiomeSource;"))
-    private static BiomeSource globe$useLatitudeStructureBiomeSource(
-            ChunkGenerator generator,
-            Structure.GenerationStub ignoredStub,
-            Structure.GenerationContext context) {
-        BiomeSource contextSource = context.biomeSource();
-        return contextSource instanceof LatitudeBiomeSource
-                ? contextSource
-                : generator.getBiomeSource();
-    }
 
     /**
      * A completed structure must retain its biome law at its visible center. This is deliberately
@@ -60,6 +45,7 @@ public abstract class StructureBiomeMatchGuardMixin {
             RegistryAccess registryAccess,
             ChunkGenerator generator,
             BiomeSource biomeSource,
+            Climate.Sampler climateSampler,
             RandomState randomState,
             StructureTemplateManager templateManager,
             long seed,
@@ -82,7 +68,7 @@ public abstract class StructureBiomeMatchGuardMixin {
                     Math.floorDiv(center.getX(), 4),
                     Math.floorDiv(center.getY(), 4),
                     Math.floorDiv(center.getZ(), 4),
-                    randomState.sampler());
+                    climateSampler);
             Registry<Structure> structureRegistry = registryAccess.lookupOrThrow(Registries.STRUCTURE);
             Registry<Biome> biomeRegistry = registryAccess.lookupOrThrow(Registries.BIOME);
             Identifier structureId = structureRegistry.getKey((Structure) (Object) this);

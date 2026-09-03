@@ -57,14 +57,14 @@ public final class DevCaptureKeybind {
 
         captureKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.globe.dev_capture_overlay",
-                InputConstants.Type.KEYSYM,
+                InputConstants.Type.KEYBOARD,
                 InputConstants.KEY_NUMPAD0,
                 ClientKeybinds.CATEGORY
         ));
 
         explainKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.globe.dev_explain_here",
-                InputConstants.Type.KEYSYM,
+                InputConstants.Type.KEYBOARD,
                 InputConstants.KEY_NUMPAD3,
                 ClientKeybinds.CATEGORY
         ));

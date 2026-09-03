@@ -16,6 +16,7 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+import net.minecraft.world.level.levelgen.placement.FeaturePlacer;
 import net.minecraft.world.level.levelgen.placement.PlacedFeature;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
 import org.spongepowered.asm.mixin.Mixin;
@@ -43,19 +44,16 @@ public abstract class ChunkGeneratorWorldgenAuthorityMixin {
             method = "applyBiomeDecoration(Lnet/minecraft/world/level/WorldGenLevel;Lnet/minecraft/world/level/chunk/ChunkAccess;Lnet/minecraft/world/level/StructureManager;)V",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/world/level/levelgen/placement/PlacedFeature;placeWithBiomeCheck(Lnet/minecraft/world/level/WorldGenLevel;Lnet/minecraft/world/level/chunk/ChunkGenerator;Lnet/minecraft/util/RandomSource;Lnet/minecraft/core/BlockPos;)Z"))
+                    target = "Lnet/minecraft/world/level/levelgen/placement/FeaturePlacer;placeWithBiomeCheck(Lnet/minecraft/world/level/levelgen/placement/PlacedFeature;Lnet/minecraft/util/RandomSource;Lnet/minecraft/core/BlockPos;)Z"))
     private boolean globe$withPlacedFeatureAuthority(
+            FeaturePlacer placer,
             PlacedFeature feature,
-            WorldGenLevel world,
-            ChunkGenerator generator,
             RandomSource random,
             BlockPos origin,
             Operation<Boolean> original) {
-        boolean active = world != null
-                && Level.OVERWORLD.equals(world.getLevel().dimension())
-                && globe$isAuthorizedGenerator();
+        boolean active = LatitudeWorldgenScope.isActive();
         try (LatitudeWorldgenScope.Scope ignored = LatitudeWorldgenScope.enterFeatures(active)) {
-            return original.call(feature, world, generator, random, origin);
+            return original.call(placer, feature, random, origin);
         }
     }
 

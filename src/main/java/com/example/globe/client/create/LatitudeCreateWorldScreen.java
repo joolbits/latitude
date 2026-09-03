@@ -493,7 +493,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                     serverConfig,
                     context -> new WorldLoader.DataLoadOutput<>(
                             new DataPackReloadCookie(
-                                    new WorldGenSettings(WorldOptions.defaultWithRandomSeed(), WorldPresets.createNormalWorldDimensions(context.datapackWorldgen())),
+                                    new WorldGenSettings(WorldOptions.defaultWithRandomSeed(), WorldPresets.createNormalWorldDimensions(context.datapackWorldRegistries())),
                                     context.dataConfiguration()),
                             context.datapackDimensions()),
                     (resourceManager, dataPackContents, dynamicRegistries, settings) -> {

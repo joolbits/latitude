@@ -42,11 +42,14 @@ import net.minecraft.world.entity.Relative;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeResolver;
+import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureSet;
@@ -213,6 +216,9 @@ public final class LatitudeStructureLocateService {
         LatitudeBiomeSource finalBiomeSource = LatitudeBiomeSource.forStructure(
                 generator.getBiomeSource(), biomeRegistry, worldRadius,
                 generator, randomState, level);
+        Climate.Sampler climateSampler =
+                randomState.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
+        BiomeResolver finalBiomeResolver = finalBiomeSource.createResolver(climateSampler);
         SearchBounds bounds = new SearchBounds(
                 Math.max(-worldRadius, Mth.floor(level.getWorldBorder().getMinX())),
                 Math.min(worldRadius, Mth.ceil(level.getWorldBorder().getMaxX())),
@@ -227,9 +233,11 @@ public final class LatitudeStructureLocateService {
                 bounds,
                 biomeRegistry,
                 finalBiomeSource,
+                finalBiomeResolver,
+                climateSampler,
                 generator,
                 randomState,
-                server.getStructureManager(),
+                server.getStructureTemplateManager(),
                 level);
 
         StructureLocateJob job = new StructureLocateJob(source, target, context);
@@ -550,11 +558,10 @@ public final class LatitudeStructureLocateService {
         if (candidate.village() && candidate.structureId() != null) {
             Holder<Biome> finalBiome;
             try {
-                finalBiome = context.finalBiomeSource().getNoiseBiome(
+                finalBiome = context.finalBiomeResolver().getNoiseBiome(
                         Math.floorDiv(blockX, 4),
                         Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
-                        Math.floorDiv(blockZ, 4),
-                        context.randomState().sampler());
+                        Math.floorDiv(blockZ, 4));
             } catch (RuntimeException resolutionFailure) {
                 tally.resolveFailures++;
                 return null;
@@ -578,6 +585,7 @@ public final class LatitudeStructureLocateService {
                     context.level().registryAccess(),
                     context.generator(),
                     context.finalBiomeSource(),
+                    context.climateSampler(),
                     context.randomState(),
                     context.templateManager(),
                     context.seed(),
@@ -632,11 +640,10 @@ public final class LatitudeStructureLocateService {
         for (StructureSitingPolicy.FootprintSample sample :
                 StructureSitingPolicy.footprintSamples(
                         footprint.minX(), footprint.maxX(), footprint.minZ(), footprint.maxZ())) {
-            Holder<Biome> finalBiome = context.finalBiomeSource().getNoiseBiome(
+            Holder<Biome> finalBiome = context.finalBiomeResolver().getNoiseBiome(
                     Math.floorDiv(sample.x(), 4),
                     Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
-                    Math.floorDiv(sample.z(), 4),
-                    context.randomState().sampler());
+                    Math.floorDiv(sample.z(), 4));
             Identifier biomeId = context.biomeRegistry().getKey(finalBiome.value());
             if (biomeId != null) {
                 sampledBiomes.add(biomeId.toString());
@@ -701,6 +708,8 @@ public final class LatitudeStructureLocateService {
             SearchBounds bounds,
             Registry<Biome> biomeRegistry,
             LatitudeBiomeSource finalBiomeSource,
+            BiomeResolver finalBiomeResolver,
+            Climate.Sampler climateSampler,
             NoiseBasedChunkGenerator generator,
             RandomState randomState,
             StructureTemplateManager templateManager,

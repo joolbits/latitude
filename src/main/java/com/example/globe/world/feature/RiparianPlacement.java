@@ -17,7 +17,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.placement.PlacementContext;
 import net.minecraft.world.level.levelgen.placement.PlacementFilter;
-import net.minecraft.world.level.levelgen.placement.PlacementModifierType;
 
 /**
  * Keeps a decoration position only where an arid biome meets fresh water, and only inside the
@@ -40,7 +39,7 @@ import net.minecraft.world.level.levelgen.placement.PlacementModifierType;
  *       coherence comes from seeded value noise, never from cell hashing.</li>
  * </ul>
  */
-public class RiparianPlacement extends PlacementFilter {
+public class RiparianPlacement implements PlacementFilter {
     /** Horizontal reach of the water probe, in blocks. */
     public static final int DEFAULT_SEARCH_RADIUS = 10;
     /** Codec ceiling for the search radius; also the widest precomputed probe ring. */
@@ -197,7 +196,7 @@ public class RiparianPlacement extends PlacementFilter {
     }
 
     @Override
-    protected boolean shouldPlace(PlacementContext context, RandomSource random, BlockPos pos) {
+    public boolean shouldPlace(PlacementContext context, RandomSource random, BlockPos pos) {
         if (!LatitudeWorldgenScope.isActive() || !LatitudeRiparianBanks.isEnabled()) {
             return false;
         }
@@ -277,7 +276,7 @@ public class RiparianPlacement extends PlacementFilter {
     }
 
     @Override
-    public PlacementModifierType<?> type() {
-        return LatitudeRiparianBanks.RIPARIAN;
+    public MapCodec<RiparianPlacement> codec() {
+        return CODEC;
     }
 }

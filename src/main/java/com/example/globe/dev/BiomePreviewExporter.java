@@ -18,10 +18,12 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeResolver;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -223,10 +225,11 @@ public final class BiomePreviewExporter {
                 ? collectBiomeAuditRows(biomeRegistry, baseSource)
                 : Map.of();
         RandomState noiseConfig = RandomState.create(
-                ((net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) generator).generatorSettings().value(),
                 world.registryAccess().lookupOrThrow(Registries.NOISE),
-                atlasSeed);
-        Climate.Sampler sampler = noiseConfig.sampler();
+                atlasSeed,
+                ((net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) generator).generatorSettings().value());
+        Climate.Sampler sampler = noiseConfig.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
+        BiomeResolver baseResolver = baseSource.createResolver(sampler);
         net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator noiseGen =
                 generator instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng ? ng : null;
         // Lightweight surface stub for atlas mode: keep sea level from the generator, but skip expensive
@@ -248,7 +251,7 @@ public final class BiomePreviewExporter {
 
                 String sampledBiomeId = null;
                 if (needsBiomeSampling) {
-                    Holder<Biome> base = baseSource.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+                    Holder<Biome> base = baseResolver.getNoiseBiome(noiseX, noiseY, noiseZ);
                     Holder<Biome> picked = LatitudeBiomes.pick(
                             biomeRegistry,
                             base,
@@ -557,6 +560,7 @@ public final class BiomePreviewExporter {
 
         private final ChunkGenerator generator;
         private final BiomeSource baseSource;
+        private final BiomeResolver baseResolver;
         private final Registry<Biome> biomeRegistry;
         private final RandomState noiseConfig;
         private final Climate.Sampler sampler;
@@ -671,10 +675,11 @@ public final class BiomePreviewExporter {
                     ? collectBiomeAuditRows(this.biomeRegistry, this.baseSource)
                     : Map.of();
             this.noiseConfig = RandomState.create(
-                    ((net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) this.generator).generatorSettings().value(),
                     world.registryAccess().lookupOrThrow(Registries.NOISE),
-                    atlasSeed);
-            this.sampler = noiseConfig.sampler();
+                    atlasSeed,
+                    ((net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) this.generator).generatorSettings().value());
+            this.sampler = noiseConfig.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
+            this.baseResolver = baseSource.createResolver(sampler);
             net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator noiseGen =
                     generator instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng ? ng : null;
             // Opt-in terrain-aware atlas (-Dlatitude.atlasTerrainAware=true): feed real terrain so terrain
@@ -746,7 +751,7 @@ public final class BiomePreviewExporter {
 
                     String sampledBiomeId = null;
                     if (needsBiomeSampling()) {
-                        Holder<Biome> base = baseSource.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+                        Holder<Biome> base = baseResolver.getNoiseBiome(noiseX, noiseY, noiseZ);
                         Holder<Biome> picked = LatitudeBiomes.pick(
                                 biomeRegistry,
                                 base,

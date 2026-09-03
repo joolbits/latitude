@@ -24,7 +24,10 @@ import net.minecraft.world.level.biome.BiomeGenerationSettings;
 import net.minecraft.world.level.biome.BiomeSpecialEffects;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.biome.MobSpawnSettings;
-import net.minecraft.world.level.levelgen.DensityFunctions;
+import net.minecraft.world.level.levelgen.densityfunction.DensityBuffer;
+import net.minecraft.world.level.levelgen.densityfunction.DensitySampler;
+import net.minecraft.world.level.levelgen.densityfunction.DensityVolume;
+import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
 
 /** Deterministic provider-ticket, descriptor admission, and fresh-world coverage checks. */
 final class BiomeProviderSelectionPolicyTest {
@@ -1205,19 +1208,21 @@ final class BiomeProviderSelectionPolicyTest {
     }
 
     private static Climate.Sampler coverageSampler(WetlandEvidence wetland) {
-        var zero = DensityFunctions.zero();
-        var continentalness = new TestDensityFunction(
-                (x, z) -> wetland == null || wetland.contains(x, z) ? 0.35 : 0.75);
-        var erosion = new TestDensityFunction((x, z) -> syntheticUpland(x) ? -0.6 : 0.0);
-        var weirdness = new TestDensityFunction((x, z) -> syntheticUpland(x) ? 0.6 : 0.0);
+        var zero = new TestDensitySampler((x, z) -> 0.0).bind(SamplerContext.EMPTY_UNCACHED);
+        var continentalness = new TestDensitySampler(
+                (x, z) -> wetland == null || wetland.contains(x, z) ? 0.35 : 0.75)
+                .bind(SamplerContext.EMPTY_UNCACHED);
+        var erosion = new TestDensitySampler((x, z) -> syntheticUpland(x) ? -0.6 : 0.0)
+                .bind(SamplerContext.EMPTY_UNCACHED);
+        var weirdness = new TestDensitySampler((x, z) -> syntheticUpland(x) ? 0.6 : 0.0)
+                .bind(SamplerContext.EMPTY_UNCACHED);
         return new Climate.Sampler(
                 zero,
                 zero,
                 continentalness,
                 erosion,
                 zero,
-                weirdness,
-                List.of());
+                weirdness);
     }
 
     private static boolean syntheticUpland(int blockX) {
@@ -1297,26 +1302,15 @@ final class BiomeProviderSelectionPolicyTest {
                 .build();
     }
 
-    private record TestDensityFunction(CoordinateValue value)
-            implements net.minecraft.world.level.levelgen.DensityFunction.SimpleFunction {
+    private record TestDensitySampler(CoordinateValue value) implements DensitySampler {
         @Override
-        public double compute(net.minecraft.world.level.levelgen.DensityFunction.FunctionContext context) {
-            return value.at(context.blockX(), context.blockZ());
+        public float sampleValue(SamplerContext context, int blockX, int blockY, int blockZ) {
+            return (float) value.at(blockX, blockZ);
         }
 
         @Override
-        public double minValue() {
-            return -1.0;
-        }
-
-        @Override
-        public double maxValue() {
-            return 1.0;
-        }
-
-        @Override
-        public net.minecraft.util.KeyDispatchDataCodec<? extends net.minecraft.world.level.levelgen.DensityFunction> codec() {
-            throw new UnsupportedOperationException("policy-test density functions are not serialized");
+        public void sampleVolume(SamplerContext context, DensityBuffer buffer, DensityVolume volume) {
+            DensitySampler.sampleVolumeNaive(context, buffer, volume, this);
         }
     }
 

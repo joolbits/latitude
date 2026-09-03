@@ -26,12 +26,14 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeResolver;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
 import net.minecraft.world.level.levelgen.synth.NormalNoise;
 
 public final class BiomeSamplerTools {
@@ -52,7 +54,7 @@ public final class BiomeSamplerTools {
                 ? latitudeSource.original()
                 : biomeSource;
         Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
-        HolderGetter<NormalNoise.NoiseParameters> noiseParameters =
+        HolderGetter<NormalNoise> noiseParameters =
                 world.registryAccess().lookupOrThrow(Registries.NOISE);
 
         return new SamplerTemplate(
@@ -104,8 +106,8 @@ public final class BiomeSamplerTools {
         try {
             for (int offset = 0; offset < options.seedCount() && matches.size() < options.maxResults(); offset++) {
                 long seed = options.seedStart() + offset;
-                RandomState noiseConfig = RandomState.create(template.settings().value(), template.noiseParameters(), seed);
-                Climate.Sampler sampler = noiseConfig.sampler();
+                RandomState noiseConfig = RandomState.create(template.noiseParameters(), seed, template.settings().value());
+                Climate.Sampler sampler = noiseConfig.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
                 Map<String, SearchHitAccumulator> hits = new LinkedHashMap<>();
 
                 scanGrid(template, seed, radiusBlocks, stepBlocks, y, (blockX, blockZ, biomeId) -> {
@@ -183,8 +185,8 @@ public final class BiomeSamplerTools {
                                               Set<String> watchedBiomes,
                                               Set<String> controlBiomes) {
         SamplerTemplate template = createTemplate(world);
-        RandomState noiseConfig = RandomState.create(template.settings().value(), template.noiseParameters(), seed);
-        Climate.Sampler sampler = noiseConfig.sampler();
+        RandomState noiseConfig = RandomState.create(template.noiseParameters(), seed, template.settings().value());
+        Climate.Sampler sampler = noiseConfig.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
 
         Set<String> allTracked = new LinkedHashSet<>();
         allTracked.addAll(watchedBiomes);
@@ -398,16 +400,19 @@ public final class BiomeSamplerTools {
                                  SampleConsumer consumer,
                                  Climate.Sampler sampler) {
         LatitudeBiomes.setWorldSeed(seed);
+        BiomeResolver baseResolver = template.baseSource().createResolver(sampler);
         int noiseY = Math.floorDiv(y, 4);
         for (int blockZ = -radiusBlocks; blockZ <= radiusBlocks; blockZ += stepBlocks) {
             int noiseZ = Math.floorDiv(blockZ, 4);
             for (int blockX = -radiusBlocks; blockX <= radiusBlocks; blockX += stepBlocks) {
-                consumer.accept(blockX, blockZ, sampleBiomeId(template, radiusBlocks, y, blockX, blockZ, noiseY, noiseZ, sampler));
+                consumer.accept(blockX, blockZ, sampleBiomeId(
+                        template, baseResolver, radiusBlocks, y, blockX, blockZ, noiseY, noiseZ, sampler));
             }
         }
     }
 
     private static String sampleBiomeId(SamplerTemplate template,
+                                        BiomeResolver baseResolver,
                                         int radiusBlocks,
                                         int y,
                                         int blockX,
@@ -416,7 +421,7 @@ public final class BiomeSamplerTools {
                                         int noiseZ,
                                         Climate.Sampler sampler) {
         int noiseX = Math.floorDiv(blockX, 4);
-        Holder<Biome> base = template.baseSource().getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+        Holder<Biome> base = baseResolver.getNoiseBiome(noiseX, noiseY, noiseZ);
         Holder<Biome> picked = LatitudeBiomes.pick(
                 template.biomeRegistry(),
                 base,
@@ -441,6 +446,7 @@ public final class BiomeSamplerTools {
         private final int y;
         private final RandomState noiseConfig;
         private final Climate.Sampler sampler;
+        private final BiomeResolver baseResolver;
         private final Map<String, InventoryAccumulator> found = new LinkedHashMap<>();
         private final long originalSeed;
         private final long startNanos = System.nanoTime();
@@ -463,8 +469,9 @@ public final class BiomeSamplerTools {
             this.radiusBlocks = radiusBlocks;
             this.stepBlocks = stepBlocks;
             this.y = y;
-            this.noiseConfig = RandomState.create(template.settings().value(), template.noiseParameters(), seed);
-            this.sampler = noiseConfig.sampler();
+            this.noiseConfig = RandomState.create(template.noiseParameters(), seed, template.settings().value());
+            this.sampler = noiseConfig.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
+            this.baseResolver = template.baseSource().createResolver(sampler);
             this.originalSeed = template.templateSeed();
             this.noiseY = Math.floorDiv(y, 4);
             this.blockZ = -radiusBlocks;
@@ -494,7 +501,8 @@ public final class BiomeSamplerTools {
                 while (blockZ <= radiusBlocks && hasBudget(unbounded, deadline)) {
                     int noiseZ = Math.floorDiv(blockZ, 4);
                     while (blockX <= radiusBlocks && hasBudget(unbounded, deadline)) {
-                        String biomeId = sampleBiomeId(template, radiusBlocks, y, blockX, blockZ, noiseY, noiseZ, sampler);
+                        String biomeId = sampleBiomeId(
+                                template, baseResolver, radiusBlocks, y, blockX, blockZ, noiseY, noiseZ, sampler);
                         InventoryAccumulator acc = found.get(biomeId);
                         if (acc == null) {
                             int rawBandIndex = bandIndexForBlockZ(radiusBlocks, blockZ);
@@ -801,7 +809,7 @@ public final class BiomeSamplerTools {
     public record SamplerTemplate(Registry<Biome> biomeRegistry,
                                   BiomeSource baseSource,
                                   Holder<NoiseGeneratorSettings> settings,
-                                  HolderGetter<NormalNoise.NoiseParameters> noiseParameters,
+                                  HolderGetter<NormalNoise> noiseParameters,
                                   long templateSeed) {
     }
 

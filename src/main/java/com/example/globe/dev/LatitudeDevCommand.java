@@ -559,7 +559,8 @@ public final class LatitudeDevCommand {
             boolean savUplandActive = savUplandChance > 0.0;
             String savannaDebug = LatitudeBiomes.debugSavannaUplandDecision(pos.getX(), pos.getZ(), pos.getY());
             net.minecraft.world.level.levelgen.RandomState noiseConfig = world.getChunkSource().randomState();
-            net.minecraft.world.level.biome.Climate.Sampler sampler = noiseConfig.sampler();
+            net.minecraft.world.level.biome.Climate.Sampler sampler = noiseConfig.createClimateSampler(
+                    net.minecraft.world.level.levelgen.densityfunction.SamplerContext.EMPTY_UNCACHED);
             net.minecraft.world.level.chunk.ChunkGenerator cg = world.getChunkSource().getGenerator();
             net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng = cg instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator n ? n : null;
             String savannaRule = LatitudeBiomes.debugSavannaRule(sampler, ng, noiseConfig, world, pos.getX(), pos.getZ());
@@ -638,14 +639,17 @@ public final class LatitudeDevCommand {
             net.minecraft.world.level.biome.BiomeSource sourceSupplier = biomeSource instanceof LatitudeBiomeSource latitudeSource
                     ? latitudeSource.original()
                     : biomeSource;
+            net.minecraft.world.level.biome.BiomeResolver sourceResolver =
+                    sourceSupplier.createResolver(sampler);
             int noiseX = Math.floorDiv(pos.getX(), 4);
             int noiseY = Math.floorDiv(pos.getY(), 4);
             int noiseZ = Math.floorDiv(pos.getZ(), 4);
             int blockX = (noiseX << 2) + 2;
             int blockY = (noiseY << 2) + 2;
             int blockZ = (noiseZ << 2) + 2;
-            Holder<Biome> sourceBiome = sourceSupplier.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
-            Holder<Biome> baseBiome = sourceSupplier.getNoiseBiome(noiseX, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, noiseZ, sampler);
+            Holder<Biome> sourceBiome = sourceResolver.getNoiseBiome(noiseX, noiseY, noiseZ);
+            Holder<Biome> baseBiome = sourceResolver.getNoiseBiome(
+                    noiseX, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, noiseZ);
             net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator noiseGenerator =
                     generator instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng ? ng : null;
             net.minecraft.world.level.LevelHeightAccessor heightView = world;
@@ -700,7 +704,8 @@ public final class LatitudeDevCommand {
             BlockPos pos = player.blockPosition();
             int radius = authoritativeRadius(source);
             net.minecraft.world.level.levelgen.RandomState noiseConfig = world.getChunkSource().randomState();
-            net.minecraft.world.level.biome.Climate.Sampler sampler = noiseConfig.sampler();
+            net.minecraft.world.level.biome.Climate.Sampler sampler = noiseConfig.createClimateSampler(
+                    net.minecraft.world.level.levelgen.densityfunction.SamplerContext.EMPTY_UNCACHED);
             net.minecraft.world.level.chunk.ChunkGenerator cg = world.getChunkSource().getGenerator();
             net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng = cg instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator n ? n : null;
             String finalBiomeId = biomeId(world.getBiome(pos));

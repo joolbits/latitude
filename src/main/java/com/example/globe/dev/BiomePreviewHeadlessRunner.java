@@ -22,6 +22,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeResolver;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkAccess;
@@ -30,6 +31,7 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -196,8 +198,8 @@ public final class BiomePreviewHeadlessRunner {
                             : activeSource.getClass().getSimpleName());
 
             try {
-                net.minecraft.world.level.levelgen.SurfaceRules.RuleSource active =
-                        noiseGen.generatorSettings().value().surfaceRule();
+                net.minecraft.world.level.levelgen.material.rule.MaterialRule active =
+                        noiseGen.generatorSettings().value().materialRule().value();
                 Path dump = server.getServerDirectory().resolve("latdev").resolve("surface-rule-active.txt");
                 Files.createDirectories(dump.getParent());
                 StringBuilder text = new StringBuilder();
@@ -360,18 +362,19 @@ public final class BiomePreviewHeadlessRunner {
                     activeSource instanceof LatitudeBiomeSource ? "LatitudeBiomeSource"
                             : activeSource.getClass().getSimpleName());
 
-            String activeRule = String.valueOf(noiseGen.generatorSettings().value().surfaceRule());
+            String activeRule = String.valueOf(noiseGen.generatorSettings().value().materialRule().value());
             int sulfurMentions = activeRule.split("sulfur", -1).length - 1;
             GlobeMod.LOGGER.info("[latdev][sulfur-scan] active surface rule class={} length={} sulfur_mentions={}",
-                    noiseGen.generatorSettings().value().surfaceRule().getClass().getName(),
+                    noiseGen.generatorSettings().value().materialRule().value().getClass().getName(),
                     activeRule.length(), sulfurMentions);
 
             Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
             RandomState noiseConfig = RandomState.create(
-                    noiseGen.generatorSettings().value(),
                     world.registryAccess().lookupOrThrow(Registries.NOISE),
-                    world.getSeed());
-            Climate.Sampler sampler = noiseConfig.sampler();
+                    world.getSeed(),
+                    noiseGen.generatorSettings().value());
+            Climate.Sampler sampler = noiseConfig.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
+            BiomeResolver activeResolver = activeSource.createResolver(sampler);
 
             List<int[]> probes = new ArrayList<>();
             LinkedHashSet<Long> chunkKeys = new LinkedHashSet<>();
@@ -381,7 +384,7 @@ public final class BiomePreviewHeadlessRunner {
                 for (int x = config.centerX - config.radius; x <= config.centerX + config.radius; x += config.step) {
                     for (int y = -48; y <= 64; y += 16) {
                         sampled++;
-                        Holder<Biome> holder = activeSource.getNoiseBiome(x >> 2, y >> 2, z >> 2, sampler);
+                        Holder<Biome> holder = activeResolver.getNoiseBiome(x >> 2, y >> 2, z >> 2);
                         if (!SULFUR_CAVES_ID.equals(biomeId(biomeRegistry, holder))) {
                             continue;
                         }
@@ -733,10 +736,11 @@ public final class BiomePreviewHeadlessRunner {
             Registry<Biome> biomes = world.registryAccess().lookupOrThrow(Registries.BIOME);
             LatitudeBiomes.rememberSourcePolicyBiomeRegistry(biomes);
             RandomState noiseConfig = RandomState.create(
-                    noiseGen.generatorSettings().value(),
                     world.registryAccess().lookupOrThrow(Registries.NOISE),
-                    effectiveSeed);
-            Climate.Sampler sampler = noiseConfig.sampler();
+                    effectiveSeed,
+                    noiseGen.generatorSettings().value());
+            Climate.Sampler sampler = noiseConfig.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
+            BiomeResolver baseResolver = baseSource.createResolver(sampler);
 
             int noiseX = Math.floorDiv(config.x, 4);
             int noiseY = Math.floorDiv(y, 4);
@@ -748,8 +752,9 @@ public final class BiomePreviewHeadlessRunner {
             int populateBlockY = sourceBlockY + 2;
             int populateBlockZ = sourceBlockZ + 2;
 
-            Holder<Biome> rawSource = baseSource.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
-            Holder<Biome> base = baseSource.getNoiseBiome(noiseX, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, noiseZ, sampler);
+            Holder<Biome> rawSource = baseResolver.getNoiseBiome(noiseX, noiseY, noiseZ);
+            Holder<Biome> base = baseResolver.getNoiseBiome(
+                    noiseX, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, noiseZ);
             Collection<Holder<Biome>> sourcePool = baseSource.possibleBiomes();
             Holder<Biome> wrappedSource = new LatitudeBiomeSource(baseSource, sourcePool, radius)
                     .getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
@@ -924,8 +929,10 @@ public final class BiomePreviewHeadlessRunner {
         int populateBlockY = sourceBlockY + 2;
         int populateBlockZ = sourceBlockZ + 2;
 
-        Holder<Biome> rawSource = baseSource.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
-        Holder<Biome> base = baseSource.getNoiseBiome(noiseX, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, noiseZ, sampler);
+        BiomeResolver baseResolver = baseSource.createResolver(sampler);
+        Holder<Biome> rawSource = baseResolver.getNoiseBiome(noiseX, noiseY, noiseZ);
+        Holder<Biome> base = baseResolver.getNoiseBiome(
+                noiseX, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, noiseZ);
         Collection<Holder<Biome>> sourcePool = baseSource.possibleBiomes();
         Holder<Biome> wrappedSource = new LatitudeBiomeSource(baseSource, sourcePool, radius)
                 .getNoiseBiome(noiseX, noiseY, noiseZ, sampler);

@@ -59,21 +59,18 @@ public final class WorldgenAuthorityPolicyTest {
 
         assertTrue(
                 mixin.contains("@Mixin(Structure.class)"),
-                "the admission redirect must target Minecraft's actual structure biome predicate");
+                "the final admission guard must target Minecraft's structure owner");
         assertTrue(
-                mixin.contains("method = \"isValidBiome\"")
-                        && mixin.contains("ChunkGenerator;getBiomeSource()")
-                        && mixin.contains("Structure.GenerationStub ignoredStub")
-                        && mixin.contains("Structure.GenerationContext context"),
-                "the redirect must match the exact 26.2 biome-validation frame and raw-generator lookup");
+                !mixin.contains("@Redirect")
+                        && !mixin.contains("method = \"isValidBiome\"")
+                        && !mixin.contains("ChunkGenerator;getBiomeSource()"),
+                "26.3's prepared structure resolver makes the old raw-generator redirect obsolete");
         assertTrue(
-                mixin.contains("BiomeSource contextSource = context.biomeSource()")
-                        && mixin.contains("contextSource instanceof LatitudeBiomeSource"),
-                "Latitude structure starts must validate against their resolved context biome source");
-        assertTrue(
-                mixin.contains("? contextSource")
-                        && mixin.contains(": generator.getBiomeSource()"),
-                "non-Latitude worlds must retain Minecraft's original biome-source behavior");
+                mixin.contains("if (!(biomeSource instanceof LatitudeBiomeSource latitudeSource))")
+                        && mixin.contains("Climate.Sampler climateSampler")
+                        && mixin.contains("latitudeSource.getNoiseBiome(")
+                        && mixin.contains("climateSampler);"),
+                "Latitude's final footprint check must use 26.3's prepared sampler and fail open for other sources");
         assertTrue(
                 mixin.contains("@Inject(method = \"generate\", at = @At(\"RETURN\"), cancellable = true)")
                         && mixin.contains("BlockPos center = start.getBoundingBox().getCenter()")
@@ -1201,7 +1198,7 @@ public final class WorldgenAuthorityPolicyTest {
         String speleothemGuard = normalize(read(
                 "src/main/java/com/example/globe/mixin/SurfaceDripstoneLawnmowerMixin.java"));
         assertTrue(
-                speleothemGuard.contains("latitude$isSulfurSpeleothem(context.config())")
+                speleothemGuard.contains("latitude$isSulfurSpeleothem(this)")
                         && speleothemGuard.contains("speleothem.pointedBlock().is(Blocks.SULFUR_SPIKE)")
                         && speleothemGuard.contains("cluster.pointedBlock().is(Blocks.SULFUR_SPIKE)")
                         && speleothemGuard.contains("if (nearSurfaceByHeightmap || skyVisible)"),
@@ -1316,14 +1313,58 @@ public final class WorldgenAuthorityPolicyTest {
     }
 
     private static JsonObject vanillaOverworldSurfaceRule() throws Exception {
-        String resource = "/data/minecraft/worldgen/noise_settings/overworld.json";
+        JsonElement expanded = expandMaterialRule(
+                readClasspathJson("/data/minecraft/worldgen/material_rule/overworld.json"),
+                new LinkedHashSet<>());
+        assertTrue(expanded.isJsonObject(),
+                "the vanilla overworld material rule must expand to an object");
+        return expanded.getAsJsonObject();
+    }
+
+    private static JsonElement expandMaterialRule(JsonElement rule, Set<String> stack)
+            throws Exception {
+        if (rule.isJsonPrimitive() && rule.getAsJsonPrimitive().isString()) {
+            String id = rule.getAsString();
+            assertTrue(stack.add(id), "material-rule reference cycle: " + id);
+            try {
+                String namespace = "minecraft";
+                String path = id;
+                int separator = id.indexOf(':');
+                if (separator >= 0) {
+                    namespace = id.substring(0, separator);
+                    path = id.substring(separator + 1);
+                }
+                return expandMaterialRule(readClasspathJson(
+                        "/data/" + namespace + "/worldgen/material_rule/" + path + ".json"),
+                        stack);
+            } finally {
+                stack.remove(id);
+            }
+        }
+        if (!rule.isJsonObject()) {
+            return rule.deepCopy();
+        }
+
+        JsonObject expanded = rule.getAsJsonObject().deepCopy();
+        if (isType(expanded, "minecraft:sequence") && expanded.has("sequence")) {
+            JsonArray children = new JsonArray();
+            for (JsonElement child : expanded.getAsJsonArray("sequence")) {
+                children.add(expandMaterialRule(child, stack));
+            }
+            expanded.add("sequence", children);
+        } else if (isType(expanded, "minecraft:condition") && expanded.has("then_run")) {
+            expanded.add("then_run", expandMaterialRule(expanded.get("then_run"), stack));
+        }
+        return expanded;
+    }
+
+    private static JsonElement readClasspathJson(String resource) throws Exception {
         try (InputStream stream =
                      WorldgenAuthorityPolicyTest.class.getResourceAsStream(resource)) {
             assertTrue(stream != null,
-                    "the vanilla overworld noise settings must be readable from the Minecraft jar "
+                    "the vanilla material rule must be readable from the Minecraft jar "
                             + "on the test classpath (" + resource + ")");
-            return JsonParser.parseString(new String(stream.readAllBytes(), StandardCharsets.UTF_8))
-                    .getAsJsonObject().getAsJsonObject("surface_rule");
+            return JsonParser.parseString(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
         }
     }
 

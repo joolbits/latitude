@@ -33,6 +33,7 @@ import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
 
 /** Runs Latitude biome locate searches in bounded server-tick slices with player progress. */
 public final class LatitudeBiomeLocateService {
@@ -76,6 +77,7 @@ public final class LatitudeBiomeLocateService {
         Registry<Biome> registry = level.registryAccess().lookupOrThrow(Registries.BIOME);
         int worldRadius = GlobeMod.borderRadiusForNoiseGenerator(generator);
         RandomState randomState = level.getChunkSource().randomState();
+        Climate.Sampler sampler = randomState.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
         LatitudeBiomeSource latitudeSource = LatitudeBiomeSource.forLocate(
                 rawSource, registry, worldRadius, generator, randomState, level);
         Set<Holder<Biome>> matching = latitudeSource.possibleBiomes().stream()
@@ -108,13 +110,13 @@ public final class LatitudeBiomeLocateService {
         BiomeLocateJob job;
         if (!includesCave && wetlandOnly && (includesSwamp || includesMangrove)) {
             job = new WetlandLocateJob(source, target, origin, latitudeSource, worldRadius,
-                    searchRadius, randomState.sampler(), includesSwamp, includesMangrove);
+                    searchRadius, sampler, includesSwamp, includesMangrove);
         } else if (!includesCave) {
             job = new SurfaceLocateJob(source, target, origin, latitudeSource, worldRadius,
-                    searchRadius, randomState.sampler(), matching, includesMangrove);
+                    searchRadius, sampler, matching, includesMangrove);
         } else {
             job = new ThreeDimensionalLocateJob(source, target, origin, latitudeSource, worldRadius,
-                    searchRadius, randomState.sampler(), level, matching);
+                    searchRadius, sampler, level, matching);
         }
         ACTIVE_JOBS.put(server, job);
         GlobeMod.LOGGER.info("[Latitude] started tick-sliced biome locate target={} route={} origin={} radius={} worldRadius={}",

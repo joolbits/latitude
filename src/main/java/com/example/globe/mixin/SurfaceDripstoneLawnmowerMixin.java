@@ -4,15 +4,15 @@ import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeWorldgenScope;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import net.minecraft.core.BlockPos;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.Heightmap;
-import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
 import net.minecraft.world.level.levelgen.feature.LargeDripstoneFeature;
 import net.minecraft.world.level.levelgen.feature.SpeleothemClusterFeature;
 import net.minecraft.world.level.levelgen.feature.SpeleothemFeature;
-import net.minecraft.world.level.levelgen.feature.configurations.SpeleothemClusterConfiguration;
-import net.minecraft.world.level.levelgen.feature.configurations.SpeleothemConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
@@ -47,27 +47,30 @@ public class SurfaceDripstoneLawnmowerMixin {
         LOGGED_CHUNKS.defaultReturnValue(Long.MIN_VALUE);
     }
 
-    @Inject(method = "place(Lnet/minecraft/world/level/levelgen/feature/FeaturePlaceContext;)Z", at = @At("HEAD"), cancellable = true)
-    private void latitude$cancelSurfaceDripstone(FeaturePlaceContext<?> context, CallbackInfoReturnable<Boolean> cir) {
+    @Inject(method = "place(Lnet/minecraft/world/level/WorldGenLevel;Lnet/minecraft/world/level/chunk/ChunkGenerator;Lnet/minecraft/util/RandomSource;Lnet/minecraft/core/BlockPos;)Z", at = @At("HEAD"), cancellable = true)
+    private void latitude$cancelSurfaceDripstone(WorldGenLevel level,
+                                                  ChunkGenerator generator,
+                                                  RandomSource random,
+                                                  BlockPos origin,
+                                                  CallbackInfoReturnable<Boolean> cir) {
         if (!LATITUDE_FIX_SURFACE_DRIPSTONE) {
             return;
         }
         if (!LatitudeWorldgenScope.isActive()
-                || !(context.chunkGenerator() instanceof NoiseBasedChunkGenerator noise)
+                || !(generator instanceof NoiseBasedChunkGenerator noise)
                 || !GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
             return;
         }
-        if (latitude$isSulfurSpeleothem(context.config())) {
+        if (latitude$isSulfurSpeleothem(this)) {
             return;
         }
 
-        BlockPos origin = context.origin();
-        int seaLevel = context.level().getSeaLevel();
-        int surfaceY = context.level().getHeight(Heightmap.Types.WORLD_SURFACE_WG, origin.getX(), origin.getZ());
+        int seaLevel = level.getSeaLevel();
+        int surfaceY = level.getHeight(Heightmap.Types.WORLD_SURFACE_WG, origin.getX(), origin.getZ());
         boolean nearSurfaceByHeightmap = origin.getY() >= surfaceY - DRIPSTONE_SURFACE_BUFFER;
         boolean skyVisible = origin.getY() > seaLevel
-                && (context.level().canSeeSky(origin)
-                || context.level().canSeeSky(origin.above(2)));
+                && (level.canSeeSky(origin)
+                || level.canSeeSky(origin.above(2)));
         if (nearSurfaceByHeightmap || skyVisible) {
             if (DEBUG_DRIPSTONE_MOW) {
                 logOncePerChunk(origin);
@@ -78,10 +81,10 @@ public class SurfaceDripstoneLawnmowerMixin {
 
     @Unique
     private static boolean latitude$isSulfurSpeleothem(Object config) {
-        if (config instanceof SpeleothemConfiguration speleothem) {
+        if (config instanceof SpeleothemFeature speleothem) {
             return speleothem.pointedBlock().is(Blocks.SULFUR_SPIKE);
         }
-        if (config instanceof SpeleothemClusterConfiguration cluster) {
+        if (config instanceof SpeleothemClusterFeature cluster) {
             return cluster.pointedBlock().is(Blocks.SULFUR_SPIKE);
         }
         return false;

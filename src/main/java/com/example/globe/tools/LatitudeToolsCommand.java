@@ -217,7 +217,8 @@ public final class LatitudeToolsCommand {
             boolean savUplandActive = savUplandChance > 0.0;
             String savannaDebug = LatitudeBiomes.debugSavannaUplandDecision(pos.getX(), pos.getZ(), pos.getY());
             net.minecraft.world.level.levelgen.RandomState noiseConfig = world.getChunkSource().randomState();
-            net.minecraft.world.level.biome.Climate.Sampler sampler = noiseConfig.sampler();
+            net.minecraft.world.level.biome.Climate.Sampler sampler = noiseConfig.createClimateSampler(
+                    net.minecraft.world.level.levelgen.densityfunction.SamplerContext.EMPTY_UNCACHED);
             net.minecraft.world.level.chunk.ChunkGenerator cg = world.getChunkSource().getGenerator();
             net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng = cg instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator n ? n : null;
             String savannaRule = LatitudeBiomes.debugSavannaRule(sampler, ng, noiseConfig, world, pos.getX(), pos.getZ());
@@ -286,7 +287,8 @@ public final class LatitudeToolsCommand {
             BlockPos pos = player.blockPosition();
             int radius = authoritativeRadius(source);
             net.minecraft.world.level.levelgen.RandomState noiseConfig = world.getChunkSource().randomState();
-            net.minecraft.world.level.biome.Climate.Sampler sampler = noiseConfig.sampler();
+            net.minecraft.world.level.biome.Climate.Sampler sampler = noiseConfig.createClimateSampler(
+                    net.minecraft.world.level.levelgen.densityfunction.SamplerContext.EMPTY_UNCACHED);
             net.minecraft.world.level.chunk.ChunkGenerator cg = world.getChunkSource().getGenerator();
             net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng = cg instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator n ? n : null;
             String finalBiomeId = biomeId(world.getBiome(pos));

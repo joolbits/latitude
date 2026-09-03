@@ -10,7 +10,8 @@ import java.util.List;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.HolderGetter;
 import net.minecraft.world.level.biome.Biome;
-import net.minecraft.world.level.levelgen.SurfaceRules;
+import net.minecraft.world.level.levelgen.material.MaterialRules;
+import net.minecraft.world.level.levelgen.material.rule.MaterialRule;
 
 /**
  * TerraBlender replaces the surface rules of every overworld-dimension noise settings — custom
@@ -54,7 +55,7 @@ public final class LatitudeTerraBlenderBridge {
             return;
         }
         try {
-            SurfaceRules.RuleSource passThrough = SurfaceRules.RuleSource.CODEC
+            MaterialRule passThrough = MaterialRule.DIRECT_CODEC
                     .parse(JsonOps.INSTANCE, JsonParser.parseString(EMPTY_SEQUENCE_JSON))
                     .getOrThrow(error -> new IllegalStateException(
                             "empty sequence rule failed to parse: " + error));
@@ -85,7 +86,7 @@ public final class LatitudeTerraBlenderBridge {
      * wins inside TerraBlender; the fail-open log line above is the breadcrumb for that fight.
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private static void registerWithTerraBlender(SurfaceRules.RuleSource passThrough) throws Exception {
+    private static void registerWithTerraBlender(MaterialRule passThrough) throws Exception {
         ClassLoader loader = LatitudeTerraBlenderBridge.class.getClassLoader();
         Class<?> manager = Class.forName("terrablender.api.SurfaceRuleManager", true, loader);
         Class<?> categoryClass = Class.forName("terrablender.api.SurfaceRuleManager$RuleCategory", true, loader);
@@ -102,23 +103,23 @@ public final class LatitudeTerraBlenderBridge {
                 switch (method.getName()) {
                     case "apply" -> {
                         HolderGetter<Biome> biomes = (HolderGetter<Biome>) args[0];
-                        List<SurfaceRules.RuleSource> woven = new ArrayList<>(
-                                (List<SurfaceRules.RuleSource>) additionsForStage
+                        List<MaterialRule> woven = new ArrayList<>(
+                                (List<MaterialRule>) additionsForStage
                                         .invoke(null, overworld, beforeBedrock, biomes));
-                        List<SurfaceRules.RuleSource> after =
-                                (List<SurfaceRules.RuleSource>) additionsForStage
+                        List<MaterialRule> after =
+                                (List<MaterialRule>) additionsForStage
                                         .invoke(null, overworld, afterBedrock, biomes);
                         if (!after.isEmpty()) {
-                            woven.add(SurfaceRules.ifTrue(
-                                    SurfaceRules.abovePreliminarySurface(),
+                            woven.add(MaterialRules.ifTrue(
+                                    MaterialRules.abovePreliminarySurface(),
                                     after.size() == 1 ? after.get(0)
-                                            : SurfaceRules.sequence(after.toArray(SurfaceRules.RuleSource[]::new))));
+                                            : MaterialRules.sequence(after)));
                         }
                         if (woven.isEmpty()) {
                             yield passThrough;
                         }
                         woven.add(passThrough);
-                        yield SurfaceRules.sequence(woven.toArray(SurfaceRules.RuleSource[]::new));
+                        yield MaterialRules.sequence(woven);
                     }
                     case "toString" -> "latitude surface sweep (pass through to noise settings)";
                     case "hashCode" -> System.identityHashCode(proxy);

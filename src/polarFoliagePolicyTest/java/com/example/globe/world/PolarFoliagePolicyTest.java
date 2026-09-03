@@ -522,7 +522,7 @@ public final class PolarFoliagePolicyTest {
     }
 
     private static void assertGeneratorGatePrecedesSuppression(String guard, String label) {
-        int generatorGate = guard.indexOf("context.chunkGenerator()");
+        int generatorGate = guard.indexOf("instanceof NoiseBasedChunkGenerator noise");
         // Either tier: the tree guard gates on the 72-degree tree line, the simple-block guard on
         // the 80-degree ground-vegetation limit. Both must sit behind the generator gate.
         int suppression = guard.indexOf("LatitudeBiomes.isBlockBeyondPolarFoliageLimit(");
@@ -531,7 +531,6 @@ public final class PolarFoliagePolicyTest {
         }
         assertTrue(
                 generatorGate >= 0
-                        && guard.contains("instanceof NoiseBasedChunkGenerator noise")
                         && guard.contains("!GlobeMod.shouldApplyLatitudeWorldgen(noise)")
                         && suppression > generatorGate,
                 label + " must fail open for non-Latitude generators before checking latitude");

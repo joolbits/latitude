@@ -28,6 +28,7 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeResolver;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkAccess;
@@ -472,6 +473,11 @@ public final class LatitudeBiomes {
     private static volatile CaveBiomeRepresentationProfile ACTIVE_CAVE_REPRESENTATION_PROFILE = null;
     /** V4 anchors only replace cells that the donor source already identified as underground caves. */
     private static volatile CaveBiomeCoveragePlan ACTIVE_CAVE_COVERAGE_PLAN = null;
+    /** Registry and sampling context bound by the active Globe overworld before chunk generation. */
+    private static volatile Registry<Biome> ACTIVE_BIOME_REGISTRY = null;
+    private static volatile RandomState ACTIVE_RANDOM_STATE = null;
+    private static volatile Climate.Sampler ACTIVE_CLIMATE_SAMPLER = null;
+    private static volatile BiomeResolver ACTIVE_DONOR_RESOLVER = null;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
     /** Sea level of the active generator; needed to ask a biome whether a column is cold enough to snow. */
     public static volatile int ACTIVE_SEA_LEVEL = 63;
@@ -694,6 +700,18 @@ public final class LatitudeBiomes {
         // no-op: compile gate only
     }
 
+    public static Registry<Biome> activeBiomeRegistryOrNull() {
+        return ACTIVE_BIOME_REGISTRY;
+    }
+
+    public static RandomState activeRandomStateOrNull() {
+        return ACTIVE_RANDOM_STATE;
+    }
+
+    public static Climate.Sampler activeClimateSamplerOrNull() {
+        return ACTIVE_CLIMATE_SAMPLER;
+    }
+
     public static void auditSparseJungleExternal(String bucket, int blockX, int blockZ, int landBandIndex, String detail, Holder<Biome> pre, Holder<Biome> post) {
         auditSparseJungle(bucket, blockX, blockZ, landBandIndex, detail, biomeId(pre), biomeId(post));
     }
@@ -799,6 +817,21 @@ public final class LatitudeBiomes {
                                                              Climate.Sampler sampler,
                                                              BiomeSource donorSource,
                                                              int seaLevel) {
+        activateWorldgenContext(radiusBlocks, seed, policy, providerTicketProfile,
+                representationProfile, caveRepresentationProfile, sampler, donorSource, seaLevel,
+                null, null);
+    }
+
+    public static synchronized void activateWorldgenContext(int radiusBlocks, long seed,
+                                                             WorldgenPolicyVersion policy,
+                                                             BiomeSelectionProfile providerTicketProfile,
+                                                             VanillaBiomeRepresentationProfile representationProfile,
+                                                             CaveBiomeRepresentationProfile caveRepresentationProfile,
+                                                             Climate.Sampler sampler,
+                                                             BiomeSource donorSource,
+                                                             int seaLevel,
+                                                             Registry<Biome> biomeRegistry,
+                                                             RandomState randomState) {
         ACTIVE_WORLDGEN_AUTHORITY = false;
         ACTIVE_WORLDGEN_POLICY = policy != null ? policy : WorldgenPolicyVersion.MODERN_1_3;
         ACTIVE_PROVIDER_TICKET_PROFILE = isProviderTicketPolicy(ACTIVE_WORLDGEN_POLICY)
@@ -813,6 +846,12 @@ public final class LatitudeBiomes {
                         ? caveRepresentationProfile : null;
         ACTIVE_RADIUS_BLOCKS = Math.max(0, radiusBlocks);
         ACTIVE_SEA_LEVEL = seaLevel;
+        ACTIVE_BIOME_REGISTRY = biomeRegistry;
+        ACTIVE_RANDOM_STATE = randomState;
+        ACTIVE_CLIMATE_SAMPLER = sampler;
+        ACTIVE_DONOR_RESOLVER = donorSource != null && sampler != null
+                ? donorSource.createResolver(sampler)
+                : null;
         WORLD_SEED = seed;
         OCEAN_DISTANCE_FIELD = new OceanDistanceField(seed);
         clearTagSelectionCaches();
@@ -850,7 +889,7 @@ public final class LatitudeBiomes {
         ACTIVE_SURFACE_WATER_COVERAGE_PLAN = (exactV2 || sizeAwareV3)
                 && ACTIVE_PROVIDER_TICKET_PROFILE != null
                 && sampler != null
-                && donorSource != null
+                && ACTIVE_DONOR_RESOLVER != null
                 ? VanillaSurfaceWaterCoveragePlan.build(
                         ACTIVE_RADIUS_BLOCKS,
                         WORLD_SEED,
@@ -858,7 +897,7 @@ public final class LatitudeBiomes {
                         surfaceTargets,
                         sizeAwareV3,
                         (biomeId, route, x, z) -> surfaceWaterRouteEligible(
-                                biomeId, route, x, z, sampler, donorSource))
+                                biomeId, route, x, z, sampler, ACTIVE_DONOR_RESOLVER))
                 : null;
         if (ACTIVE_SURFACE_WATER_COVERAGE_PLAN != null && !ACTIVE_SURFACE_WATER_COVERAGE_PLAN.complete()) {
             LOGGER.error("[Latitude] Fresh-world surface/water coverage plan is incomplete; missing route-managed biomes: {} diagnostics={}",
@@ -868,14 +907,14 @@ public final class LatitudeBiomes {
         ACTIVE_CAVE_COVERAGE_PLAN = ACTIVE_WORLDGEN_POLICY
                 == WorldgenPolicyVersion.PROVIDER_TICKET_V4_CAVE_COVERAGE
                 && ACTIVE_CAVE_REPRESENTATION_PROFILE != null
-                && donorSource != null
+                && ACTIVE_DONOR_RESOLVER != null
                 && sampler != null
                 ? CaveBiomeCoveragePlan.build(
                         ACTIVE_RADIUS_BLOCKS,
                         WORLD_SEED,
                         ACTIVE_CAVE_REPRESENTATION_PROFILE,
                         (route, x, y, z) -> caveCoverageRouteEligible(
-                                route, x, y, z, donorSource, sampler))
+                                route, x, y, z, ACTIVE_DONOR_RESOLVER))
                 : null;
         if (ACTIVE_CAVE_COVERAGE_PLAN != null && !ACTIVE_CAVE_COVERAGE_PLAN.complete()) {
             LOGGER.error("[Latitude] Fresh-world cave coverage plan is incomplete; missing cave identities: {}",
@@ -913,6 +952,10 @@ public final class LatitudeBiomes {
         ACTIVE_VANILLA_REPRESENTATION_PROFILE = null;
         ACTIVE_CAVE_REPRESENTATION_PROFILE = null;
         ACTIVE_CAVE_COVERAGE_PLAN = null;
+        ACTIVE_BIOME_REGISTRY = null;
+        ACTIVE_RANDOM_STATE = null;
+        ACTIVE_CLIMATE_SAMPLER = null;
+        ACTIVE_DONOR_RESOLVER = null;
     }
 
     public static boolean hasActiveWorldgenAuthority() {
@@ -999,9 +1042,9 @@ public final class LatitudeBiomes {
     }
 
     private static boolean caveCoverageRouteEligible(BiomeRoute route, int blockX, int blockY, int blockZ,
-                                                      BiomeSource donorSource, Climate.Sampler sampler) {
-        if (route == null || donorSource == null || sampler == null || blockY > 96) return false;
-        Holder<Biome> donor = donorSource.getNoiseBiome(blockX >> 2, blockY >> 2, blockZ >> 2, sampler);
+                                                      BiomeResolver donorResolver) {
+        if (route == null || donorResolver == null || blockY > 96) return false;
+        Holder<Biome> donor = donorResolver.getNoiseBiome(blockX >> 2, blockY >> 2, blockZ >> 2);
         if (!isUndergroundCaveBiome(donor)) return false;
         return route != BiomeRoute.CAVE_DEEP || blockY <= -16;
     }
@@ -1018,10 +1061,10 @@ public final class LatitudeBiomes {
             int blockX,
             int blockZ,
             Climate.Sampler sampler,
-            BiomeSource donorSource) {
-        if (sampler == null || donorSource == null) return false;
-        Holder<Biome> donor = donorSource.getNoiseBiome(
-                blockX >> 2, SURFACE_CLASSIFY_Y >> 2, blockZ >> 2, sampler);
+            BiomeResolver donorResolver) {
+        if (sampler == null || donorResolver == null) return false;
+        Holder<Biome> donor = donorResolver.getNoiseBiome(
+                blockX >> 2, SURFACE_CLASSIFY_Y >> 2, blockZ >> 2);
         return surfaceWaterRouteEligible(
                 biomeId, route, donor, blockX, blockZ, sampler);
     }
@@ -8881,9 +8924,9 @@ public final class LatitudeBiomes {
                         : steps.get(vegetal)) {
                     var nested = placed.value().getFeatures().iterator();
                     while (nested.hasNext()) {
-                        // 26.2 getFeatures() yields Holder<ConfiguredFeature>; the sibling line
-                        // yields the ConfiguredFeature directly. Same walk, one unwrap.
-                        if (nested.next().value().feature()
+                        // 26.3 features carry their own configuration, so one holder unwrap reaches
+                        // the concrete feature directly.
+                        if (nested.next().value()
                                 instanceof net.minecraft.world.level.levelgen.feature.TreeFeature) {
                             treed = true;
                             break outer;

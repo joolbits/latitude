@@ -21,6 +21,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
@@ -50,7 +51,7 @@ public abstract class ExtremePolarVillageStartGuardMixin {
             method = "tryGenerateStructure",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/world/level/levelgen/structure/Structure;generate(Lnet/minecraft/core/Holder;Lnet/minecraft/resources/ResourceKey;Lnet/minecraft/core/RegistryAccess;Lnet/minecraft/world/level/chunk/ChunkGenerator;Lnet/minecraft/world/level/biome/BiomeSource;Lnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplateManager;JLnet/minecraft/world/level/ChunkPos;ILnet/minecraft/world/level/LevelHeightAccessor;Ljava/util/function/Predicate;)Lnet/minecraft/world/level/levelgen/structure/StructureStart;"))
+                    target = "Lnet/minecraft/world/level/levelgen/structure/Structure;generate(Lnet/minecraft/core/Holder;Lnet/minecraft/resources/ResourceKey;Lnet/minecraft/core/RegistryAccess;Lnet/minecraft/world/level/chunk/ChunkGenerator;Lnet/minecraft/world/level/biome/BiomeSource;Lnet/minecraft/world/level/biome/Climate$Sampler;Lnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplateManager;JLnet/minecraft/world/level/ChunkPos;ILnet/minecraft/world/level/LevelHeightAccessor;Ljava/util/function/Predicate;)Lnet/minecraft/world/level/levelgen/structure/StructureStart;"))
     private StructureStart globe$blockVillageStartsInExtremePolar(
             Structure structure,
             Holder<Structure> structureHolder,
@@ -58,6 +59,7 @@ public abstract class ExtremePolarVillageStartGuardMixin {
             RegistryAccess registryAccess,
             ChunkGenerator chunkGenerator,
             BiomeSource biomeSource,
+            Climate.Sampler sampler,
             RandomState randomState,
             StructureTemplateManager templateManager,
             long seed,
@@ -125,11 +127,10 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                     if (!VillageTerrainSuitabilityPolicy.isSuitable(terrainHeights)) {
                         return StructureStart.INVALID_START;
                     }
-                    Holder<Biome> baseBiome = biomeSource.getNoiseBiome(
+                    Holder<Biome> baseBiome = biomeSource.createResolver(sampler).getNoiseBiome(
                             Math.floorDiv(blockX, 4),
                             Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
-                            Math.floorDiv(blockZ, 4),
-                            randomState.sampler());
+                            Math.floorDiv(blockZ, 4));
                     Holder<Biome> pickedBiome = LatitudeBiomes.pick(
                             biomeRegistry,
                             baseBiome,
@@ -137,7 +138,7 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                             blockZ,
                             LatitudeBiomes.SURFACE_CLASSIFY_Y,
                             radius,
-                            randomState.sampler(),
+                            sampler,
                             "VILLAGE_START",
                             noise,
                             randomState,
@@ -165,6 +166,7 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                 registryAccess,
                 chunkGenerator,
                 structureBiomeSource,
+                sampler,
                 randomState,
                 templateManager,
                 seed,
@@ -194,17 +196,18 @@ public abstract class ExtremePolarVillageStartGuardMixin {
             }
 
             List<String> sampledBiomes = new ArrayList<>();
+            net.minecraft.world.level.biome.BiomeResolver structureResolver =
+                    structureBiomeSource.createResolver(sampler);
             for (StructureSitingPolicy.FootprintSample sample :
                     StructureSitingPolicy.footprintSamples(
                             footprint.minX(),
                             footprint.maxX(),
                             footprint.minZ(),
                             footprint.maxZ())) {
-                Holder<Biome> finalBiome = structureBiomeSource.getNoiseBiome(
+                Holder<Biome> finalBiome = structureResolver.getNoiseBiome(
                         Math.floorDiv(sample.x(), 4),
                         Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
-                        Math.floorDiv(sample.z(), 4),
-                        randomState.sampler());
+                        Math.floorDiv(sample.z(), 4));
                 Identifier biomeId = generatedBiomeRegistry.getKey(finalBiome.value());
                 if (biomeId != null) {
                     sampledBiomes.add(biomeId.toString());

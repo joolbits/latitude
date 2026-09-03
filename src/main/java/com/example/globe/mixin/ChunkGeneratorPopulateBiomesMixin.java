@@ -2,7 +2,7 @@ package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
-import com.example.globe.world.LatitudeBiomeSource;
+import com.example.globe.world.LatitudeBiomeResolver;
 import com.example.globe.world.LatitudeBiomes;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
@@ -12,13 +12,10 @@ import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeResolver;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkAccess;
-import net.minecraft.world.level.chunk.LevelChunkSection;
-import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
@@ -31,8 +28,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(NoiseBasedChunkGenerator.class)
 public abstract class ChunkGeneratorPopulateBiomesMixin {
@@ -80,7 +76,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
     @Unique
-    private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_POPULATE_NO_STRUCTURE_LOGGED =
+    private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_POPULATE_NO_CONTEXT_LOGGED =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
     @Unique
@@ -94,8 +90,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     @Unique
     private static final String GLOBE_SETTINGS_CHECKED =
             "globe:overworld|globe:overworld_xsmall|globe:overworld_small|globe:overworld_regular|globe:overworld_large|globe:overworld_massive";
-    @Unique
-    private static final ThreadLocal<RandomState> globe$noiseConfigTL = new ThreadLocal<>();
 
     // Only apply Latitude to your globe overworld settings (keeps Nether/End sane).
     @Unique
@@ -152,10 +146,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_MASSIVE_KEY =
             ResourceKey.create(Registries.NOISE_SETTINGS, GLOBE_SETTINGS_MASSIVE_ID);
 
-    // Thread-local so the Redirect (which cannot see outer args) can still access StructureAccessor safely.
-    @Unique
-    private static final ThreadLocal<StructureManager> globe$structureAccessorTL = new ThreadLocal<>();
-
     @Unique
     private static final Long2LongOpenHashMap DEBUG_WORLDGEN_CHUNKS = new Long2LongOpenHashMap();
 
@@ -191,39 +181,17 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         LOGGER.info("[LAT][POPBIO][{}] {}", phase, message);
     }
 
-    // Capture StructureAccessor for the duration of the private populateBiomes call.
-    @Inject(
-            method = "doCreateBiomes(Lnet/minecraft/world/level/levelgen/blending/Blender;Lnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/chunk/ChunkAccess;)V",
-            at = @At("HEAD")
-    )
-    private void globe$captureStructureAccessor(Blender blender, RandomState noiseConfig, StructureManager structureAccessor, ChunkAccess chunk, CallbackInfo ci) {
-        globe$structureAccessorTL.set(structureAccessor);
-        globe$noiseConfigTL.set(noiseConfig);
-    }
-
-    @Inject(
-            method = "doCreateBiomes(Lnet/minecraft/world/level/levelgen/blending/Blender;Lnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/chunk/ChunkAccess;)V",
-            at = @At("RETURN")
-    )
-    private void globe$clearStructureAccessor(Blender blender, RandomState noiseConfig, StructureManager structureAccessor, ChunkAccess chunk, CallbackInfo ci) {
-        globe$structureAccessorTL.remove();
-        globe$noiseConfigTL.remove();
-    }
-
     /**
-     * Wrap the BiomeSupplier used by vanilla chunk biome population.
+     * Wrap the resolver Minecraft 26.3 has already prepared for this chunk.
      * This is Latitude's final chunk-biome owner, so a mapping mismatch must fail during startup
      * instead of silently generating a fresh world without Latitude geography.
      */
-    @Redirect(
-            method = "doCreateBiomes(Lnet/minecraft/world/level/levelgen/blending/Blender;Lnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/chunk/ChunkAccess;)V",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/world/level/chunk/ChunkAccess;fillBiomesFromNoise(Lnet/minecraft/world/level/biome/BiomeResolver;Lnet/minecraft/world/level/biome/Climate$Sampler;)V"
-            ),
-            require = 1
-    )
-    private void globe$wrapBiomeSupplier(ChunkAccess chunk, BiomeResolver originalSupplier, Climate.Sampler sampler) {
+    @Inject(method = "decorateBiomeResolver", at = @At("RETURN"), cancellable = true, require = 1)
+    private void globe$wrapBiomeSupplier(
+            Blender blender,
+            ChunkAccess chunk,
+            BiomeResolver originalSupplier,
+            CallbackInfoReturnable<BiomeResolver> cir) {
         var pos = chunk.getPos();
         globe$logPopBio("ENTER", "chunk=" + pos.x() + "," + pos.z() + " settings=" + globe$matchedSettingsLabel());
         // Gate: only apply to your globe overworld settings.
@@ -233,37 +201,35 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 LOGGER.info("[Latitude] populateBiomes gate reject: settings not Globe preset checked={} matched={} action=falling back to vanilla populateBiomes",
                         GLOBE_SETTINGS_CHECKED, globe$matchedSettingsLabel());
             }
-            chunk.fillBiomesFromNoise(originalSupplier, sampler);
             return;
         }
 
-        StructureManager structureAccessor = globe$structureAccessorTL.get();
-        if (structureAccessor == null) {
-            globe$logPopBio("FALLBACK", "settings=" + globe$matchedSettingsLabel() + " action=vanilla populateBiomes reason=missing_structure_accessor");
-            if (DEBUG_WORLDGEN_PATH && DEBUG_POPULATE_NO_STRUCTURE_LOGGED.compareAndSet(false, true)) {
-                LOGGER.info("[Latitude] populateBiomes gate reject: StructureAccessor unavailable settings={} action=falling back to vanilla populateBiomes",
+        Registry<Biome> biomes = LatitudeBiomes.activeBiomeRegistryOrNull();
+        RandomState noiseConfig = LatitudeBiomes.activeRandomStateOrNull();
+        Climate.Sampler sampler = LatitudeBiomes.activeClimateSamplerOrNull();
+        if (biomes == null || noiseConfig == null || sampler == null) {
+            globe$logPopBio("FALLBACK", "settings=" + globe$matchedSettingsLabel()
+                    + " action=vanilla populateBiomes reason=missing_bound_context");
+            if (DEBUG_WORLDGEN_PATH && DEBUG_POPULATE_NO_CONTEXT_LOGGED.compareAndSet(false, true)) {
+                LOGGER.info("[Latitude] populateBiomes gate reject: bound resolver context unavailable settings={} action=falling back to vanilla populateBiomes",
                         globe$matchedSettingsLabel());
             }
-            chunk.fillBiomesFromNoise(originalSupplier, sampler);
             return;
         }
 
-        Registry<Biome> biomes = structureAccessor.registryAccess().lookupOrThrow(Registries.BIOME);
-        LatitudeBiomes.rememberSourcePolicyBiomeRegistry(biomes);
         int borderRadiusBlocks = this.globe$borderRadiusBlocks();
         NoiseBasedChunkGenerator generator = (NoiseBasedChunkGenerator)(Object) this;
-        RandomState noiseConfig = globe$noiseConfigTL.get();
         Long2LongOpenHashMap surfaceYCache = new Long2LongOpenHashMap();
         surfaceYCache.defaultReturnValue(Long.MIN_VALUE);
         Long2ObjectOpenHashMap<Holder<Biome>> columnPickCache = new Long2ObjectOpenHashMap<>();
         Long2ObjectOpenHashMap<Holder<Biome>> columnPickBase = new Long2ObjectOpenHashMap<>();
         Long2ObjectOpenHashMap<Holder<Biome>> columnBaseCache = new Long2ObjectOpenHashMap<>();
         logWorldgenPathOnce(chunk, borderRadiusBlocks, globe$matchedSettingsLabel());
-        BiomeResolver sourceSupplier = originalSupplier instanceof LatitudeBiomeSource latitudeSource
-                ? latitudeSource.original()
+        BiomeResolver sourceSupplier = cir.getReturnValue() != null
+                ? cir.getReturnValue()
                 : originalSupplier;
 
-        BiomeResolver wrapped = (x, y, z, ignoredSampler) -> {
+        BiomeResolver wrapped = new LatitudeBiomeResolver(sourceSupplier, (delegate, x, y, z) -> {
             globe$logPopBio("LATITUDE_RESOLVER", "chunk=" + pos.x() + "," + pos.z() + " noise=" + x + "," + y + "," + z);
             // x/z are "noise biome coords" (4-block). Convert to block coords for your latitude math.
             int blockX = (x << 2) + 2;
@@ -271,11 +237,11 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             int blockY = (y << 2) + 2;
             long colKey = (((long) x) << 32) ^ (z & 0xFFFF_FFFFL);
 
-            Holder<Biome> current = sourceSupplier.getNoiseBiome(x, y, z, sampler);
+            Holder<Biome> current = delegate.getNoiseBiome(x, y, z);
             Holder<Biome> base = columnBaseCache.get(colKey);
             if (base == null) {
-                base = sourceSupplier.getNoiseBiome(
-                        x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
+                base = delegate.getNoiseBiome(
+                        x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z);
                 columnBaseCache.put(colKey, base);
             }
             boolean caveCurrent = isCaveBiome(biomes, current);
@@ -334,10 +300,10 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             columnPickCache.put(colKey, picked);
             columnPickBase.put(colKey, base);
             return picked;
-        };
+        });
 
         globe$logPopBio("ENTER", "installing Latitude resolver chunk=" + pos.x() + "," + pos.z() + " radius=" + borderRadiusBlocks);
-        globe$populateBiomes(chunk, wrapped, sampler);
+        cir.setReturnValue(wrapped);
     }
 
     @Unique
@@ -432,37 +398,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         }
         surfaceYCache.put(key, surfaceY);
         return surfaceY;
-    }
-
-    @Unique
-    private static void globe$populateBiomes(ChunkAccess chunk, BiomeResolver supplier, Climate.Sampler sampler) {
-        int minQuartY = chunk.getMinY() >> 2;
-        int heightQuarts = chunk.getHeight() >> 2;
-        int startQuartX = chunk.getPos().x() << 2;
-        int startQuartZ = chunk.getPos().z() << 2;
-        for (int localX = 0; localX < 4; localX++) {
-            int quartX = startQuartX + localX;
-            for (int localZ = 0; localZ < 4; localZ++) {
-                int quartZ = startQuartZ + localZ;
-                for (int localY = 0; localY < heightQuarts; localY++) {
-                    int quartY = minQuartY + localY;
-                    if (localY < 0 || localY >= heightQuarts) {
-                        if (DEBUG_CAVE_CLAMP) {
-                            LOGGER.warn("[Latitude] Skipping out-of-range biome Y quartY={} minQuartY={} localY={} heightQuarts={}",
-                                    quartY, minQuartY, localY, heightQuarts);
-                        }
-                        continue;
-                    }
-                    Holder<Biome> biome = supplier.getNoiseBiome(quartX, quartY, quartZ, sampler);
-                    int sectionIndex = localY >> 2;
-                    int sectionLocalY = localY & 3;
-                    LevelChunkSection section = chunk.getSection(sectionIndex);
-                    PalettedContainer<Holder<Biome>> container =
-                            (PalettedContainer<Holder<Biome>>) section.getBiomes();
-                    container.getAndSet(localX, sectionLocalY, localZ, biome);
-                }
-            }
-        }
     }
 
     @Unique

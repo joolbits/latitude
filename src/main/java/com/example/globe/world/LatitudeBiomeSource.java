@@ -27,11 +27,13 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeResolver;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.tags.BiomeTags;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
 
 public final class LatitudeBiomeSource extends BiomeSource {
     private static final int MAX_CAVE_BIOME_Y = Integer.getInteger("latitude.maxCaveBiomeY", 96);
@@ -155,9 +157,51 @@ public final class LatitudeBiomeSource extends BiomeSource {
     }
 
     @Override
+    public BiomeResolver createResolver(Climate.Sampler sampler) {
+        return prepareResolver(original.createResolver(sampler), sampler);
+    }
+
+    @Override
+    public BiomeResolver createResolverForChunk(
+            Climate.Sampler sampler,
+            int minQuartX,
+            int minQuartY,
+            int minQuartZ,
+            int sizeQuartX,
+            int sizeQuartY,
+            int sizeQuartZ) {
+        return prepareResolver(
+                original.createResolverForChunk(
+                        sampler,
+                        minQuartX,
+                        minQuartY,
+                        minQuartZ,
+                        sizeQuartX,
+                        sizeQuartY,
+                        sizeQuartZ),
+                sampler);
+    }
+
+    private BiomeResolver prepareResolver(BiomeResolver delegate, Climate.Sampler sampler) {
+        return new LatitudeBiomeResolver(
+                delegate,
+                (baseResolver, x, y, z) -> resolveNoiseBiome(baseResolver, x, y, z, sampler));
+    }
+
+    /** Transitional source-level entry used by bounded Latitude helpers during the 26.3 port. */
     public Holder<Biome> getNoiseBiome(int x, int y, int z, Climate.Sampler sampler) {
-        Holder<Biome> current = original.getNoiseBiome(x, y, z, sampler);
-        Holder<Biome> base = original.getNoiseBiome(x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
+        return createResolver(sampler).getNoiseBiome(x, y, z);
+    }
+
+    private Holder<Biome> resolveNoiseBiome(
+            BiomeResolver originalResolver,
+            int x,
+            int y,
+            int z,
+            Climate.Sampler sampler) {
+        Holder<Biome> current = originalResolver.getNoiseBiome(x, y, z);
+        Holder<Biome> base = originalResolver.getNoiseBiome(
+                x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z);
         // The populate-biomes resolver classifies the center of each quart cell. Locate's
         // terrain-aware wrapper must use that same point or it can report the neighbouring
         // biome at a boundary even though the returned Holder passed the predicate.
@@ -196,9 +240,10 @@ public final class LatitudeBiomeSource extends BiomeSource {
         if (biomeRegistry == null) {
             return true;
         }
-        Holder<Biome> current = original.getNoiseBiome(x, y, z, sampler);
-        Holder<Biome> base = original.getNoiseBiome(
-                x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
+        BiomeResolver baseResolver = original.createResolver(sampler);
+        Holder<Biome> current = baseResolver.getNoiseBiome(x, y, z);
+        Holder<Biome> base = baseResolver.getNoiseBiome(
+                x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z);
         int blockX = (x << 2) + 2;
         int blockZ = (z << 2) + 2;
         int blockY = (y << 2) + 2;
@@ -248,8 +293,9 @@ public final class LatitudeBiomeSource extends BiomeSource {
             int horizontalStep,
             int verticalStep,
             Predicate<Holder<Biome>> target,
-            Climate.Sampler sampler,
+            RandomState randomState,
             LevelReader level) {
+        Climate.Sampler sampler = randomState.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
         Set<Holder<Biome>> matching = possibleBiomes().stream()
                 .filter(target)
                 .collect(Collectors.toUnmodifiableSet());
@@ -297,6 +343,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
                     targetIncludesSwamp,
                     targetIncludesMangrove,
                     wetlandOnlyTarget,
+                    randomState,
                     sampler,
                     level);
             long elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
@@ -336,7 +383,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
                 boundedHorizontalStep,
                 boundedVerticalStep,
                 target,
-                sampler,
+                randomState,
                 level);
         if (result == null && hasCaveTarget) {
             result = findPlannedCaveCoverage(matching, origin, safeRadius, target, sampler);
@@ -365,6 +412,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
             boolean targetIncludesSwamp,
             boolean targetIncludesMangrove,
             boolean wetlandOnlyTarget,
+            RandomState randomState,
             Climate.Sampler sampler,
             LevelReader level) {
         int rings = radius / Math.max(1, previewHorizontalStep);
@@ -447,7 +495,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
                 fallbackHorizontalStep,
                 oneLayerVerticalStep,
                 target,
-                sampler,
+                randomState,
                 level));
         Pair<BlockPos, Holder<Biome>> plannedFallback = fallback == null
                 ? findPlannedSurfaceCoverage(matching, origin, target, sampler)
@@ -617,9 +665,10 @@ public final class LatitudeBiomeSource extends BiomeSource {
             int y,
             int z,
             Climate.Sampler sampler) {
-        Holder<Biome> current = original.getNoiseBiome(x, y, z, sampler);
-        Holder<Biome> base = original.getNoiseBiome(
-                x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
+        BiomeResolver baseResolver = original.createResolver(sampler);
+        Holder<Biome> current = baseResolver.getNoiseBiome(x, y, z);
+        Holder<Biome> base = baseResolver.getNoiseBiome(
+                x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z);
         int blockX = x << 2;
         int blockZ = z << 2;
         int blockY = y << 2;
