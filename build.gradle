@@ -707,6 +707,17 @@ tasks.named('check').configure {
     dependsOn tasks.named('latitudeDevToolPolicyTest')
 }
 
+tasks.register('latitudeRecorderLiteAtlasTest', Exec) {
+    group = 'verification'
+    description = 'Exercise Recorder Lite atlas comparison and negative fixtures'
+    commandLine('python3', '-m', 'unittest', 'discover',
+            '-s', 'tools/tests', '-p', 'test_latitude_atlas_summary.py', '-v')
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudeRecorderLiteAtlasTest')
+}
+
 def latitudeSpawnSafetyPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeSpawnSafetyPolicyTest')
 
 tasks.register('compileLatitudeSpawnSafetyPolicyTest', JavaCompile) {

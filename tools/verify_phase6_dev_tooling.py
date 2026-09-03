@@ -250,6 +250,7 @@ def verify_sources(failures: list[str]) -> None:
     session = read("src/main/java/com/example/globe/dev/DevTestSession.java")
     recorder_plan = read("src/main/java/com/example/globe/dev/RecorderLitePlan.java")
     recorder_wrapper = read("tools/latitude_recorder.py")
+    atlas_summary = read("tools/latitude_atlas_summary.py")
     build = read("build.gradle")
     production_metadata = read("src/main/resources/fabric.mod.json")
 
@@ -501,6 +502,18 @@ def verify_sources(failures: list[str]) -> None:
     require(command, "DevTestSession.startRecorderActive(", "Recorder Lite session start", failures)
     require(recorder_wrapper, "LATITUDE_RECORDER_PLAN_READY", "Recorder Lite local wrapper", failures)
     require(recorder_wrapper, "-Dlatitude.recorder.plan=", "Recorder Lite JVM handoff", failures)
+    for summary_field in (
+        '"latitude-recorder-atlas-summary-v1"',
+        '"new_arrivals"',
+        '"disappearances"',
+        '"wrong_band"',
+        '"provider_reachability"',
+        '"non_minecraft_winner_changes"',
+        '"share_changes"',
+        '"recipe_fingerprint"',
+    ):
+        require(atlas_summary, summary_field, f"Recorder Lite atlas field {summary_field}", failures)
+    require(build, "latitudeRecorderLiteAtlasTest", "Recorder Lite atlas test task", failures)
 
     require(
         build,
