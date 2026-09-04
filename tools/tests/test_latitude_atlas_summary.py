@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+import io
 import json
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -129,6 +132,49 @@ class LatitudeAtlasSummaryTest(unittest.TestCase):
             result = summary_tool.compare(donor, candidate, "donor", "candidate")
             self.assertEqual(0, result["wrong_band"]["new_count"])
             self.assertEqual("pass", result["verdict"])
+
+    def test_missing_band_policy_is_unknown_not_exempt(self):
+        for missing_side in ("donor", "candidate"):
+            with self.subTest(missing_side=missing_side), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                bundles = {}
+                for side in ("donor", "candidate"):
+                    allowed = {} if side == missing_side else {"minecraft:dappled_forest": ["temperate"]}
+                    bundles[side] = self.bundle(
+                        root, side, ["minecraft:dappled_forest"] * 4,
+                        allowed, ["temperate"] * 4)
+                result = summary_tool.compare(bundles["donor"], bundles["candidate"], "donor", "candidate")
+                self.assertEqual("unknown", result["verdict"])
+                self.assertEqual(["minecraft:dappled_forest"], result["unclassified_biomes"][missing_side])
+                self.assertIn("Unclassified " + missing_side + " biomes: minecraft:dappled_forest",
+                              summary_tool.friendly_text(result))
+
+    def test_cli_names_report_completion_and_unknown_verdict(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            donor = self.bundle(root, "donor", ["minecraft:dappled_forest"] * 4,
+                                {}, ["temperate"] * 4)
+            candidate = self.bundle(root, "candidate", ["minecraft:dappled_forest"] * 4,
+                                    {}, ["temperate"] * 4)
+            output = io.StringIO()
+            argv = ["atlas-summary", "--donor", str(donor), "--candidate", str(candidate),
+                    "--json-out", str(root / "summary.json"), "--text-out", str(root / "summary.txt")]
+            with patch.object(sys, "argv", argv), redirect_stdout(output):
+                self.assertEqual(0, summary_tool.main())
+            self.assertIn("SUMMARY_COMPLETE verdict=unknown", output.getvalue())
+            self.assertNotIn("SUMMARY_PASS", output.getvalue())
+            self.assertEqual("unknown", json.loads((root / "summary.json").read_text())["verdict"])
+
+    def test_explicit_band_exemption_remains_valid(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            donor = self.bundle(root, "donor", ["minecraft:ocean"] * 4,
+                                {"minecraft:ocean": []}, ["tropical"] * 4)
+            candidate = self.bundle(root, "candidate", ["minecraft:ocean"] * 4,
+                                    {"minecraft:ocean": []}, ["polar"] * 4)
+            result = summary_tool.compare(donor, candidate, "donor", "candidate")
+            self.assertEqual("pass", result["verdict"])
+            self.assertEqual({"donor": [], "candidate": []}, result["unclassified_biomes"])
 
     def test_missing_bundle_file_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -237,7 +237,13 @@ def compare(donor: Path, candidate: Path, donor_label: str, candidate_label: str
         if before.split(":", 1)[0] != "minecraft" and before != after
     )
     wrong_band = wrong_band_comparison(donor, donor_cells, candidate, candidate_cells)
+    unclassified = {
+        "donor": sorted(set(donor_cells) - allowed_bands(donor).keys()),
+        "candidate": sorted(set(candidate_cells) - allowed_bands(candidate).keys()),
+    }
     verdict = "fail" if wrong_band["new_count"] or lost_providers else "pass"
+    if verdict == "pass" and any(unclassified.values()):
+        verdict = "unknown"
 
     return {
         "schema": SCHEMA,
@@ -248,6 +254,7 @@ def compare(donor: Path, candidate: Path, donor_label: str, candidate_label: str
         "new_arrivals": sorted(candidate_inventory - donor_inventory),
         "disappearances": sorted(donor_inventory - candidate_inventory),
         "wrong_band": wrong_band,
+        "unclassified_biomes": unclassified,
         "provider_reachability": {
             "donor": donor_providers,
             "candidate": candidate_providers,
@@ -264,6 +271,7 @@ def friendly_text(summary: dict[str, Any]) -> str:
     disappearances = summary["disappearances"]
     provider = summary["provider_reachability"]
     wrong = summary["wrong_band"]
+    unclassified = summary.get("unclassified_biomes", {"donor": [], "candidate": []})
     lines = [
         "Latitude Recorder Lite atlas comparison",
         f"Verdict: {summary['verdict'].upper()}",
@@ -277,6 +285,8 @@ def friendly_text(summary: dict[str, Any]) -> str:
         "Lost providers: " + (", ".join(provider["lost_providers"])
                                if provider["lost_providers"] else "none"),
         f"Changed non-Minecraft winners: {summary['non_minecraft_winner_changes']}",
+        "Unclassified donor biomes: " + (", ".join(unclassified["donor"]) or "none"),
+        "Unclassified candidate biomes: " + (", ".join(unclassified["candidate"]) or "none"),
         "Largest biome-share changes:",
     ]
     for row in summary["share_changes"][:10]:
@@ -315,7 +325,7 @@ def main() -> int:
         atomic_write(args.text_out.resolve(), friendly_text(summary))
     except AtlasSummaryError as error:
         parser.error(str(error))
-    print("LATITUDE_RECORDER_ATLAS_SUMMARY_PASS")
+    print(f"LATITUDE_RECORDER_ATLAS_SUMMARY_COMPLETE verdict={summary['verdict']}")
     return 0
 
 

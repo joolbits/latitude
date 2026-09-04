@@ -1,6 +1,7 @@
 package com.example.globe.dev;
 
 import com.example.globe.util.LatitudeBands;
+import com.example.globe.world.DappledForestPlacementPolicy;
 
 import java.util.List;
 import java.util.Locale;
@@ -41,6 +42,7 @@ final class BiomeBandPolicy {
             entry("minecraft:plains", LatitudeBands.Band.TROPICAL, LatitudeBands.Band.SUBTROPICAL, LatitudeBands.Band.TEMPERATE),
             entry("minecraft:sunflower_plains", LatitudeBands.Band.TEMPERATE),
             entry("minecraft:forest", LatitudeBands.Band.SUBTROPICAL, LatitudeBands.Band.TEMPERATE),
+            entry(DappledForestPlacementPolicy.BIOME_ID, LatitudeBands.Band.TEMPERATE),
             entry("minecraft:flower_forest", LatitudeBands.Band.SUBTROPICAL, LatitudeBands.Band.TEMPERATE),
             entry("minecraft:birch_forest", LatitudeBands.Band.SUBTROPICAL, LatitudeBands.Band.TEMPERATE),
             entry("minecraft:old_growth_birch_forest", LatitudeBands.Band.SUBTROPICAL, LatitudeBands.Band.TEMPERATE),

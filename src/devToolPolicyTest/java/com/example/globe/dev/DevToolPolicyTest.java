@@ -16,6 +16,7 @@ public final class DevToolPolicyTest {
     }
 
     public static void main(String[] args) throws Exception {
+        atlasBandCatalogNamesDappledAndPreservesExemptions();
         sanitizationIsStableAndTraversalSafe();
         packagedTestIdentityAndProbePolicyFailClosed();
         latitudeMappingUsesCenterBoundsAndBlockCenters();
@@ -25,6 +26,17 @@ public final class DevToolPolicyTest {
         caseSessionIsAppendOnlyOrderedAndExplicitlyClosed();
         recorderLiteBindsPrivateIdentityAndRouteWithoutLeakingSummary();
         System.out.println("DEV_TOOL_POLICY_TEST_PASS assertions=" + assertions);
+    }
+
+    private static void atlasBandCatalogNamesDappledAndPreservesExemptions() {
+        expectTrue(BiomeBandPolicy.canonicalBandIdsFor("minecraft:dappled_forest")
+                        .equals(List.of("temperate")),
+                "Dappled must be audited against its temperate placement band");
+        expectTrue(BiomeBandPolicy.policy().containsKey("minecraft:ocean")
+                        && BiomeBandPolicy.canonicalBandIdsFor("minecraft:ocean").isEmpty(),
+                "an explicitly exempt ocean must remain distinguishable from missing policy");
+        expectTrue(!BiomeBandPolicy.policy().containsKey("example:unreviewed"),
+                "unknown biome policy must not be guessed from its name");
     }
 
     private static void packagedTestIdentityAndProbePolicyFailClosed() {
