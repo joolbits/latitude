@@ -1815,7 +1815,18 @@ public class LatitudeCreateWorldScreen extends Screen {
             draggingPaneStripScrollbar = false;
             return true;
         }
-        return super.mouseReleased(click);
+        boolean handled = super.mouseReleased(click);
+        if (click.button() == 0) {
+            clearStillButtonMouseFocus();
+        }
+        return handled;
+    }
+
+    private void clearStillButtonMouseFocus() {
+        if (stillBackgroundBtn != null && this.getFocused() == stillBackgroundBtn) {
+            stillBackgroundBtn.setFocused(false);
+            this.setFocused(null);
+        }
     }
 
     // ══════════════════════════════════════════════════════════════
