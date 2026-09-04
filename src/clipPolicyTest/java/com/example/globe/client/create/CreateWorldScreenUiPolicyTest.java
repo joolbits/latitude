@@ -28,6 +28,7 @@ public final class CreateWorldScreenUiPolicyTest {
         bespokeBackgroundUsesFixedEightyPercentOpacity();
         stillBackgroundControlStaysOnTheMainScreenAndPersists();
         stillBackgroundMouseFocusClearsAfterRelease();
+        stillBackgroundWaitsForTheIntroReveal();
         accessibilityFooterAvoidsTheCreateButtons();
         tabClicksUseRealWidgetOwnership();
         System.out.println("PASS CreateWorldScreenUiPolicyTest assertions=" + assertions);
@@ -100,12 +101,25 @@ public final class CreateWorldScreenUiPolicyTest {
         int returned = screen.indexOf("return handled;", clear);
         expectTrue(release >= 0 && clear > release && returned > clear,
                 "mouse release must clear the Still button focus after widget dispatch");
-        expectTrue(screen.contains("this.getFocused() == stillBackgroundBtn"),
-                "focus clearing must be limited to the Still button");
+        expectTrue(screen.contains("stillBackgroundBtn.isFocused()"),
+                "focus clearing must trust the Still button's own focus state");
         expectTrue(screen.contains("stillBackgroundBtn.setFocused(false)"),
                 "the Still button must not retain its click highlight");
         expectTrue(screen.contains("this.setFocused(null)"),
                 "the screen must release its matching focus owner");
+        expectTrue(screen.contains("stillButtonMouseInteraction"),
+                "mouse focus clearing must not erase ordinary keyboard focus");
+        expectTrue(screen.contains("!stillBackgroundBtn.isMouseOver(mouseX, mouseY)"),
+                "moving the pointer away must clear any late retained mouse focus");
+    }
+
+    private static void stillBackgroundWaitsForTheIntroReveal() throws IOException {
+        String screen = Files.readString(Path.of(
+                "src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java"));
+        expectTrue(screen.contains("setTabbedWidgetVisible(stillBackgroundBtn, true)"),
+                "Still must appear with the rest of the create-world UI");
+        expectTrue(screen.contains("setTabbedWidgetVisible(stillBackgroundBtn, false)"),
+                "Still must remain hidden during the Latitude title intro");
     }
 
     private static void accessibilityFooterAvoidsTheCreateButtons() {
