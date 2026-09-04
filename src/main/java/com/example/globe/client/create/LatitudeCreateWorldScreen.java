@@ -264,6 +264,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private Button createWorldBtn;
     private Button cancelBtn;
     private Button stillBackgroundBtn;
+    private boolean stillButtonMouseInteraction;
 
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
         super(Component.literal("New World"));
@@ -1273,6 +1274,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             setTabbedWidgetVisible(tab, showTabs);
         }
         if (!introActive()) {
+            setTabbedWidgetVisible(stillBackgroundBtn, true);
             setTabbedWidgetVisible(createWorldBtn, true);
             setTabbedWidgetVisible(cancelBtn, true);
             return;
@@ -1295,6 +1297,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         setTabbedWidgetVisible(bonusChestBtn, false);
         setTabbedWidgetVisible(gameRulesBtn, false);
         setTabbedWidgetVisible(hudStudioBtn, false);
+        setTabbedWidgetVisible(stillBackgroundBtn, false);
         setTabbedWidgetVisible(createWorldBtn, false);
         setTabbedWidgetVisible(cancelBtn, false);
     }
@@ -1697,7 +1700,14 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (isInsideSpawnPanel(mouseX, mouseY) && !isInsideSpawnClip(mouseX, mouseY)) {
             return true;
         }
-        return super.mouseClicked(mouseX, mouseY, button);
+        boolean stillClicked = button == 0
+                && stillBackgroundBtn != null
+                && stillBackgroundBtn.isMouseOver(mouseX, mouseY);
+        boolean handled = super.mouseClicked(mouseX, mouseY, button);
+        if (stillClicked && handled) {
+            stillButtonMouseInteraction = true;
+        }
+        return handled;
     }
 
     @Override
@@ -1729,16 +1739,29 @@ public class LatitudeCreateWorldScreen extends Screen {
             return true;
         }
         boolean handled = super.mouseReleased(mouseX, mouseY, button);
-        if (button == 0) {
+        if (button == 0 && stillButtonMouseInteraction) {
             clearStillButtonMouseFocus();
         }
         return handled;
     }
 
+    @Override
+    public void mouseMoved(double mouseX, double mouseY) {
+        super.mouseMoved(mouseX, mouseY);
+        if (stillButtonMouseInteraction
+                && stillBackgroundBtn != null
+                && !stillBackgroundBtn.isMouseOver(mouseX, mouseY)) {
+            clearStillButtonMouseFocus();
+            stillButtonMouseInteraction = false;
+        }
+    }
+
     private void clearStillButtonMouseFocus() {
-        if (stillBackgroundBtn != null && this.getFocused() == stillBackgroundBtn) {
+        if (stillBackgroundBtn != null && stillBackgroundBtn.isFocused()) {
             stillBackgroundBtn.setFocused(false);
-            this.setFocused(null);
+            if (this.getFocused() == stillBackgroundBtn) {
+                this.setFocused(null);
+            }
         }
     }
 
