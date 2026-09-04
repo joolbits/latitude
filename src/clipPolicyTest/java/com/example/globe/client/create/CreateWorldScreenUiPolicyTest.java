@@ -27,6 +27,7 @@ public final class CreateWorldScreenUiPolicyTest {
         highScaleFrameKeepsTightMargins();
         bespokeBackgroundUsesFixedEightyPercentOpacity();
         stillBackgroundControlStaysOnTheMainScreenAndPersists();
+        stillBackgroundMouseFocusClearsAfterRelease();
         accessibilityFooterAvoidsTheCreateButtons();
         tabClicksUseRealWidgetOwnership();
         System.out.println("PASS CreateWorldScreenUiPolicyTest assertions=" + assertions);
@@ -89,6 +90,22 @@ public final class CreateWorldScreenUiPolicyTest {
                 "panel opacity must remain a fixed design value, not saved configuration");
         expectTrue(config.contains("private Boolean createWorldStillBackgroundValue = false;"),
                 "older configs must retain the scenic background by default");
+    }
+
+    private static void stillBackgroundMouseFocusClearsAfterRelease() throws IOException {
+        String screen = Files.readString(Path.of(
+                "src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java"));
+        int release = screen.indexOf("boolean handled = super.mouseReleased(click);");
+        int clear = screen.indexOf("clearStillButtonMouseFocus();", release);
+        int returned = screen.indexOf("return handled;", clear);
+        expectTrue(release >= 0 && clear > release && returned > clear,
+                "mouse release must clear the Still button focus after widget dispatch");
+        expectTrue(screen.contains("this.getFocused() == stillBackgroundBtn"),
+                "focus clearing must be limited to the Still button");
+        expectTrue(screen.contains("stillBackgroundBtn.setFocused(false)"),
+                "the Still button must not retain its click highlight");
+        expectTrue(screen.contains("this.setFocused(null)"),
+                "the screen must release its matching focus owner");
     }
 
     private static void accessibilityFooterAvoidsTheCreateButtons() {
