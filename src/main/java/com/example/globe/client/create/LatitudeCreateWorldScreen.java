@@ -277,7 +277,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private Button createWorldBtn;
     private Button cancelBtn;
     private Button stillBackgroundBtn;
-    private boolean stillButtonMouseInteraction;
+    private boolean lastInputWasMouse;
 
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
         this(onClose, parent, holder, false);
@@ -1734,6 +1734,7 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        lastInputWasMouse = true;
         if (introActive()) {
             skipIntro();
             return true;
@@ -1787,28 +1788,15 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (isInsideSpawnPanel(click.x(), click.y()) && !isInsideSpawnClip(click.x(), click.y())) {
             return true;
         }
-        boolean stillClicked = click.button() == 0
-                && stillBackgroundBtn != null
-                && stillBackgroundBtn.isMouseOver(click.x(), click.y());
-        boolean handled = super.mouseClicked(click, doubled);
-        if (stillClicked) {
-            stillButtonMouseInteraction = true;
-            // 26.3 assigns ordinary Button focus during mouse-down. Clear it immediately so the
-            // accessibility toggle uses hover-only feedback for a mouse, while keyPressed below
-            // still preserves visible focus for keyboard navigation.
-            clearStillButtonMouseFocus();
-        }
-        return handled;
+        return super.mouseClicked(click, doubled);
     }
 
     @Override
     public boolean keyPressed(net.minecraft.client.input.KeyEvent input) {
+        lastInputWasMouse = false;
         if (introActive()) {
             skipIntro();
             return true;
-        }
-        if (stillBackgroundBtn != null && stillBackgroundBtn.isFocused()) {
-            stillButtonMouseInteraction = false;
         }
         if (tabbedMode && input.key() == InputConstants.KEY_TAB && input.hasControlDown()) {
             switchTab(CreateWorldScreenUiPolicy.cyclePanel(activeTab, TAB_LABELS.length, input.hasShiftDown()));
@@ -1832,26 +1820,11 @@ public class LatitudeCreateWorldScreen extends Screen {
             draggingPaneStripScrollbar = false;
             return true;
         }
-        boolean handled = super.mouseReleased(click);
-        if (click.button() == 0 && stillButtonMouseInteraction) {
-            clearStillButtonMouseFocus();
-        }
-        return handled;
-    }
-
-    @Override
-    public void mouseMoved(double mouseX, double mouseY) {
-        super.mouseMoved(mouseX, mouseY);
-        if (stillButtonMouseInteraction
-                && stillBackgroundBtn != null
-                && !stillBackgroundBtn.isMouseOver(mouseX, mouseY)) {
-            clearStillButtonMouseFocus();
-            stillButtonMouseInteraction = false;
-        }
+        return super.mouseReleased(click);
     }
 
     private void clearStillButtonMouseFocus() {
-        if (stillBackgroundBtn != null && stillBackgroundBtn.isFocused()) {
+        if (stillBackgroundBtn != null) {
             stillBackgroundBtn.setFocused(false);
             if (this.getFocused() == stillBackgroundBtn) {
                 this.setFocused(null);
@@ -1870,13 +1843,12 @@ public class LatitudeCreateWorldScreen extends Screen {
         // three-column run, which would make the NEXT create-world attempt inherit a stale
         // mid-fade. See CreateWorldIntroClock: the fade is frame-driven, never wall-clock.
         CreateWorldIntroClock.advance(Util.getMillis());
-        if (stillButtonMouseInteraction
-                && stillBackgroundBtn != null
-                && !stillBackgroundBtn.isMouseOver(mouseX, mouseY)) {
-            // SDL may update the rendered pointer position without delivering mouseMoved to this
-            // screen. The per-frame coordinates are the final authority for hover-only mouse glow.
+        if (stillBackgroundBtn != null
+                && !CreateWorldScreenUiPolicy.shouldRetainButtonFocus(
+                        lastInputWasMouse, stillBackgroundBtn.isMouseOver(mouseX, mouseY))) {
+            // Rendering always has the current pointer position, even when SDL does not deliver a
+            // separate mouseMoved event. Mouse navigation is hover-only; keyboard focus is retained.
             clearStillButtonMouseFocus();
-            stillButtonMouseInteraction = false;
         }
         if (LatitudeConfig.createWorldStillBackground) {
             // Do not rewrite Minecraft's global panorama preference for one screen. Cover it with a
