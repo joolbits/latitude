@@ -1704,8 +1704,12 @@ public class LatitudeCreateWorldScreen extends Screen {
                 && stillBackgroundBtn != null
                 && stillBackgroundBtn.isMouseOver(mouseX, mouseY);
         boolean handled = super.mouseClicked(mouseX, mouseY, button);
-        if (stillClicked && handled) {
+        if (stillClicked) {
             stillButtonMouseInteraction = true;
+            // Minecraft assigns ordinary Button focus during mouse-down. Clear it immediately so the
+            // accessibility toggle uses hover-only feedback for a mouse, while keyPressed below
+            // still preserves visible focus for keyboard navigation.
+            clearStillButtonMouseFocus();
         }
         return handled;
     }
@@ -1715,6 +1719,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (introActive()) {
             skipIntro();
             return true;
+        }
+        if (stillBackgroundBtn != null && stillBackgroundBtn.isFocused()) {
+            stillButtonMouseInteraction = false;
         }
         if (tabbedMode && keyCode == InputConstants.KEY_TAB && Screen.hasControlDown()) {
             switchTab(CreateWorldScreenUiPolicy.cyclePanel(activeTab, TAB_LABELS.length, Screen.hasShiftDown()));
@@ -1776,6 +1783,14 @@ public class LatitudeCreateWorldScreen extends Screen {
         // three-column run, which would make the NEXT create-world attempt inherit a stale
         // mid-fade. See CreateWorldIntroClock: the fade is frame-driven, never wall-clock.
         CreateWorldIntroClock.advance(Util.getMillis());
+        if (stillButtonMouseInteraction
+                && stillBackgroundBtn != null
+                && !stillBackgroundBtn.isMouseOver(mouseX, mouseY)) {
+            // SDL may update the rendered pointer position without delivering mouseMoved to this
+            // screen. The per-frame coordinates are the final authority for hover-only mouse glow.
+            clearStillButtonMouseFocus();
+            stillButtonMouseInteraction = false;
+        }
         if (LatitudeConfig.createWorldStillBackground) {
             // Do not rewrite Minecraft's global panorama preference for one screen. Cover it with a
             // stable Latitude backdrop instead, then restore the scenic view instantly when toggled off.
@@ -2813,7 +2828,8 @@ public class LatitudeCreateWorldScreen extends Screen {
             int helperY = y + compactUi(2) + uiFontHeight() + compactUi(2);
             for (net.minecraft.network.chat.FormattedText wrappedLine : wrapUiLines(helper, helperWidth)) {
                 if (helperY + uiFontHeight() > y + h - compactUi(2)) break;
-                drawUiText(context, wrappedLine.getString(), textX, helperY, MUTED, false);
+                drawUiText(context, wrappedLine.getString(), textX, helperY,
+                        selected ? WARM_WHITE : MUTED, false);
                 helperY += uiFontHeight();
             }
 

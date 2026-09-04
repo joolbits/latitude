@@ -29,6 +29,7 @@ public final class CreateWorldScreenUiPolicyTest {
         stillBackgroundControlStaysOnTheMainScreenAndPersists();
         stillBackgroundMouseFocusClearsAfterRelease();
         stillBackgroundWaitsForTheIntroReveal();
+        selectedClimateDescriptionUsesReadableContrast();
         accessibilityFooterAvoidsTheCreateButtons();
         tabClicksUseRealWidgetOwnership();
         System.out.println("PASS CreateWorldScreenUiPolicyTest assertions=" + assertions);
@@ -112,6 +113,15 @@ public final class CreateWorldScreenUiPolicyTest {
                 "mouse focus clearing must not erase ordinary keyboard focus");
         expectTrue(screen.contains("!stillBackgroundBtn.isMouseOver(mouseX, mouseY)"),
                 "moving the pointer away must clear any late retained mouse focus");
+        int clicked = screen.indexOf(
+                "boolean handled = super.mouseClicked(mouseX, mouseY, button);");
+        int immediateClear = screen.indexOf("clearStillButtonMouseFocus();", clicked);
+        expectTrue(clicked >= 0 && immediateClear > clicked,
+                "mouse-down focus must be cleared immediately after widget dispatch");
+        int frameCoordinates = screen.indexOf("!stillBackgroundBtn.isMouseOver(mouseX, mouseY)",
+                screen.indexOf("public void render(GuiGraphics"));
+        expectTrue(frameCoordinates >= 0,
+                "rendered pointer coordinates must clear focus when SDL skips mouseMoved");
     }
 
     private static void stillBackgroundWaitsForTheIntroReveal() throws IOException {
@@ -121,6 +131,13 @@ public final class CreateWorldScreenUiPolicyTest {
                 "Still must appear with the rest of the create-world UI");
         expectTrue(screen.contains("setTabbedWidgetVisible(stillBackgroundBtn, false)"),
                 "Still must remain hidden during the Latitude title intro");
+    }
+
+    private static void selectedClimateDescriptionUsesReadableContrast() throws IOException {
+        String screen = Files.readString(Path.of(
+                "src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java"));
+        expectTrue(screen.contains("selected ? WARM_WHITE : MUTED, false"),
+                "the selected climate description must brighten while other rows stay muted");
     }
 
     private static void accessibilityFooterAvoidsTheCreateButtons() {
