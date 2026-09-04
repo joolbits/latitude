@@ -39,4 +39,8 @@ final class CreateWorldScreenUiPolicy {
     static boolean accessibilityControlsNeedOwnRow(int buttonRowStartX, int controlsWidth) {
         return EDGE_MARGIN + controlsWidth + PANE_GAP > buttonRowStartX;
     }
+
+    static boolean shouldRetainButtonFocus(boolean lastInputWasMouse, boolean hovered) {
+        return !lastInputWasMouse || hovered;
+    }
 }
