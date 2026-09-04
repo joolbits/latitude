@@ -44,6 +44,8 @@ public final class LatitudeConfig {
     public static boolean screenshotAlsoSaveToDisk = true;
     public static boolean screenshotClipboardWindowsPowerShell = defaultWindowsClipboardEnabled();
     public static boolean captureWriteCsv = false;
+    public static int createWorldPanelOpacity = 85;
+    public static boolean createWorldStillBackground = false;
 
     private boolean enableWarningParticlesValue = true;
     private boolean showWarningMessagesValue = true;
@@ -76,6 +78,9 @@ public final class LatitudeConfig {
     private boolean screenshotAlsoSaveToDiskValue = true;
     private boolean screenshotClipboardWindowsPowerShellValue = defaultWindowsClipboardEnabled();
     private boolean captureWriteCsvValue = false;
+    // Boxed so an older config that predates these options can be distinguished from an explicit value.
+    private Integer createWorldPanelOpacityValue = 85;
+    private Boolean createWorldStillBackgroundValue = false;
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path PATH = FabricLoader.getInstance().getConfigDir().resolve("globe_latitude.json");
@@ -138,6 +143,8 @@ public final class LatitudeConfig {
                         screenshotAlsoSaveToDisk = cfg.screenshotAlsoSaveToDiskValue;
                         screenshotClipboardWindowsPowerShell = cfg.screenshotClipboardWindowsPowerShellValue;
                         captureWriteCsv = cfg.captureWriteCsvValue;
+                        createWorldPanelOpacity = cfg.createWorldPanelOpacityValue;
+                        createWorldStillBackground = cfg.createWorldStillBackgroundValue;
                         return cfg;
                     }
                 }
@@ -178,6 +185,8 @@ public final class LatitudeConfig {
         screenshotAlsoSaveToDisk = fresh.screenshotAlsoSaveToDiskValue;
         screenshotClipboardWindowsPowerShell = fresh.screenshotClipboardWindowsPowerShellValue;
         captureWriteCsv = fresh.captureWriteCsvValue;
+        createWorldPanelOpacity = fresh.createWorldPanelOpacityValue;
+        createWorldStillBackground = fresh.createWorldStillBackgroundValue;
         save(fresh);
         return fresh;
     }
@@ -215,6 +224,8 @@ public final class LatitudeConfig {
             cfg.screenshotAlsoSaveToDiskValue = screenshotAlsoSaveToDisk;
             cfg.screenshotClipboardWindowsPowerShellValue = screenshotClipboardWindowsPowerShell;
             cfg.captureWriteCsvValue = captureWriteCsv;
+            cfg.createWorldPanelOpacityValue = createWorldPanelOpacity;
+            cfg.createWorldStillBackgroundValue = createWorldStillBackground;
             Files.createDirectories(PATH.getParent());
             try (Writer w = Files.newBufferedWriter(PATH)) {
                 GSON.toJson(cfg, w);
@@ -235,6 +246,10 @@ public final class LatitudeConfig {
 
         latitudeBandBlendWidthFracValue = clamp(latitudeBandBlendWidthFracValue, 0.0, 1.0);
         latitudeBandBoundaryWarpFracValue = clamp(latitudeBandBoundaryWarpFracValue, 0.0, 1.0);
+
+        if (createWorldPanelOpacityValue == null) createWorldPanelOpacityValue = 85;
+        createWorldPanelOpacityValue = clampInt(createWorldPanelOpacityValue, 75, 100);
+        if (createWorldStillBackgroundValue == null) createWorldStillBackgroundValue = false;
     }
 
     private static double clamp(double v, double lo, double hi) {
