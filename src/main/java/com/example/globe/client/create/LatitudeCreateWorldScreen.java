@@ -11,7 +11,6 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -67,15 +66,15 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final int WARM_WHITE = 0xFFEDE0D0;
     private static final int MUTED = 0xFF8C8078;
     private static final int PANEL_BORDER = 0xFF5C4A3A;
+    private static final int PANEL_BG = CreateWorldScreenUiPolicy.bespokeBackground(PANEL_BG_RGB);
+    private static final int TAB_INACTIVE_BG = CreateWorldScreenUiPolicy.bespokeBackground(TAB_INACTIVE_BG_RGB);
     private static final int SCROLLBAR_GUTTER = 6;
     private static final int MIN_LEFT_W = 108;   // World: text fields (leftW-8) + padding
     private static final int MIN_RIGHT_W = 130;  // Spawn Zone: zone rows + description
     private static final int MIN_RAIL_W = 130;   // Rules: enough for world-type label (safeWidth = railW-66 >= 64px)
     private static final int HIGH_GUI_SCALE = 3;
     private static final int MIN_COMFORTABLE_THREE_COL_WIDTH = 720;
-    private static final int ACCESSIBILITY_SLIDER_WIDTH = 156;
     private static final int ACCESSIBILITY_BUTTON_WIDTH = 96;
-    private static final int ACCESSIBILITY_CONTROL_GAP = 4;
     private static final double[] PREVIEW_LABEL_DEGREES = {0.0, 23.5, 35.0, 50.0, 66.5, 90.0};
 
     private static final GlobeWorldSize DEFAULT_SIZE = GlobeWorldSize.REGULAR;
@@ -277,7 +276,6 @@ public class LatitudeCreateWorldScreen extends Screen {
     private final boolean continueIntroFromPreparing;
     private Button createWorldBtn;
     private Button cancelBtn;
-    private BackgroundOpacitySlider backgroundOpacitySlider;
     private Button stillBackgroundBtn;
 
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
@@ -592,8 +590,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         int cancelW = Math.max(70, this.font.width("Cancel") + 20);
         int totalBtnW = beginW + btnSpacing + cancelW;
         int btnStartX = cx - totalBtnW / 2;
-        int desiredAccessibilityWidth = ACCESSIBILITY_SLIDER_WIDTH
-                + ACCESSIBILITY_CONTROL_GAP + ACCESSIBILITY_BUTTON_WIDTH;
+        int desiredAccessibilityWidth = ACCESSIBILITY_BUTTON_WIDTH;
         boolean accessibilityOwnRow = CreateWorldScreenUiPolicy.accessibilityControlsNeedOwnRow(
                 btnStartX, desiredAccessibilityWidth);
         int accessibilityY = accessibilityOwnRow
@@ -673,8 +670,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         // Frozen tab order — widgets added in exact sequence:
         // 1–2. Tabs when present  3. World Name  4. Seed  5. Size ◀  6. Size ▶
         // 7–11. Zone rows (Tropical → Polar)
-        // 12–20. Settings rail  21. Panel opacity  22. Still background
-        // 23. Begin Expedition  24. Cancel
+        // 12–20. Settings rail  21. Still background
+        // 22. Begin Expedition  23. Cancel
         // ═══════════════════════════════════════════════
 
         // ── 3. World Name + 4. Seed (share one row to free up vertical space) ──
@@ -795,35 +792,24 @@ public class LatitudeCreateWorldScreen extends Screen {
             applyTabbedVisibility();
         }
 
-        // ── 21–22. Always-visible accessibility controls ──
-        int controlsAvailableW = accessibilityOwnRow
-                ? Math.max(120, this.width - CreateWorldScreenUiPolicy.EDGE_MARGIN * 2)
-                : desiredAccessibilityWidth;
-        int stillW = Math.min(ACCESSIBILITY_BUTTON_WIDTH, Math.max(58, controlsAvailableW / 3));
-        int opacityW = Math.max(58, controlsAvailableW - ACCESSIBILITY_CONTROL_GAP - stillW);
+        // ── 21. Always-visible accessibility control ──
         int accessibilityX = CreateWorldScreenUiPolicy.EDGE_MARGIN;
-        this.backgroundOpacitySlider = new BackgroundOpacitySlider(
-                accessibilityX, accessibilityY, opacityW, btnH,
-                LatitudeConfig.createWorldPanelOpacity);
-        this.addRenderableWidget(this.backgroundOpacitySlider);
-
         this.stillBackgroundBtn = Button.builder(stillBackgroundLabel(), b -> {
                     LatitudeConfig.createWorldStillBackground = !LatitudeConfig.createWorldStillBackground;
                     b.setMessage(stillBackgroundLabel());
                     LatitudeConfig.saveCurrent();
                 })
-                .bounds(accessibilityX + opacityW + ACCESSIBILITY_CONTROL_GAP,
-                        accessibilityY, stillW, btnH)
+                .bounds(accessibilityX, accessibilityY, ACCESSIBILITY_BUTTON_WIDTH, btnH)
                 .build();
         this.addRenderableWidget(this.stillBackgroundBtn);
 
-        // ── 23. Create World ──
+        // ── 22. Create World ──
         this.createWorldBtn = Button.builder(Component.literal("Create World"), b -> beginExpedition())
                 .bounds(btnStartX, bottomY, beginW, btnH)
                 .build();
         this.addRenderableWidget(this.createWorldBtn);
 
-        // ── 24. Cancel ──
+        // ── 23. Cancel ──
         this.cancelBtn = Button.builder(Component.literal("Cancel"), b -> onClose())
                 .bounds(btnStartX + beginW + btnSpacing, bottomY, cancelW, btnH)
                 .build();
@@ -1971,7 +1957,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         int textMaxW = descPanelW - 12;
         String spawnLine = spawnZoneDescription();
         if (rightDescPanelH > scaledUi(24)) {
-            context.fill(descPanelX, rightDescPanelY, descPanelX + descPanelW, rightDescPanelY + rightDescPanelH, panelBackground());
+            context.fill(descPanelX, rightDescPanelY, descPanelX + descPanelW, rightDescPanelY + rightDescPanelH, PANEL_BG);
             int sideColor = randomZone ? MUTED : BAND_COLORS[selectedZone.ordinal()];
             context.fill(descPanelX, rightDescPanelY, descPanelX + 2, rightDescPanelY + rightDescPanelH, sideColor);
 
@@ -2572,16 +2558,6 @@ public class LatitudeCreateWorldScreen extends Screen {
         return WORLD_TYPE_NAMES[Math.max(0, Math.min(worldTypeIdx, WORLD_TYPE_NAMES.length - 1))];
     }
 
-    private static int panelBackground() {
-        return CreateWorldScreenUiPolicy.bespokeBackground(
-                PANEL_BG_RGB, LatitudeConfig.createWorldPanelOpacity);
-    }
-
-    private static int inactiveTabBackground() {
-        return CreateWorldScreenUiPolicy.bespokeBackground(
-                TAB_INACTIVE_BG_RGB, LatitudeConfig.createWorldPanelOpacity);
-    }
-
     private static Component stillBackgroundLabel() {
         return Component.literal("Still: "
                 + (LatitudeConfig.createWorldStillBackground ? "ON" : "OFF"));
@@ -2602,7 +2578,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         context.fill(x, y, x + 1, y + h, PANEL_BORDER);
         context.fill(x + w - 1, y, x + w, y + h, PANEL_BORDER);
         // Fill
-        context.fill(x + 1, y + 1, x + w - 1, y + h - 1, panelBackground());
+        context.fill(x + 1, y + 1, x + w - 1, y + h - 1, PANEL_BG);
         // Subtle grid decoration
         drawGridDecoration(context, x + 1, y + 1, w - 2, h - 2);
     }
@@ -2701,7 +2677,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             int tabW = tabWidths[i];
             boolean active = i == activeTab;
             boolean hovered = !active && mouseX >= x && mouseX < x + tabW && mouseY >= tabStripY && mouseY < tabStripY + TAB_H;
-            int bg = active || hovered ? panelBackground() : inactiveTabBackground();
+            int bg = active || hovered ? PANEL_BG : TAB_INACTIVE_BG;
             int border = active ? GOLD : PANEL_BORDER;
             // Tab background
             context.fill(x, tabStripY, x + tabW, tabStripY + TAB_H, bg);
@@ -2711,7 +2687,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             context.fill(x + tabW - 1, tabStripY, x + tabW, tabStripY + TAB_H, border);
             if (active) {
                 // Active tab: no bottom border (merges with panel)
-                context.fill(x + 1, tabStripY + TAB_H - 1, x + tabW - 1, tabStripY + TAB_H, panelBackground());
+                context.fill(x + 1, tabStripY + TAB_H - 1, x + tabW - 1, tabStripY + TAB_H, PANEL_BG);
             } else {
                 // Inactive tab: bottom border
                 context.fill(x, tabStripY + TAB_H - 1, x + tabW, tabStripY + TAB_H, PANEL_BORDER);
@@ -2754,42 +2730,6 @@ public class LatitudeCreateWorldScreen extends Screen {
     // ── Diameter formatting: "7,500", "10,000", etc. ──
     private static String formatDiameter(int diameter) {
         return String.format(Locale.ROOT, "%,d", diameter);
-    }
-
-    private static final class BackgroundOpacitySlider extends AbstractSliderButton {
-        private static final int STEP_PERCENT = 5;
-
-        private BackgroundOpacitySlider(int x, int y, int width, int height, int initialPercent) {
-            super(x, y, width, height, Component.empty(), toNormalized(initialPercent));
-            updateMessage();
-        }
-
-        @Override
-        protected void updateMessage() {
-            this.setMessage(Component.literal("Background: " + opacityPercent() + "%"));
-        }
-
-        @Override
-        protected void applyValue() {
-            LatitudeConfig.createWorldPanelOpacity = opacityPercent();
-            LatitudeConfig.saveCurrent();
-            updateMessage();
-        }
-
-        private int opacityPercent() {
-            int min = CreateWorldScreenUiPolicy.MIN_BACKGROUND_OPACITY_PERCENT;
-            int max = CreateWorldScreenUiPolicy.MAX_BACKGROUND_OPACITY_PERCENT;
-            int raw = (int) Math.round(min + (max - min) * this.value);
-            int stepped = min + Math.round((raw - min) / (float) STEP_PERCENT) * STEP_PERCENT;
-            return CreateWorldScreenUiPolicy.clampBackgroundOpacity(stepped);
-        }
-
-        private static double toNormalized(int opacityPercent) {
-            int min = CreateWorldScreenUiPolicy.MIN_BACKGROUND_OPACITY_PERCENT;
-            int max = CreateWorldScreenUiPolicy.MAX_BACKGROUND_OPACITY_PERCENT;
-            int clamped = CreateWorldScreenUiPolicy.clampBackgroundOpacity(opacityPercent);
-            return (double) (clamped - min) / (double) (max - min);
-        }
     }
 
     // ══════════════════════════════════════════════════════════════
