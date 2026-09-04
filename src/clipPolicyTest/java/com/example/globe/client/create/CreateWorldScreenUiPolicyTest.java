@@ -14,8 +14,18 @@ final class CreateWorldScreenUiPolicyTest {
         keyboardTabCycleVisitsEveryPanelInBothDirections();
         keyboardTabCycleRejectsANonPositivePanelCount();
         highScaleFrameKeepsTightMargins();
+        bespokeBackgroundUsesSeventyFivePercentOpacity();
         tabClicksUseRealWidgetOwnership();
         return assertions;
+    }
+
+    private static void bespokeBackgroundUsesSeventyFivePercentOpacity() {
+        int background = CreateWorldScreenUiPolicy.bespokeBackground(0x3A302A);
+        expect(191, CreateWorldScreenUiPolicy.BESPOKE_BACKGROUND_ALPHA,
+                "rounded 75 percent alpha");
+        expect(191, background >>> 24, "bespoke background alpha channel");
+        expect(0x3A302A, background & 0x00FFFFFF,
+                "bespoke background keeps its brown color");
     }
 
     private static void highScaleFrameKeepsTightMargins() {

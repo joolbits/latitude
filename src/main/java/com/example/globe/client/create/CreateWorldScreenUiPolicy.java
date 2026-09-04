@@ -16,6 +16,7 @@ final class CreateWorldScreenUiPolicy {
     static final int BUTTON_ROW_TOP_FROM_BOTTOM = 20;
     static final int PANE_GAP = 2;
     static final int TAB_GAP = 1;
+    static final int BESPOKE_BACKGROUND_ALPHA = Math.round(255 * 0.75f);
 
     private CreateWorldScreenUiPolicy() {
     }
@@ -25,5 +26,9 @@ final class CreateWorldScreenUiPolicy {
             throw new IllegalArgumentException("panelCount must be positive");
         }
         return Math.floorMod(activePanel + (reverse ? -1 : 1), panelCount);
+    }
+
+    static int bespokeBackground(int rgb) {
+        return (BESPOKE_BACKGROUND_ALPHA << 24) | (rgb & 0x00FFFFFF);
     }
 }
