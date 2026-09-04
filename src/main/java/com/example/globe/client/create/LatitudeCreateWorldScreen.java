@@ -58,12 +58,14 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final Logger LOGGER = LoggerFactory.getLogger("LatitudeCreateWorldScreen");
 
     // ── Theme constants ──
-    private static final int BG_COLOR = 0xFF2C2420;
+    private static final int BG_COLOR = CreateWorldScreenUiPolicy.bespokeBackground(0x2C2420);
     private static final int GOLD = 0xFFD4A74A;
     private static final int WARM_WHITE = 0xFFEDE0D0;
     private static final int MUTED = 0xFF8C8078;
     private static final int PANEL_BORDER = 0xFF5C4A3A;
-    private static final int PANEL_BG = 0xFF3A302A;
+    private static final int PANEL_BG = CreateWorldScreenUiPolicy.bespokeBackground(0x3A302A);
+    private static final int TAB_HOVER_BG = CreateWorldScreenUiPolicy.bespokeBackground(0x3A302A);
+    private static final int TAB_INACTIVE_BG = CreateWorldScreenUiPolicy.bespokeBackground(0x2A2420);
     private static final int SCROLLBAR_GUTTER = 6;
     private static final int MIN_LEFT_W = 108;   // World: text fields (leftW-8) + padding
     private static final int MIN_RIGHT_W = 130;  // Spawn Zone: zone rows + description
@@ -2642,7 +2644,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             int tabW = tabWidths[i];
             boolean active = i == activeTab;
             boolean hovered = !active && mouseX >= x && mouseX < x + tabW && mouseY >= tabStripY && mouseY < tabStripY + TAB_H;
-            int bg = active ? PANEL_BG : (hovered ? 0xFF3A302A : 0xFF2A2420);
+            int bg = active ? PANEL_BG : (hovered ? TAB_HOVER_BG : TAB_INACTIVE_BG);
             int border = active ? GOLD : PANEL_BORDER;
             // Tab background
             context.fill(x, tabStripY, x + tabW, tabStripY + TAB_H, bg);
