@@ -25,6 +25,7 @@ public final class CreateWorldScreenUiPolicyTest {
         singlePanelStaysPut();
         rejectsNonPositivePanelCount();
         highScaleFrameKeepsTightMargins();
+        bespokeBackgroundUsesSeventyFivePercentOpacity();
         tabClicksUseRealWidgetOwnership();
         System.out.println("PASS CreateWorldScreenUiPolicyTest assertions=" + assertions);
     }
@@ -60,6 +61,15 @@ public final class CreateWorldScreenUiPolicyTest {
         if (!threw) {
             throw new AssertionError("zero panel count must be rejected");
         }
+    }
+
+    private static void bespokeBackgroundUsesSeventyFivePercentOpacity() {
+        int background = CreateWorldScreenUiPolicy.bespokeBackground(0x3A302A);
+        expect(191, CreateWorldScreenUiPolicy.BESPOKE_BACKGROUND_ALPHA,
+                "rounded 75 percent alpha");
+        expect(191, background >>> 24, "bespoke background alpha channel");
+        expect(0x3A302A, background & 0x00FFFFFF,
+                "bespoke background keeps its brown color");
     }
 
     private static void highScaleFrameKeepsTightMargins() {
