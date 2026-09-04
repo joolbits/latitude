@@ -14,18 +14,51 @@ final class CreateWorldScreenUiPolicyTest {
         keyboardTabCycleVisitsEveryPanelInBothDirections();
         keyboardTabCycleRejectsANonPositivePanelCount();
         highScaleFrameKeepsTightMargins();
-        bespokeBackgroundUsesSeventyFivePercentOpacity();
+        bespokeBackgroundUsesPlayerSelectedOpacity();
+        accessibilityControlsStayOnTheMainScreenAndPersist();
+        accessibilityFooterAvoidsTheCreateButtons();
         tabClicksUseRealWidgetOwnership();
         return assertions;
     }
 
-    private static void bespokeBackgroundUsesSeventyFivePercentOpacity() {
-        int background = CreateWorldScreenUiPolicy.bespokeBackground(0x3A302A);
-        expect(191, CreateWorldScreenUiPolicy.BESPOKE_BACKGROUND_ALPHA,
-                "rounded 75 percent alpha");
-        expect(191, background >>> 24, "bespoke background alpha channel");
+    private static void bespokeBackgroundUsesPlayerSelectedOpacity() {
+        int background = CreateWorldScreenUiPolicy.bespokeBackground(
+                0x3A302A, CreateWorldScreenUiPolicy.DEFAULT_BACKGROUND_OPACITY_PERCENT);
+        expect(217, background >>> 24, "rounded default 85 percent alpha channel");
         expect(0x3A302A, background & 0x00FFFFFF,
                 "bespoke background keeps its brown color");
+        expect(191, CreateWorldScreenUiPolicy.bespokeBackground(0x3A302A, 75) >>> 24,
+                "minimum 75 percent alpha channel");
+        expect(255, CreateWorldScreenUiPolicy.bespokeBackground(0x3A302A, 100) >>> 24,
+                "solid alpha channel");
+        expect(75, CreateWorldScreenUiPolicy.clampBackgroundOpacity(20),
+                "opacity cannot fall below the readable floor");
+        expect(100, CreateWorldScreenUiPolicy.clampBackgroundOpacity(120),
+                "opacity cannot exceed solid");
+    }
+
+    private static void accessibilityControlsStayOnTheMainScreenAndPersist() throws Exception {
+        String screen = Files.readString(Path.of(
+                "src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java"));
+        String config = Files.readString(Path.of(
+                "src/main/java/com/example/globe/client/LatitudeConfig.java"));
+        expectTrue(screen.contains("this.addRenderableWidget(this.backgroundOpacitySlider)"),
+                "panel-opacity slider must belong to the main screen");
+        expectTrue(screen.contains("this.addRenderableWidget(this.stillBackgroundBtn)"),
+                "still-background control must belong to the main screen");
+        expectTrue(screen.contains("LatitudeConfig.saveCurrent()"),
+                "accessibility changes must be remembered immediately");
+        expectTrue(config.contains("private Integer createWorldPanelOpacityValue = 85;"),
+                "older configs must receive the 85 percent default");
+        expectTrue(config.contains("private Boolean createWorldStillBackgroundValue = false;"),
+                "older configs must retain the scenic background by default");
+    }
+
+    private static void accessibilityFooterAvoidsTheCreateButtons() {
+        expectTrue(!CreateWorldScreenUiPolicy.accessibilityControlsNeedOwnRow(300, 240),
+                "wide screens keep one compact footer row");
+        expectTrue(CreateWorldScreenUiPolicy.accessibilityControlsNeedOwnRow(180, 240),
+                "narrow screens give accessibility controls their own row");
     }
 
     private static void highScaleFrameKeepsTightMargins() {
