@@ -16,7 +16,8 @@ final class CreateWorldScreenUiPolicyTest {
         highScaleFrameKeepsTightMargins();
         bespokeBackgroundUsesFixedEightyPercentOpacity();
         stillBackgroundControlStaysOnTheMainScreenAndPersists();
-        stillBackgroundMouseFocusClearsAfterRelease();
+        mouseAndKeyboardFocusFollowInputMode();
+        stillBackgroundUsesTheSharedFocusRule();
         stillBackgroundWaitsForTheIntroReveal();
         selectedClimateDescriptionUsesReadableContrast();
         accessibilityFooterAvoidsTheCreateButtons();
@@ -50,32 +51,30 @@ final class CreateWorldScreenUiPolicyTest {
                 "older configs must retain the scenic background by default");
     }
 
-    private static void stillBackgroundMouseFocusClearsAfterRelease() throws Exception {
+    private static void mouseAndKeyboardFocusFollowInputMode() {
+        expectTrue(!CreateWorldScreenUiPolicy.shouldRetainButtonFocus(true, false),
+                "mouse focus must clear after the pointer leaves");
+        expectTrue(CreateWorldScreenUiPolicy.shouldRetainButtonFocus(true, true),
+                "real mouse hover must remain highlighted");
+        expectTrue(CreateWorldScreenUiPolicy.shouldRetainButtonFocus(false, false),
+                "keyboard focus must remain visible without mouse hover");
+    }
+
+    private static void stillBackgroundUsesTheSharedFocusRule() throws Exception {
         String screen = Files.readString(Path.of(
                 "src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java"));
-        int release = screen.indexOf("boolean handled = super.mouseReleased(click);");
-        int clear = screen.indexOf("clearStillButtonMouseFocus();", release);
-        int returned = screen.indexOf("return handled;", clear);
-        expectTrue(release >= 0 && clear > release && returned > clear,
-                "mouse release must clear the Still button focus after widget dispatch");
-        expectTrue(screen.contains("stillBackgroundBtn.isFocused()"),
-                "focus clearing must trust the Still button's own focus state");
+        expectTrue(screen.contains("lastInputWasMouse = true;"),
+                "mouse clicks must select mouse focus behavior");
+        expectTrue(screen.contains("lastInputWasMouse = false;"),
+                "keyboard input must select keyboard focus behavior");
+        expectTrue(screen.contains("CreateWorldScreenUiPolicy.shouldRetainButtonFocus("),
+                "Still must use the tested shared input-mode rule during rendering");
         expectTrue(screen.contains("stillBackgroundBtn.setFocused(false)"),
                 "the Still button must not retain its click highlight");
         expectTrue(screen.contains("this.setFocused(null)"),
                 "the screen must release its matching focus owner");
-        expectTrue(screen.contains("stillButtonMouseInteraction"),
-                "mouse focus clearing must not erase ordinary keyboard focus");
-        expectTrue(screen.contains("!stillBackgroundBtn.isMouseOver(mouseX, mouseY)"),
-                "moving the pointer away must clear any late retained mouse focus");
-        int clicked = screen.indexOf("boolean handled = super.mouseClicked(click, doubled);");
-        int immediateClear = screen.indexOf("clearStillButtonMouseFocus();", clicked);
-        expectTrue(clicked >= 0 && immediateClear > clicked,
-                "mouse-down focus must be cleared immediately after widget dispatch");
-        int frameCoordinates = screen.indexOf("!stillBackgroundBtn.isMouseOver(mouseX, mouseY)",
-                screen.indexOf("public void extractRenderState"));
-        expectTrue(frameCoordinates >= 0,
-                "rendered pointer coordinates must clear focus when SDL skips mouseMoved");
+        expectTrue(!screen.contains("stillButtonMouseInteraction"),
+                "failed per-click focus bookkeeping must not remain in the runtime path");
     }
 
     private static void stillBackgroundWaitsForTheIntroReveal() throws Exception {
