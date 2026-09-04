@@ -121,7 +121,6 @@ loom {
             runDir latitudePreviewRunDir
             vmArg "-Xms2G"
             vmArg "-Xmx8G"
-            vmArg "-Dlatdev.biomePng=${System.getProperty('latdev.biomePng', 'enabled')}"
             vmArg "-Dlatdev.locateBoundary=${System.getProperty('latdev.locateBoundary', '')}"
             vmArg "-Dlatitude.debugWorldgenPath=${System.getProperty('latitude.debugWorldgenPath', 'false')}"
             // Terrain-aware atlas was reachable in code but not from the command line: BiomePreviewExporter
@@ -866,6 +865,8 @@ tasks.named('runBiomePreview').configure {
             logger.lifecycle("[runBiomePreview] forwarding latdev.badlandsScan to the preview JVM: {}", badlandsScan)
         }
 
+        // Keep the recipe out of Loom's later JVM argument provider.
+        def previewRecipe = System.getProperty('latdev.biomePng', '').trim() ?: 'enabled'
         def rawArgs = new ArrayList(args ?: [])
         def latdevOptions = [:]
         def passthrough = []
@@ -942,11 +943,21 @@ tasks.named('runBiomePreview').configure {
             }
             def propValue = propParts.join(';')
 
-            jvmArgs "-Dlatdev.biomePng=${propValue}"
+            previewRecipe = propValue
             setArgs(passthrough)
             logger.lifecycle("[runBiomePreview] translated latdev --args to JVM property: {}", propValue)
         } else {
             setArgs(rawArgs)
+        }
+
+        systemProperty 'latdev.biomePng', previewRecipe
+        // allJvmArgs includes Loom's provider arguments; jvmArgs alone does not.
+        def launchJvmArgs = allJvmArgs
+        def expectedRecipeArg = "-Dlatdev.biomePng=${previewRecipe}".toString()
+        if (launchJvmArgs.any {
+            it.startsWith('-Dlatdev.biomePng=') && it != expectedRecipeArg
+        }) {
+            throw new GradleException('Biome preview recipe is shadowed by another JVM argument')
         }
     }
 }
