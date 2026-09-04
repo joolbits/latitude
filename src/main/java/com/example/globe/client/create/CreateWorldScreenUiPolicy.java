@@ -15,7 +15,9 @@ final class CreateWorldScreenUiPolicy {
     static final int BUTTON_ROW_TOP_FROM_BOTTOM = 20;
     static final int PANE_GAP = 2;
     static final int TAB_GAP = 1;
-    static final int BESPOKE_BACKGROUND_ALPHA = Math.round(255 * 0.75f);
+    static final int MIN_BACKGROUND_OPACITY_PERCENT = 75;
+    static final int DEFAULT_BACKGROUND_OPACITY_PERCENT = 85;
+    static final int MAX_BACKGROUND_OPACITY_PERCENT = 100;
 
     private CreateWorldScreenUiPolicy() {
     }
@@ -31,7 +33,17 @@ final class CreateWorldScreenUiPolicy {
         return Math.floorMod(activePanel + (reverse ? -1 : 1), panelCount);
     }
 
-    static int bespokeBackground(int rgb) {
-        return (BESPOKE_BACKGROUND_ALPHA << 24) | (rgb & 0x00FFFFFF);
+    static int clampBackgroundOpacity(int opacityPercent) {
+        return Math.max(MIN_BACKGROUND_OPACITY_PERCENT,
+                Math.min(MAX_BACKGROUND_OPACITY_PERCENT, opacityPercent));
+    }
+
+    static int bespokeBackground(int rgb, int opacityPercent) {
+        int alpha = Math.round(255 * clampBackgroundOpacity(opacityPercent) / 100.0f);
+        return (alpha << 24) | (rgb & 0x00FFFFFF);
+    }
+
+    static boolean accessibilityControlsNeedOwnRow(int buttonRowStartX, int controlsWidth) {
+        return EDGE_MARGIN + controlsWidth + PANE_GAP > buttonRowStartX;
     }
 }
