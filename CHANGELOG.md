@@ -1,5 +1,12 @@
 # Changelog
 
+## Latitude 1.5.1-beta.4 (Minecraft 1.21.11)
+
+- **Smoother transitions into the polar region.** Taiga now thins out in patches
+  across the subpolar edge instead of disappearing along a straight latitude line.
+  The polar tree line is preserved.
+- This changes newly generated terrain. Existing chunks keep their current biomes.
+
 ## Latitude 1.5.1 Beta 3 (Minecraft 1.21.11)
 
 A focused follow-up to Beta 1, bringing this line level with the 26.2 line's Beta 2 and then
