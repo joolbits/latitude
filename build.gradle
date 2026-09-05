@@ -723,7 +723,7 @@ tasks.register('latitudeRecorderLiteAtlasTest', Exec) {
     group = 'verification'
     description = 'Exercise Recorder Lite atlas comparison and negative fixtures'
     commandLine('python3', '-m', 'unittest', 'discover',
-            '-s', 'tools/tests', '-p', 'test_latitude_atlas_summary.py', '-v')
+            '-s', 'tools/tests', '-p', 'test*atlas*.py', '-v')
 }
 
 tasks.named('check').configure {
