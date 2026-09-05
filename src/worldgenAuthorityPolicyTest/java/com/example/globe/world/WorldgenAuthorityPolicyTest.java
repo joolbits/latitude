@@ -22,6 +22,11 @@ import net.minecraft.nbt.NbtIo;
 
 public final class WorldgenAuthorityPolicyTest {
     public static void main(String[] args) throws Exception {
+        if (args.length == 1 && "polar-transition".equals(args[0])) {
+            BiomeProviderSelectionPolicyTest.polarTaigaTransitionPreservesShouldersAndTreeLine();
+            System.out.println("POLAR_TAIGA_TRANSITION_TEST_PASS");
+            return;
+        }
         if (args.length == 1 && "feature-data".equals(args[0])) {
             worldgenFeatureDataUsesCurrentRegistry();
             System.out.println("WORLDGEN_FEATURE_DATA_TEST_PASS");
