@@ -33,10 +33,6 @@ public final class GlobeWarningOverlay {
             "The cold overwhelms you.";
     private static final int POLAR_KEYLINE_RGB = 0x080609;
 
-    private static final String EW_VISIBILITY_WARN_TEXT =
-            "Storms ahead. Low visibility; consider turning back.";
-    private static final String EW_VISIBILITY_DANGER_TEXT =
-            "Zero visibility ahead. Turn around.";
     private static final int EW_KEYLINE_RGB = 0x080609;
 
     // render() runs every frame; cap the crash log so a persistent fault can't flood at frame rate.
@@ -125,13 +121,12 @@ public final class GlobeWarningOverlay {
         };
     }
 
-    private static Component ewTextForStage(GlobeClientState.EwStormStage stage) {
-        if (stage == null) return null;
-        return switch (stage) {
-            case LEVEL_1 -> Component.literal(EW_VISIBILITY_WARN_TEXT);
-            case LEVEL_2 -> Component.literal(EW_VISIBILITY_DANGER_TEXT);
-            default -> null;
-        };
+    private static Component ewTextForStage(GlobeClientState.EwStormStage stage, Minecraft client) {
+        if (stage == null || client.level == null || client.player == null) return null;
+        var border = client.level.getWorldBorder();
+        String text = EwPresentationPolicy.warningText(
+                ewRank(stage), border.getMinX(), border.getMaxX(), client.player.getX());
+        return text == null ? null : Component.literal(text);
     }
 
     public static void render(GuiGraphics ctx, DeltaTracker tickCounter) {
@@ -238,7 +233,7 @@ public final class GlobeWarningOverlay {
             Component bestText;
             if (state.type() == GlobeClientState.WarningType.STORM) {
                 GlobeClientState.EwStormStage stage = (GlobeClientState.EwStormStage) state.stage();
-                bestText = ewTextForStage(stage);
+                bestText = ewTextForStage(stage, client);
             } else {
                 bestText = poleTextForStage(activePolarStage);
             }

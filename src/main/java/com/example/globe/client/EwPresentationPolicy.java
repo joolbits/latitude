@@ -57,6 +57,16 @@ public final class EwPresentationPolicy {
         return Math.min(Math.abs(x - westBorder), Math.abs(eastBorder - x));
     }
 
+    /** Name the nearby world edge, independently of the player's viewing direction. */
+    public static String warningText(int stageRank, double westBorder, double eastBorder, double x) {
+        String direction = Math.abs(x - westBorder) < Math.abs(eastBorder - x) ? "west" : "east";
+        return switch (stageRank) {
+            case 1 -> "Storms to the " + direction + ". Low visibility; consider turning back.";
+            case 2 -> "Zero visibility to the " + direction + ". Turn around.";
+            default -> null;
+        };
+    }
+
     public static float fogIntensity(double distanceToBorder) {
         double t = (FOG_START_DISTANCE_BLOCKS - distanceToBorder)
                 / (FOG_START_DISTANCE_BLOCKS - FOG_FULL_DISTANCE_BLOCKS);
