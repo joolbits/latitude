@@ -7,6 +7,8 @@
   The polar tree line is preserved.
 - This changes newly generated terrain. Existing chunks keep their current biomes.
 - Edge storm warnings now say whether the storm is to the east or west.
+- **Less repeat work while exploring new terrain.** Latitude no longer repeats a
+  custom-biome scan that was only needed for disabled diagnostics during chunk decoration.
 
 ## Latitude 1.5.1 Beta 3 (Minecraft 1.21.11)
 
