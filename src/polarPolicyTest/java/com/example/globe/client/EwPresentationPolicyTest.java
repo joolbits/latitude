@@ -21,6 +21,7 @@ public final class EwPresentationPolicyTest {
         fogEnvelopeUsesThe400To50Smoothstep();
         warmSandHazeStopsAtTheSubpolarBoundary();
         borderDistanceIsSymmetricThroughTheCanonicalMinFormula();
+        warningCopyNamesTheActualWorldEdge();
         particlesUseTheFixedFogEnvelopeAndActualBorder();
         warningEpisodesAreFiniteDirectionalAndRearmable();
         pausedCrossingAndDirectEntryFollowStrictApproachSemantics();
@@ -310,6 +311,27 @@ public final class EwPresentationPolicyTest {
                 "clock resync does not rearm a warning episode");
     }
 
+    private static void warningCopyNamesTheActualWorldEdge() {
+        // Shifted borders catch implementations that mistake the sign of X for the edge.
+        for (double[] borders : new double[][]{{-10000, 10000}, {1000, 3000}, {-3000, -1000}}) {
+            for (boolean east : new boolean[]{false, true}) {
+                String direction = east ? "east" : "west";
+                double edge = east ? borders[1] : borders[0];
+                for (double inward : new double[]{300, 50, 0, -10}) {
+                    double x = edge + (east ? -inward : inward);
+                    assertTrue(("Storms to the " + direction + ". Low visibility; consider turning back.")
+                                    .equals(EwPresentationPolicy.warningText(1, borders[0], borders[1], x)),
+                            "advisory names the nearby " + direction + " edge");
+                    assertTrue(("Zero visibility to the " + direction + ". Turn around.")
+                                    .equals(EwPresentationPolicy.warningText(2, borders[0], borders[1], x)),
+                            "danger names the same " + direction + " edge, including at or beyond it");
+                    assertTrue(EwPresentationPolicy.warningText(0, borders[0], borders[1], x) == null,
+                            "no warning stage remains silent");
+                }
+            }
+        }
+    }
+
     private static void staticIntegrationProofsHold() throws IOException {
         String state = normalize(read("src/main/java/com/example/globe/client/GlobeClientState.java"));
         String overlay = read("src/main/java/com/example/globe/client/GlobeWarningOverlay.java");
@@ -326,9 +348,10 @@ public final class EwPresentationPolicyTest {
                         && state.contains("EwPresentationPolicy.SKY_SAMPLE_COUNT")
                         && state.contains("EXPOSURE_RECOMPUTE_TICKS = 5"),
                 "live exposure shim uses the exact 13-sample five-tick cache policy");
-        assertTrue(overlay.contains("Storms ahead. Low visibility; consider turning back.")
-                        && overlay.contains("Zero visibility ahead. Turn around."),
-                "warning copy is exact");
+        assertTrue(overlay.contains("EwPresentationPolicy.warningText(")
+                        && overlay.contains("ewRank(stage), border.getMinX(), border.getMaxX(), client.player.getX()")
+                        && overlay.contains("ewTextForStage(stage, client)"),
+                "warning copy receives the actual world borders and player position");
         assertTrue(!overlay.contains("Sandstorm on the horizon"),
                 "warning copy remains truthful outside sandstorm climates");
         assertTrue(!overlay.contains("ChatFormatting.BOLD"),

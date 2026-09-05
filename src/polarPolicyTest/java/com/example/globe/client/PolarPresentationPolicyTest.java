@@ -229,9 +229,10 @@ public final class PolarPresentationPolicyTest {
                 "Minecraft-facing warning state maps the executable dependency-free policy");
         assertTrue(overlay.contains("GlobeClientState.arbitrateWarning(activePolarStage, activeEwStage)"),
                 "overlay arbitrates from the finite active polar episode and canonical east/west text stage");
-        assertTrue(overlay.contains("Storms ahead. Low visibility; consider turning back.")
-                        && overlay.contains("Zero visibility ahead. Turn around."),
-                "east/west warning copy is exact");
+        assertTrue(overlay.contains("EwPresentationPolicy.warningText(")
+                        && overlay.contains("ewRank(stage), border.getMinX(), border.getMaxX(), client.player.getX()")
+                        && overlay.contains("ewTextForStage(stage, client)"),
+                "east/west warning copy receives the actual world borders and player position");
         assertTrue(!overlay.contains("Sandstorm on the horizon"),
                 "east/west warning copy remains truthful in polar geography");
         assertTrue(!overlay.contains("EW_SAND_WARN_TEMPLATE")

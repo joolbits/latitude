@@ -6,6 +6,7 @@
   across the subpolar edge instead of disappearing along a straight latitude line.
   The polar tree line is preserved.
 - This changes newly generated terrain. Existing chunks keep their current biomes.
+- Edge storm warnings now say whether the storm is to the east or west.
 
 ## Latitude 1.5.1-beta.3 (Minecraft 26.2)
 
