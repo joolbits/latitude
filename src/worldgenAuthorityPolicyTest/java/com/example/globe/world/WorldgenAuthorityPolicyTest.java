@@ -1578,6 +1578,18 @@ public final class WorldgenAuthorityPolicyTest {
         assertTrue(
                 occurrences(features, "LatitudeWorldgenScope.isActive()") >= 2,
                 "both feature-index and retainAll mutations fail open outside an authorized scope");
+        String retainAll = methodBody(
+                features,
+                "private boolean globe$logRetainAll(Set<?> biomes, Collection<?> retainSet) {",
+                "custom-biome retainAll");
+        assertTrue(
+                retainAll.contains("boolean debugRetainAll = LATITUDE_DEBUG_CUSTOM_RETAINALL_GATES;")
+                        && retainAll.contains("this.globe$customBiomeIndexSafe || debugRetainAll"),
+                "release worldgen keeps the custom-biome preservation snapshot but does not create it solely for disabled diagnostics");
+        assertTrue(
+                retainAll.indexOf("if (debugRetainAll)")
+                        < retainAll.indexOf("boolean after = latitude$hasPolicyCustomBiome"),
+                "the second full custom-biome scan is debug-only rather than per-chunk release work");
         assertTrue(
                 features.contains("LATITUDE_CUSTOM_INDEX_FAILURE_WARNED.compareAndSet(false, true)")
                         && features.contains("indexExpansion result=blocked exceptionType={}"),
