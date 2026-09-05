@@ -20,6 +20,11 @@ import net.minecraft.nbt.NbtIo;
 
 public final class WorldgenAuthorityPolicyTest {
     public static void main(String[] args) throws Exception {
+        if (args.length == 1 && "polar-transition".equals(args[0])) {
+            BiomeProviderSelectionPolicyTest.polarTaigaTransitionPreservesShouldersAndTreeLine();
+            System.out.println("POLAR_TAIGA_TRANSITION_TEST_PASS");
+            return;
+        }
         contextLifecycleIsExplicitAndClearsAllAuthority();
         ordinarySettersDoNotActivateGlobalGuards();
         inlineGeneratorAuthorityIsBoundToTheExactOverworld();
