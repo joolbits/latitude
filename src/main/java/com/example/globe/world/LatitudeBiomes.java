@@ -9141,13 +9141,34 @@ public final class LatitudeBiomes {
         return safe != null ? safe : out;
     }
 
+    /** Preserve the blended subpolar shoulder, then fade taiga out before the woody tree line. */
+    private static boolean taigaSurvivesPolarTransition(int landBandIndex, double latDeg,
+                                                       int blockX, int blockZ) {
+        if (landBandIndex >= BAND_POLAR || !Double.isFinite(latDeg)) {
+            return false;
+        }
+        double latitude = Math.abs(latDeg);
+        double start = LatitudeBands.Band.POLAR.lowDeg();
+        double end = PolarFoliagePolicy.MAX_WOODY_ABSOLUTE_LATITUDE_DEGREES;
+        if (latitude <= start) {
+            return true;
+        }
+        if (latitude >= end) {
+            return false;
+        }
+        double keep = 1.0 - smoothstep((latitude - start) / (end - start));
+        double noise = ValueNoise2D.sampleBlocks(
+                WORLD_SEED ^ 0x504F4C4152544149L, blockX, blockZ, SNOWY_RAMP_PATCH_BLOCKS);
+        return noise < keep;
+    }
+
     private static Holder<Biome> gatePolarTaigaSurvival(Registry<Biome> biomes,
                                                                 Holder<Biome> out,
                                                                 int landBandIndex,
                                                                 double latDeg,
                                                                 int blockX, int blockZ) {
-        boolean polarRange = landBandIndex >= BAND_POLAR || latDeg >= LatitudeBands.Band.POLAR.lowDeg();
-        if (!polarRange || !isTaigaFamilyBiome(out)) {
+        if (!isTaigaFamilyBiome(out)
+                || taigaSurvivesPolarTransition(landBandIndex, latDeg, blockX, blockZ)) {
             return out;
         }
         if (DEBUG_PROVINCE) {
@@ -9169,8 +9190,8 @@ public final class LatitudeBiomes {
                                                                 int landBandIndex,
                                                                 double latDeg,
                                                                 int blockX, int blockZ) {
-        boolean polarRange = landBandIndex >= BAND_POLAR || latDeg >= LatitudeBands.Band.POLAR.lowDeg();
-        if (!polarRange || !isTaigaFamilyBiome(out)) {
+        if (!isTaigaFamilyBiome(out)
+                || taigaSurvivesPolarTransition(landBandIndex, latDeg, blockX, blockZ)) {
             return out;
         }
         if (DEBUG_PROVINCE) {
