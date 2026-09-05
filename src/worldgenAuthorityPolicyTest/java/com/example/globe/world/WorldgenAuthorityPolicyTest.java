@@ -10,6 +10,11 @@ import net.minecraft.nbt.NbtIo;
 
 public final class WorldgenAuthorityPolicyTest {
     public static void main(String[] args) throws Exception {
+        if (args.length == 1 && "polar-transition".equals(args[0])) {
+            BiomeProviderSelectionPolicyTest.polarTaigaTransitionPreservesShouldersAndTreeLine();
+            System.out.println("POLAR_TAIGA_TRANSITION_TEST_PASS");
+            return;
+        }
         if (args.length == 1 && "humid-coverage".equals(args[0])) {
             landCoveragePrecedesEveryFinalAdmissionAuthority();
             BiomeProviderSelectionPolicyTest.runHumidCoverageProof();
@@ -24,7 +29,7 @@ public final class WorldgenAuthorityPolicyTest {
             return;
         }
         if (args.length != 0) {
-            throw new IllegalArgumentException("expected no arguments, humid-coverage, or warm-upland");
+            throw new IllegalArgumentException("expected no arguments, polar-transition, humid-coverage, or warm-upland");
         }
         contextLifecycleIsExplicitAndClearsAllAuthority();
         ordinarySettersDoNotActivateGlobalGuards();

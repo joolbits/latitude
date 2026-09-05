@@ -65,6 +65,7 @@ final class BiomeProviderSelectionPolicyTest {
         providerTicketHotPathCachesAndInvalidates();
         providerProfileCompatibilityIsBirthLocked();
         polarIceSpikeAccentStaysAMinorityInEveryPoolSize();
+        polarTaigaTransitionPreservesShouldersAndTreeLine();
         polarExtremeCapCatchesNameAlikeModdedBiomesConsistently();
         windsweptFamilyIsSubpolarMountainOnly();
         warmBeltIdentityIsProvinceOrdered();
@@ -613,6 +614,81 @@ final class BiomeProviderSelectionPolicyTest {
                 && (descriptor.family() == BiomeDescriptorLedger.Family.FOREST
                     || descriptor.family() == BiomeDescriptorLedger.Family.JUNGLE
                     || descriptor.family() == BiomeDescriptorLedger.Family.WETLAND);
+    }
+
+    static void polarTaigaTransitionPreservesShouldersAndTreeLine() throws Exception {
+        net.minecraft.SharedConstants.tryDetectVersion();
+        net.minecraft.server.Bootstrap.bootStrap();
+        Registry<Biome> registry = buildTestBiomeRegistry(List.of()).registry();
+        List<Holder<Biome>> pool = registry.listElements().map(h -> (Holder<Biome>) h).toList();
+        java.lang.reflect.Method registryGate = LatitudeBiomes.class.getDeclaredMethod(
+                "gatePolarTaigaSurvival", Registry.class, Holder.class,
+                int.class, double.class, int.class, int.class);
+        java.lang.reflect.Method collectionGate = LatitudeBiomes.class.getDeclaredMethod(
+                "gatePolarTaigaSurvival", java.util.Collection.class, Holder.class,
+                int.class, double.class, int.class, int.class);
+        registryGate.setAccessible(true);
+        collectionGate.setAccessible(true);
+        String[] taigas = {"minecraft:taiga", "minecraft:snowy_taiga",
+                "minecraft:old_growth_pine_taiga", "minecraft:old_growth_spruce_taiga"};
+        try {
+            LatitudeBiomes.setWorldSeed(1L);
+            for (int radius : new int[]{3750, 5000, 7500, 10000, 15000, 20000}) {
+                for (int sign : new int[]{-1, 1}) {
+                    int samples = 0, below = 0, above = 0, middle = 0, changedNeighbors = 0;
+                    for (int x = -radius; x <= radius; x += 64) {
+                        samples++;
+                        for (double latitude : new double[]{66.4, 66.6, 69.25, 72.0, 74.5, 80.0}) {
+                            int z = sign * (int) Math.round(radius * latitude / 90.0);
+                            double actualLatitude = Math.abs(z) * 90.0 / radius;
+                            for (String id : taigas) {
+                                Holder<Biome> input = holder(registry, id);
+                                Object a = registryGate.invoke(null, registry, input, 3, actualLatitude, x, z);
+                                Object b = collectionGate.invoke(null, pool, input, 3, actualLatitude, x, z);
+                                assertEquals(a, b, "both final picker paths must make the same transition decision");
+                                if (latitude <= 66.4) assertEquals(input, a, "subpolar taiga below the transition is unchanged");
+                                if (latitude >= 72.0) {
+                                    assertEquals(holder(registry, "minecraft:snowy_plains"), a,
+                                            "taiga must not extend past the existing woody tree line");
+                                }
+                                if (id.equals("minecraft:taiga")) {
+                                    if (latitude == 66.4 && a == input) below++;
+                                    if (latitude == 66.6 && a == input) above++;
+                                    if (latitude == 69.25 && a == input) middle++;
+                                    if (latitude == 69.25) {
+                                        Object neighbor = registryGate.invoke(null, registry, input, 3, actualLatitude, x + 1, z);
+                                        if (neighbor != a) changedNeighbors++;
+                                    }
+                                }
+                                Object polar = registryGate.invoke(null, registry, input, 4, actualLatitude, x, z);
+                                assertEquals(polar, collectionGate.invoke(null, pool, input, 4, actualLatitude, x, z),
+                                        "both final picker paths preserve the polar selection exclusion");
+                                assertEquals(holder(registry, "minecraft:snowy_plains"), polar,
+                                        "a genuinely polar blended selection must remain treeless");
+                            }
+                            Holder<Biome> meadow = holder(registry, "minecraft:meadow");
+                            assertEquals(meadow, registryGate.invoke(null, registry, meadow, 3, actualLatitude, x, z),
+                                    "the taiga transition must not replace another biome family");
+                        }
+                    }
+                    Holder<Biome> edgeTaiga = holder(registry, "minecraft:taiga");
+                    int edgeZ = sign * (int) Math.round(radius * 66.5 / 90.0);
+                    assertEquals(edgeTaiga, registryGate.invoke(null, registry, edgeTaiga, 3, 66.5, 0, edgeZ),
+                            "the exact transition start must preserve a blended subpolar selection");
+                    assertEquals(edgeTaiga, collectionGate.invoke(null, pool, edgeTaiga, 3, 66.5, 0, edgeZ),
+                            "collection path must preserve the exact transition start too");
+                    assertEquals(samples, below, "all pre-boundary subpolar taiga control points survive");
+                    assertTrue(above > samples * 0.95,
+                            "crossing 66.5 degrees must not synchronously erase the subpolar taiga pool");
+                    assertTrue(middle > 0 && middle < samples,
+                            "the shoulder must contain both surviving taiga and snow replacements");
+                    assertTrue(changedNeighbors < samples * 0.05,
+                            "survival decisions must form coherent patches rather than per-block noise");
+                }
+            }
+        } finally {
+            LatitudeBiomes.clearWorldgenContext();
+        }
     }
 
     private static void descriptorAdmissionIsClosedAndCanonical() {
