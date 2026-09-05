@@ -296,13 +296,15 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
         if (!LatitudeWorldgenScope.isActive()) {
             return biomes.retainAll(retainSet);
         }
+        boolean debugRetainAll = LATITUDE_DEBUG_CUSTOM_RETAINALL_GATES;
         Set<Identifier> retainIds = latitude$customBiomeRetainIds();
-        List<Holder<Biome>> beforePolicyHolders = latitude$policyCustomHoldersInSet(biomes, retainIds);
-        boolean before = !beforePolicyHolders.isEmpty();
-        int beforeSize = biomes.size();
-
-        List<Holder<Biome>> auditHolders = (before && !LATITUDE_DEBUG_CUSTOM_INDEX_AUDIT_DONE.get())
-                ? beforePolicyHolders : List.of();
+        int beforeSize = debugRetainAll ? biomes.size() : 0;
+        // Preserving a selected custom biome needs this snapshot. Ordinary release runs do not
+        // need the same traversal merely to assemble a debug report when preservation is inactive.
+        List<Holder<Biome>> beforePolicyHolders =
+                (this.globe$customBiomeIndexSafe || debugRetainAll)
+                        ? latitude$policyCustomHoldersInSet(biomes, retainIds)
+                        : List.of();
 
         boolean changed = biomes.retainAll(retainSet);
         int preservedCustom = 0;
@@ -318,21 +320,19 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
                 }
             }
         }
-        boolean after = latitude$hasPolicyCustomBiome(biomes, retainIds);
-
-        if (LATITUDE_DEBUG_CUSTOM_RETAINALL_GATES
-                && LATITUDE_DEBUG_CUSTOM_RETAINALL_LOGS.getAndIncrement() < LATITUDE_DEBUG_CUSTOM_RETAINALL_LOG_LIMIT
-                && (before || after)) {
-            GlobeMod.LOGGER.info("[LAT][CUSTOM_RETAINALL] classification={} beforeSize={} afterSize={} beforePolicyCustom={} afterPolicyCustom={} retainAllChanged={} preservedCustom={} indexSafe={} policyCustomBiomes={} featureTotal={} featureInIndex={}",
-                    LATITUDE_CUSTOM_RETAINALL_CLASSIFICATION, beforeSize, biomes.size(), before, after, changed,
-                    preservedCustom, this.globe$customBiomeIndexSafe, this.globe$customBiomePolicyCount,
-                    this.globe$customBiomeFeatureCount, this.globe$customBiomeIndexedCount);
-        }
-
-        if (LATITUDE_DEBUG_CUSTOM_RETAINALL_GATES
-                && !auditHolders.isEmpty()
-                && LATITUDE_DEBUG_CUSTOM_INDEX_AUDIT_DONE.compareAndSet(false, true)) {
-            latitude$auditCustomIndexedFeatures(auditHolders);
+        if (debugRetainAll) {
+            boolean before = !beforePolicyHolders.isEmpty();
+            boolean after = latitude$hasPolicyCustomBiome(biomes, retainIds);
+            if (LATITUDE_DEBUG_CUSTOM_RETAINALL_LOGS.getAndIncrement() < LATITUDE_DEBUG_CUSTOM_RETAINALL_LOG_LIMIT
+                    && (before || after)) {
+                GlobeMod.LOGGER.info("[LAT][CUSTOM_RETAINALL] classification={} beforeSize={} afterSize={} beforePolicyCustom={} afterPolicyCustom={} retainAllChanged={} preservedCustom={} indexSafe={} policyCustomBiomes={} featureTotal={} featureInIndex={}",
+                        LATITUDE_CUSTOM_RETAINALL_CLASSIFICATION, beforeSize, biomes.size(), before, after, changed,
+                        preservedCustom, this.globe$customBiomeIndexSafe, this.globe$customBiomePolicyCount,
+                        this.globe$customBiomeFeatureCount, this.globe$customBiomeIndexedCount);
+            }
+            if (before && LATITUDE_DEBUG_CUSTOM_INDEX_AUDIT_DONE.compareAndSet(false, true)) {
+                latitude$auditCustomIndexedFeatures(beforePolicyHolders);
+            }
         }
 
         return changed;
