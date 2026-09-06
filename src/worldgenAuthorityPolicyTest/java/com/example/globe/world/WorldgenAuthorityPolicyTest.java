@@ -1203,14 +1203,19 @@ public final class WorldgenAuthorityPolicyTest {
                                 "src/main/java/com/example/globe/world/SulfurSurfaceExpressionPolicy.java")),
                 "Latitude does not register or retain a sulfur pool/spike placement restriction");
 
-        String speleothemGuard = normalize(read(
+        // Sulfur speleothems are Minecraft 26.2 content, so this line carries no exemption for
+        // them. What it must keep is the guard itself, unconditional across all three dripstone
+        // features: an exemption added here would silently stop mowing surface dripstone.
+        String dripstoneGuard = normalize(read(
                 "src/main/java/com/example/globe/mixin/SurfaceDripstoneLawnmowerMixin.java"));
         assertTrue(
-                speleothemGuard.contains("latitude$isSulfurSpeleothem(context.config())")
-                        && speleothemGuard.contains("speleothem.pointedBlock().is(Blocks.SULFUR_SPIKE)")
-                        && speleothemGuard.contains("cluster.pointedBlock().is(Blocks.SULFUR_SPIKE)")
-                        && speleothemGuard.contains("if (nearSurfaceByHeightmap || skyVisible)"),
-                "sulfur speleothems fail open before the ordinary dripstone surface guard");
+                dripstoneGuard.contains("@Mixin({LargeDripstoneFeature.class, "
+                                + "DripstoneClusterFeature.class, PointedDripstoneFeature.class})")
+                        && dripstoneGuard.contains("if (nearSurfaceByHeightmap || skyVisible)"),
+                "the dripstone surface guard covers all three dripstone features on 26.1");
+        assertFalse(
+                dripstoneGuard.contains("SULFUR") || dripstoneGuard.contains("Speleothem"),
+                "26.1 has no sulfur or speleothem content for the dripstone guard to special-case");
     }
 
     /**
@@ -1256,13 +1261,17 @@ public final class WorldgenAuthorityPolicyTest {
      * Latitude serves its own overworld noise settings, so per-biome substrate painting is never
      * inherited from a new Minecraft version automatically. When 26.2 added sulfur caves, the fork
      * kept 27 of 28 clauses and dropped that one: the biome still generated, but nothing painted
-     * sulfur or cinnabar, so every substrate-gated feature no-opped with no error anywhere. This
-     * fails the build if a version bump ever drops another biome's substrate the same way.
+     * sulfur or cinnabar, so every substrate-gated feature no-opped with no error anywhere.
+     *
+     * <p>The comparison below is version-agnostic on purpose: it reads whatever the Minecraft on
+     * the test classpath actually paints and demands Latitude paint at least as much. On this 26.1
+     * line that set contains no sulfur caves, so the sulfur-specific clause assertions the 26.2
+     * tree carries are not reproduced here -- but the law that caught them still is.
      */
     private static void globeSurfaceRulesKeepEveryVanillaBiomeSubstrate() throws Exception {
         Set<String> vanillaBiomes = paintedBiomes(vanillaOverworldSurfaceRule());
-        assertTrue(vanillaBiomes.contains("minecraft:sulfur_caves"),
-                "the vanilla overworld surface rules on the test classpath must paint sulfur caves");
+        assertTrue(!vanillaBiomes.isEmpty(),
+                "the vanilla overworld surface rules on the test classpath must paint some biome");
 
         String shared = null;
         for (String name : GLOBE_NOISE_SETTINGS) {
@@ -1283,40 +1292,10 @@ public final class WorldgenAuthorityPolicyTest {
                     "globe surface rules drop substrate that Minecraft paints " + dropped + " in "
                             + name + "; port those clauses when moving Minecraft versions");
 
-            List<JsonObject> sulfurClauses = biomeClauses(surfaceRule, "minecraft:sulfur_caves");
-            assertTrue(sulfurClauses.size() == 3,
-                    "sulfur caves need their deep clause and both floor clauses in " + name
-                            + "; found " + sulfurClauses.size());
-            for (JsonObject clause : sulfurClauses) {
-                Set<String> painted = paintedBlocks(clause);
-                assertTrue(painted.contains("minecraft:sulfur")
-                                && painted.contains("minecraft:cinnabar"),
-                        "each sulfur clause must paint sulfur and cinnabar in " + name);
-                assertTrue(referencedNoises(clause).contains("minecraft:sulfur_cave_gradient"),
-                        "sulfur substrate must band on the vanilla gradient noise in " + name);
-            }
-
-            JsonArray topLevel = surfaceRule.getAsJsonArray("sequence");
-            int sulfurIndex = -1;
-            boolean gradientFollowsSulfur = false;
-            for (int i = 0; i < topLevel.size(); i++) {
-                JsonObject entry = topLevel.get(i).getAsJsonObject();
-                if (!entry.has("if_true") || !entry.get("if_true").isJsonObject()) {
-                    continue;
-                }
-                JsonObject condition = entry.getAsJsonObject("if_true");
-                if (isType(condition, "minecraft:biome")
-                        && biomeIds(condition).contains("minecraft:sulfur_caves")) {
-                    sulfurIndex = i;
-                } else if (sulfurIndex >= 0 && isType(condition, "minecraft:vertical_gradient")) {
-                    gradientFollowsSulfur = true;
-                }
-            }
-            assertTrue(sulfurIndex >= 0,
-                    "the deep sulfur clause must sit in the top-level rule sequence in " + name);
-            assertTrue(gradientFollowsSulfur,
-                    "the deep sulfur clause must be evaluated before the deepslate gradient in "
-                            + name + ", or deepslate wins underground and no substrate is painted");
+            assertTrue(biomeClauses(surfaceRule, "minecraft:sulfur_caves").isEmpty(),
+                    "26.1 has no sulfur caves, so " + name + " must not carry a sulfur clause; "
+                            + "sulfur, cinnabar and minecraft:sulfur_cave_gradient do not resolve "
+                            + "on this Minecraft line and would fail the noise settings to load");
         }
     }
 

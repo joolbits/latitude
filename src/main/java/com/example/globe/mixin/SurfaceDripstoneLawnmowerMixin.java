@@ -4,15 +4,12 @@ import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeWorldgenScope;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
 import net.minecraft.world.level.levelgen.feature.LargeDripstoneFeature;
-import net.minecraft.world.level.levelgen.feature.SpeleothemClusterFeature;
-import net.minecraft.world.level.levelgen.feature.SpeleothemFeature;
-import net.minecraft.world.level.levelgen.feature.configurations.SpeleothemClusterConfiguration;
-import net.minecraft.world.level.levelgen.feature.configurations.SpeleothemConfiguration;
+import net.minecraft.world.level.levelgen.feature.DripstoneClusterFeature;
+import net.minecraft.world.level.levelgen.feature.PointedDripstoneFeature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
@@ -21,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin({LargeDripstoneFeature.class, SpeleothemClusterFeature.class, SpeleothemFeature.class})
+@Mixin({LargeDripstoneFeature.class, DripstoneClusterFeature.class, PointedDripstoneFeature.class})
 public class SurfaceDripstoneLawnmowerMixin {
 
     @Unique
@@ -57,10 +54,6 @@ public class SurfaceDripstoneLawnmowerMixin {
                 || !GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
             return;
         }
-        if (latitude$isSulfurSpeleothem(context.config())) {
-            return;
-        }
-
         BlockPos origin = context.origin();
         int seaLevel = context.level().getSeaLevel();
         int surfaceY = context.level().getHeight(Heightmap.Types.WORLD_SURFACE_WG, origin.getX(), origin.getZ());
@@ -74,17 +67,6 @@ public class SurfaceDripstoneLawnmowerMixin {
             }
             cir.setReturnValue(false);
         }
-    }
-
-    @Unique
-    private static boolean latitude$isSulfurSpeleothem(Object config) {
-        if (config instanceof SpeleothemConfiguration speleothem) {
-            return speleothem.pointedBlock().is(Blocks.SULFUR_SPIKE);
-        }
-        if (config instanceof SpeleothemClusterConfiguration cluster) {
-            return cluster.pointedBlock().is(Blocks.SULFUR_SPIKE);
-        }
-        return false;
     }
 
     @Unique

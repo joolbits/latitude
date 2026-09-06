@@ -1517,9 +1517,9 @@ final class BiomeProviderSelectionPolicyTest {
     private static void caveCoverageIsClosedAndWorldSizeSafe() throws Exception {
         List<String> required = List.of(
                 "minecraft:deep_dark", "minecraft:dripstone_caves",
-                "minecraft:lush_caves", "minecraft:sulfur_caves");
+                "minecraft:lush_caves");
         assertEquals(Set.copyOf(required), CaveBiomeRepresentationProfile.mandatoryIds().keySet(),
-                "the four native cave identities are mandatory, exact, and closed");
+                "the three native cave identities present on 26.1 are mandatory, exact, and closed");
 
         BiomeSelectionProfile combined = BiomeSelectionProfile.capture(
                 registryFor(Set.of("biomesoplenty", "terralith", "clifftree")));
@@ -1659,9 +1659,9 @@ final class BiomeProviderSelectionPolicyTest {
         assertEquals(51, classifiedSurface.size(),
                 "all 51 vanilla Overworld surface identities are classified by land, water, or Pale Garden authority");
         assertEquals(Set.of("minecraft:deep_dark", "minecraft:dripstone_caves",
-                        "minecraft:lush_caves", "minecraft:sulfur_caves"),
+                        "minecraft:lush_caves"),
                 VanillaBiomeRepresentationProfile.nativeUndergroundIds(),
-                "the four underground identities are explicitly classified outside the surface planner");
+                "the three underground identities are explicitly classified outside the surface planner");
 
         int[] radii = {3_750, 5_000, 7_500, 10_000, 15_000, 20_000};
         long[] seeds = {3L, 41L, 131L, 461L};

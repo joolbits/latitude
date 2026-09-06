@@ -149,8 +149,7 @@ public final class VanillaBiomeRepresentationProfile {
 
     /** Native underground authority is classified, but deliberately outside this surface slice. */
     private static final Set<String> NATIVE_UNDERGROUND = Set.of(
-            "minecraft:deep_dark", "minecraft:dripstone_caves", "minecraft:lush_caves",
-            "minecraft:sulfur_caves");
+            "minecraft:deep_dark", "minecraft:dripstone_caves", "minecraft:lush_caves");
 
     private final WorldSize worldSize;
     private final Map<String, BiomeRoute> landTargets;

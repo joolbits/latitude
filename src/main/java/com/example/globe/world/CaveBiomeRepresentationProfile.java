@@ -21,8 +21,7 @@ public final class CaveBiomeRepresentationProfile {
     private static final Map<String, BiomeRoute> MANDATORY = Map.of(
             "minecraft:deep_dark", BiomeRoute.CAVE_DEEP,
             "minecraft:dripstone_caves", BiomeRoute.CAVE_SHALLOW,
-            "minecraft:lush_caves", BiomeRoute.CAVE_SHALLOW,
-            "minecraft:sulfur_caves", BiomeRoute.CAVE_SHALLOW);
+            "minecraft:lush_caves", BiomeRoute.CAVE_SHALLOW);
     private static final List<BiomeRoute> CAVE_ROUTES = List.of(
             BiomeRoute.CAVE_SHALLOW, BiomeRoute.CAVE_DEEP);
 
