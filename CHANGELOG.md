@@ -1,6 +1,6 @@
 # Changelog
 
-## Latitude 1.5.1-beta.4 (Minecraft 1.21.1)
+## Latitude 1.5.1-beta.5 (Minecraft 1.21.1)
 
 The first Latitude release for Minecraft 1.21.1 since 1.3.0, and it is a big jump: everything
 from 1.4 and the whole 1.5 line arrives at once. If you are coming from 1.3.0 on this version,
@@ -34,6 +34,9 @@ what was already generated.
   chose, and not inside a hazard.
 - **The loading screen is Latitude's.** Entering a Latitude world — new or existing — shows the
   Latitude loading pane instead of the bare vanilla screen.
+- **A still background for the create-world screen.** The **Still** toggle at the left of the
+  bottom button row on Latitude's create-world screen swaps the moving panorama for a flat dark
+  backdrop, and the choice is remembered between sessions.
 
 ### Improved
 
@@ -52,6 +55,10 @@ what was already generated.
 - **Less repeat work while exploring.** Latitude no longer redoes a custom-biome scan that was
   only needed for diagnostics that are switched off, and several worldgen paths cache what they
   had been recomputing per chunk.
+- **Create-world screen layout.** Panels sit tighter with less empty space, the World and Settings
+  tab headers are now real buttons you can reach and activate from the keyboard (and Minecraft's
+  narrator announces them), and panel backgrounds are slightly see-through so the panorama behind
+  shows through.
 
 ### Fixed
 
