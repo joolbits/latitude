@@ -19,9 +19,18 @@
     "minecraft:mangrove_roots",
     "minecraft:muddy_mangrove_roots",
     "minecraft:hanging_roots",
-    "minecraft:leaf_litter",
-    "minecraft:pale_moss_carpet",
-    "minecraft:pale_hanging_moss",
+    {
+      "id": "minecraft:leaf_litter",
+      "required": false
+    },
+    {
+      "id": "minecraft:pale_moss_carpet",
+      "required": false
+    },
+    {
+      "id": "minecraft:pale_hanging_moss",
+      "required": false
+    },
     "minecraft:spore_blossom"
   ]
 }
