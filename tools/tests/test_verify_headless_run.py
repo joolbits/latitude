@@ -64,6 +64,23 @@ class ClassifyTest(unittest.TestCase):
                 lines = CLEAN_RUN[:2] + [f"[12:00:31] [Server thread/INFO]: [latdev][{job}] stopping server"]
                 self.assertEqual(gate.classify(lines)[0], "PASS")
 
+    def test_structure_atlas_and_census_exporters_log_their_own_summary(self) -> None:
+        # These exporters own server shutdown and never print "[latdev][...] stopping server".
+        atlas = CLEAN_RUN[:2] + [
+            "[12:00:40] [Server thread/INFO]: [Latitude] structure atlas: 128 candidates across 7 structures in 9120 ms -> atlas.json",
+        ]
+        self.assertEqual(gate.classify(atlas)[0], "PASS")
+        refused = CLEAN_RUN[:2] + [
+            "[12:00:40] [Server thread/ERROR]: [Latitude] structure atlas REFUSED: no_overworld -> atlas.json",
+        ]
+        self.assertEqual(gate.classify(refused)[0], "FAIL")
+        census = CLEAN_RUN[:2] + [
+            "[12:00:40] [Server thread/INFO]: [Latitude] distribution census: 4096 samples, 31 biomes, hotspot 12 (0.29%) in 800 ms -> census.json",
+        ]
+        self.assertEqual(gate.classify(census)[0], "PASS")
+        failed = CLEAN_RUN[:2] + ["[12:00:40] [Server thread/ERROR]: [Latitude] distribution census failed"]
+        self.assertEqual(gate.classify(failed)[0], "FAIL")
+
     def test_no_completion_evidence_is_invalid_not_pass(self) -> None:
         # A boot that hangs, is killed, or never reaches the runner must not read as green.
         verdict, _ = gate.classify(CLEAN_RUN[:2])
