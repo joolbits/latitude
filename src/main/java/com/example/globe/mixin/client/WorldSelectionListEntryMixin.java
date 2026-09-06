@@ -50,6 +50,23 @@ public abstract class WorldSelectionListEntryMixin {
     @Unique
     private String globe$lastKnownBandLabel;
 
+    // The redirect below runs once per visible row per frame. Everything derived from the zone
+    // label is constant for the entry, and the fitted head text only changes when the incoming
+    // timestamp text or the row allotment changes, so both are memoized here to keep the per-frame
+    // cost at two draw calls, matching the one-shot behaviour of the newer lines.
+    @Unique
+    private Component globe$zoneSuffix;
+    @Unique
+    private int globe$zoneSuffixWidth;
+    @Unique
+    private String globe$headSourceText;
+    @Unique
+    private int globe$headAllotted = -1;
+    @Unique
+    private String globe$headText;
+    @Unique
+    private int globe$headWidth;
+
     /**
      * Appends the save's last-known climate zone onto the existing "id (date)" line, e.g.
      * "world (8/5/26, 9:11 AM) Temperate", read from the same on-disk state file the resumed-world
@@ -88,18 +105,29 @@ public abstract class WorldSelectionListEntryMixin {
             return graphics.drawString(font, text, x, y, color, dropShadow);
         }
 
-        Component suffix = Component.literal(" " + zone)
-                .withStyle(Style.EMPTY.withColor(GLOBE_LAST_ZONE_BADGE_COLOR));
+        if (this.globe$zoneSuffix == null) {
+            this.globe$zoneSuffix = Component.literal(" " + zone)
+                    .withStyle(Style.EMPTY.withColor(GLOBE_LAST_ZONE_BADGE_COLOR));
+            this.globe$zoneSuffixWidth = font.width(this.globe$zoneSuffix);
+        }
         int allotted = Math.max(0, (left + width) - x - 4);
-        String head = WorldListZoneFitPolicy.headText(
-                text,
-                font::width,
-                CommonComponents.ELLIPSIS.getString(),
-                font.width(suffix),
-                allotted);
+        if (this.globe$headText == null
+                || allotted != this.globe$headAllotted
+                || !text.equals(this.globe$headSourceText)) {
+            this.globe$headSourceText = text;
+            this.globe$headAllotted = allotted;
+            this.globe$headText = WorldListZoneFitPolicy.headText(
+                    text,
+                    font::width,
+                    CommonComponents.ELLIPSIS.getString(),
+                    this.globe$zoneSuffixWidth,
+                    allotted);
+            this.globe$headWidth = font.width(this.globe$headText);
+        }
 
-        int result = graphics.drawString(font, head, x, y, color, dropShadow);
-        graphics.drawString(font, suffix, x + font.width(head), y, GLOBE_LAST_ZONE_BADGE_COLOR, dropShadow);
+        int result = graphics.drawString(font, this.globe$headText, x, y, color, dropShadow);
+        graphics.drawString(font, this.globe$zoneSuffix, x + this.globe$headWidth, y,
+                GLOBE_LAST_ZONE_BADGE_COLOR, dropShadow);
         return result;
     }
 
