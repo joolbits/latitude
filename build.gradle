@@ -560,6 +560,23 @@ tasks.named('check').configure {
     dependsOn tasks.named('latitudeMixinTargetVerify')
 }
 
+// The verifiers under tools/ are gates, and a gate with no tests of its own is trusted rather
+// than checked. This runs their unit tests (tools/tests) through a runner that refuses to call
+// zero discovered tests a pass.
+tasks.register('latitudeToolsUnitTest', Exec) {
+    group = 'verification'
+    description = 'Run the unit tests of the Python verifiers under tools/'
+    inputs.dir('tools/tests')
+    inputs.file('tools/run_tool_tests.py')
+    inputs.file('tools/verify_mixin_targets.py')
+    inputs.file('tools/verify_headless_run.py')
+    commandLine('python3', file('tools/run_tool_tests.py'))
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudeToolsUnitTest')
+}
+
 def latitudeLocationDetailPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeLocationDetailPolicyTest')
 
 tasks.register('compileLatitudeLocationDetailPolicyTest', JavaCompile) {
@@ -805,6 +822,55 @@ tasks.register('syncBiomePreviewMods', Copy) {
     }
     into file("${latitudePreviewRunDir}/mods")
 }
+
+// The dedicated server swallows start-up failures: net.minecraft.server.Main catches Throwable
+// around the whole boot, logs "Failed to start the minecraft server" and returns normally, so
+// the JVM -- and with it these tasks -- exited 0 after a boot that never loaded a world. The
+// mod cannot fix that (no mod code runs after that line, and a shutdown hook cannot set the
+// exit status), so the run task tees the server console into build/latitude-headless/ and
+// tools/verify_headless_run.py decides PASS / FAIL / INVALID from what the run actually logged.
+// Only PASS keeps the task green; a run without completion evidence is INVALID, not a pass.
+def latitudeHeadlessCaptureDir = layout.buildDirectory.dir('latitude-headless')
+
+def latitudeTeeStream = { OutputStream primary, OutputStream capture ->
+    new OutputStream() {
+        @Override
+        void write(int b) { primary.write(b); capture.write(b) }
+
+        @Override
+        void write(byte[] b, int off, int len) { primary.write(b, off, len); capture.write(b, off, len) }
+
+        @Override
+        void flush() { primary.flush(); capture.flush() }
+    }
+}
+
+def latitudeGuardHeadlessRun = { String taskName ->
+    tasks.named(taskName).configure { task ->
+        def captureFile = latitudeHeadlessCaptureDir.get().file("${taskName}.log").asFile
+        doFirst {
+            captureFile.parentFile.mkdirs()
+            def capture = new FileOutputStream(captureFile)
+            task.ext.latitudeCapture = capture
+            task.standardOutput = latitudeTeeStream(System.out, capture)
+            task.errorOutput = latitudeTeeStream(System.err, capture)
+        }
+        doLast {
+            task.standardOutput.flush()
+            task.errorOutput.flush()
+            task.ext.latitudeCapture.close()
+            def proc = new ProcessBuilder('python3', project.file('tools/verify_headless_run.py').path,
+                    '--log', captureFile.path, '--task', taskName)
+                    .directory(project.projectDir).redirectErrorStream(true).start()
+            def out = proc.inputStream.text
+            logger.lifecycle(out.trim())
+            if (proc.waitFor() != 0) {
+                throw new GradleException("${taskName}: the headless run did not complete -- see ${captureFile}")
+            }
+        }
+    }
+}
+['runBiomePreview', 'runBiomeSeedSearch', 'runBandAudit'].each { latitudeGuardHeadlessRun(it) }
 
 tasks.named('runBiomePreview').configure {
     workingDir file(latitudePreviewRunDir)
