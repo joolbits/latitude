@@ -1,8 +1,8 @@
 # Changelog
 
-## Latitude 1.5.1-beta.4 (Minecraft 26.1, 26.1.1, 26.1.2)
+## Latitude 1.5.1-beta.5 (Minecraft 26.1, 26.1.1, 26.1.2)
 
-The 26.1 line catches up with everything from 1.5.1-beta.1 through beta.4 in one release, and now
+The 26.1 line catches up with everything from 1.5.1-beta.1 through beta.5 in one release, and now
 ships as a single jar covering Minecraft 26.1, 26.1.1 and 26.1.2. **Beta:** shipped for testing
 before the 1.5.1 stable tag.
 
@@ -26,6 +26,9 @@ it the badlands terracotta repair described below.
 - **A new title-intro animation** plays once per screen-open in the compact create-world layout.
 - `Ctrl+Tab` now cycles the World/Settings tabs, and switching tabs no longer leaves a text field on
   the previous tab quietly holding your keystrokes.
+- **A still background for the create-world screen.** The **Still** toggle at the left of the
+  bottom button row on Latitude's create-world screen swaps the moving panorama for a flat dark
+  backdrop, and the choice is remembered between sessions.
 
 ### Improved
 
@@ -54,6 +57,10 @@ it the badlands terracotta repair described below.
   entries, and the second tab now correctly reads "Settings" (it was mislabelled "Rules").
 - Reduced unnecessary log-file bloat from the create-world screen, and corrected license
   inconsistencies to confirm alignment with GPL-3.0-or-later.
+- **Create-world screen layout.** Panels sit tighter with less empty space, the World and Settings
+  tab headers are now real buttons you can reach and activate from the keyboard (and Minecraft's
+  narrator announces them), and panel backgrounds are slightly see-through so the panorama behind
+  shows through.
 
 ### Fixed
 
