@@ -1,5 +1,31 @@
 # Changelog
 
+## Latitude 1.5.1-beta.5 (Minecraft 26.2)
+
+A small follow-up to Beta 4 that brings the create-world screen work from the Minecraft 26.3 port
+to this line. **Beta:** shipped for testing before the 1.5.1 stable tag.
+
+### New
+
+- **A still background for the create-world screen.** The **Still** toggle at the left of the
+  bottom button row on Latitude's create-world screen swaps the moving panorama for a flat dark
+  backdrop, and the choice is remembered between sessions.
+
+### Improved
+
+- **Create-world screen layout.** Panels sit tighter with less empty space, the World and Settings
+  tab headers are now real buttons you can reach and activate from the keyboard (and Minecraft's
+  narrator announces them), and panel backgrounds are slightly see-through so the panorama behind
+  shows through.
+
+### Fixed
+
+- **The sources jar no longer carries a development-only helper.** Beta 4's `-sources.jar` on this
+  line included one clipboard helper that the main jar correctly left out; the packaging rule now
+  covers both jars.
+
+Nothing in this release changes world generation.
+
 ## Latitude 1.5.1-beta.4 (Minecraft 26.2)
 
 - **Smoother transitions into the polar region.** Taiga now thins out in patches
