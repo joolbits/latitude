@@ -587,24 +587,35 @@ public final class VanillaHandoffCostPolicyTest {
     }
 
     /**
-     * Reported live: the door failed to reappear after the window was narrowed and then widened
-     * back out. Root cause: {@code Screen.resize(int,int)} calls only {@code repositionElements()},
-     * never {@code init()} again (a hidden {@code initialized} flag routes every call after the
-     * first away from init entirely) -- so a hook placed only at init's TAIL fires exactly once per
-     * screen instance and is blind to every later resize.
+     * Reported live on the newer lines: the door failed to reappear after the window was narrowed
+     * and then widened back out, because there {@code Screen.resize} routes to
+     * {@code repositionElements()} and a hidden {@code initialized} flag keeps {@code init()} from
+     * running again.
+     *
+     * <p>1.21.1 has the opposite shape, and it has to be guarded from the other side.
+     * {@code Screen.repositionElements()} here is just {@code rebuildWidgets()} --
+     * {@code clearWidgets()} then a full {@code init()} -- and {@code SelectWorldScreen} does not
+     * override it, so there is no {@code repositionElements} on this target to hook and init IS the
+     * resize path. The failure mode that remains is the mirror image: {@code clearWidgets} drops
+     * the door from the screen while the mixin still holds the reference, so without releasing it
+     * at init's HEAD the layout pass would skip the re-add and the door would vanish on resize.
      */
     private static void doorAlsoLaysOutOnRepositionNotJustInit() throws IOException {
         String source = read(DOOR_MIXIN);
         assertTrue(source.contains("@Inject(method = \"init\", at = @At(\"TAIL\"))"),
-                "still hooks init's TAIL, for the screen's first construction");
-        assertTrue(source.contains("@Inject(method = \"repositionElements\", at = @At(\"TAIL\"))"),
-                "ALSO hooks repositionElements's TAIL -- the path every actual window resize takes");
+                "still hooks init's TAIL, which is also the resize path on this target");
+        assertTrue(!source.contains("@Inject(method = \"repositionElements\""),
+                "does NOT hook repositionElements: SelectWorldScreen does not declare it here, so "
+                        + "such an injection could never apply");
+        assertTrue(source.contains("@Inject(method = \"init\", at = @At(\"HEAD\"))"),
+                "hooks init's HEAD as well, to release the door cleared by rebuildWidgets");
 
         String initInject = methodSection(source, "private void globe$onInit(");
-        String repositionInject = methodSection(source, "private void globe$onReposition(");
-        assertTrue(normalize(initInject).contains("globe$layOutVanillaDoor();")
-                        && normalize(repositionInject).contains("globe$layOutVanillaDoor();"),
-                "both entry points delegate to the SAME layout method, not two diverging copies");
+        String staleDrop = methodSection(source, "private void globe$dropStaleDoorBeforeRebuild(");
+        assertTrue(normalize(initInject).contains("globe$layOutVanillaDoor();"),
+                "the layout entry point delegates to the shared layout method");
+        assertTrue(normalize(staleDrop).contains("this.globe$doorButton = null;"),
+                "the HEAD hook releases the stale door so every init rebuilds and re-adds it");
     }
 
     /**

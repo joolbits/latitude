@@ -94,7 +94,7 @@ public class ProtoChunkSnowBlockGuardMixin {
     }
 
     @Inject(method = "setBlockState", at = @At("HEAD"), cancellable = true)
-    private void globe$blockSnowInWarmBands(BlockPos pos, BlockState state, int flags, CallbackInfoReturnable<BlockState> cir) {
+    private void globe$blockSnowInWarmBands(BlockPos pos, BlockState state, boolean isMoving, CallbackInfoReturnable<BlockState> cir) {
         if (state == null) return;
         if (!LatitudeWorldgenScope.isActive()) return;
 

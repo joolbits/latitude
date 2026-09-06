@@ -67,17 +67,26 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         LatitudeLoadingPane.render(context, this.font, delta, rawProgress, now);
     }
 
-    @Inject(method = "onClose", at = @At("HEAD"), cancellable = true, require = 0, expect = 1)
+    /**
+     * 1.21.1's LevelLoadingScreen declares no {@code onClose} -- it inherits Screen's, and
+     * {@code shouldCloseOnEsc} is false, so the player cannot trigger it at all. {@code removed} is
+     * the equivalent "this screen is going away" point that the class does declare. It cannot be
+     * cancelled, but the cancelling half was only ever there to hold the overlay while a playable
+     * world exists; that case is simply left alone here and the Minecraft-tick mixin below stays the
+     * fail-open release, exactly as it is on the newer lines.
+     */
+    @Inject(method = "removed", at = @At("HEAD"), require = 0, expect = 1)
     private void globe$clearLoadingFlag(CallbackInfo ci) {
         if (LatitudeClientState.isLatitudeWorldLoading()) {
             Minecraft client = Minecraft.getInstance();
             if (client.level != null && client.player != null) {
-                ci.cancel();
+                // The render-warmup handoff: a playable world is up, so the tick mixin owns the
+                // release and the overlay must not be torn down here.
                 return;
             }
-            // Vanilla is closing the loading screen without a playable client world. This is an abort/error
-            // transition, not the render-warmup handoff, so release our flag and let vanilla show its next
-            // screen instead of trapping the player behind the overlay until the ten-minute fail-safe.
+            // The loading screen is going away without a playable client world. This is an
+            // abort/error transition, so release the flag rather than trapping the player behind the
+            // overlay until the ten-minute fail-safe.
             LatitudeClientState.clearLatitudeLoadingState();
         }
         LatitudeLoadingPane.reset();

@@ -9,6 +9,7 @@ import net.minecraft.server.level.WorldGenRegion;
 import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.biome.BiomeManager;
 import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.levelgen.GenerationStep;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.RandomState;
@@ -25,12 +26,17 @@ public class NoiseChunkGeneratorCarveMixin {
     );
 
     @Inject(
-            method = "applyCarvers(Lnet/minecraft/server/level/WorldGenRegion;JLnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/biome/BiomeManager;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/chunk/ChunkAccess;)V",
+            method = "applyCarvers(Lnet/minecraft/server/level/WorldGenRegion;JLnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/biome/BiomeManager;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/chunk/ChunkAccess;Lnet/minecraft/world/level/levelgen/GenerationStep$Carving;)V",
             at = @At("HEAD"),
             cancellable = true
     )
     private void globe$disableCarversInPolarCap(WorldGenRegion chunkRegion, long seed, RandomState noiseConfig, BiomeManager biomeAccess,
-                                               StructureManager structureAccessor, ChunkAccess chunk, CallbackInfo ci) {
+                                               StructureManager structureAccessor, ChunkAccess chunk,
+                                               // 1.21.1 still runs carvers per carving step, so this
+                                               // method takes the step 1.21.2 removed. The polar-cap
+                                               // suppression is step-independent, exactly as it is on
+                                               // the single-call newer lines.
+                                               GenerationStep.Carving carverStep, CallbackInfo ci) {
         if (!LatitudeWorldgenScope.isActive()) {
             return;
         }

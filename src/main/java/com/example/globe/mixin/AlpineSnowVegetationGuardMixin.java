@@ -57,7 +57,7 @@ public class AlpineSnowVegetationGuardMixin {
 
     @Inject(method = "setBlockState", at = @At("HEAD"), cancellable = true)
     private void globe$suppressAlpineSnowVegetation(
-            BlockPos pos, BlockState state, int flags, CallbackInfoReturnable<BlockState> cir) {
+            BlockPos pos, BlockState state, boolean isMoving, CallbackInfoReturnable<BlockState> cir) {
         if (state == null || state.isAir()) {
             return;
         }

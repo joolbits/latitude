@@ -37,14 +37,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * matching it by message is sound. <b>Match a widget by message only where nothing rewrites that
  * message</b> -- and prefer a field wherever vanilla offers one.</p>
  *
- * <p>Runs from BOTH {@code init}'s TAIL and {@code repositionElements}'s TAIL, not init alone --
- * verified in bytecode that {@code Screen.resize(int,int)} calls only {@code repositionElements()},
- * and that {@code init(int,int)} itself runs the full {@code init()} exactly once per screen instance
- * (a hidden {@code initialized} flag routes every later call to {@code repositionElements()} instead).
- * A hook placed only at init's TAIL fires once and never again: reported live as the door failing to
- * reappear after the window was narrowed and then widened back out. Either entry point runs after
- * vanilla has (re)arranged its own footer, so Play and Create's coordinates are always final by the
- * time this reads them.</p>
+ * <p>Runs from {@code init} alone on this target, and that is enough here -- verified in bytecode
+ * that 1.21.1's {@code Screen.resize} calls {@code repositionElements()}, whose default body is
+ * {@code rebuildWidgets()}: {@code clearWidgets()} followed by a full {@code init()}. The newer
+ * lines gate {@code init()} behind a hidden {@code initialized} flag and route resizes to
+ * {@code repositionElements()} only, which is why they need the second hook; 1.21.1 does not, and
+ * {@code SelectWorldScreen} does not override {@code repositionElements}, so there is nothing there
+ * to hook. The trade is that {@code clearWidgets} drops the door on every resize, so the retained
+ * reference has to be released at init's HEAD -- see {@code globe$dropStaleDoorBeforeRebuild}.
+ * Either way the hook runs after vanilla has (re)arranged its own footer, so Play and Create's
+ * coordinates are final by the time this reads them.</p>
  *
  * <p>Play, Create, and the door are narrowed together to share the span of the FOUR-button row
  * below them (Edit / Delete / Re-Create / Back) -- not appended past Create's edge with a
@@ -69,12 +71,11 @@ public abstract class SelectWorldScreenVanillaDoorMixin {
     private Button selectButton;
 
     /**
-     * The door widget, once constructed. Kept rather than re-added on every layout pass: {@code
-     * repositionElements} runs on EVERY window resize (verified in bytecode -- {@code
-     * Screen.resize(int,int)} calls only {@code repositionElements()}, never {@code init()} again;
-     * a hidden {@code initialized} flag guards the {@code init()} path to a single first call per
-     * screen instance), so a naive re-add on every pass would pile up a fresh button behind the
-     * last one every time the window is resized.
+     * The door widget for the current {@code init} pass. On the newer lines this is kept across
+     * layout passes, because there {@code repositionElements} re-lays out without clearing and a
+     * naive re-add would pile up a fresh button behind the last one on every resize. 1.21.1 clears
+     * the widget list before each {@code init}, so the opposite is true here: the reference is
+     * released at init's HEAD and rebuilt once per pass, and nothing can accumulate.
      */
     @Unique
     private Button globe$doorButton;
@@ -95,9 +96,16 @@ public abstract class SelectWorldScreenVanillaDoorMixin {
      * correctly update on every resize) so the door's presence and geometry track every resize, not
      * just the first one.
      */
-    @Inject(method = "repositionElements", at = @At("TAIL"))
-    private void globe$onReposition(CallbackInfo ci) {
-        globe$layOutVanillaDoor();
+    @Inject(method = "init", at = @At("HEAD"))
+    private void globe$dropStaleDoorBeforeRebuild(CallbackInfo ci) {
+        // 1.21.1 resizes through Screen.repositionElements, whose default body is
+        // rebuildWidgets() -- clearWidgets() and then init() again. SelectWorldScreen does not
+        // override repositionElements, so there is nothing there to hook; init IS the resize path
+        // here. But clearWidgets has already dropped the door from the screen's children by the
+        // time this runs, so the retained reference is stale: keeping it would make the TAIL hook
+        // below skip the re-add and the door would vanish after any resize -- the same live defect
+        // the newer lines hit for the opposite reason. Dropping it makes every init rebuild it.
+        this.globe$doorButton = null;
     }
 
     @Unique

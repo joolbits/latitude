@@ -54,11 +54,12 @@ public abstract class ExtremePolarVillageStartGuardMixin {
             method = "tryGenerateStructure",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/world/level/levelgen/structure/Structure;generate(Lnet/minecraft/core/Holder;Lnet/minecraft/resources/ResourceKey;Lnet/minecraft/core/RegistryAccess;Lnet/minecraft/world/level/chunk/ChunkGenerator;Lnet/minecraft/world/level/biome/BiomeSource;Lnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplateManager;JLnet/minecraft/world/level/ChunkPos;ILnet/minecraft/world/level/LevelHeightAccessor;Ljava/util/function/Predicate;)Lnet/minecraft/world/level/levelgen/structure/StructureStart;"))
+                    target = "Lnet/minecraft/world/level/levelgen/structure/Structure;generate(Lnet/minecraft/core/RegistryAccess;Lnet/minecraft/world/level/chunk/ChunkGenerator;Lnet/minecraft/world/level/biome/BiomeSource;Lnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplateManager;JLnet/minecraft/world/level/ChunkPos;ILnet/minecraft/world/level/LevelHeightAccessor;Ljava/util/function/Predicate;)Lnet/minecraft/world/level/levelgen/structure/StructureStart;"))
     private StructureStart globe$blockVillageStartsInExtremePolar(
+            // 1.21.1's Structure.generate takes neither the structure holder nor the dimension
+            // key; both arrived later. The holder is recovered from the registry below, and the
+            // dimension key was only ever passed straight through.
             Structure structure,
-            Holder<Structure> structureHolder,
-            ResourceKey<Level> levelKey,
             RegistryAccess registryAccess,
             ChunkGenerator chunkGenerator,
             BiomeSource biomeSource,
@@ -100,6 +101,7 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                 Registry<Structure> registry =
                         registryAccess.registryOrThrow(Registries.STRUCTURE);
                 ResourceLocation structureId = registry.getKey(structure);
+                Holder<Structure> structureHolder = registry.wrapAsHolder(structure);
                 boolean village = structureHolder.is(StructureTags.VILLAGE)
                         || (structureId != null && structureId.getPath().contains("village"));
                 generatedStructureId = structureId;
@@ -205,8 +207,6 @@ public abstract class ExtremePolarVillageStartGuardMixin {
         }
         StructureStart generated = original.call(
                 structure,
-                structureHolder,
-                levelKey,
                 registryAccess,
                 chunkGenerator,
                 effectiveBiomeSource,

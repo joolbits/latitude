@@ -11,6 +11,7 @@ import net.minecraft.world.level.NoiseColumn;
 import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.biome.BiomeManager;
 import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.levelgen.GenerationStep;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.RandomState;
@@ -72,7 +73,7 @@ public abstract class NoiseChunkGeneratorWorldgenAuthorityMixin {
         }
     }
 
-    @WrapMethod(method = "applyCarvers(Lnet/minecraft/server/level/WorldGenRegion;JLnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/biome/BiomeManager;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/chunk/ChunkAccess;)V")
+    @WrapMethod(method = "applyCarvers(Lnet/minecraft/server/level/WorldGenRegion;JLnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/biome/BiomeManager;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/chunk/ChunkAccess;Lnet/minecraft/world/level/levelgen/GenerationStep$Carving;)V")
     private void globe$withCarverAuthority(
             WorldGenRegion world,
             long seed,
@@ -80,10 +81,14 @@ public abstract class NoiseChunkGeneratorWorldgenAuthorityMixin {
             BiomeManager biomeManager,
             StructureManager structureManager,
             ChunkAccess chunk,
+            // 1.21.1 still runs carvers per carving step, so this method carries the step
+            // parameter 1.21.2 removed. It is passed straight through: the authority scope is
+            // step-independent.
+            GenerationStep.Carving carverStep,
             Operation<Void> original) {
         boolean active = globe$isAuthorizedOverworld(world);
         try (LatitudeWorldgenScope.Scope ignored = LatitudeWorldgenScope.enter(active)) {
-            original.call(world, seed, randomState, biomeManager, structureManager, chunk);
+            original.call(world, seed, randomState, biomeManager, structureManager, chunk, carverStep);
         }
     }
 

@@ -1627,8 +1627,18 @@ public final class WorldgenAuthorityPolicyTest {
                 occurrences(noiseScope, "try (LatitudeWorldgenScope.Scope") >= 2,
                 "surface and carver paths close authority through try-with-resources");
         assertTrue(
-                occurrences(generatorScope + noiseScope, "Level.OVERWORLD") >= 3,
+                occurrences(generatorScope + noiseScope, "Level.OVERWORLD") >= 2,
                 "each dimension-bearing wrapper explicitly restricts authority to the overworld");
+        // 1.21.1's ChunkGenerator.createStructures takes no dimension key -- that parameter arrived
+        // later -- so that wrapper has no dimension to read. It must therefore gate on the
+        // generator identity, which is the discriminator that actually decides this: only
+        // Latitude's own configured noise generator answers true.
+        String structureWrapper = generatorScope.substring(structureWrapperStart);
+        assertTrue(
+                !structureWrapper.contains("ResourceKey<Level>")
+                        && structureWrapper.contains("globe$isAuthorizedGenerator()"),
+                "the structure wrapper, which has no dimension parameter on this target, gates on "
+                        + "the Latitude generator identity instead");
     }
 
     private static String read(String path) throws Exception {

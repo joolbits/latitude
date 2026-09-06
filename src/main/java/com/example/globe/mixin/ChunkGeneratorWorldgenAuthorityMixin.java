@@ -68,11 +68,13 @@ public abstract class ChunkGeneratorWorldgenAuthorityMixin {
             StructureManager structureManager,
             ChunkAccess chunk,
             StructureTemplateManager structureTemplateManager,
-            ResourceKey<Level> dimension,
             Operation<Void> original) {
-        boolean active = Level.OVERWORLD.equals(dimension) && globe$isAuthorizedGenerator();
+        // 1.21.1's createStructures carries no dimension key -- that parameter arrived later. The
+        // generator check below is the discriminator that actually matters: only Latitude's own
+        // configured noise generator answers true, and no other dimension runs it.
+        boolean active = globe$isAuthorizedGenerator();
         try (LatitudeWorldgenScope.Scope ignored = LatitudeWorldgenScope.enter(active)) {
-            original.call(registryAccess, structureState, structureManager, chunk, structureTemplateManager, dimension);
+            original.call(registryAccess, structureState, structureManager, chunk, structureTemplateManager);
         }
     }
 
