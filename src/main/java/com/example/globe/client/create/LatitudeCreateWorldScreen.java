@@ -330,7 +330,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                     initialState.getSeed() != null && !initialState.getSeed().isBlank(),
                     initialState.getSettings());
         }
-        client.gui.setScreen(new LatitudeCreateWorldScreen(
+        client.setScreen(new LatitudeCreateWorldScreen(
                 onClose, parent, initialState, recreated, recreatedPresetId, true));
     }
 
@@ -508,22 +508,22 @@ public class LatitudeCreateWorldScreen extends Screen {
                     if (throwable != null) {
                         LOGGER.error("Failed to load datapacks for Latitude create-world screen", throwable);
                         onClose.run();
-                        if (client.gui.screen() == null || client.gui.screen() == preparingScreen) {
-                            client.gui.setScreen(parent);
+                        if (client.screen == null || client.screen == preparingScreen) {
+                            client.setScreen(parent);
                         }
                         return;
                     }
 
                     // Open the bespoke screen with the loaded holder.
-                    client.gui.setScreen(new LatitudeCreateWorldScreen(onClose, parent, loadedHolder, true));
+                    client.setScreen(new LatitudeCreateWorldScreen(onClose, parent, loadedHolder, true));
                 });
             });
         } catch (Exception e) {
             LOGGER.error("Failed to load datapacks for Latitude create-world screen", e);
             // 5A error path: return to caller screen, never show bespoke screen
             onClose.run();
-            if (client.gui.screen() == null || client.gui.screen() == preparingScreen) {
-                client.gui.setScreen(parent);
+            if (client.screen == null || client.screen == preparingScreen) {
+                client.setScreen(parent);
             }
         }
     }
@@ -1426,15 +1426,15 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void openGameRules() {
         if (this.minecraft == null) return;
-        this.minecraft.gui.setScreen(new WorldCreationGameRulesScreen(this.gameRules, optional -> {
+        this.minecraft.setScreen(new WorldCreationGameRulesScreen(this.gameRules, optional -> {
             optional.ifPresent(rules -> this.gameRules = rules);
-            this.minecraft.gui.setScreen(this);
+            this.minecraft.setScreen(this);
         }));
     }
 
     private void openHudStudio() {
         if (this.minecraft == null) return;
-        this.minecraft.gui.setScreen(new LatitudeHudStudioScreen(this));
+        this.minecraft.setScreen(new LatitudeHudStudioScreen(this));
     }
 
     /**
@@ -1482,7 +1482,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         // this executes -- capturing it eagerly here would read the screen's state at the moment the
         // player LEFT Latitude, defeating the whole point.
         Runnable returnToLatitude = () -> {
-            Screen current = this.minecraft.gui.screen();
+            Screen current = this.minecraft.screen;
             if (current instanceof CreateWorldScreen) {
                 // NOT a cast to the @Mixin class itself -- that compiles but crashes at runtime with
                 // IllegalClassLoadError the first time this code actually runs (caught live, not
@@ -1507,7 +1507,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         // screen showing at click time is the vanilla one, so it -- not this screen -- is what
         // "nothing took over yet" means for that exit.
         Runnable exitCreateFlow = () ->
-                leaveCreateFlowFrom(this.minecraft == null ? null : this.minecraft.gui.screen());
+                leaveCreateFlowFrom(this.minecraft == null ? null : this.minecraft.screen);
         VanillaCreateWorldHandoff.armNext(
                 returnToLatitude, this.worldNameInput, this.seedInput, exitCreateFlow);
         try {
@@ -1624,8 +1624,8 @@ public class LatitudeCreateWorldScreen extends Screen {
     private void leaveCreateFlowFrom(@Nullable Screen expectedCurrent) {
         this.onClose.run();
         if (this.minecraft != null
-                && (this.minecraft.gui.screen() == expectedCurrent || this.minecraft.gui.screen() == null)) {
-            this.minecraft.gui.setScreen(this.parent);
+                && (this.minecraft.screen == expectedCurrent || this.minecraft.screen == null)) {
+            this.minecraft.setScreen(this.parent);
         }
     }
 

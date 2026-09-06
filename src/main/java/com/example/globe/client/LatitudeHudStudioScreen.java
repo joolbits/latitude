@@ -453,7 +453,7 @@ public class LatitudeHudStudioScreen extends Screen {
         CompassHudConfig.saveCurrent();
         LatitudeConfig.saveCurrent();
         if (this.minecraft != null) {
-            this.minecraft.gui.setScreen(this.parent);
+            this.minecraft.setScreen(this.parent);
         }
     }
 

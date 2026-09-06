@@ -240,7 +240,7 @@ public abstract class CreateWorldScreenInitRedirectMixin {
             LOGGER.info("[LAT][CWPATH] CreateWorldScreenInitRedirectMixin.init screen={}", this.getClass().getName());
         }
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.gui.screen() != (Object) this) {
+        if (client == null || client.screen != (Object) this) {
             return;
         }
 
@@ -281,7 +281,7 @@ public abstract class CreateWorldScreenInitRedirectMixin {
         Screen parent = globe$getParentSafe((Object) this);
         // Named apart from the shadowed onClose field above: that one is vanilla's own callback
         // and doubles as the handoff claim key, this one is where Latitude's screen goes on close.
-        Runnable returnToParent = () -> client.gui.setScreen(parent);
+        Runnable returnToParent = () -> client.setScreen(parent);
 
         WorldCreationUiState initialState = self.getUiState();
         String recreatedPresetId = ((RecreatedWorldPresetCarrier) this).globe$getRecreatedWorldPresetId();
