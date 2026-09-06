@@ -1282,8 +1282,9 @@ public final class WorldgenAuthorityPolicyTest {
 
         String state = normalize(read(
                 "src/main/java/com/example/globe/world/LatitudeWorldState.java"));
+        // 1.21.1 passes the saved-data id at lookup time rather than carrying it on the type.
         assertTrue(
-                state.contains("return world.getDataStorage().get(STATE_TYPE);"),
+                state.contains("return world.getDataStorage().get(STATE_TYPE, STATE_ID);"),
                 "non-creating state lookup uses SavedDataStorage.get");
         assertFalse(
                 state.contains("return world.getGameTime() < 100L"),

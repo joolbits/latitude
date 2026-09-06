@@ -260,31 +260,22 @@ public final class PolarPresentationPolicyTest {
                         && ewPolicy.contains("FOG_NEAR_END_BLOCKS = 12.0f"),
                 "east/west fog converges on the approved near-whiteout distances");
 
-        // This target splits the 26.2 single-hook design into two injections in the same method.
-        // 26.2's FogRenderer.setupFog returned the FogData, so one injection reached both the
-        // distances and the colour. Here setupFog returns the colour Vector4f and has ALREADY
-        // uploaded it to the fog UBO by the time it returns, so the colour is blended earlier in
-        // computeFogColor.
-        //
-        // The distance pass must land AFTER vanilla's own writes. setupFog calls
-        // FogEnvironment.setupFog (bci 106) and then unconditionally putfields renderDistanceStart
-        // (139) and renderDistanceEnd (146) before reading all six fields into updateBuffer. An
-        // earlier revision hooked AtmosphericFogEnvironment.setupFog -- i.e. bci 106 -- so both
-        // renderDistance writes were clobbered three instructions later and the far fog wall never
-        // rendered, while environmentalStart/End and skyEnd/cloudEnd silently did work. Pin the
-        // hook to the post-putfield position so that cannot regress.
+        // 1.21.1's FogRenderer is static and shares nothing: setupFog builds a package-private
+        // holder and pushes start/end/shape into RenderSystem as its last act, and setupColor does
+        // the same for the colour. There is no FogData to capture and no returned value to blend,
+        // so both passes hook TAIL of their own method and re-apply through RenderSystem -- the
+        // only state the shaders read. Pin both hooks so a future edit cannot move them earlier,
+        // where vanilla's own writes would land afterwards and silently win.
         String fogMixin = read("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java");
         String fog = read("src/main/java/com/example/globe/client/LatitudeFogPresentation.java");
 
-        assertEquals(1, countOccurrences(fogMixin, "@Inject(method = \"computeFogColor\""),
-                "exactly one fog hook blends colour, and it targets computeFogColor");
+        assertEquals(1, countOccurrences(fogMixin, "@Inject(method = \"setupColor\""),
+                "exactly one fog hook blends colour, and it targets FogRenderer.setupColor");
         assertEquals(1, countOccurrences(fogMixin, "method = \"setupFog\""),
                 "exactly one fog hook tightens distances, and it targets FogRenderer.setupFog");
-        assertTrue(fogMixin.contains("FogData;renderDistanceEnd:F")
-                        && fogMixin.contains("Opcodes.PUTFIELD")
-                        && fogMixin.contains("At.Shift.AFTER"),
-                "the distance hook fires after vanilla's last renderDistanceEnd write, or vanilla "
-                        + "clobbers it and the far fog wall silently disappears");
+        assertEquals(2, countOccurrences(fogMixin, "at = @At(\"TAIL\")"),
+                "both fog hooks fire after vanilla's own RenderSystem writes, or vanilla clobbers "
+                        + "them and the fog wall silently disappears");
         assertTrue(!Files.exists(Path.of(
                         "src/main/java/com/example/globe/mixin/client/AtmosphericFogEnvironmentMixin.java")),
                 "the superseded environment-side distance hook is removed, not left applying twice");

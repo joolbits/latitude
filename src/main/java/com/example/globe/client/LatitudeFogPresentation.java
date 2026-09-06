@@ -54,6 +54,15 @@ public final class LatitudeFogPresentation {
         return new Gate(client, eval);
     }
 
+    /**
+     * The single start/end pair 1.21.1 publishes per {@code FogMode}, in a mutable holder so the
+     * two passes below keep the same shape they have on the lines that hand them a {@code FogData}.
+     */
+    private static final class FogRange {
+        private float start;
+        private float end;
+    }
+
     /** E/W sandstorm and polar fog distance tightening, applied to the active shader fog range. */
     public static void applyDistances(Camera camera) {
         Gate gate = gate(camera);
@@ -61,42 +70,21 @@ public final class LatitudeFogPresentation {
             return;
         }
 
-        float start = RenderSystem.getShaderFogStart();
-        float end = RenderSystem.getShaderFogEnd();
+        FogRange fog = new FogRange();
+        fog.start = RenderSystem.getShaderFogStart();
+        fog.end = RenderSystem.getShaderFogEnd();
+        float uploadedStart = fog.start;
+        float uploadedEnd = fog.end;
 
-        // E/W first, then polar -- the same order the 1.21.9+ lines apply them in.
-        float ewStart = tightenStart(start, gate.client().player.getX());
-        float ewEnd = tightenEnd(end, gate.client().player.getX());
+        applyEwDistances(fog, gate.client().player.getX());
+        applyPolarDistances(fog, gate.client().player.getZ(), gate.eval());
 
-        float finalStart = ewStart;
-        float finalEnd = ewEnd;
-        if (gate.eval().surfaceOk()) {
-            float polarIntensity = GlobeClientState.computePoleFogIntensity(gate.client().player.getZ());
-            if (polarIntensity > 0.0f) {
-                finalEnd = polarEnd(ewEnd, gate.client().player.getZ());
-                finalStart = Math.min(
-                        ewStart,
-                        PolarPresentationPolicy.polarFogStart(ewStart, polarIntensity));
-            }
+        if (fog.start != uploadedStart) {
+            RenderSystem.setShaderFogStart(fog.start);
         }
-
-        if (finalStart != start) {
-            RenderSystem.setShaderFogStart(finalStart);
+        if (fog.end != uploadedEnd) {
+            RenderSystem.setShaderFogEnd(fog.end);
         }
-        if (finalEnd != end) {
-            RenderSystem.setShaderFogEnd(finalEnd);
-        }
-    }
-
-    /** Reads the uploaded fog colour back, blends Latitude's tints into it, and writes it out. */
-    public static void applyColor(Camera camera, ClientLevel level) {
-        float[] uploaded = RenderSystem.getShaderFogColor();
-        if (uploaded == null || uploaded.length < 4) {
-            return;
-        }
-        Vector4f color = new Vector4f(uploaded[0], uploaded[1], uploaded[2], uploaded[3]);
-        applyColor(color, camera, level);
-        RenderSystem.setShaderFogColor(color.x(), color.y(), color.z(), color.w());
     }
 
     /** E/W sandstorm and polar fog colour blending, in that order, as on 26.2. */
@@ -124,6 +112,39 @@ public final class LatitudeFogPresentation {
         if (polarIntensity > 0.0f) {
             blendPolarFogColor(color, polarIntensity);
         }
+    }
+
+    /** Reads the uploaded fog colour back, blends Latitude's tints into it, and writes it out. */
+    public static void applyColor(Camera camera, ClientLevel level) {
+        float[] uploaded = RenderSystem.getShaderFogColor();
+        if (uploaded == null || uploaded.length < 4) {
+            return;
+        }
+        Vector4f color = new Vector4f(uploaded[0], uploaded[1], uploaded[2], uploaded[3]);
+        applyColor(color, camera, level);
+        RenderSystem.setShaderFogColor(color.x(), color.y(), color.z(), color.w());
+    }
+
+    private static void applyEwDistances(FogRange fog, double x) {
+        fog.start = tightenStart(fog.start, x);
+        fog.end = tightenEnd(fog.end, x);
+    }
+
+    private static void applyPolarDistances(FogRange fog, double z, GlobeClientState.Eval eval) {
+        if (!eval.surfaceOk()) {
+            return;
+        }
+        float polarIntensity = GlobeClientState.computePoleFogIntensity(z);
+        if (polarIntensity <= 0.0f) {
+            return;
+        }
+
+        float originalStart = fog.start;
+
+        fog.end = polarEnd(fog.end, z);
+        fog.start = Math.min(
+                fog.start,
+                PolarPresentationPolicy.polarFogStart(originalStart, polarIntensity));
     }
 
     private static float tightenEnd(float currentEnd, double x) {

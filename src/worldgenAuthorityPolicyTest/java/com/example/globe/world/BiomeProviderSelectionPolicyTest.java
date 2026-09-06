@@ -1740,7 +1740,6 @@ final class BiomeProviderSelectionPolicyTest {
             ResourceKey<Biome> key = ResourceKey.create(Registries.BIOME, ResourceLocation.parse(id));
             writable.register(key, minimalBiome(), RegistrationInfo.BUILT_IN);
         }
-        writable.bindAllTagsToEmpty();
         List<Holder<Biome>> temperateMountainHolders = new ArrayList<>();
         for (String id : List.of(
                 "minecraft:meadow",
@@ -1757,13 +1756,16 @@ final class BiomeProviderSelectionPolicyTest {
                 "byg:crag_gardens",
                 "terrestria:caldera",
                 "terrestria:canyon")) {
-            writable.get(ResourceLocation.parse(id)).ifPresent(temperateMountainHolders::add);
+            writable.getHolder(ResourceLocation.parse(id)).ifPresent(temperateMountainHolders::add);
         }
-        writable.bindTag(
+        // 1.21.1's MappedRegistry publishes only the whole-map bindTags, and that call rebinds every
+        // tag it knows about. Passing this one tag therefore binds it and leaves every other tag
+        // empty -- exactly what bindAllTagsToEmpty() followed by a single bindTag did before.
+        writable.bindTags(Map.of(
                 TagKey.create(
                         Registries.BIOME,
                         ResourceLocation.fromNamespaceAndPath("globe", "lat_temperate_mountain")),
-                temperateMountainHolders);
+                temperateMountainHolders));
         Registry<Biome> registry = writable.freeze();
         List<Holder<Biome>> holders = registry.holders()
                 .map(holder -> (Holder<Biome>) holder)
@@ -1776,14 +1778,21 @@ final class BiomeProviderSelectionPolicyTest {
                 .hasPrecipitation(true)
                 .temperature(0.8F)
                 .downfall(0.4F)
-                .specialEffects(new BiomeSpecialEffects.Builder().waterColor(0x3f76e4).build())
+                // 1.21.1's BiomeSpecialEffects.Builder requires all four colours; the newer lines
+                // default the three this fixture used to omit. Values are vanilla plains'.
+                .specialEffects(new BiomeSpecialEffects.Builder()
+                        .waterColor(0x3f76e4)
+                        .waterFogColor(0x050533)
+                        .fogColor(0xc0d8ff)
+                        .skyColor(0x78a7ff)
+                        .build())
                 .mobSpawnSettings(MobSpawnSettings.EMPTY)
                 .generationSettings(BiomeGenerationSettings.EMPTY)
                 .build();
     }
 
     private static Holder<Biome> holder(Registry<Biome> registry, String id) {
-        return registry.get(ResourceLocation.parse(id))
+        return registry.getHolder(ResourceLocation.parse(id))
                 .orElseThrow(() -> new AssertionError("missing test biome holder: " + id));
     }
 

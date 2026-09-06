@@ -141,7 +141,9 @@ def verify_tools_sources(failures: list[str]) -> None:
 
     # T6 operator gating, applied exactly once at the /latitude root. The separate locate action
     # is authorized by an expiring player-bound token instead of an elevated command requirement.
-    require(command, ".requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))",
+    # 1.21.1 publishes no Commands.hasPermission(int) predicate factory, so the same level-2 gate is
+    # spelled as an explicit source predicate. The required level is unchanged.
+    require(command, ".requires(source -> source.hasPermission(Commands.LEVEL_GAMEMASTERS))",
             "shipping operator permission gate", failures)
     if command.count(".requires(") != 1:
         failures.append(
@@ -409,7 +411,7 @@ def verify_sources(failures: list[str]) -> None:
     forbid(production_metadata, "LatitudeDevTestEntrypoint", "production TEST entrypoint", failures)
     require(
         command,
-        ".requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))",
+        ".requires(source -> source.hasPermission(Commands.LEVEL_GAMEMASTERS))",
         "level-2 /latdev permission predicate",
         failures,
     )

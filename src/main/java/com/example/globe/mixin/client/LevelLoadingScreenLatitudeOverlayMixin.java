@@ -9,8 +9,10 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.progress.StoringChunkProgressListener;
 import net.minecraft.util.Mth;
 import net.minecraft.Util;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -25,8 +27,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(LevelLoadingScreen.class)
 public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
 
+    // 1.21.1's LevelLoadingScreen keeps no smoothed progress field: the raw percentage lives on
+    // the listener it was constructed with. Reading it directly gives the same 0..1 value, without
+    // the newer lines' inter-frame smoothing, which this screen does not have to publish.
     @Shadow
-    private float smoothedProgress;
+    @Final
+    private StoringChunkProgressListener progressListener;
 
     // Theme, phrases, drawing and animation state all live in LatitudeLoadingPane now — this
     // screen is one of several the pane is painted on. See that class's javadoc.
@@ -56,7 +62,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
 
         // This is the only screen in the load chain with real chunk progress to report, so it is
         // the only one that publishes it.
-        float rawProgress = Mth.clamp(this.smoothedProgress, 0f, 1f);
+        float rawProgress = Mth.clamp(this.progressListener.getProgress() / 100.0F, 0f, 1f);
         LatitudeClientState.latitudeLoadingProgress = rawProgress;
         LatitudeLoadingPane.render(context, this.font, delta, rawProgress, now);
     }

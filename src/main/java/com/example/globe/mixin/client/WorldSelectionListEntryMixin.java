@@ -9,8 +9,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.StringWidget;
-import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
 import net.minecraft.network.chat.CommonComponents;
@@ -25,9 +23,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(targets = "net.minecraft.client.gui.screens.worldselection.WorldSelectionList$WorldListEntry")
 public abstract class WorldSelectionListEntryMixin {
@@ -44,12 +40,6 @@ public abstract class WorldSelectionListEntryMixin {
     @Final
     private LevelSummary summary;
 
-    // Declared directly on the target class, so it shadows safely without a refmap (unlike the
-    // row's geometry accessors, which are only INHERITED here and failed to apply as a shadow).
-    @Shadow
-    @Final
-    private StringWidget idAndLastPlayedText;
-
     @Unique
     private String globe$recreatedWorldPresetId;
 
@@ -61,38 +51,63 @@ public abstract class WorldSelectionListEntryMixin {
     private String globe$lastKnownBandLabel;
 
     /**
-     * Appends the save's last-known climate zone onto the existing "(id (date))" line, e.g.
-     * "world (8/5/26, 9:11 AM) Temperate", read from the same on-disk state file the
-     * resumed-world loading screen reads. Silently absent for non-Latitude saves and for saves
-     * that predate this field.
+     * Appends the save's last-known climate zone onto the existing "id (date)" line, e.g.
+     * "world (8/5/26, 9:11 AM) Temperate", read from the same on-disk state file the resumed-world
+     * loading screen reads. Silently absent for non-Latitude saves and for saves that predate this
+     * field.
      *
-     * <p>This edits the widget's own text rather than drawing a separate overlay, deliberately:
-     * a prior attempt to right-align a second draw call over this row twice landed on top of
-     * vanilla's own text (StringWidget.getWidth() reports the SHORT actual-text width, not the
-     * row's allotted width, so "the far edge" kept resolving to a point right next to the visible
-     * text instead of the row's true right margin). Editing the text directly sidesteps that
-     * class of bug entirely: there is only ever one draw call, so nothing can land on top of it.
-     * Injected at HEAD, before vanilla's own renderContent body renders this widget, so the
-     * combined text is correct from the very first frame.
+     * <p>1.21.1 draws that line as a raw string inside the entry's own {@code render}, not through
+     * a {@code StringWidget} the newer lines expose — there is no widget to shadow, no allotted
+     * width to read off one, and no tooltip attached to it. The redirect therefore takes over the
+     * second {@code drawString} call: it draws the (possibly ellipsised) timestamp itself and then
+     * the gold zone label immediately after it, so there is still exactly one pass over that line
+     * and nothing can land on top of anything else.
      *
-     * <p>That getWidth() diagnosis remains true, but it is no longer the reason right-alignment is
-     * off the table: the row's true allotment is reachable via {@link StringWidgetMaxWidthAccessor}.
-     * Single-draw-call stands on its own merits, and reading the allotment is what makes the
-     * reservation below possible at all — without it the zone is simply clipped away, which is what
-     * a live report showed on long rows ("… 10:12 PM) S…" instead of "Subtropical").</p>
-     *
-     * <p>The tooltip is rebuilt rather than inherited. Vanilla attaches one carrying the full text
-     * in the entry's constructor, i.e. before this runs, so the inherited tooltip holds the
-     * PRE-SUFFIX text — hovering a clipped row would not reveal the zone either, and the feature
-     * would be invisible twice over.</p>
+     * <p>The allotment is computed from the row rectangle the enclosing {@code render} was handed,
+     * which is the same quantity the widget's max width reported on the newer lines. The tooltip a
+     * clipped row gets there has no equivalent here: 1.21.1 attaches none to this text at all, so a
+     * clipped row simply shows the ellipsis.
      */
-    // GitHub #7 rule: fail soft -- a missed target costs the zone suffix / preset carry on the
-    // world list, never a crash. expect=1 keeps dev boots loud under -Dmixin.debug.strict=true.
-    @Inject(method = "renderContent", at = @At("HEAD"), require = 0, expect = 1)
-    private void globe$appendLastKnownZoneToTimestamp(GuiGraphics graphics, int mouseX, int mouseY,
-                                                        boolean hovered, float partialTick, CallbackInfo ci) {
+    // GitHub #7 rule: fail soft -- a missed target costs the zone suffix on the world list, never a
+    // crash. expect=1 keeps dev boots loud under -Dmixin.debug.strict=true.
+    @Redirect(
+            require = 0,
+            expect = 1,
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    ordinal = 1,
+                    target = "Lnet/minecraft/client/gui/GuiGraphics;drawString(Lnet/minecraft/client/gui/Font;Ljava/lang/String;IIIZ)I"))
+    private int globe$appendLastKnownZoneToTimestamp(GuiGraphics graphics, Font font, String text,
+                                                     int x, int y, int color, boolean dropShadow,
+                                                     GuiGraphics outerGraphics, int index, int top,
+                                                     int left, int width, int height, int mouseX,
+                                                     int mouseY, boolean hovering, float partialTick) {
+        String zone = globe$lastKnownZoneLabel();
+        if (zone == null) {
+            return graphics.drawString(font, text, x, y, color, dropShadow);
+        }
+
+        Component suffix = Component.literal(" " + zone)
+                .withStyle(Style.EMPTY.withColor(GLOBE_LAST_ZONE_BADGE_COLOR));
+        int allotted = Math.max(0, (left + width) - x - 4);
+        String head = WorldListZoneFitPolicy.headText(
+                text,
+                font::width,
+                CommonComponents.ELLIPSIS.getString(),
+                font.width(suffix),
+                allotted);
+
+        int result = graphics.drawString(font, head, x, y, color, dropShadow);
+        graphics.drawString(font, suffix, x + font.width(head), y, GLOBE_LAST_ZONE_BADGE_COLOR, dropShadow);
+        return result;
+    }
+
+    /** Reads the save's last-known band once per entry, then serves the cached answer. */
+    @Unique
+    private String globe$lastKnownZoneLabel() {
         if (this.globe$lastKnownBandLoaded) {
-            return;
+            return this.globe$lastKnownBandLabel;
         }
         this.globe$lastKnownBandLoaded = true;
         try {
@@ -106,37 +121,7 @@ public abstract class WorldSelectionListEntryMixin {
             GLOBE_LOGGER.warn("[Latitude] could not read last-known band for world " + this.summary.getLevelId(), e);
             this.globe$lastKnownBandLabel = null;
         }
-        if (this.globe$lastKnownBandLabel == null) {
-            return;
-        }
-        Component suffix = Component.literal(" " + this.globe$lastKnownBandLabel)
-                .withStyle(Style.EMPTY.withColor(GLOBE_LAST_ZONE_BADGE_COLOR));
-        Component original = this.idAndLastPlayedText.getMessage();
-        Font font = this.minecraft.font;
-        int allotted = ((StringWidgetMaxWidthAccessor) (Object) this.idAndLastPlayedText)
-                .globe$getMaxWidth();
-
-        Component head = original;
-        if (allotted > 0) {
-            // Measure candidates exactly as they will draw -- same style, style-aware overload --
-            // so the reservation cannot drift from what is rendered.
-            Style style = original.getStyle();
-            String originalText = original.getString();
-            String headText = WorldListZoneFitPolicy.headText(
-                    originalText,
-                    text -> font.width(Component.literal(text).withStyle(style)),
-                    CommonComponents.ELLIPSIS.getString(),
-                    font.width(suffix),
-                    allotted);
-            if (!headText.equals(originalText)) {
-                head = Component.literal(headText).withStyle(style);
-                // Only a clipped row hides anything, so only a clipped row earns a tooltip; on a
-                // row that fits, one would just repeat text already fully visible.
-                this.idAndLastPlayedText.setTooltip(Tooltip.create(
-                        Component.empty().append(original).append(suffix)));
-            }
-        }
-        this.idAndLastPlayedText.setMessage(Component.empty().append(head).append(suffix));
+        return this.globe$lastKnownBandLabel;
     }
 
     // 26.2 named the two call sites "recreateWorld" and its lambda. On this target the second one

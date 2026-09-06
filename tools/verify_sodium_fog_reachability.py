@@ -1,30 +1,26 @@
 #!/usr/bin/env python3
 """Verify Latitude's supported Sodium 0.8.13 fog-culling integration from exact class bytes.
 
-Target-specific. The 26.2 edition of this verifier asserted a different chain, because both
-Minecraft and Sodium changed shape between the two lines:
+Target-specific. Each Minecraft line needs its own edition of this verifier, because both Minecraft
+and Sodium change shape between them:
 
-* 26.2 ships Minecraft deobfuscated, so Sodium's jar referenced real names
-  (``net/minecraft/client/renderer/fog/FogData.environmentalStart``). 1.21.11 is obfuscated, so
-  Sodium ships remapped to **intermediary** and the same references read ``class_7285.field_60582``.
-* Sodium 0.9.1 hooked ``setupFog`` at ``RETURN``. Sodium 0.8.13 hooks ``setupFog`` at the
-  ``INVOKE`` of ``updateBuffer`` and captures the local ``FogData`` and ``Vector4f`` there.
+* 26.2 ships Minecraft deobfuscated; 1.21.11 and 1.21.1 are obfuscated, so Sodium ships remapped to
+  intermediary there.
+* On 1.21.11 Sodium 0.8.13 SNAPSHOTS the fog: its core FogRendererMixin captures the FogData local
+  inside setupFog at the updateBuffer call, so everything Latitude does had to happen before that
+  instruction. On 1.21.1 there is no such mixin at all -- the only FogRenderer mixin Sodium ships
+  is the unrelated sky one -- and the culling distance is read LIVE from RenderSystem instead:
 
-That second difference is the load-bearing one for Latitude. Sodium snapshots the fog state at the
-buffer write, so everything Latitude does to the fog must happen *before* ``updateBuffer`` is
-invoked. It is why Latitude's colour pass hooks ``computeFogColor`` rather than the return of
-``setupFog``: blending into ``setupFog``'s return value would land after both the UBO upload and
-Sodium's snapshot, compiling cleanly and changing nothing on screen.
+      RenderSectionManager.createTerrainRenderList
+          -> getSearchDistance()                       (consults useFogOcclusion)
+              -> getEffectiveRenderDistance()
+                  -> RenderSystem.getShaderFogEnd()    <- the value Latitude writes
+          -> RemovableMultiForest.traverse(...)
 
-Intermediary names asserted below, resolved against 1.21.11 intermediary-v2:
-    class_758                    net.minecraft.client.renderer.fog.FogRenderer
-    class_7285                   net.minecraft.client.renderer.fog.FogData
-    method_3211  (Camera,int,DeltaTracker,float,ClientLevel)Vector4f      FogRenderer.setupFog
-    method_71110 (ByteBuffer,int,Vector4f,float x6)V                      FogRenderer.updateBuffer
-    field_60582  F   FogData.environmentalStart
-    field_60583  F   FogData.renderDistanceStart
-    field_60584  F   FogData.environmentalEnd
-    field_60585  F   FogData.renderDistanceEnd
+  That makes the reachability requirement simpler and stronger here: Latitude writes the tightened
+  fog end into RenderSystem at the TAIL of vanilla's own setupFog, and Sodium reads that same
+  RenderSystem state later in the frame. There is no snapshot to get ahead of, but the write must
+  still land after vanilla's own -- hence the TAIL pin asserted on the Latitude side below.
 """
 
 from __future__ import annotations
@@ -40,8 +36,8 @@ import zipfile
 from pathlib import Path
 
 
-EXPECTED_SODIUM_SHA256 = "78d7b657406c2961e0a10d1d5c2703c519deb2030ec670163166f8a0a1152176"
-EXPECTED_SODIUM_VERSION = "0.8.13+mc1.21.11"
+EXPECTED_SODIUM_SHA256 = "3d43c14985a4deb19c654aad3393b454cf57e1ebcbba86c4ae6a98dfc60eca2d"
+EXPECTED_SODIUM_VERSION = "0.8.13+mc1.21.1"
 DEAD_MIXIN = "client.compat.sodium.RenderSectionManagerVisibilityMixin"
 DEAD_SOURCE = Path("src/main/java/com/example/globe/mixin/client/compat/sodium/RenderSectionManagerVisibilityMixin.java")
 COLOR_SOURCE = Path("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java")
@@ -52,15 +48,18 @@ COLOR_SOURCE = Path("src/main/java/com/example/globe/mixin/client/FogRendererEwM
 RETIRED_DISTANCE_SOURCE = Path(
     "src/main/java/com/example/globe/mixin/client/AtmosphericFogEnvironmentMixin.java")
 MIXIN_CONFIG = Path("src/main/resources/globe.mixins.json")
+FOG_PRESENTATION = Path("src/main/java/com/example/globe/client/LatitudeFogPresentation.java")
 
-# Sodium's own snapshot point. Latitude must have finished with the fog before this runs.
-SODIUM_SNAPSHOT_TARGET = (
-    'target="Lnet/minecraft/class_758;'
-    'method_71110(Ljava/nio/ByteBuffer;ILorg/joml/Vector4f;FFFFFF)V"'
-)
+
+def read_source_or_empty(root: Path, relative: Path) -> str:
+    candidate = root / relative
+    return candidate.read_text() if candidate.is_file() else ""
+
+# The live read Latitude's fog write has to reach.
+SODIUM_FOG_READ = "com/mojang/blaze3d/systems/RenderSystem.getShaderFogEnd:()F"
 # 0.8.13's traversal entry point; 0.9.1 called this SectionTree.traverse.
 SODIUM_TRAVERSE = "RemovableMultiForest.traverse:"
-SODIUM_SEARCH = "getSearchDistance:(Lnet/caffeinemc/mods/sodium/client/util/FogParameters;)F"
+SODIUM_SEARCH = "getSearchDistance:()F"
 
 
 class VerificationError(RuntimeError):
@@ -102,37 +101,34 @@ def method_section(bytecode: str, signature: str) -> str:
 
 
 def verify_sodium_chain(fog_mixin: str, renderer: str) -> None:
-    # Sodium still snapshots FogData, and still does it inside setupFog at the buffer write.
-    for token in (
-        "sodium$storeFogParameters",
-        "value=[class Lnet/minecraft/class_758;]",   # @Mixin(FogRenderer.class)
-        'method=["method_3211"]',                    # setupFog
-        'value="INVOKE"',
-        SODIUM_SNAPSHOT_TARGET,                      # ... at the updateBuffer call
-        "net/minecraft/class_7285",                  # FogData
-        "field_60582",                               # environmentalStart
-        "field_60583",                               # renderDistanceStart
-        "field_60584",                               # environmentalEnd
-        "field_60585",                               # renderDistanceEnd
-    ):
-        require(token in fog_mixin, f"Sodium FogData snapshot drifted or is missing: {token}")
+    # 1.21.1's Sodium ships no core FogRenderer mixin: the only one is the sky mixin, which does not
+    # touch the culling distance. Assert that, so a future Sodium that starts snapshotting again
+    # cannot slip past a verifier written for the live-read world.
+    require("sodium$storeFogParameters" not in fog_mixin,
+            "Sodium has started snapshotting fog parameters on this line; the live-read "
+            "reachability argument no longer holds and this verifier must be rewritten")
 
-    search_method = method_section(renderer, "private float getSearchDistance(")
+    effective_method = method_section(renderer, "private float getEffectiveRenderDistance();")
+    require(SODIUM_FOG_READ in effective_method,
+            "Sodium no longer derives its effective distance from the live RenderSystem fog end")
+    require("getRenderDistance:()F" in effective_method,
+            "Sodium no longer clamps the fog-derived distance against the render distance")
+
+    search_method = method_section(renderer, "private float getSearchDistance();")
     require("useFogOcclusion:Z" in search_method,
             "Sodium fog-occlusion user setting is no longer consulted")
-    require("getEffectiveRenderDistance:(Lnet/caffeinemc/mods/sodium/client/util/FogParameters;)F"
-            in search_method,
-            "Sodium no longer derives effective distance from FogParameters")
+    require("getEffectiveRenderDistance:()F" in search_method,
+            "Sodium no longer derives effective distance from the fog end")
     require("getRenderDistance:()F" in search_method,
             "Sodium no longer preserves uncapped distance when fog occlusion is disabled")
 
     traversal_method = method_section(renderer, "private boolean createTerrainRenderList(")
     require(SODIUM_SEARCH in traversal_method,
-            "FogParameters no longer reach RenderSectionManager.getSearchDistance")
+            "the fog-derived search distance no longer reaches RenderSectionManager traversal")
     require(SODIUM_TRAVERSE in traversal_method,
             "RenderSectionManager no longer reaches the forest traversal")
     require(traversal_method.index(SODIUM_SEARCH) < traversal_method.index(SODIUM_TRAVERSE),
-            "FogParameters search distance does not precede the forest traversal")
+            "the search distance is not computed before the forest traversal")
 
 
 def main() -> int:
@@ -154,10 +150,12 @@ def main() -> int:
 
     javap_bin = shutil.which("javap")
     require(javap_bin is not None, "javap is unavailable")
+    # The sky mixin is the only FogRenderer mixin this Sodium ships; reading it is how the
+    # "no snapshot on this line" claim is checked rather than assumed.
     fog_mixin = javap(
         javap_bin,
         jar,
-        "net.caffeinemc.mods.sodium.mixin.core.render.world.FogRendererMixin",
+        "net.caffeinemc.mods.sodium.mixin.features.render.world.sky.FogRendererMixin",
         verbose=True,
     )
     renderer = javap(
@@ -177,9 +175,9 @@ def main() -> int:
 
     mixins = json.loads((root / MIXIN_CONFIG).read_text())
     client_mixins = mixins.get("client", [])
-    # Unlike 26.2, RenderSectionManager.isSectionVisible(int,int,int) still exists on this Sodium
-    # line. Latitude deliberately does not hook it: fog occlusion via FogParameters is the
-    # supported mechanism, and the placement-time visibility mixin stays retired.
+    # Latitude deliberately does not hook RenderSectionManager.isSectionVisible: fog occlusion via
+    # the live RenderSystem fog end is the supported mechanism, and the placement-time visibility
+    # mixin stays retired.
     require(DEAD_MIXIN not in client_mixins, "dead Sodium isSectionVisible mixin remains registered")
     require(not (root / DEAD_SOURCE).exists(), "dead Sodium isSectionVisible mixin source remains present")
 
@@ -187,25 +185,28 @@ def main() -> int:
     # mixin, which snapshots at setupFog's updateBuffer call.
     fog_source = (root / COLOR_SOURCE).read_text()
     require("@Mixin(value = FogRenderer.class, priority = 900)" in fog_source,
-            "Latitude fog mixin lacks explicit priority 900 before Sodium's snapshot")
+            "Latitude fog mixin lacks its explicit priority 900")
     require(not (root / RETIRED_DISTANCE_SOURCE).exists(),
             "the retired AtmosphericFogEnvironment distance hook is back; it applies before "
             "vanilla overwrites renderDistanceStart/End, silently removing the far fog wall")
-    require('@Inject(method = "computeFogColor"' in fog_source,
-            "Latitude fog colour must be blended in computeFogColor, before Sodium's snapshot at "
-            "the updateBuffer call; blending setupFog's return value never reaches the screen")
-    # The distance pass must sit after vanilla's last renderDistanceEnd write (bci 146) and
-    # before the six fields are read into updateBuffer (bci 186+) -- which is also strictly
-    # before Sodium's snapshot at that same call.
-    require('Lnet/minecraft/client/renderer/fog/FogData;renderDistanceEnd:F' in fog_source
-            and "Opcodes.PUTFIELD" in fog_source
-            and "At.Shift.AFTER" in fog_source,
-            "Latitude fog distances must be applied after vanilla's last renderDistanceEnd write; "
-            "any earlier and vanilla clobbers them")
+    require('@Inject(method = "setupColor"' in fog_source,
+            "Latitude fog colour must be blended in FogRenderer.setupColor; 1.21.1 publishes no "
+            "computeFogColor and setupColor is what uploads the colour")
+    require('@Inject(method = "setupFog"' in fog_source,
+            "Latitude fog distances must be applied in FogRenderer.setupFog")
+    # Both passes must sit after vanilla's own RenderSystem writes -- the last thing each method
+    # does. Anything earlier is overwritten by vanilla a few instructions later and never reaches
+    # either the shaders or Sodium's later read.
+    require(fog_source.count('at = @At("TAIL")') == 2,
+            "both Latitude fog hooks must fire at TAIL, after vanilla's own RenderSystem writes")
+    require("RenderSystem.setShaderFogEnd(" in read_source_or_empty(root, FOG_PRESENTATION)
+            and "RenderSystem.getShaderFogEnd()" in read_source_or_empty(root, FOG_PRESENTATION),
+            "Latitude must read and write the same RenderSystem fog end Sodium later reads")
 
     print(f"SODIUM_FOG_REACHABILITY_PASS jar={jar.name} sha256={EXPECTED_SODIUM_SHA256}")
-    print(" chain=FogData->FogParameters->getSearchDistance->RemovableMultiForest.traverse")
-    print(" snapshot=setupFog@INVOKE(updateBuffer) latitudeWritesBefore=colour+distances")
+    print(" chain=RenderSystem.getShaderFogEnd->getEffectiveRenderDistance->getSearchDistance"
+          "->RemovableMultiForest.traverse")
+    print(" snapshot=none(live-read) latitudeWritesAt=setupFog/setupColor TAIL")
     print(" userSetting=useFogOcclusion-preserved negativeControl=drift-detected")
     return 0
 

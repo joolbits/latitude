@@ -135,11 +135,17 @@ public final class PolarFoliagePolicyTest {
                 "simple foliage modifies exactly the sampled provider result instead of redirecting or resampling");
         assertTrue(
                 simpleGuard.contains("Blocks.SWEET_BERRY_BUSH")
-                        && simpleGuard.contains("Blocks.FIREFLY_BUSH")
                         && simpleGuard.contains("coldEnoughToSnow(")
                         && simpleGuard.contains("PolarFoliagePolicy.isSubpolarOrPolar(")
                         && simpleGuard.contains("PolarFoliagePolicy.shouldSuppressSimpleBlock("),
-                "simple-block interception preserves berries and rejects fireflies only in snowy subpolar/polar climates");
+                "simple-block interception preserves berries only in snowy subpolar/polar climates");
+        // 1.21.1 predates the firefly bush, so that leg of the rule cannot fire here. Asserted both
+        // ways so it stays visibly inert rather than silently rotting: the block must not be
+        // referenced (it does not exist) and the flag must be pinned false at the source.
+        assertTrue(
+                !simpleGuard.contains("Blocks.FIREFLY_BUSH")
+                        && simpleGuard.contains("boolean fireflyBush = false;"),
+                "the firefly-bush leg is explicitly inert on a target that has no firefly bush");
         assertTrue(
                 simpleGuard.contains("POLAR_FOLIAGE")
                         && simpleGuard.contains("sampledState.is(POLAR_FOLIAGE)"),

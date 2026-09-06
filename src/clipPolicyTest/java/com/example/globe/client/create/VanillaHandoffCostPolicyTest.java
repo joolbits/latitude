@@ -221,7 +221,10 @@ public final class VanillaHandoffCostPolicyTest {
         int armed = hatch.indexOf("VanillaCreateWorldHandoff.armNext(");
         assertTrue(exitBuilt >= 0 && armed > exitBuilt,
                 "the exit callback is built before it is armed into the handoff");
-        assertTrue(hatch.substring(armed).startsWith("VanillaCreateWorldHandoff.armNext(returnToLatitude, "
+        // 1.21.1's CreateWorldScreen takes a Screen, so the claim key is the RunnableReturnScreen
+        // that wraps returnToLatitude rather than the callback itself. The exit callback's position
+        // is what this guards, and that is unchanged.
+        assertTrue(hatch.substring(armed).startsWith("VanillaCreateWorldHandoff.armNext(returnScreen, "
                         + "this.worldNameInput, this.seedInput, exitCreateFlow);"),
                 "armNext receives the exit callback as its fourth argument");
 
@@ -434,7 +437,9 @@ public final class VanillaHandoffCostPolicyTest {
      */
     private static void doorOpensFreshRatherThanReusingAContext() throws IOException {
         String door = methodSection(read(DOOR_MIXIN), "private static void globe$openVanillaDoor(");
-        assertTrue(door.contains("CreateWorldScreen.openFresh(client, onClose)"),
+        // 1.21.1's openFresh takes the Screen to return to, so the door hands it the world list
+        // directly instead of a callback that would re-open it.
+        assertTrue(door.contains("CreateWorldScreen.openFresh(client, worldList)"),
                 "the door opens vanilla fresh -- there is no context of its own to reuse");
         assertTrue(!door.contains("createFromExisting"),
                 "the door must not call createFromExisting; unlike the hatch it has nothing to carry");
