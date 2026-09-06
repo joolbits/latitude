@@ -2,10 +2,10 @@ package com.example.globe.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
-import net.minecraft.resources.Identifier;
 
 public final class ClientKeybinds {
-    public static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("globe", "globe"));
+    // 1.21.1 has no KeyMapping.Category registry: the category is the raw translation key.
+    public static final String CATEGORY = "key.categories.globe";
 
     public static KeyMapping TOGGLE_COMPASS;
     public static KeyMapping OPEN_SETTINGS;

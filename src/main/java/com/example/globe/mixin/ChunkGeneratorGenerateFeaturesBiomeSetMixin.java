@@ -21,7 +21,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.biome.Biome;
@@ -100,7 +100,7 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
     private volatile int globe$customBiomeIndexedCount;
 
     @Unique
-    private volatile Set<Identifier> globe$customBiomeRetainIds;
+    private volatile Set<ResourceLocation> globe$customBiomeRetainIds;
 
     /**
      * Lush desert riverbank features, in load order, or empty when they are switched off, missing,
@@ -133,7 +133,7 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
             }
             boolean scopedIndexInstalled = false;
             try {
-                Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
+                Registry<Biome> biomeRegistry = world.registryAccess().registryOrThrow(Registries.BIOME);
                 List<Holder<Biome>> policyBiomes = latitude$taggedCustomPolicyBiomes(biomeRegistry);
                 this.globe$customBiomePolicyCount = policyBiomes.size();
                 List<Holder<Biome>> expandedBiomes = new ArrayList<>(this.biomeSource.possibleBiomes());
@@ -334,7 +334,7 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
             return biomes.retainAll(retainSet);
         }
         boolean debugRetainAll = LATITUDE_DEBUG_CUSTOM_RETAINALL_GATES;
-        Set<Identifier> retainIds = latitude$customBiomeRetainIds();
+        Set<ResourceLocation> retainIds = latitude$customBiomeRetainIds();
         int beforeSize = debugRetainAll ? biomes.size() : 0;
         // Preserving a selected custom biome needs this snapshot. Ordinary release runs do not
         // need the same traversal merely to assemble a debug report when preservation is inactive.
@@ -347,7 +347,7 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
         int preservedCustom = 0;
         if (this.globe$customBiomeIndexSafe && !beforePolicyHolders.isEmpty()) {
             for (Holder<Biome> holder : beforePolicyHolders) {
-                Identifier id = latitude$biomeId(holder);
+                ResourceLocation id = latitude$biomeId(holder);
                 if (id != null
                         && retainIds.contains(id)
                         && !latitude$hasBiomeId(biomes, id)
@@ -377,8 +377,8 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
     }
 
     @Unique
-    private Set<Identifier> latitude$customBiomeRetainIds() {
-        Set<Identifier> retainIds = this.globe$customBiomeRetainIds;
+    private Set<ResourceLocation> latitude$customBiomeRetainIds() {
+        Set<ResourceLocation> retainIds = this.globe$customBiomeRetainIds;
         return retainIds != null ? retainIds : Set.of();
     }
 
@@ -452,9 +452,9 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
 
     @Unique
     private static void latitude$appendMissingPolicyBiomes(List<Holder<Biome>> expandedBiomes, Collection<Holder<Biome>> policyBiomes) {
-        Set<Identifier> seen = latitude$biomeIds(expandedBiomes);
+        Set<ResourceLocation> seen = latitude$biomeIds(expandedBiomes);
         for (Holder<Biome> holder : policyBiomes) {
-            Identifier id = latitude$biomeId(holder);
+            ResourceLocation id = latitude$biomeId(holder);
             if (id != null && seen.add(id)) {
                 expandedBiomes.add(holder);
             }
@@ -462,30 +462,30 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
     }
 
     @Unique
-    private static Set<Identifier> latitude$biomeIds(Collection<Holder<Biome>> holders) {
-        Set<Identifier> out = new HashSet<>();
+    private static Set<ResourceLocation> latitude$biomeIds(Collection<Holder<Biome>> holders) {
+        Set<ResourceLocation> out = new HashSet<>();
         for (Holder<Biome> holder : holders) {
-            Identifier id = latitude$biomeId(holder);
+            ResourceLocation id = latitude$biomeId(holder);
             if (id != null) out.add(id);
         }
         return out;
     }
 
     @Unique
-    private static Identifier latitude$biomeId(Holder<?> holder) {
-        return holder.unwrapKey().map(key -> key.identifier()).orElse(null);
+    private static ResourceLocation latitude$biomeId(Holder<?> holder) {
+        return holder.unwrapKey().map(key -> key.location()).orElse(null);
     }
 
     @Unique
     @SuppressWarnings("unchecked")
-    private static List<Holder<Biome>> latitude$policyCustomHoldersInSet(Set<?> biomes, Set<Identifier> policyIds) {
+    private static List<Holder<Biome>> latitude$policyCustomHoldersInSet(Set<?> biomes, Set<ResourceLocation> policyIds) {
         List<Holder<Biome>> out = new ArrayList<>();
         if (policyIds.isEmpty()) {
             return out;
         }
         for (Object biome : biomes) {
             if (biome instanceof Holder<?> holder) {
-                Identifier id = latitude$biomeId(holder);
+                ResourceLocation id = latitude$biomeId(holder);
                 if (id != null && policyIds.contains(id)) {
                     out.add((Holder<Biome>) holder);
                 }
@@ -495,12 +495,12 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
     }
 
     @Unique
-    private static boolean latitude$hasPolicyCustomBiome(Set<?> biomes, Set<Identifier> policyIds) {
+    private static boolean latitude$hasPolicyCustomBiome(Set<?> biomes, Set<ResourceLocation> policyIds) {
         return !latitude$policyCustomHoldersInSet(biomes, policyIds).isEmpty();
     }
 
     @Unique
-    private static boolean latitude$hasBiomeId(Set<?> biomes, Identifier target) {
+    private static boolean latitude$hasBiomeId(Set<?> biomes, ResourceLocation target) {
         for (Object biome : biomes) {
             if (biome instanceof Holder<?> holder && target.equals(latitude$biomeId(holder))) {
                 return true;

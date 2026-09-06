@@ -494,11 +494,11 @@ public final class CompassHud {
         int nW = Minecraft.getInstance().font.width(nLabel);
         float nScale = Mth.clamp(radius / 24.0f, 0.4f, 1.0f);
         var pose = ctx.pose();
-        pose.pushMatrix();
-        pose.translate((float) (cx + 1), (float) (cy - radius + 2 + tickLen + 1));
-        pose.scale(nScale, nScale);
+        pose.pushPose();
+        pose.translate((float) (cx + 1), (float) (cy - radius + 2 + tickLen + 1), 0.0F);
+        pose.scale(nScale, nScale, 1.0F);
         ctx.drawString(Minecraft.getInstance().font, nLabel, -nW / 2, 0, colors.needle(), true);
-        pose.popMatrix();
+        pose.popPose();
 
         int needleLen = radius - 4;
         int nx = cx + (int) Math.round(Math.sin(angle) * needleLen);
@@ -956,7 +956,7 @@ public final class CompassHud {
         var biome = client.level.getBiome(client.player.blockPosition());
         return biome.unwrapKey()
                 .map(key -> LocationDetailPolicy.biomeLabel(
-                        key.identifier().toString(),
+                        key.location().toString(),
                         cfg.showCustomBiomeSource))
                 .orElse("Unknown");
     }
@@ -991,13 +991,13 @@ public final class CompassHud {
             int color,
             float scale) {
         var pose = ctx.pose();
-        pose.pushMatrix();
+        pose.pushPose();
         try {
-            pose.translate(x, y);
-            pose.scale(scale, scale);
+            pose.translate((float) (x), (float) (y), 0.0F);
+            pose.scale(scale, scale, 1.0F);
             drawText(ctx, client, cfg, text, 0, 0, color);
         } finally {
-            pose.popMatrix();
+            pose.popPose();
         }
     }
 

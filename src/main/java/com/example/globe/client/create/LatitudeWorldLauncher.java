@@ -19,7 +19,7 @@ import net.minecraft.client.gui.screens.AlertScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.RegistryLayer;
-import net.minecraft.util.Util;
+import net.minecraft.Util;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.level.GameType;
@@ -27,7 +27,7 @@ import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
-import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.levelgen.WorldDimensions;
 import net.minecraft.world.level.levelgen.presets.WorldPreset;
 import net.minecraft.world.level.storage.LevelStorageSource;
@@ -78,11 +78,11 @@ public final class LatitudeWorldLauncher {
         }
         try {
             // ── 1. Size preset resolution ──
-            net.minecraft.resources.Identifier presetId;
+            net.minecraft.resources.ResourceLocation presetId;
             if (worldTypeIdx == 2) {
-                presetId = net.minecraft.resources.Identifier.withDefaultNamespace("flat");
+                presetId = net.minecraft.resources.ResourceLocation.withDefaultNamespace("flat");
             } else if (worldTypeIdx == 1) {
-                presetId = net.minecraft.resources.Identifier.withDefaultNamespace("normal");
+                presetId = net.minecraft.resources.ResourceLocation.withDefaultNamespace("normal");
             } else {
                 presetId = size.worldPresetId;
             }
@@ -103,11 +103,11 @@ public final class LatitudeWorldLauncher {
 
             // Apply the preset via setWorldType to ensure dimensions are updated
             Registry<WorldPreset> presetRegistry = holder.worldgenLoadContext()
-                    .lookupOrThrow(Registries.WORLD_PRESET);
-            Holder<WorldPreset> presetEntry = presetRegistry.get(presetKey).orElse(null);
+                    .registryOrThrow(Registries.WORLD_PRESET);
+            Holder<WorldPreset> presetEntry = presetRegistry.getHolder(presetKey).orElse(null);
             if (presetEntry == null) {
                 LOGGER.error("Latitude world preset '{}' was not present in the loaded registry; enabled packs={}",
-                        presetKey.identifier(), holder.dataConfiguration().dataPacks().getEnabled());
+                        presetKey.location(), holder.dataConfiguration().dataPacks().getEnabled());
                 if (isLatitude) {
                     LatitudeClientState.clearLatitudeLoadingState();
                 }
@@ -133,11 +133,11 @@ public final class LatitudeWorldLauncher {
             // reassert the selected Latitude preset before extracting the final holder.
             WorldCreationContext goh = wc.getSettings();
             Registry<WorldPreset> updatedPresetRegistry = goh.worldgenLoadContext()
-                    .lookupOrThrow(Registries.WORLD_PRESET);
-            Holder<WorldPreset> updatedPresetEntry = updatedPresetRegistry.get(presetKey).orElse(null);
+                    .registryOrThrow(Registries.WORLD_PRESET);
+            Holder<WorldPreset> updatedPresetEntry = updatedPresetRegistry.getHolder(presetKey).orElse(null);
             if (updatedPresetEntry == null) {
                 LOGGER.error("Latitude world preset '{}' disappeared after WorldCreator.update(); enabled packs={}",
-                        presetKey.identifier(), goh.dataConfiguration().dataPacks().getEnabled());
+                        presetKey.location(), goh.dataConfiguration().dataPacks().getEnabled());
                 if (isLatitude) {
                     LatitudeClientState.clearLatitudeLoadingState();
                 }
@@ -209,7 +209,8 @@ public final class LatitudeWorldLauncher {
                     hardcore,
                     difficulty,
                     allowCommands,
-                    gameRules != null ? gameRules : new GameRules(goh.dataConfiguration().enabledFeatures()),
+                    // 1.21.1's GameRules constructor takes no feature-flag set.
+                    gameRules != null ? gameRules : new GameRules(),
                     goh.dataConfiguration());
 
             // On 26.2 the WorldOptions ride along in the WorldGenSettings handed to
@@ -229,7 +230,7 @@ public final class LatitudeWorldLauncher {
             final PrimaryLevelData launchLevelProperties = levelProperties;
 
             // ── 8. Show "Preparing..." ──
-            client.setScreenAndShow(new GenericMessageScreen(Component.translatable("createWorld.preparing")));
+            client.setScreen(new GenericMessageScreen(Component.translatable("createWorld.preparing")));
             CompletableFuture.runAsync(() -> {
                 LevelStorageSource.LevelStorageAccess session;
                 try {
@@ -317,13 +318,13 @@ public final class LatitudeWorldLauncher {
      * later {@code isGlobeOverworld} check depends on.
      */
     private static String boundGlobeSettingsId(WorldDimensions.Complete dimensionsConfig) {
-        LevelStem overworld = dimensionsConfig.dimensions().getValue(LevelStem.OVERWORLD);
+        LevelStem overworld = dimensionsConfig.dimensions().get(LevelStem.OVERWORLD);
         if (overworld == null || !(overworld.generator() instanceof NoiseBasedChunkGenerator noise)) {
             return null;
         }
         return noise.generatorSettings()
                 .unwrapKey()
-                .map(key -> key.identifier().toString())
+                .map(key -> key.location().toString())
                 .filter(id -> id.startsWith("globe:"))
                 .orElse(null);
     }
@@ -336,7 +337,7 @@ public final class LatitudeWorldLauncher {
      */
     private static boolean globeSettingsSerializable(WorldDimensions.Complete dimensionsConfig,
                                                      LayeredRegistryAccess<RegistryLayer> registries) {
-        LevelStem overworld = dimensionsConfig.dimensions().getValue(LevelStem.OVERWORLD);
+        LevelStem overworld = dimensionsConfig.dimensions().get(LevelStem.OVERWORLD);
         if (overworld == null || !(overworld.generator() instanceof NoiseBasedChunkGenerator noise)) {
             return false;
         }
@@ -353,7 +354,7 @@ public final class LatitudeWorldLauncher {
         if (generator instanceof NoiseBasedChunkGenerator noise) {
             return noise.generatorSettings()
                     .unwrapKey()
-                    .map(key -> key.identifier().toString())
+                    .map(key -> key.location().toString())
                     .orElse("<inline>");
         }
         return "<non-noise>";

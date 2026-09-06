@@ -27,7 +27,7 @@ import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -116,9 +116,9 @@ public class GlobeModClient implements ClientModInitializer {
 
         List<Block> blocks = new ArrayList<>();
         for (String blockId : PROMENADE_PALM_TINT_BLOCKS) {
-            Identifier id = Identifier.parse(blockId);
+            ResourceLocation id = ResourceLocation.parse(blockId);
             if (BuiltInRegistries.BLOCK.containsKey(id)) {
-                blocks.add(BuiltInRegistries.BLOCK.getValue(id));
+                blocks.add(BuiltInRegistries.BLOCK.get(id));
             }
         }
 

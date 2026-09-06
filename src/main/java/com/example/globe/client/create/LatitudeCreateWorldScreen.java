@@ -17,30 +17,26 @@ import net.minecraft.client.gui.screens.GenericMessageScreen;
 import net.minecraft.client.gui.screens.Screen;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
-import net.minecraft.client.gui.screens.worldselection.DataPackReloadCookie;
 import net.minecraft.client.gui.screens.worldselection.EditGameRulesScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
-import net.minecraft.client.gui.screens.worldselection.WorldCreationContextMapper;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
-import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.gui.navigation.CommonInputs;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.WorldLoader;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.server.packs.repository.ServerPacksSource;
-import net.minecraft.server.permissions.LevelBasedPermissionSet;
-import net.minecraft.util.Util;
+import net.minecraft.Util;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.level.DataPackConfig;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.WorldDataConfiguration;
-import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.levelgen.WorldGenSettings;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.WorldOptions;
@@ -268,7 +264,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.onClose = onClose;
         this.parent = parent;
         this.holder = holder;
-        this.gameRules = new GameRules(holder.dataConfiguration().enabledFeatures());
+        // 1.21.1's GameRules constructor takes no feature-flag set.
+        this.gameRules = new GameRules();
     }
 
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent,
@@ -354,7 +351,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (loadedWorldType == 0) {
             var key = effectivePresetKey(initialState, recreated, recreatedPresetId);
             for (GlobeWorldSize size : GlobeWorldSize.values()) {
-                if (size.worldPresetId.equals(key.identifier())) {
+                if (size.worldPresetId.equals(key.location())) {
                     this.selectedSize = size;
                     break;
                 }
@@ -384,14 +381,14 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         String effectivePresetId = RecreatedWorldTypePolicy.effectivePresetId(
                 recreated,
-                selectedPreset.identifier().toString(),
+                selectedPreset.location().toString(),
                 recreatedPresetId,
                 overworldNoiseSettingsId(initialState));
         if (effectivePresetId == null
-                || effectivePresetId.equals(selectedPreset.identifier().toString())) {
+                || effectivePresetId.equals(selectedPreset.location().toString())) {
             return selectedPreset;
         }
-        return ResourceKey.create(Registries.WORLD_PRESET, Identifier.parse(effectivePresetId));
+        return ResourceKey.create(Registries.WORLD_PRESET, ResourceLocation.parse(effectivePresetId));
     }
 
     @Nullable
@@ -403,7 +400,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         String keyedSettingsId = noise.generatorSettings()
                 .unwrapKey()
-                .map(key -> key.identifier().toString())
+                .map(key -> key.location().toString())
                 .orElse(null);
         if (keyedSettingsId != null) {
             return keyedSettingsId;
@@ -425,7 +422,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             return 2;
         }
         for (GlobeWorldSize size : GlobeWorldSize.values()) {
-            if (size.worldPresetId.equals(key.identifier())) {
+            if (size.worldPresetId.equals(key.location())) {
                 return 0;
             }
         }
@@ -438,7 +435,7 @@ public class LatitudeCreateWorldScreen extends Screen {
      */
     public static void open(Minecraft client, Runnable onClose, @Nullable Screen parent) {
         // Show "Preparing..." message (vanilla pattern)
-        client.setScreenAndShow(new GenericMessageScreen(Component.translatable("createWorld.preparing")));
+        client.setScreen(new GenericMessageScreen(Component.translatable("createWorld.preparing")));
 
         try {
             // Build datapack configuration (replicates createServerConfig, lines 511-513)
@@ -453,10 +450,13 @@ public class LatitudeCreateWorldScreen extends Screen {
                     : new WorldDataConfiguration(new DataPackConfig(enabledPackIds, List.of()), FeatureFlags.DEFAULT_FLAGS);
             WorldLoader.PackConfig dataPacks = new WorldLoader.PackConfig(resourcePackManager, dataConfiguration, false, true);
             WorldLoader.InitConfig serverConfig = new WorldLoader.InitConfig(
-                    dataPacks, Commands.CommandSelection.INTEGRATED, LevelBasedPermissionSet.GAMEMASTER);
+                    dataPacks, Commands.CommandSelection.INTEGRATED, Commands.LEVEL_GAMEMASTERS);
 
-            // Generator options factory (replicates lines 131-133)
-            WorldCreationContextMapper generatorOptionsFactory = (dataPackContents, dynamicRegistries, settings) ->
+            // Generator options factory (replicates lines 131-133). 1.21.1 exposes neither
+            // WorldCreationContextMapper nor an accessible DataPackReloadCookie -- the cookie is a
+            // package-private record inside CreateWorldScreen -- so both are Latitude-owned here.
+            // WorldLoader's cookie type is a free type parameter, so this is a shape match, not a fork.
+            GeneratorOptionsFactory generatorOptionsFactory = (dataPackContents, dynamicRegistries, settings) ->
                     new WorldCreationContext(settings.worldGenSettings(), dynamicRegistries, dataPackContents, settings.dataConfiguration());
 
             // Load datapacks asynchronously so the UI stays responsive while the
@@ -464,7 +464,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             CompletableFuture<WorldCreationContext> future = WorldLoader.load(
                     serverConfig,
                     context -> new WorldLoader.DataLoadOutput<>(
-                            new DataPackReloadCookie(
+                            new LatitudeDataPackReloadCookie(
                                     new WorldGenSettings(WorldOptions.defaultWithRandomSeed(), WorldPresets.createNormalWorldDimensions(context.datapackWorldgen())),
                                     context.dataConfiguration()),
                             context.datapackDimensions()),
@@ -552,7 +552,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         paneStripViewportRight = Math.max(paneStripViewportLeft + 1, this.width - 8);
         paneStripViewportWidth = Math.max(1, paneStripViewportRight - paneStripViewportLeft);
         paneStripContentWidth = paneStripViewportWidth;
-        int guiScale = Minecraft.getInstance().getWindow().getGuiScale();
+        int guiScale = (int) Minecraft.getInstance().getWindow().getGuiScale();
         // The hard panel minima only prevent outright overlap; they still produce the crammed three-column
         // layout visible at high GUI scale. High scale therefore always gets one pane per tab, while normal
         // scales keep three columns only when each pane has genuinely comfortable space.
@@ -1299,7 +1299,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         return pointInsideClip(x, y, left, spawnClipTop(), right, rightViewportBottom);
     }
 
-    private boolean handleSpawnZoneClippedClick(MouseButtonEvent click, boolean doubled) {
+    private boolean handleSpawnZoneClippedClick(double mouseX, double mouseY, int button) {
         if (!isLatitudeWorld() || (tabbedMode && activeTab != 0)) {
             return false;
         }
@@ -1312,8 +1312,8 @@ public class LatitudeCreateWorldScreen extends Screen {
                 continue;
             }
             if (ViewportClipPolicy.acceptsClippedWidgetClick(
-                    click.x(),
-                    click.y(),
+                    mouseX,
+                    mouseY,
                     row.getX(),
                     row.getY(),
                     row.getX() + row.getWidth(),
@@ -1323,7 +1323,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                     clipRight,
                     clipBottom
             )) {
-                row.selectFromClippedMouseClick(click, doubled);
+                row.selectFromClippedMouseClick(mouseX, mouseY);
                 return true;
             }
         }
@@ -1431,9 +1431,11 @@ public class LatitudeCreateWorldScreen extends Screen {
         // clicked -- not "now", since capturing minecraft.screen eagerly would name THIS screen
         // (Latitude's), and leaveCreateFlowFrom's guard would then never match at click time.
         Runnable exitCreateFlow = () -> leaveCreateFlowFrom(this.minecraft == null ? null : this.minecraft.screen);
-        // The Runnable is the claim key: the next screen is constructed with this exact instance,
-        // so only that screen can take the payload.
-        VanillaCreateWorldHandoff.armNext(returnToLatitude, this.worldNameInput, this.seedInput, exitCreateFlow);
+        // 1.21.1's CreateWorldScreen takes a Screen, not a Runnable, so the callback is wrapped in
+        // one. That wrapper is the claim key: the next screen is constructed with this exact
+        // instance, so only that screen can take the payload.
+        Screen returnScreen = new RunnableReturnScreen(returnToLatitude);
+        VanillaCreateWorldHandoff.armNext(returnScreen, this.worldNameInput, this.seedInput, exitCreateFlow);
         try {
             // createFromExisting rather than openFresh, deliberately. openFresh runs a full
             // WorldLoader pass -- vanilla's "Preparing world data" screen, a fresh PackRepository,
@@ -1460,7 +1462,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             // null temp datapack dir: vanilla creates one on demand, and unlike Re-Create there is
             // no extracted world folder to carry over.
             CreateWorldScreen vanillaScreen = CreateWorldScreen.createFromExisting(
-                    this.minecraft, returnToLatitude, carried, this.holder, null);
+                    this.minecraft, returnScreen, carried, this.holder, null);
             this.minecraft.setScreen(vanillaScreen);
         } catch (RuntimeException exception) {
             // Never leave a payload armed for a screen that failed to open; the next create-world
@@ -1597,7 +1599,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (introActive()) {
             skipIntro();
             return true;
@@ -1608,7 +1610,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         // scale, where the panel bottom crowds the button row -- which is why it only reproduced
         // there. A row has no claim on any point outside its own clip, so mute the rows for those
         // clicks and let the real widget underneath take them.
-        if (!isInsideSpawnClip(click.x(), click.y())) {
+        if (!isInsideSpawnClip(mouseX, mouseY)) {
             List<ZoneRowWidget> muted = new ArrayList<>();
             for (ZoneRowWidget row : zoneRows) {
                 if (row.active) {
@@ -1617,73 +1619,73 @@ public class LatitudeCreateWorldScreen extends Screen {
                 }
             }
             try {
-                return globe$dispatchClick(click, doubled);
+                return globe$dispatchClick(mouseX, mouseY, button);
             } finally {
                 for (ZoneRowWidget row : muted) {
                     row.active = true;
                 }
             }
         }
-        return globe$dispatchClick(click, doubled);
+        return globe$dispatchClick(mouseX, mouseY, button);
     }
 
-    private boolean globe$dispatchClick(MouseButtonEvent click, boolean doubled) {
-        if (click.button() == 0 && handleTabClick(click.x(), click.y())) {
+    private boolean globe$dispatchClick(double mouseX, double mouseY, int button) {
+        if (button == 0 && handleTabClick(mouseX, mouseY)) {
             return true;
         }
-        if (click.button() == 0
+        if (button == 0
                 && getPaneStripMaxScroll() > 0
-                && click.x() >= paneStripScrollbarX
-                && click.x() < paneStripScrollbarX + paneStripScrollbarW
-                && click.y() >= paneStripScrollbarY - 2
-                && click.y() < paneStripScrollbarY + paneStripScrollbarH + 2) {
+                && mouseX >= paneStripScrollbarX
+                && mouseX < paneStripScrollbarX + paneStripScrollbarW
+                && mouseY >= paneStripScrollbarY - 2
+                && mouseY < paneStripScrollbarY + paneStripScrollbarH + 2) {
             draggingPaneStripScrollbar = true;
-            setPaneStripScrollFromMouse(click.x());
+            setPaneStripScrollFromMouse(mouseX);
             return true;
         }
-        if (click.button() == 0 && handleSpawnZoneClippedClick(click, doubled)) {
+        if (button == 0 && handleSpawnZoneClippedClick(mouseX, mouseY, button)) {
             return true;
         }
         // Widgets may intersect the viewport so their visible portion renders continuously. Consume clicks
         // in the clipped-off heading/footer area before Screen dispatches against the widget's full rectangle.
-        if (isInsideRulesPanel(click.x(), click.y()) && !isInsideRulesClip(click.x(), click.y())) {
+        if (isInsideRulesPanel(mouseX, mouseY) && !isInsideRulesClip(mouseX, mouseY)) {
             return true;
         }
-        if (isInsideSpawnPanel(click.x(), click.y()) && !isInsideSpawnClip(click.x(), click.y())) {
+        if (isInsideSpawnPanel(mouseX, mouseY) && !isInsideSpawnClip(mouseX, mouseY)) {
             return true;
         }
-        return super.mouseClicked(click, doubled);
+        return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
-    public boolean keyPressed(net.minecraft.client.input.KeyEvent input) {
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (introActive()) {
             skipIntro();
             return true;
         }
-        if (tabbedMode && input.key() == InputConstants.KEY_TAB && input.hasControlDown()) {
-            switchTab(CreateWorldScreenUiPolicy.cyclePanel(activeTab, TAB_LABELS.length, input.hasShiftDown()));
+        if (tabbedMode && keyCode == InputConstants.KEY_TAB && Screen.hasControlDown()) {
+            switchTab(CreateWorldScreenUiPolicy.cyclePanel(activeTab, TAB_LABELS.length, Screen.hasShiftDown()));
             return true;
         }
-        return super.keyPressed(input);
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
-    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
-        if (draggingPaneStripScrollbar && click.button() == 0) {
-            setPaneStripScrollFromMouse(click.x());
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (draggingPaneStripScrollbar && button == 0) {
+            setPaneStripScrollFromMouse(mouseX);
             return true;
         }
-        return super.mouseDragged(click, deltaX, deltaY);
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
     }
 
     @Override
-    public boolean mouseReleased(MouseButtonEvent click) {
-        if (draggingPaneStripScrollbar && click.button() == 0) {
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (draggingPaneStripScrollbar && button == 0) {
             draggingPaneStripScrollbar = false;
             return true;
         }
-        return super.mouseReleased(click);
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -2354,11 +2356,11 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void drawScaledText(GuiGraphics context, String text, int x, int y, float scale, int color, boolean shadow) {
         var matrices = context.pose();
-        matrices.pushMatrix();
-        matrices.translate((float) x, (float) y);
-        matrices.scale(scale, scale);
+        matrices.pushPose();
+        matrices.translate((float) x, (float) y, 0.0F);
+        matrices.scale(scale, scale, 1.0F);
         context.drawString(this.font, text, 0, 0, color, shadow);
-        matrices.popMatrix();
+        matrices.popPose();
     }
 
     private void drawSmallWorldWarning(GuiGraphics context, UiRect rect) {
@@ -2373,11 +2375,11 @@ public class LatitudeCreateWorldScreen extends Screen {
             int x = rect.x + Math.max(0, (rect.w - scaledWidth) / 2);
             int y = rect.y + i * lineHeight;
             var matrices = context.pose();
-            matrices.pushMatrix();
-            matrices.translate((float) x, (float) y);
-            matrices.scale(scale, scale);
+            matrices.pushPose();
+            matrices.translate((float) x, (float) y, 0.0F);
+            matrices.scale(scale, scale, 1.0F);
             context.drawString(this.font, Component.literal(line).setStyle(SMALL_WORLD_WARNING.getStyle()), 0, 0, 0xFFF0A030, false);
-            matrices.popMatrix();
+            matrices.popPose();
         }
     }
 
@@ -2631,19 +2633,19 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
 
         @Override
-        public void onClick(net.minecraft.client.input.MouseButtonEvent click, boolean doubled) {
+        public void onClick(double mouseX, double mouseY) {
             select();
         }
 
-        private void selectFromClippedMouseClick(net.minecraft.client.input.MouseButtonEvent click, boolean doubled) {
+        private void selectFromClippedMouseClick(double mouseX, double mouseY) {
             this.playDownSound(Minecraft.getInstance().getSoundManager());
-            this.onClick(click, doubled);
+            this.onClick(mouseX, mouseY);
         }
 
         @Override
-        public boolean keyPressed(net.minecraft.client.input.KeyEvent input) {
+        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
             if (!this.isActive()) return false;
-            if (input.isSelection()) {
+            if (CommonInputs.selected(keyCode)) {
                 this.playDownSound(Minecraft.getInstance().getSoundManager());
                 select();
                 return true;
@@ -2717,7 +2719,6 @@ public class LatitudeCreateWorldScreen extends Screen {
             if (clipped) {
                 context.disableScissor();
             }
-            this.handleCursor(context);
         }
 
         @Override
@@ -2725,4 +2726,24 @@ public class LatitudeCreateWorldScreen extends Screen {
             this.defaultButtonNarrationText(builder);
         }
     }
+
+    /**
+     * Stands in for 1.21.11's {@code WorldCreationContextMapper}, which 1.21.1 does not publish.
+     */
+    @FunctionalInterface
+    private interface GeneratorOptionsFactory {
+        WorldCreationContext apply(net.minecraft.server.ReloadableServerResources dataPackContents,
+                                   net.minecraft.core.LayeredRegistryAccess<net.minecraft.server.RegistryLayer> dynamicRegistries,
+                                   LatitudeDataPackReloadCookie settings);
+    }
+
+    /**
+     * Stands in for {@code CreateWorldScreen.DataPackReloadCookie}, which is package-private on
+     * 1.21.1. {@link WorldLoader} treats the cookie as an opaque type parameter, so an
+     * identically-shaped local record carries the same payload.
+     */
+    private record LatitudeDataPackReloadCookie(WorldGenSettings worldGenSettings,
+                                                WorldDataConfiguration dataConfiguration) {
+    }
+
 }

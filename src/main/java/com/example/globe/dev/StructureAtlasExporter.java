@@ -84,7 +84,7 @@ public final class StructureAtlasExporter {
         // already established that these candidate evaluators are pure functions of per-world
         // configuration, safe off-thread — run the sweep on the shared background executor,
         // exactly like the biome runner's own export job, and halt when it finishes.
-        net.minecraft.util.Util.backgroundExecutor().execute(() -> runSweep(server, overworld, property));
+        net.minecraft.Util.backgroundExecutor().execute(() -> runSweep(server, overworld, property));
     }
 
     private static void runSweep(MinecraftServer server, ServerLevel overworld, String property) {

@@ -238,7 +238,7 @@ public final class GlobeClientState {
         var cam = mc.gameRenderer.getMainCamera();
         if (cam == null) return Double.NaN;
 
-        double x = cam.position().x;
+        double x = cam.getPosition().x;
 
         double eastX = 3750.0;
         double westX = -3750.0;
@@ -347,7 +347,7 @@ public final class GlobeClientState {
         }
 
         // If server says it's a globe world, trust it explicitly and ignore client-side registry key quirks.
-        if (!globeWorld && !client.level.dimension().identifier().equals(Level.OVERWORLD.identifier())) {
+        if (!globeWorld && !client.level.dimension().location().equals(Level.OVERWORLD.location())) {
             active = false;
         }
 

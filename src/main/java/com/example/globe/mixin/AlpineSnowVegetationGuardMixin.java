@@ -5,11 +5,11 @@ import com.example.globe.world.LatitudeBiomes;
 import com.example.globe.world.LatitudeWorldgenScope;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.VegetationBlock;
+import net.minecraft.world.level.block.BushBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
@@ -42,7 +42,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *
  * <p><b>Scope.</b> Ground cover only. Woody content above the same height is already refused by the
  * tree line, which sits at the alpine rock line, so this guard deliberately does not repeat that
- * tier. Terrain, snow, ice and fluids are neither tagged foliage nor {@code VegetationBlock}s, so
+ * tier. Terrain, snow, ice and fluids are neither tagged foliage nor {@code BushBlock}s, so
  * the test cannot erase the cap it is protecting.
  */
 @Mixin(ProtoChunk.class)
@@ -50,7 +50,7 @@ public class AlpineSnowVegetationGuardMixin {
 
     @Unique
     private static final TagKey<Block> GLOBE_ALPINE_FOLIAGE =
-            TagKey.create(Registries.BLOCK, Identifier.fromNamespaceAndPath("globe", "polar_foliage"));
+            TagKey.create(Registries.BLOCK, ResourceLocation.fromNamespaceAndPath("globe", "polar_foliage"));
 
     @Unique
     private static final BlockState GLOBE_ALPINE_AIR = Blocks.AIR.defaultBlockState();
@@ -71,7 +71,7 @@ public class AlpineSnowVegetationGuardMixin {
         }
 
         boolean foliage = state.is(GLOBE_ALPINE_FOLIAGE);
-        boolean vegetation = state.getBlock() instanceof VegetationBlock;
+        boolean vegetation = state.getBlock() instanceof BushBlock;
         if (!foliage && !vegetation) {
             return;
         }

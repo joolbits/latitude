@@ -4,7 +4,7 @@ import com.example.globe.client.LatitudeClientState;
 import com.example.globe.client.create.RecreatedWorldMetadata;
 import com.example.globe.util.LatitudeBands;
 import net.minecraft.client.Minecraft;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.WorldStem;
@@ -135,8 +135,8 @@ public abstract class MinecraftClientStartIntegratedMixin {
         }
 
         LevelStem overworldStem = worldStem.registries().compositeAccess()
-                .lookupOrThrow(Registries.LEVEL_STEM)
-                .getValue(LevelStem.OVERWORLD);
+                .registryOrThrow(Registries.LEVEL_STEM)
+                .get(LevelStem.OVERWORLD);
         if (overworldStem == null) {
             return false;
         }
@@ -157,6 +157,6 @@ public abstract class MinecraftClientStartIntegratedMixin {
     @Unique
     private static ResourceKey<NoiseGeneratorSettings> globe$noiseSettingsKey(String path) {
         return ResourceKey.create(net.minecraft.core.registries.Registries.NOISE_SETTINGS,
-                Identifier.fromNamespaceAndPath("globe", path));
+                ResourceLocation.fromNamespaceAndPath("globe", path));
     }
 }

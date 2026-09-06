@@ -210,11 +210,11 @@ public final class LatitudeLoadingPane {
         int w = Math.round(font.width(text) * scale);
         int x = cx - w / 2;
         var matrices = context.pose();
-        matrices.pushMatrix();
-        matrices.translate((float) x, (float) y);
-        matrices.scale(scale, scale);
+        matrices.pushPose();
+        matrices.translate((float) x, (float) y, 0.0F);
+        matrices.scale(scale, scale, 1.0F);
         context.drawString(font, text, 0, 0, color, shadow);
-        matrices.popMatrix();
+        matrices.popPose();
     }
 
     /** Same scaled/centered treatment as drawScaledCentered, but italic — used only for
@@ -224,11 +224,11 @@ public final class LatitudeLoadingPane {
         int w = Math.round(font.width(styled) * scale);
         int x = cx - w / 2;
         var matrices = context.pose();
-        matrices.pushMatrix();
-        matrices.translate((float) x, (float) y);
-        matrices.scale(scale, scale);
+        matrices.pushPose();
+        matrices.translate((float) x, (float) y, 0.0F);
+        matrices.scale(scale, scale, 1.0F);
         context.drawString(font, styled, 0, 0, color, false);
-        matrices.popMatrix();
+        matrices.popPose();
     }
 
     private static void drawVersionLabel(GuiGraphics context, Font font, int paneX, int paneY, int paneW, int paneH) {
@@ -248,10 +248,10 @@ public final class LatitudeLoadingPane {
         float drawX = x / VERSION_LABEL_SCALE;
         float drawY = y / VERSION_LABEL_SCALE;
         var matrices = context.pose();
-        matrices.pushMatrix();
-        matrices.scale(VERSION_LABEL_SCALE, VERSION_LABEL_SCALE);
+        matrices.pushPose();
+        matrices.scale(VERSION_LABEL_SCALE, VERSION_LABEL_SCALE, 1.0F);
         context.drawString(font, VERSION_LABEL, Math.round(drawX), Math.round(drawY), MUTED, false);
-        matrices.popMatrix();
+        matrices.popPose();
     }
 
     private static void updateNeedle(long now, float delta) {

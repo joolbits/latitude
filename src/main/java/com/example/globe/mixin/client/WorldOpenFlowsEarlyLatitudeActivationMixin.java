@@ -20,7 +20,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * world, not after.
  *
  * <p>{@code WorldOpenFlows.openWorld}'s very first action — before any file is even opened — is
- * {@code Minecraft.setScreenAndShow(new GenericMessageScreen("selectWorld.data_read"))}. Only much
+ * {@code Minecraft.setScreen(new GenericMessageScreen("selectWorld.data_read"))}. Only much
  * later, after the save's registries and world stem are fully resolved, does
  * {@code Minecraft.doWorldLoad} run — the point {@link MinecraftClientStartIntegratedMixin} already
  * hooks to activate the overlay, because that is the earliest point a live {@code WorldStem} exists

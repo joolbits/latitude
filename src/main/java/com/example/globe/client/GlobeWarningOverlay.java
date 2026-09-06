@@ -86,7 +86,7 @@ public final class GlobeWarningOverlay {
         var biomeEntry = client.level.getBiome(client.player.blockPosition());
         var optKey = biomeEntry.unwrapKey();
         if (optKey.isPresent()) {
-            String path = optKey.get().identifier().getPath();
+            String path = optKey.get().location().getPath();
             return titleCase(path);
         }
         return "Unknown";

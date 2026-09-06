@@ -268,7 +268,7 @@ public final class PolarFoliagePolicyTest {
         assertTrue(guard.contains("method = \"setBlockState\""),
                 "the guard must intercept the block WRITE — guarding feature classes is what left "
                         + "fallen trees, huge mushrooms, glow lichen and block_column cane outside");
-        assertTrue(guard.contains("instanceof VegetationBlock"),
+        assertTrue(guard.contains("instanceof BushBlock"),
                 "modded ground cover must be caught by inheritance from the vanilla plant base; a "
                         + "tag-only test fails OPEN on any block a pack never tagged, which left the "
                         + "polar cap greener than a correctly-guarded biome");
@@ -370,7 +370,7 @@ public final class PolarFoliagePolicyTest {
                 "src/main/java/com/example/globe/mixin/AlpineSnowVegetationGuardMixin.java");
         assertTrue(guard.contains("method = \"setBlockState\""),
                 "the guard must intercept the block WRITE, not a named feature class");
-        assertTrue(guard.contains("instanceof VegetationBlock"),
+        assertTrue(guard.contains("instanceof BushBlock"),
                 "modded ground cover must be caught by inheritance from the vanilla plant base, "
                         + "exactly as the polar guard catches it");
         assertTrue(guard.contains("polar_foliage"),
@@ -595,7 +595,7 @@ public final class PolarFoliagePolicyTest {
      * biomesoplenty:fallen_fir_log's mushrooms floating where this guard turned the log to air
      * (2026-08-31). The law: wherever the guard can have removed support (woody latitude tier or
      * the elevation tree line), a floor plant being placed over air is refused -- and the check
-     * is scoped to the floor-supported block CONTRACT (VegetationBlock), never the foliage tag,
+     * is scoped to the floor-supported block CONTRACT (BushBlock), never the foliage tag,
      * which legitimately contains wall- and ceiling-attached blocks such as glow lichen.
      */
     private static void strippedSupportCannotStrandFloorPlants() throws Exception {
@@ -621,7 +621,7 @@ public final class PolarFoliagePolicyTest {
             }
         }
         assertTrue(gatedOnVegetation,
-                "the support check is reachable only for VegetationBlock placements");
+                "the support check is reachable only for BushBlock placements");
 
         int supportAt = method.indexOf("pos.below()");
         int woodyReturnAt = method.indexOf("if (!beyondWoody)");

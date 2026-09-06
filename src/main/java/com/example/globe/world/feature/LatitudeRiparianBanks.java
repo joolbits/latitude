@@ -12,7 +12,7 @@ import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.levelgen.placement.PlacedFeature;
 import net.minecraft.world.level.levelgen.placement.PlacementModifierType;
@@ -38,20 +38,20 @@ public final class LatitudeRiparianBanks {
     private static final boolean ENABLED =
             Boolean.parseBoolean(System.getProperty("latitude.riparianDesertBanks", "true"));
 
-    private static final Identifier RIPARIAN_TYPE_ID =
-            Identifier.fromNamespaceAndPath(GlobeMod.MOD_ID, "riparian");
+    private static final ResourceLocation RIPARIAN_TYPE_ID =
+            ResourceLocation.fromNamespaceAndPath(GlobeMod.MOD_ID, "riparian");
 
     /**
      * Order is load-bearing: the ground patch has to exist before the plants that stand on it, and
      * this list is the order the features are appended to the vegetal step in.
      */
-    private static final List<Identifier> ORDERED_FEATURE_IDS = List.of(
-            Identifier.fromNamespaceAndPath(GlobeMod.MOD_ID, "riparian/desert_bank_soil"),
-            Identifier.fromNamespaceAndPath(GlobeMod.MOD_ID, "riparian/desert_bank_plants"));
+    private static final List<ResourceLocation> ORDERED_FEATURE_IDS = List.of(
+            ResourceLocation.fromNamespaceAndPath(GlobeMod.MOD_ID, "riparian/desert_bank_soil"),
+            ResourceLocation.fromNamespaceAndPath(GlobeMod.MOD_ID, "riparian/desert_bank_plants"));
 
     /** Ledger-described arid surface land: vanilla desert and the badlands family, plus any
      *  optional-mod identity the ledger routes the same way. */
-    private static final Set<Identifier> ARID_LAND_IDS = aridLandIds();
+    private static final Set<ResourceLocation> ARID_LAND_IDS = aridLandIds();
 
     /** The placement modifier type behind {@code "type": "globe:riparian"} in placed-feature JSON. */
     public static final PlacementModifierType<RiparianPlacement> RIPARIAN = () -> RiparianPlacement.CODEC;
@@ -84,7 +84,7 @@ public final class LatitudeRiparianBanks {
             return false;
         }
         return biome.unwrapKey()
-                .map(key -> ARID_LAND_IDS.contains(key.identifier()))
+                .map(key -> ARID_LAND_IDS.contains(key.location()))
                 .orElse(Boolean.FALSE);
     }
 
@@ -97,13 +97,13 @@ public final class LatitudeRiparianBanks {
         if (!ENABLED || registryAccess == null) {
             return List.of();
         }
-        Optional<Registry<PlacedFeature>> registry = registryAccess.lookup(Registries.PLACED_FEATURE);
+        Optional<Registry<PlacedFeature>> registry = registryAccess.registry(Registries.PLACED_FEATURE);
         if (registry.isEmpty()) {
             return List.of();
         }
         List<Holder<PlacedFeature>> resolved = new ArrayList<>(ORDERED_FEATURE_IDS.size());
-        for (Identifier id : ORDERED_FEATURE_IDS) {
-            Optional<Holder.Reference<PlacedFeature>> holder = registry.get().get(id);
+        for (ResourceLocation id : ORDERED_FEATURE_IDS) {
+            Optional<Holder.Reference<PlacedFeature>> holder = registry.get().getHolder(id);
             if (holder.isEmpty()) {
                 GlobeMod.LOGGER.warn("[LAT][RIPARIAN] missing placed feature {}; desert banks stay bare", id);
                 return List.of();
@@ -113,11 +113,11 @@ public final class LatitudeRiparianBanks {
         return List.copyOf(resolved);
     }
 
-    private static Set<Identifier> aridLandIds() {
-        Set<Identifier> ids = new HashSet<>();
+    private static Set<ResourceLocation> aridLandIds() {
+        Set<ResourceLocation> ids = new HashSet<>();
         for (BiomeDescriptorLedger.Descriptor descriptor : BiomeDescriptorLedger.descriptors()) {
             if (BiomeDescriptorLedger.isAridSurfaceLand(descriptor.biomeId())) {
-                ids.add(Identifier.parse(descriptor.biomeId()));
+                ids.add(ResourceLocation.parse(descriptor.biomeId()));
             }
         }
         return Set.copyOf(ids);

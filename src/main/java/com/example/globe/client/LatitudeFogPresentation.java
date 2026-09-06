@@ -1,34 +1,30 @@
 package com.example.globe.client;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.fog.FogData;
 import net.minecraft.world.level.material.FogType;
 import org.joml.Vector4f;
 
 /**
  * Latitude's fog presentation, split into a distance pass and a colour pass.
  *
- * <p>On 26.2 both lived in a single {@code FogRenderer.setupFog} injection, because that method
- * returned the {@link FogData} and the colour hung off it. On this target {@code setupFog} returns
- * the colour {@link Vector4f} instead, and it has <em>already uploaded that colour to the fog UBO</em>
- * by the time it returns — so mutating its return value would compile and silently do nothing.
+ * <p>1.21.1 has no {@code FogData} record of ranges: {@code FogRenderer.setupFog} keeps a
+ * package-private holder with a single {@code start}/{@code end} pair and pushes it straight into
+ * {@code RenderSystem.setShaderFogStart}/{@code setShaderFogEnd} at the end of the method, and
+ * {@code FogRenderer.setupColor} does the same for the colour. Both passes therefore read the
+ * render-system state back and write the tightened values into it, rather than mutating a shared
+ * object the way the 1.21.9+ lines do.
  *
- * <p>The two passes therefore hook different points of the same method, and both must keep the
- * same gate:
- * <ul>
- *   <li>distances — {@code FogRenderer.setupFog}, immediately after vanilla's last
- *       {@code renderDistanceEnd} write and before the six fields are read into the UBO. Applying
- *       them any earlier (as an {@code AtmosphericFogEnvironment.setupFog} hook once did) lets
- *       vanilla clobber {@code renderDistanceStart}/{@code End} three instructions later, which
- *       silently removes the far fog wall while the near fog still works.</li>
- *   <li>colour — {@code FogRenderer.computeFogColor}, which runs before the buffer upload</li>
- * </ul>
+ * <p>Range fidelity is reduced by the target, not by choice: the newer lines carry four separate
+ * ranges (environmental, render-distance, sky, cloud) and Latitude narrows each. 1.21.1 exposes one
+ * range per {@code FogMode}, so the same tightening is applied to that single pair on every
+ * {@code setupFog} call — the sky and terrain passes each get it in their own turn.
  *
  * <p>Every distance write here is a {@code tighten} or {@code Math.min}, so the pass can only
- * narrow fog. That is what makes it safe to run after vanilla and outside the atmospheric
- * environment (e.g. under Blindness) without overriding a vanilla effect.
+ * narrow fog. That is what makes it safe to run after vanilla without overriding a vanilla effect.
+ * Submerged cameras are excluded by the presentation gate itself.
  */
 public final class LatitudeFogPresentation {
 
@@ -58,15 +54,49 @@ public final class LatitudeFogPresentation {
         return new Gate(client, eval);
     }
 
-    /** E/W sandstorm and polar fog distance tightening. */
-    public static void applyDistances(FogData fog, Camera camera) {
+    /** E/W sandstorm and polar fog distance tightening, applied to the active shader fog range. */
+    public static void applyDistances(Camera camera) {
         Gate gate = gate(camera);
         if (gate == null) {
             return;
         }
 
-        applyEwDistances(fog, gate.client().player.getX());
-        applyPolarDistances(fog, gate.client().player.getZ(), gate.eval());
+        float start = RenderSystem.getShaderFogStart();
+        float end = RenderSystem.getShaderFogEnd();
+
+        // E/W first, then polar -- the same order the 1.21.9+ lines apply them in.
+        float ewStart = tightenStart(start, gate.client().player.getX());
+        float ewEnd = tightenEnd(end, gate.client().player.getX());
+
+        float finalStart = ewStart;
+        float finalEnd = ewEnd;
+        if (gate.eval().surfaceOk()) {
+            float polarIntensity = GlobeClientState.computePoleFogIntensity(gate.client().player.getZ());
+            if (polarIntensity > 0.0f) {
+                finalEnd = polarEnd(ewEnd, gate.client().player.getZ());
+                finalStart = Math.min(
+                        ewStart,
+                        PolarPresentationPolicy.polarFogStart(ewStart, polarIntensity));
+            }
+        }
+
+        if (finalStart != start) {
+            RenderSystem.setShaderFogStart(finalStart);
+        }
+        if (finalEnd != end) {
+            RenderSystem.setShaderFogEnd(finalEnd);
+        }
+    }
+
+    /** Reads the uploaded fog colour back, blends Latitude's tints into it, and writes it out. */
+    public static void applyColor(Camera camera, ClientLevel level) {
+        float[] uploaded = RenderSystem.getShaderFogColor();
+        if (uploaded == null || uploaded.length < 4) {
+            return;
+        }
+        Vector4f color = new Vector4f(uploaded[0], uploaded[1], uploaded[2], uploaded[3]);
+        applyColor(color, camera, level);
+        RenderSystem.setShaderFogColor(color.x(), color.y(), color.z(), color.w());
     }
 
     /** E/W sandstorm and polar fog colour blending, in that order, as on 26.2. */
@@ -94,40 +124,6 @@ public final class LatitudeFogPresentation {
         if (polarIntensity > 0.0f) {
             blendPolarFogColor(color, polarIntensity);
         }
-    }
-
-    private static void applyEwDistances(FogData fog, double x) {
-        fog.environmentalStart = tightenStart(fog.environmentalStart, x);
-        fog.renderDistanceStart = tightenStart(fog.renderDistanceStart, x);
-        fog.environmentalEnd = tightenEnd(fog.environmentalEnd, x);
-        fog.renderDistanceEnd = tightenEnd(fog.renderDistanceEnd, x);
-        fog.skyEnd = tightenEnd(fog.skyEnd, x);
-        fog.cloudEnd = tightenEnd(fog.cloudEnd, x);
-    }
-
-    private static void applyPolarDistances(FogData fog, double z, GlobeClientState.Eval eval) {
-        if (!eval.surfaceOk()) {
-            return;
-        }
-        float polarIntensity = GlobeClientState.computePoleFogIntensity(z);
-        if (polarIntensity <= 0.0f) {
-            return;
-        }
-
-        float originalEnvironmentalStart = fog.environmentalStart;
-        float originalRenderStart = fog.renderDistanceStart;
-
-        fog.environmentalEnd = polarEnd(fog.environmentalEnd, z);
-        fog.renderDistanceEnd = polarEnd(fog.renderDistanceEnd, z);
-        fog.skyEnd = polarEnd(fog.skyEnd, z);
-        fog.cloudEnd = polarEnd(fog.cloudEnd, z);
-
-        fog.environmentalStart = Math.min(
-                fog.environmentalStart,
-                PolarPresentationPolicy.polarFogStart(originalEnvironmentalStart, polarIntensity));
-        fog.renderDistanceStart = Math.min(
-                fog.renderDistanceStart,
-                PolarPresentationPolicy.polarFogStart(originalRenderStart, polarIntensity));
     }
 
     private static float tightenEnd(float currentEnd, double x) {

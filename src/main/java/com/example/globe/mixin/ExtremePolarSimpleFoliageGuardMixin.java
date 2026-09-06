@@ -8,7 +8,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.Block;
@@ -28,7 +28,7 @@ import org.spongepowered.asm.mixin.injection.At;
 @Mixin(SimpleBlockFeature.class)
 public class ExtremePolarSimpleFoliageGuardMixin {
     private static final TagKey<Block> POLAR_FOLIAGE =
-            TagKey.create(Registries.BLOCK, Identifier.fromNamespaceAndPath("globe", "polar_foliage"));
+            TagKey.create(Registries.BLOCK, ResourceLocation.fromNamespaceAndPath("globe", "polar_foliage"));
 
     /**
      * 26.2 suppressed a placement by returning null from {@code BlockStateProvider.getOptionalState},
@@ -72,7 +72,8 @@ public class ExtremePolarSimpleFoliageGuardMixin {
         boolean beyondLimit = LatitudeBiomes.isBlockBeyondPolarFoliageLimit(
                 context.origin().getZ(),
                 GlobeMod.BORDER_RADIUS);
-        boolean fireflyBush = sampledState.is(Blocks.FIREFLY_BUSH);
+        // 1.21.1 predates the firefly bush; no block to exempt on this target.
+        boolean fireflyBush = false;
         boolean snowySubpolarOrPolar = fireflyBush
                 && PolarFoliagePolicy.isSubpolarOrPolar(
                         context.origin().getZ(),
@@ -81,7 +82,7 @@ public class ExtremePolarSimpleFoliageGuardMixin {
                 && context.level()
                         .getBiome(context.origin())
                         .value()
-                        .coldEnoughToSnow(context.origin(), noise.getSeaLevel());
+                        .coldEnoughToSnow(context.origin());
         boolean foliage = sampledState.is(POLAR_FOLIAGE);
         return PolarFoliagePolicy.shouldSuppressSimpleBlock(
                 beyondLimit,

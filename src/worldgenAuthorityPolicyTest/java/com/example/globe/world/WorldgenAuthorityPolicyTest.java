@@ -709,11 +709,11 @@ public final class WorldgenAuthorityPolicyTest {
                 "src/main/java/com/example/globe/tools/LatitudeToolsCommand.java"));
         assertTrue(
                 service.contains("showTeleportLocateResult(source, target, origin, result)")
-                        && service.contains("new ClickEvent.RunCommand(\"/latitude_locate_teleport \" + token)")
+                        && service.contains("new ClickEvent(ClickEvent.Action.RUN_COMMAND, \"/latitude_locate_teleport \" + token)")
                         && service.contains("pending == null || !pending.token().equals(token)")
                         && service.contains("Util.getMillis() > pending.expiresAtMs()")
                         && service.contains("serverTeleports.remove(player.getUUID())")
-                        && !service.contains("new ClickEvent.RunCommand(\"/tp ")
+                        && !service.contains("new ClickEvent(ClickEvent.Action.RUN_COMMAND, \"/tp ")
                         && service.contains("\"commands.locate.structure.not_found\""),
                 "the coordinate click must use a player-bound, expiring, single-use action");
 
@@ -1377,7 +1377,7 @@ public final class WorldgenAuthorityPolicyTest {
     /**
      * The SavedData id IS the on-disk filename. Code that reads that file without a loaded server
      * must derive its path from the id, never re-spell it: the port changed the id from an
-     * Identifier to a plain String -- moving the file from
+     * ResourceLocation to a plain String -- moving the file from
      * dimensions/minecraft/overworld/data/globe/latitude_world_state.dat to
      * data/globe_latitude_world_state.dat -- and the off-disk reader kept the old literal, so it
      * found nothing on every world and every feature built on it went silently dead.

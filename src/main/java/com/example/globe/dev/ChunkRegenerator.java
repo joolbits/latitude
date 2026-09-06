@@ -12,7 +12,8 @@ import net.minecraft.server.level.ChunkResult;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ThreadedLevelLightEngine;
-import net.minecraft.util.Util;
+import net.minecraft.server.level.progress.ChunkProgressListener;
+import net.minecraft.Util;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
@@ -42,6 +43,30 @@ import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 
 public final class ChunkRegenerator {
+
+    /**
+     * 1.21.1's ServerLevel constructor requires a {@link ChunkProgressListener}; the newer lines
+     * dropped that parameter. The temporary regeneration level drives no progress UI, so every
+     * callback is deliberately empty.
+     */
+    private static final ChunkProgressListener NO_OP_CHUNK_PROGRESS_LISTENER = new ChunkProgressListener() {
+        @Override
+        public void updateSpawnPos(ChunkPos center) {
+        }
+
+        @Override
+        public void onStatusChange(ChunkPos chunkPos, ChunkStatus status) {
+        }
+
+        @Override
+        public void start() {
+        }
+
+        @Override
+        public void stop() {
+        }
+    };
+
     private static final int SET_BLOCK_FLAGS = Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE | Block.UPDATE_SUPPRESS_DROPS;
 
     private ChunkRegenerator() {
@@ -88,13 +113,17 @@ public final class ChunkRegenerator {
                         worldProperties,
                         realWorld.dimension(),
                         dimensionOptions,
+                        // 1.21.1's ServerLevel constructor takes a ChunkProgressListener that the
+                        // newer lines dropped. This temporary generation level has no UI to drive,
+                        // so a no-op listener is the faithful equivalent of passing nothing.
+                        NO_OP_CHUNK_PROGRESS_LISTENER,
                         realWorld.isDebug(),
                         seed,
                         List.of(),
                         false,
-                        // 1.21.11's ctor takes a trailing RandomSequences that 26.2's does not.
-                        // null is vanilla's own pattern for a fresh level: ServerLevel lazily
-                        // creates the sequence state from its data storage when this is absent.
+                        // 1.21.1's ctor also takes a trailing RandomSequences. null is vanilla's own
+                        // pattern for a fresh level: ServerLevel lazily creates the sequence state
+                        // from its data storage when this is absent.
                         null
                 )) {
                     Map<Long, ChunkAccess> generated = generateToFeatures(tempWorld, targets);
@@ -164,7 +193,7 @@ public final class ChunkRegenerator {
         List<LevelChunk> biomeRefreshChunks = copyBiomes ? new ArrayList<>(targets.size()) : List.of();
         ThreadedLevelLightEngine lightingProvider = realWorld.getChunkSource().getLightEngine();
 
-        int minY = realWorld.getMinY();
+        int minY = realWorld.getMinBuildHeight();
         int maxY = minY + realWorld.getHeight();
 
         for (ChunkPos chunkPos : targets) {
@@ -222,7 +251,7 @@ public final class ChunkRegenerator {
                 biomeRefreshChunks.add(targetChunk);
             }
 
-            targetChunk.markUnsaved();
+            targetChunk.setUnsaved(true);
             lightingProvider.propagateLightSources(chunkPos);
         }
 
@@ -253,7 +282,7 @@ public final class ChunkRegenerator {
             LevelChunkSection targetSection = targetSections[sectionIndex];
 
             PalettedContainer<Holder<Biome>> sourceBiomes =
-                    (PalettedContainer<Holder<Biome>>) sourceSection.getBiomes().copy();
+                    (PalettedContainer<Holder<Biome>>) sourceSection.getBiomes().recreate();
             PalettedContainer<Holder<Biome>> targetBiomes =
                     (PalettedContainer<Holder<Biome>>) targetSection.getBiomes();
 

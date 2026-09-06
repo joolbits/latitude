@@ -4,10 +4,13 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.mojang.serialization.Codec;
 import java.util.Optional;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.Tag;
 import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.level.saveddata.SavedData;
-import net.minecraft.world.level.saveddata.SavedDataType;
 
 public final class LatitudeWorldState extends SavedData {
     public enum WorldgenPolicyVersion {
@@ -26,7 +29,7 @@ public final class LatitudeWorldState extends SavedData {
     );
 
     /**
-     * The SavedData id. 26.2's {@code SavedDataType} takes an Identifier; 1.21.11's takes a plain
+     * The SavedData id. 26.2's {@code SavedDataType} takes an ResourceLocation; 1.21.11's takes a plain
      * String, and that string IS the {@code .dat} filename under the world's {@code data/} folder
      * — a persistence contract, not a label. Deliberately matches the 1.4-era 1.21.11 port's
      * filename so a 1.4 world upgrading on this target keeps its globe radius and zone state
@@ -34,16 +37,20 @@ public final class LatitudeWorldState extends SavedData {
      *
      * <p>PUBLIC because any code that reads this state off disk WITHOUT a loaded server (see
      * {@code RecreatedWorldMetadata}) must derive its path from this exact id. Those two drifted
-     * apart once already: the port changed the id here from an Identifier to this String — moving
+     * apart once already: the port changed the id here from an ResourceLocation to this String — moving
      * the file from {@code dimensions/minecraft/overworld/data/globe/latitude_world_state.dat} to
      * {@code data/globe_latitude_world_state.dat} — and the off-disk reader kept the old literal,
      * so it silently found nothing on every world. Derive, never re-spell.
      */
     public static final String STATE_ID = "globe_latitude_world_state";
 
-    private static final SavedDataType<LatitudeWorldState> STATE_TYPE = new SavedDataType<>(
-            STATE_ID,
-            LatitudeWorldState::new,
+    /**
+     * 1.21.1 has no codec-driven {@code SavedDataType}: {@link SavedData.Factory} carries a plain
+     * constructor plus a {@code (CompoundTag, HolderLookup.Provider)} deserializer, and the id is
+     * passed at lookup time instead. The record codec below is kept verbatim and driven manually in
+     * {@link #load} / {@link #save} so the on-disk field names stay byte-identical to the newer lines.
+     */
+    private static final Codec<LatitudeWorldState> CODEC =
             RecordCodecBuilder.<LatitudeWorldState>create(instance -> instance.group(
                     Codec.BOOL.optionalFieldOf("spawn_picker_dismissed", false)
                             .forGetter(LatitudeWorldState::isSpawnPickerDismissed),
@@ -67,9 +74,32 @@ public final class LatitudeWorldState extends SavedData {
                     new LatitudeWorldState(spawnPickerDismissed, normalizeWorldgenPolicy(worldgenPolicy),
                             globeRadius, providerTicketProfile.orElse(null),
                             vanillaRepresentationProfile.orElse(null), caveRepresentationProfile.orElse(null),
-                            lastKnownBandId.orElse(null), retrofitEnabled))),
+                            lastKnownBandId.orElse(null), retrofitEnabled)));
+
+    private static final SavedData.Factory<LatitudeWorldState> STATE_TYPE = new SavedData.Factory<>(
+            LatitudeWorldState::new,
+            LatitudeWorldState::load,
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
     );
+
+    private static LatitudeWorldState load(CompoundTag tag, HolderLookup.Provider registries) {
+        return CODEC.parse(NbtOps.INSTANCE, tag).result().orElseGet(LatitudeWorldState::new);
+    }
+
+    @Override
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
+        CODEC.encodeStart(NbtOps.INSTANCE, this).result().ifPresent(encoded -> {
+            if (encoded instanceof CompoundTag encodedTag) {
+                for (String key : encodedTag.getAllKeys()) {
+                    Tag value = encodedTag.get(key);
+                    if (value != null) {
+                        tag.put(key, value);
+                    }
+                }
+            }
+        });
+        return tag;
+    }
 
     private boolean spawnPickerDismissed;
     private WorldgenPolicyVersion worldgenPolicy;
@@ -115,14 +145,14 @@ public final class LatitudeWorldState extends SavedData {
     }
 
     public static LatitudeWorldState get(ServerLevel world) {
-        LatitudeWorldState state = world.getDataStorage().computeIfAbsent(STATE_TYPE);
+        LatitudeWorldState state = world.getDataStorage().computeIfAbsent(STATE_TYPE, STATE_ID);
         state.ensureWorldgenPolicy(world);
         return state;
     }
 
     /** Reads an existing Latitude state without creating or dirtying a vanilla save. */
     public static LatitudeWorldState getIfPresent(ServerLevel world) {
-        return world.getDataStorage().get(STATE_TYPE);
+        return world.getDataStorage().get(STATE_TYPE, STATE_ID);
     }
 
     public boolean isSpawnPickerDismissed() {

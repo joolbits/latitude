@@ -20,7 +20,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -122,7 +122,7 @@ public final class LatitudeDecorationRetrofit {
     /** Present (true) on any chunk whose eligible biomes were decorated under the fixed index. */
     public static final AttachmentType<Boolean> DECORATED_UNDER_FIXED_INDEX =
             AttachmentRegistry.createPersistent(
-                    Identifier.fromNamespaceAndPath("globe", "retrofit_decorated"), Codec.BOOL);
+                    ResourceLocation.fromNamespaceAndPath("globe", "retrofit_decorated"), Codec.BOOL);
 
     private static final int CHUNKS_PER_TICK = 2;
     private static final int MAX_PENDING_CHUNKS = 2048;
@@ -143,7 +143,7 @@ public final class LatitudeDecorationRetrofit {
     private static volatile long lastOverflowWarningMs = Long.MIN_VALUE;
     private static volatile long lastCompletionInfoMs = Long.MIN_VALUE;
     private static volatile boolean completionSummaryPending;
-    private static volatile List<Identifier> eligibleCache;
+    private static volatile List<ResourceLocation> eligibleCache;
 
     private LatitudeDecorationRetrofit() {
     }
@@ -151,7 +151,8 @@ public final class LatitudeDecorationRetrofit {
     public static void init() {
         // Touch the attachment type so registration happens during mod init, before any world
         // exists; the field initializer performs the actual registration.
-        Identifier registered = DECORATED_UNDER_FIXED_INDEX.identifier();
+        // Fabric API 0.115.6 (1.21.1) names the attachment accessor identifier(), not location().
+        ResourceLocation registered = DECORATED_UNDER_FIXED_INDEX.identifier();
         GlobeMod.LOGGER.debug("[Latitude] retrofit chunk marker registered: {}", registered);
 
         ServerChunkEvents.CHUNK_LOAD.register(LatitudeDecorationRetrofit::onChunkLoad);
@@ -351,7 +352,7 @@ public final class LatitudeDecorationRetrofit {
                 CHUNKS_RETROFITTED.incrementAndGet();
                 GlobeMod.LOGGER.debug("[Latitude] retrofit decorated chunk {},{}: biomes={} featuresPlaced={}",
                         pos.x, pos.z,
-                        present.stream().map(h -> h.unwrapKey().map(k -> k.identifier().toString()).orElse("?")).toList(),
+                        present.stream().map(h -> h.unwrapKey().map(k -> k.location().toString()).orElse("?")).toList(),
                         placed);
             }
         } catch (Exception e) {
@@ -360,7 +361,7 @@ public final class LatitudeDecorationRetrofit {
             GlobeMod.LOGGER.warn("[Latitude] retrofit failed for chunk {},{} (marking handled)", pos.x, pos.z, e);
         }
         markDecoratedUnderFixedIndex(chunk);
-        chunk.markUnsaved();
+        chunk.setUnsaved(true);
     }
 
     private static void maybeWarnQueueOverflow(ChunkPos pos) {
@@ -410,15 +411,15 @@ public final class LatitudeDecorationRetrofit {
     }
 
     private static List<Holder<Biome>> eligibleBiomesIn(ServerLevel world, LevelChunk chunk) {
-        List<Identifier> eligible = eligibleBiomeIds(world);
+        List<ResourceLocation> eligible = eligibleBiomeIds(world);
         if (eligible.isEmpty()) {
             return List.of();
         }
-        Registry<Biome> registry = world.registryAccess().lookupOrThrow(Registries.BIOME);
-        Map<Identifier, Holder<Biome>> found = new LinkedHashMap<>();
+        Registry<Biome> registry = world.registryAccess().registryOrThrow(Registries.BIOME);
+        Map<ResourceLocation, Holder<Biome>> found = new LinkedHashMap<>();
         for (LevelChunkSection section : chunk.getSections()) {
             section.getBiomes().getAll(holder -> holder.unwrapKey().ifPresent(key -> {
-                Identifier id = key.identifier();
+                ResourceLocation id = key.location();
                 if (eligible.contains(id)) {
                     found.putIfAbsent(id, holder);
                 }
@@ -429,15 +430,15 @@ public final class LatitudeDecorationRetrofit {
         }
         // Re-resolve through the registry so downstream feature lookups use canonical holders.
         List<Holder<Biome>> out = new ArrayList<>();
-        for (Identifier id : found.keySet()) {
-            registry.get(id).ifPresent(out::add);
+        for (ResourceLocation id : found.keySet()) {
+            registry.getHolder(id).ifPresent(out::add);
         }
         return out;
     }
 
     private static int replayVegetalFeatures(ServerLevel world, ChunkPos pos, List<Holder<Biome>> biomes) {
         int step = GenerationStep.Decoration.VEGETAL_DECORATION.ordinal();
-        BlockPos origin = new BlockPos(pos.getMinBlockX(), world.getMinY(), pos.getMinBlockZ());
+        BlockPos origin = new BlockPos(pos.getMinBlockX(), world.getMinBuildHeight(), pos.getMinBlockZ());
         WorldgenRandom random = new WorldgenRandom(new XoroshiroRandomSource(world.getSeed()));
         long decorationSeed = random.setDecorationSeed(world.getSeed(), origin.getX(), origin.getZ());
         int placed = 0;
@@ -460,7 +461,7 @@ public final class LatitudeDecorationRetrofit {
                     }
                 } catch (Exception e) {
                     GlobeMod.LOGGER.warn("[Latitude] retrofit feature failed in chunk {},{} ({}): {}",
-                            pos.x, pos.z, feature.unwrapKey().map(k -> k.identifier().toString()).orElse("?"),
+                            pos.x, pos.z, feature.unwrapKey().map(k -> k.location().toString()).orElse("?"),
                             e.toString());
                 }
             }
@@ -482,12 +483,12 @@ public final class LatitudeDecorationRetrofit {
      * are skipped.
      */
     public static List<Holder<Biome>> allPaintableCustomBiomes(Registry<Biome> biomeRegistry) {
-        Map<Identifier, Holder<Biome>> out = new LinkedHashMap<>();
+        Map<ResourceLocation, Holder<Biome>> out = new LinkedHashMap<>();
         for (String tagPath : DECORATION_POLICY_TAG_PATHS) {
-            TagKey<Biome> tag = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", tagPath));
+            TagKey<Biome> tag = TagKey.create(Registries.BIOME, ResourceLocation.fromNamespaceAndPath("globe", tagPath));
             for (Holder<Biome> holder : biomeRegistry.getTagOrEmpty(tag)) {
                 holder.unwrapKey().ifPresent(key -> {
-                    Identifier id = key.identifier();
+                    ResourceLocation id = key.location();
                     if (!"minecraft".equals(id.getNamespace())) {
                         out.putIfAbsent(id, holder);
                     }
@@ -495,35 +496,35 @@ public final class LatitudeDecorationRetrofit {
             }
         }
         for (BiomeDescriptorLedger.Descriptor descriptor : BiomeDescriptorLedger.descriptors()) {
-            Identifier id = Identifier.tryParse(descriptor.biomeId());
+            ResourceLocation id = ResourceLocation.tryParse(descriptor.biomeId());
             if (id == null || "minecraft".equals(id.getNamespace()) || out.containsKey(id)) {
                 continue;
             }
-            biomeRegistry.get(id).ifPresent(holder -> out.putIfAbsent(id, holder));
+            biomeRegistry.getHolder(id).ifPresent(holder -> out.putIfAbsent(id, holder));
         }
         return List.copyOf(out.values());
     }
 
-    private static List<Identifier> eligibleBiomeIds(ServerLevel world) {
-        List<Identifier> cached = eligibleCache;
+    private static List<ResourceLocation> eligibleBiomeIds(ServerLevel world) {
+        List<ResourceLocation> cached = eligibleCache;
         if (cached != null) {
             return cached;
         }
-        Registry<Biome> registry = world.registryAccess().lookupOrThrow(Registries.BIOME);
-        Set<Identifier> tagged = new HashSet<>();
+        Registry<Biome> registry = world.registryAccess().registryOrThrow(Registries.BIOME);
+        Set<ResourceLocation> tagged = new HashSet<>();
         for (String tagPath : DECORATION_POLICY_TAG_PATHS) {
-            TagKey<Biome> tag = TagKey.create(Registries.BIOME, Identifier.fromNamespaceAndPath("globe", tagPath));
+            TagKey<Biome> tag = TagKey.create(Registries.BIOME, ResourceLocation.fromNamespaceAndPath("globe", tagPath));
             for (Holder<Biome> holder : registry.getTagOrEmpty(tag)) {
-                holder.unwrapKey().ifPresent(key -> tagged.add(key.identifier()));
+                holder.unwrapKey().ifPresent(key -> tagged.add(key.location()));
             }
         }
-        List<Identifier> out = new ArrayList<>();
+        List<ResourceLocation> out = new ArrayList<>();
         for (BiomeDescriptorLedger.Descriptor descriptor : BiomeDescriptorLedger.descriptors()) {
-            Identifier id = Identifier.tryParse(descriptor.biomeId());
+            ResourceLocation id = ResourceLocation.tryParse(descriptor.biomeId());
             if (id == null || "minecraft".equals(id.getNamespace()) || tagged.contains(id)) {
                 continue;
             }
-            if (registry.get(id).isPresent()) {
+            if (registry.getHolder(id).isPresent()) {
                 out.add(id);
             }
         }
@@ -533,11 +534,11 @@ public final class LatitudeDecorationRetrofit {
     }
 
     private static String eligibleSummary(ServerLevel world) {
-        List<Identifier> ids = eligibleBiomeIds(world);
+        List<ResourceLocation> ids = eligibleBiomeIds(world);
         if (ids.isEmpty()) {
             return "none present (no eligible provider mods installed)";
         }
-        return ids.size() + " (" + ids.stream().map(Identifier::toString)
+        return ids.size() + " (" + ids.stream().map(ResourceLocation::toString)
                 .limit(6).reduce((a, b) -> a + ", " + b).orElse("") + (ids.size() > 6 ? ", …" : "") + ")";
     }
 }

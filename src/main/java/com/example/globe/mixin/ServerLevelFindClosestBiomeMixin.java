@@ -44,7 +44,7 @@ public abstract class ServerLevelFindClosestBiomeMixin {
             int radius = GlobeMod.borderRadiusForNoiseGenerator(noise);
             ServerLevel world = (ServerLevel) (Object) this;
             RandomState noiseConfig = world.getChunkSource().randomState();
-            Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
+            Registry<Biome> biomeRegistry = world.registryAccess().registryOrThrow(Registries.BIOME);
             BiomeSource wrapped = LatitudeBiomeSource.forLocate(rawSource, biomeRegistry, radius,
                     noise, noiseConfig, world);
             if (DEBUG_WORLDGEN_PATH && DEBUG_LOCATE_WRAP_LOGGED.compareAndSet(false, true)) {

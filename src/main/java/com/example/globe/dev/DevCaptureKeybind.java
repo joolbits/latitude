@@ -15,7 +15,7 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.network.chat.Component;
-import net.minecraft.util.Util;
+import net.minecraft.Util;
 
 import java.io.File;
 import java.io.IOException;
@@ -127,9 +127,8 @@ public final class DevCaptureKeybind {
             snapshot = freezeSnapshot(client);
             RenderTarget framebuffer = client.getMainRenderTarget();
             CaptureSnapshot frozenSnapshot = snapshot;
-            Screenshot.takeScreenshot(
-                    framebuffer,
-                    image -> client.execute(() -> handleCapturedImage(client, image, frozenSnapshot)));
+            NativeImage captured = Screenshot.takeScreenshot(framebuffer);
+            client.execute(() -> handleCapturedImage(client, captured, frozenSnapshot));
         } catch (Exception e) {
             GlobeMod.LOGGER.warn("[latdev] Capture pipeline failed", e);
             if (requestOwned) {
@@ -334,7 +333,7 @@ public final class DevCaptureKeybind {
                 LatitudeMath.worldRadiusBlocks(border));
         String biome = world.getBiome(player.blockPosition())
                 .unwrapKey()
-                .map(key -> key.identifier().toString())
+                .map(key -> key.location().toString())
                 .orElse("unknown");
         String seed = "unknown";
         var integratedServer = client.getSingleplayerServer();
@@ -349,7 +348,7 @@ public final class DevCaptureKeybind {
                 sessionId,
                 sessionSequence,
                 worldTick,
-                world.dimension().identifier().toString(),
+                world.dimension().location().toString(),
                 seed,
                 biome,
                 String.format(Locale.ROOT, "%.6f", signedLatitude),
@@ -359,7 +358,7 @@ public final class DevCaptureKeybind {
                 String.format(Locale.ROOT, "%.3f", player.getZ()),
                 String.format(Locale.ROOT, "%.3f", player.getYRot()),
                 String.format(Locale.ROOT, "%.3f", player.getXRot()),
-                client.getWindow().getGuiScale(),
+                (int) client.getWindow().getGuiScale(),
                 buildIdentity());
     }
 

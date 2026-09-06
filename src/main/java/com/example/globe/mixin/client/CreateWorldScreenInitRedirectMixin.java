@@ -14,7 +14,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -36,10 +35,10 @@ public abstract class CreateWorldScreenInitRedirectMixin {
     @Shadow
     private boolean recreated;
 
-    /** The Runnable this screen was constructed with; the handoff's claim key. */
+    /** The Screen this screen was constructed with; the handoff's claim key on 1.21.1. */
     @Shadow
     @Final
-    private Runnable onClose;
+    private Screen lastScreen;
 
     /**
      * Set once this screen has claimed a vanilla handoff. {@code init} runs again on every window
@@ -65,7 +64,7 @@ public abstract class CreateWorldScreenInitRedirectMixin {
             return;
         }
 
-        var handoff = VanillaCreateWorldHandoff.claimNext(this.onClose);
+        var handoff = VanillaCreateWorldHandoff.claimNext(this.lastScreen);
         if (handoff.isPresent()) {
             VanillaCreateWorldHandoff.Payload payload = handoff.orElseThrow();
             // Fields are individually nullable: armNextWithoutReturn (the world-list door) carries
@@ -91,7 +90,9 @@ public abstract class CreateWorldScreenInitRedirectMixin {
             return;
         }
 
-        Screen parent = globe$getParentSafe((Object) this);
+        // 1.21.1 keeps exactly one back-reference, lastScreen, so it is both the parent and the
+        // claim key; the reflective "parent" lookup the newer lines need has nothing to find here.
+        Screen parent = this.lastScreen;
         Runnable returnToParent = () -> client.setScreen(parent);
 
         WorldCreationUiState initialState = self.getUiState();
@@ -235,14 +236,4 @@ public abstract class CreateWorldScreenInitRedirectMixin {
         this.globe$exitWidget.setY(rowY);
     }
 
-    private static Screen globe$getParentSafe(Object self) {
-        try {
-            Field parentField = self.getClass().getDeclaredField("parent");
-            parentField.setAccessible(true);
-            Object value = parentField.get(self);
-            return value instanceof Screen ? (Screen) value : null;
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
 }

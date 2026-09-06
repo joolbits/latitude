@@ -11,7 +11,6 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 
@@ -167,7 +166,7 @@ public class LatitudeHudStudioScreen extends Screen {
 
         if (activeTab == TAB_COMPASS) {
 
-        this.wCompassStyle = this.addRenderableWidget(CycleButton.<CompassHudConfig.CompassStyle>builder(v -> Component.literal(v == CompassHudConfig.CompassStyle.ANALOG ? "Analog" : "Digital"), () -> cfg.style)
+        this.wCompassStyle = this.addRenderableWidget(CycleButton.<CompassHudConfig.CompassStyle>builder(v -> Component.literal(v == CompassHudConfig.CompassStyle.ANALOG ? "Analog" : "Digital")).withInitialValue(cfg.style)
                 .withValues(CompassHudConfig.CompassStyle.values())
                 .create(panelX, y, widgetW, rowH, Component.literal("Compass Style"), (btn, value) -> {
                     cfg.style = value;
@@ -199,7 +198,7 @@ public class LatitudeHudStudioScreen extends Screen {
             tooltip(this.wCompassAnalogInnerAlpha, "Controls how solid the compass face is. Lower values show more of the world behind it.");
             trackSidebarWidget(this.wCompassAnalogInnerAlpha, y);
             y += rowH + rowGap;
-            this.wCompassAnalogTheme = this.addRenderableWidget(CycleButton.<CompassHudConfig.AnalogCompassTheme>builder(v -> Component.literal(themeLabel(v)), () -> cfg.analogTheme)
+            this.wCompassAnalogTheme = this.addRenderableWidget(CycleButton.<CompassHudConfig.AnalogCompassTheme>builder(v -> Component.literal(themeLabel(v))).withInitialValue(cfg.analogTheme)
                     .withValues(CompassHudConfig.AnalogCompassTheme.values())
                     .create(panelX, y, widgetW, rowH, Component.literal("Color Scheme"), (btn, value) -> {
                         cfg.analogTheme = value;
@@ -219,14 +218,14 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wCompassTransparency, y);
             y += rowH + rowGap;
 
-            this.wCompassBackground = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.showBackground)
+            this.wCompassBackground = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF")).withInitialValue(cfg.showBackground)
                     .withValues(true, false)
                     .create(panelX, y, widgetW, rowH, Component.literal("Background"), (btn, value) -> cfg.showBackground = value));
             tooltip(this.wCompassBackground, "Toggles the digital compass background box.");
             trackSidebarWidget(this.wCompassBackground, y);
             y += rowH + rowGap;
 
-            this.wCompassBgColor = this.addRenderableWidget(CycleButton.<String>builder(Component::literal, () -> bgColorName(cfg.backgroundRgb))
+            this.wCompassBgColor = this.addRenderableWidget(CycleButton.<String>builder(Component::literal).withInitialValue(bgColorName(cfg.backgroundRgb))
                     .withValues("BLACK", "WHITE", "DARK_GRAY", "BLUE")
                     .create(panelX, y, widgetW, rowH, Component.literal("Background Color"), (btn, value) -> cfg.backgroundRgb = bgColorRgb(value)));
             tooltip(this.wCompassBgColor, "Selects the background color for the digital compass.");
@@ -234,7 +233,7 @@ public class LatitudeHudStudioScreen extends Screen {
             y += rowH + rowGap;
         }
 
-        this.wCompassTextColor = this.addRenderableWidget(CycleButton.<String>builder(Component::literal, () -> textColorName(cfg.textRgb))
+        this.wCompassTextColor = this.addRenderableWidget(CycleButton.<String>builder(Component::literal).withInitialValue(textColorName(cfg.textRgb))
                 .withValues("WHITE", "BLACK", "YELLOW", "RED", "CYAN")
                 .create(panelX, y, widgetW, rowH, Component.literal("Text Color"), (btn, value) -> cfg.textRgb = textColorRgb(value)));
         tooltip(this.wCompassTextColor, "Selects the text color used for the compass and labels.");
@@ -242,21 +241,21 @@ public class LatitudeHudStudioScreen extends Screen {
         y += rowH + rowGap;
 
         if (analog) {
-            this.wCompassAnalogShowLatitude = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.analogShowLatitude))
+            this.wCompassAnalogShowLatitude = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF")).withInitialValue(Boolean.TRUE.equals(cfg.analogShowLatitude))
                     .withValues(true, false)
                     .create(panelX, y, widgetW, rowH, Component.literal("Analog Latitude"), (btn, value) -> cfg.analogShowLatitude = value));
             tooltip(this.wCompassAnalogShowLatitude, "Shows latitude next to the analog compass.");
             trackSidebarWidget(this.wCompassAnalogShowLatitude, y);
             y += rowH + rowGap;
         } else {
-            this.wCompassShowLatitude = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.showLatitude))
+            this.wCompassShowLatitude = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF")).withInitialValue(Boolean.TRUE.equals(cfg.showLatitude))
                     .withValues(true, false)
                     .create(panelX, y, widgetW, rowH, Component.literal("Show Latitude"), (btn, value) -> cfg.showLatitude = value));
             tooltip(this.wCompassShowLatitude, "Shows latitude inside the digital compass line.");
             trackSidebarWidget(this.wCompassShowLatitude, y);
             y += rowH + rowGap;
 
-            this.wCompassCompact = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
+            this.wCompassCompact = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF")).withInitialValue(cfg.compactHud)
                     .withValues(true, false)
                     .create(panelX, y, widgetW, rowH, Component.literal("Compact HUD"), (btn, value) -> cfg.compactHud = value));
             tooltip(this.wCompassCompact, "Uses a tighter layout with minimal spacing.");
@@ -282,7 +281,7 @@ public class LatitudeHudStudioScreen extends Screen {
         trackSidebarWidget(this.wLocationTextScale, y);
         y += rowH + rowGap;
 
-        this.wCompassAttachHotbar = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.attachToHotbarCompass)
+        this.wCompassAttachHotbar = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF")).withInitialValue(cfg.attachToHotbarCompass)
                 .withValues(true, false)
                 .create(panelX, y, widgetW, rowH, Component.literal("Attach to Hotbar"), (btn, value) -> {
                     cfg.attachToHotbarCompass = value;
@@ -293,8 +292,7 @@ public class LatitudeHudStudioScreen extends Screen {
         y += rowH + rowGap;
 
         this.wLocationDetail = this.addRenderableWidget(CycleButton.<LocationDetailPolicy.Mode>builder(
-                        value -> Component.literal(value.label()),
-                        cfg::locationDetailMode)
+                        value -> Component.literal(value.label())).withInitialValue(cfg.locationDetailMode())
                 .withValues(LocationDetailPolicy.Mode.values())
                 .create(panelX, y, widgetW, rowH, Component.literal("Location Detail"), (btn, value) -> {
                     cfg.setLocationDetailMode(value);
@@ -308,8 +306,7 @@ public class LatitudeHudStudioScreen extends Screen {
         y += rowH + rowGap;
 
         this.wCustomBiomeSource = this.addRenderableWidget(CycleButton.<Boolean>builder(
-                        v -> Component.literal(v ? "ON" : "OFF"),
-                        () -> cfg.showCustomBiomeSource)
+                        v -> Component.literal(v ? "ON" : "OFF")).withInitialValue(cfg.showCustomBiomeSource)
                 .withValues(true, false)
                 .create(panelX, y, widgetW, rowH, Component.literal("Show Biome Source"), (btn, value) -> {
                     cfg.showCustomBiomeSource = value;
@@ -321,7 +318,7 @@ public class LatitudeHudStudioScreen extends Screen {
         trackSidebarWidget(this.wCustomBiomeSource, y);
         y += rowH + rowGap;
 
-        this.wLocationFollow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "FOLLOW" : "DETACH"), () -> cfg.zoneFollowsCompass)
+        this.wLocationFollow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "FOLLOW" : "DETACH")).withInitialValue(cfg.zoneFollowsCompass)
                 .withValues(true, false)
                 .create(panelX, y, widgetW, rowH, Component.literal("Location Placement"), (btn, value) -> {
                     cfg.zoneFollowsCompass = value;
@@ -336,8 +333,7 @@ public class LatitudeHudStudioScreen extends Screen {
 
         } else if (activeTab == TAB_TITLE) {
             this.wZoneEnterTitle = this.addRenderableWidget(CycleButton.<Boolean>builder(
-                            v -> Component.literal(v ? "ON" : "OFF"),
-                            () -> LatitudeConfig.zoneEnterTitleEnabled)
+                            v -> Component.literal(v ? "ON" : "OFF")).withInitialValue(LatitudeConfig.zoneEnterTitleEnabled)
                     .withValues(true, false)
                     .create(panelX, y, widgetW, rowH, Component.literal("Zone Enter Title"), (btn, value) -> {
                         LatitudeConfig.zoneEnterTitleEnabled = value;
@@ -377,8 +373,7 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wTitleScale, y);
         } else {
             this.wShowHud = this.addRenderableWidget(CycleButton.<Boolean>builder(
-                            v -> Component.literal(v ? "ON" : "OFF"),
-                            () -> cfg.enabled)
+                            v -> Component.literal(v ? "ON" : "OFF")).withInitialValue(cfg.enabled)
                     .withValues(true, false)
                     .create(panelX, y, widgetW, rowH, Component.literal("Show HUD"), (btn, value) -> {
                         cfg.enabled = value;
@@ -389,8 +384,7 @@ public class LatitudeHudStudioScreen extends Screen {
             y += rowH + rowGap;
 
             this.wDisplayWhen = this.addRenderableWidget(CycleButton.<CompassHudConfig.ShowMode>builder(
-                            LatitudeHudStudioScreen::showModeLabel,
-                            () -> cfg.showMode)
+                            LatitudeHudStudioScreen::showModeLabel).withInitialValue(cfg.showMode)
                     .withValues(CompassHudConfig.ShowMode.values())
                     .create(panelX, y, widgetW, rowH, Component.literal("Display When"), (btn, value) -> {
                         cfg.showMode = value;
@@ -401,8 +395,7 @@ public class LatitudeHudStudioScreen extends Screen {
             y += rowH + rowGap;
 
             this.wWarningMessages = this.addRenderableWidget(CycleButton.<Boolean>builder(
-                            v -> Component.literal(v ? "ON" : "OFF"),
-                            () -> LatitudeConfig.showWarningMessages)
+                            v -> Component.literal(v ? "ON" : "OFF")).withInitialValue(LatitudeConfig.showWarningMessages)
                     .withValues(true, false)
                     .create(panelX, y, widgetW, rowH, Component.literal("Warning Messages"), (btn, value) -> {
                         LatitudeConfig.showWarningMessages = value;
@@ -413,8 +406,7 @@ public class LatitudeHudStudioScreen extends Screen {
             y += rowH + rowGap;
 
             this.wPlacementGrid = this.addRenderableWidget(CycleButton.<Boolean>builder(
-                            v -> Component.literal(v ? "SNAP" : "FREE"),
-                            () -> LatitudeConfig.hudSnapEnabled)
+                            v -> Component.literal(v ? "SNAP" : "FREE")).withInitialValue(LatitudeConfig.hudSnapEnabled)
                     .withValues(true, false)
                     .create(panelX, y, widgetW, rowH, Component.literal("HUD Placement"), (btn, value) -> {
                         LatitudeConfig.hudSnapEnabled = value;
@@ -543,7 +535,7 @@ public class LatitudeHudStudioScreen extends Screen {
         var mc = Minecraft.getInstance();
         if (mc == null || mc.getWindow() == null) return;
 
-        boolean lDown = InputConstants.isKeyDown(mc.getWindow(), InputConstants.KEY_L);
+        boolean lDown = InputConstants.isKeyDown(mc.getWindow().getWindow(), InputConstants.KEY_L);
         if (lDown && !wasLDown) {
             sidebarVisible = !sidebarVisible;
             updateSidebarVisibility();
@@ -564,15 +556,15 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(MouseButtonEvent click, boolean doubleClick) {
-        if (super.mouseClicked(click, doubleClick)) {
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (super.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
 
-        double mx = click.x();
-        double my = click.y();
+        double mx = mouseX;
+        double my = mouseY;
 
-        if (click.button() == 0) {
+        if (button == 0) {
             if (LatitudeConfig.zoneEnterTitleDraggable
                     && isMouseOverTitle(mx, my)) {
                 dragElement = DragElement.TITLE;
@@ -600,15 +592,15 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
-        if (super.mouseDragged(click, deltaX, deltaY)) {
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)) {
             return true;
         }
 
-        double mx = click.x();
-        double my = click.y();
+        double mx = mouseX;
+        double my = mouseY;
 
-        if (click.button() != 0) {
+        if (button != 0) {
             return false;
         }
 
@@ -697,8 +689,8 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(MouseButtonEvent click) {
-        if (click.button() == 0) {
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 0) {
             if (dragElement == DragElement.TITLE) {
                 int x = (int) Math.round(titleOffsetXf);
                 int y = (int) Math.round(titleOffsetYf);
@@ -718,7 +710,7 @@ public class LatitudeHudStudioScreen extends Screen {
             }
             dragElement = DragElement.NONE;
         }
-        return super.mouseReleased(click);
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     private static void resetHudDefaults() {
@@ -1125,15 +1117,15 @@ public class LatitudeHudStudioScreen extends Screen {
         }
 
         @Override
-        public void onClick(MouseButtonEvent click, boolean doubled) {
+        public void onClick(double mouseX, double mouseY) {
             dragging = true;
-            super.onClick(click, doubled);
+            super.onClick(mouseX, mouseY);
         }
 
         @Override
-        public void onRelease(MouseButtonEvent click) {
+        public void onRelease(double mouseX, double mouseY) {
             dragging = false;
-            super.onRelease(click);
+            super.onRelease(mouseX, mouseY);
         }
 
         @Override

@@ -52,7 +52,7 @@ public final class RiverBandPolicyTest {
         String biomes = normalize(Files.readString(Path.of(
                 "src/main/java/com/example/globe/world/LatitudeBiomes.java")));
         assertTrue(biomes.contains(
-                        "Identifier.fromNamespaceAndPath(\"globe\", \"lat_river_subtropical\")"),
+                        "ResourceLocation.fromNamespaceAndPath(\"globe\", \"lat_river_subtropical\")"),
                 "the subtropical pool tag key must be declared");
         String split = "blendedBandIndex == BAND_TROPICAL ? LAT_RIVER_WARM"
                 + " : blendedBandIndex == BAND_SUBTROPICAL ? LAT_RIVER_SUBTROPICAL"

@@ -236,12 +236,12 @@ public abstract class SelectWorldScreenVanillaDoorMixin {
 
     @Unique
     private static void globe$openVanillaDoor(Minecraft client, Screen worldList) {
-        Runnable onClose = () -> client.setScreen(worldList);
-        // The claim key is the Runnable the next CreateWorldScreen is constructed with -- same
+        // The claim key is the Screen the next CreateWorldScreen is constructed with -- same
         // discipline as the escape hatch, so only the screen this door actually opens can claim it.
-        VanillaCreateWorldHandoff.armNextWithoutReturn(onClose);
+        // 1.21.1 takes the world list itself rather than a callback that would re-open it.
+        VanillaCreateWorldHandoff.armNextWithoutReturn(worldList);
         try {
-            CreateWorldScreen.openFresh(client, onClose);
+            CreateWorldScreen.openFresh(client, worldList);
         } catch (RuntimeException exception) {
             VanillaCreateWorldHandoff.cancelNext();
             client.setScreen(worldList);

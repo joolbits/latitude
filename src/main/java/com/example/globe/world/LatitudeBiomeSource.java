@@ -22,7 +22,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.QuartPos;
 import net.minecraft.core.Registry;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.LevelReader;
@@ -37,10 +37,10 @@ public final class LatitudeBiomeSource extends BiomeSource {
     private static final int MAX_CAVE_BIOME_Y = Integer.getInteger("latitude.maxCaveBiomeY", 96);
     private static final int HARD_DECK_SURFACE_Y = Integer.getInteger("latitude.hardDeckSurfaceY", 20);
     private static final int DEEP_DARK_MAX_Y = -16;
-    private static final Identifier LUSH_CAVES_ID = Identifier.fromNamespaceAndPath("minecraft", "lush_caves");
-    private static final Identifier DRIPSTONE_CAVES_ID = Identifier.fromNamespaceAndPath("minecraft", "dripstone_caves");
-    private static final Identifier DEEP_DARK_ID = Identifier.fromNamespaceAndPath("minecraft", "deep_dark");
-    private static final Identifier SULFUR_CAVES_ID = Identifier.fromNamespaceAndPath("minecraft", "sulfur_caves");
+    private static final ResourceLocation LUSH_CAVES_ID = ResourceLocation.fromNamespaceAndPath("minecraft", "lush_caves");
+    private static final ResourceLocation DRIPSTONE_CAVES_ID = ResourceLocation.fromNamespaceAndPath("minecraft", "dripstone_caves");
+    private static final ResourceLocation DEEP_DARK_ID = ResourceLocation.fromNamespaceAndPath("minecraft", "deep_dark");
+    private static final ResourceLocation SULFUR_CAVES_ID = ResourceLocation.fromNamespaceAndPath("minecraft", "sulfur_caves");
 
     private final BiomeSource original;
     private final Collection<Holder<Biome>> biomes;
@@ -127,12 +127,12 @@ public final class LatitudeBiomeSource extends BiomeSource {
         if (biomeRegistry == null) {
             return base.stream();
         }
-        java.util.Map<Identifier, Holder<Biome>> union = new java.util.LinkedHashMap<>();
+        java.util.Map<ResourceLocation, Holder<Biome>> union = new java.util.LinkedHashMap<>();
         for (Holder<Biome> holder : base) {
-            holder.unwrapKey().ifPresent(key -> union.putIfAbsent(key.identifier(), holder));
+            holder.unwrapKey().ifPresent(key -> union.putIfAbsent(key.location(), holder));
         }
         for (Holder<Biome> holder : LatitudeDecorationRetrofit.allPaintableCustomBiomes(biomeRegistry)) {
-            holder.unwrapKey().ifPresent(key -> union.putIfAbsent(key.identifier(), holder));
+            holder.unwrapKey().ifPresent(key -> union.putIfAbsent(key.location(), holder));
         }
         return union.values().stream();
     }
@@ -253,13 +253,13 @@ public final class LatitudeBiomeSource extends BiomeSource {
         if (hasSurfaceTarget && !hasCaveTarget) {
             int surfaceY = Mth.clamp(
                     LatitudeBiomes.SURFACE_CLASSIFY_Y + 4,
-                    level.getMinY() + 1,
-                    level.getMaxY());
+                    level.getMinBuildHeight() + 1,
+                    (level.getMaxBuildHeight() - 1));
             boundedOrigin = new BlockPos(origin.getX(), surfaceY, origin.getZ());
             boundedHorizontalStep = LatitudeLocateBudgetPolicy.surfaceHorizontalStep(
                     safeRadius, safeHorizontalStep);
             // Larger than the complete build-height span: Mth.outFromOrigin emits one Y.
-            boundedVerticalStep = Math.max(1, level.getMaxY() - level.getMinY() + 2);
+            boundedVerticalStep = Math.max(1, (level.getMaxBuildHeight() - 1) - level.getMinBuildHeight() + 2);
             verticalSamples = 1;
             boolean targetIncludesMangrove = matching.stream().anyMatch(candidate ->
                     LatitudeBiomes.isBiomeIdPublic(candidate, "minecraft:mangrove_swamp"));
@@ -284,8 +284,8 @@ public final class LatitudeBiomeSource extends BiomeSource {
         } else {
             verticalSamples = (int) Mth.outFromOrigin(
                     origin.getY(),
-                    level.getMinY() + 1,
-                    level.getMaxY() + 1,
+                    level.getMinBuildHeight() + 1,
+                    (level.getMaxBuildHeight() - 1) + 1,
                     safeVerticalStep).count();
             verticalSamples = Math.max(1, verticalSamples);
             boundedHorizontalStep = LatitudeLocateBudgetPolicy.threeDimensionalHorizontalStep(
@@ -619,7 +619,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
                 || entry.is(ConventionalBiomeTags.IS_UNDERGROUND)) {
             return true;
         }
-        Identifier id = biomeId(entry);
+        ResourceLocation id = biomeId(entry);
         if (id == null) {
             return false;
         }
@@ -630,7 +630,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
     }
 
     private static boolean isDeepDark(Holder<Biome> entry) {
-        Identifier id = biomeId(entry);
+        ResourceLocation id = biomeId(entry);
         return id != null && id.equals(DEEP_DARK_ID);
     }
 
@@ -638,7 +638,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
         if (entry.is(BiomeTags.IS_BEACH)) {
             return true;
         }
-        Identifier id = biomeId(entry);
+        ResourceLocation id = biomeId(entry);
         if (id == null) {
             return false;
         }
@@ -646,10 +646,10 @@ public final class LatitudeBiomeSource extends BiomeSource {
         return path.contains("beach") || path.contains("shore");
     }
 
-    private static Identifier biomeId(Holder<Biome> entry) {
+    private static ResourceLocation biomeId(Holder<Biome> entry) {
         if (entry == null) {
             return null;
         }
-        return entry.unwrapKey().map(key -> key.identifier()).orElse(null);
+        return entry.unwrapKey().map(key -> key.location()).orElse(null);
     }
 }

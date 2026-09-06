@@ -20,7 +20,7 @@ public final class RecreatedWorldMetadata {
      * Derived from {@link LatitudeWorldState#STATE_ID}, never re-spelled — the two drifted apart
      * during the 1.21.11 port and this reader silently found nothing on every world. On 1.21.11
      * the overworld's SavedData lives at {@code <world>/data/<id>.dat}; 26.2 nested it under
-     * {@code dimensions/minecraft/overworld/data/} and split the Identifier's namespace into a
+     * {@code dimensions/minecraft/overworld/data/} and split the ResourceLocation's namespace into a
      * folder.
      */
     private static final Path LATITUDE_STATE =
@@ -35,7 +35,7 @@ public final class RecreatedWorldMetadata {
         if (data == null) {
             return null;
         }
-        int radius = data.getIntOr("globe_radius", 0);
+        int radius = data.contains("globe_radius") ? data.getInt("globe_radius") : 0;
         return RecreatedWorldTypePolicy.presetIdForRadius(radius);
     }
 
@@ -46,7 +46,7 @@ public final class RecreatedWorldMetadata {
         if (data == null) {
             return null;
         }
-        return data.getString("last_known_band").orElse(null);
+        return data.contains("last_known_band") ? data.getString("last_known_band") : null;
     }
 
     @Nullable
@@ -59,6 +59,6 @@ public final class RecreatedWorldMetadata {
             return null;
         }
         CompoundTag root = NbtIo.readCompressed(statePath, NbtAccounter.unlimitedHeap());
-        return root.getCompoundOrEmpty("data");
+        return root.getCompound("data");
     }
 }

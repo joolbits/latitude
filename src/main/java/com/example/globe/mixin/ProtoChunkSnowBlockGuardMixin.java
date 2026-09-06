@@ -83,11 +83,11 @@ public class ProtoChunkSnowBlockGuardMixin {
         if (biome == null) {
             return false;
         }
-        if (biome.value().coldEnoughToSnow(pos, LatitudeBiomes.getActiveSeaLevel())) {
+        if (biome.value().coldEnoughToSnow(pos)) {
             return true;
         }
         return com.example.globe.world.WindsweptSnowLinePolicy.appliesTo(
-                biome.unwrapKey().map(key -> key.identifier().toString()).orElse(null),
+                biome.unwrapKey().map(key -> key.location().toString()).orElse(null),
                 pos.getY(), LatitudeBiomes.getActiveSeaLevel(),
                 com.example.globe.world.WindsweptSnowLinePolicy.absoluteLatitudeDegrees(
                         pos.getZ(), LatitudeBiomes.getActiveRadiusBlocks(), GlobeMod.BORDER_RADIUS));

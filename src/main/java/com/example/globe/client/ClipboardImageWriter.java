@@ -3,7 +3,7 @@ package com.example.globe.client;
 import com.example.globe.GlobeMod;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.Minecraft;
-import net.minecraft.util.Util;
+import net.minecraft.Util;
 
 import java.awt.GraphicsEnvironment;
 import java.awt.HeadlessException;
@@ -152,7 +152,7 @@ public final class ClipboardImageWriter {
         int width = image.getWidth();
         int height = image.getHeight();
         BufferedImage bufferedImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        int[] pixels = image.getPixels();
+        int[] pixels = image.getPixelsRGBA();
         bufferedImage.setRGB(0, 0, width, height, pixels, 0, width);
         return bufferedImage;
     }

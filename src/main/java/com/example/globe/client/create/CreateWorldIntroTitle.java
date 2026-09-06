@@ -47,11 +47,11 @@ public final class CreateWorldIntroTitle {
         int cx = width / 2;
 
         var matrices = context.pose();
-        matrices.pushMatrix();
-        matrices.translate((float) (cx - titleWidth / 2), (float) startY);
-        matrices.scale(SCALE, SCALE);
+        matrices.pushPose();
+        matrices.translate((float) (cx - titleWidth / 2), (float) startY, 0.0F);
+        matrices.scale(SCALE, SCALE, 1.0F);
         context.drawString(font, TEXT, 0, 0, goldA, true);
-        matrices.popMatrix();
+        matrices.popPose();
 
         int subtitleWidth = font.width(SUBTITLE);
         int subtitleY = startY + titleHeight + SUBTITLE_GAP;

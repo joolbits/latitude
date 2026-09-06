@@ -13,7 +13,7 @@ import javax.imageio.ImageIO;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
@@ -73,7 +73,7 @@ public final class BiomePreviewExporter {
             "minecraft:windswept_hills",
             "minecraft:stony_peaks");
     private static final int DEFAULT_INVENTORY_DISCOVERY_STEP = 32;
-    private static final Identifier MANGROVE_SWAMP_BIOME_ID = Identifier.parse("minecraft:mangrove_swamp");
+    private static final ResourceLocation MANGROVE_SWAMP_BIOME_ID = ResourceLocation.parse("minecraft:mangrove_swamp");
     private static final DateTimeFormatter RUN_LABEL_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
             .withLocale(Locale.ROOT)
             .withZone(ZoneOffset.UTC);
@@ -218,7 +218,7 @@ public final class BiomePreviewExporter {
         BiomeSource baseSource = biomeSource instanceof LatitudeBiomeSource latitudeSource
                 ? latitudeSource.original()
                 : biomeSource;
-        Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
+        Registry<Biome> biomeRegistry = world.registryAccess().registryOrThrow(Registries.BIOME);
         Map<String, BiomeAuditRecord> biomeAudit = includeBiomeAudit
                 ? collectBiomeAuditRows(biomeRegistry, baseSource)
                 : Map.of();
@@ -666,7 +666,7 @@ public final class BiomePreviewExporter {
             this.baseSource = biomeSource instanceof LatitudeBiomeSource latitudeSource
                     ? latitudeSource.original()
                     : biomeSource;
-            this.biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
+            this.biomeRegistry = world.registryAccess().registryOrThrow(Registries.BIOME);
             this.biomeAuditRows = includeBiomeAudit
                     ? collectBiomeAuditRows(this.biomeRegistry, this.baseSource)
                     : Map.of();
@@ -2592,7 +2592,7 @@ public final class BiomePreviewExporter {
         if (value instanceof String raw) {
             return normalizeBiomeId(raw);
         }
-        if (value instanceof Identifier id) {
+        if (value instanceof ResourceLocation id) {
             return normalizeBiomeId(id.toString());
         }
         return null;
@@ -2604,11 +2604,11 @@ public final class BiomePreviewExporter {
         }
         if (fallbackHolder != null) {
             return fallbackHolder.unwrapKey()
-                    .map(key -> key.identifier().toString())
+                    .map(key -> key.location().toString())
                     .orElse(null);
         }
         if (biomeRegistry != null) {
-            Identifier id = biomeRegistry.getKey(biome);
+            ResourceLocation id = biomeRegistry.getKey(biome);
             if (id != null) {
                 return id.toString();
             }
@@ -2646,11 +2646,11 @@ public final class BiomePreviewExporter {
     }
 
     private static String biomeId(Registry<Biome> biomeRegistry, Holder<Biome> biome) {
-        Identifier id = biomeRegistry.getKey(biome.value());
+        ResourceLocation id = biomeRegistry.getKey(biome.value());
         if (id != null) {
             return id.toString();
         }
-        return biome.unwrapKey().map(key -> key.identifier().toString()).orElse("minecraft:plains");
+        return biome.unwrapKey().map(key -> key.location().toString()).orElse("minecraft:plains");
     }
 
     private static Integer paletteOverrideFor(String biomeId) {
@@ -2739,7 +2739,7 @@ public final class BiomePreviewExporter {
     }
 
     private static Holder<Biome> forceMangroveSwampForAtlas(Registry<Biome> biomeRegistry, Holder<Biome> fallback) {
-        Holder.Reference<Biome> mangrove = biomeRegistry.get(MANGROVE_SWAMP_BIOME_ID).orElse(null);
+        Holder.Reference<Biome> mangrove = biomeRegistry.getHolder(MANGROVE_SWAMP_BIOME_ID).orElse(null);
         return mangrove != null ? mangrove : fallback;
     }
 
@@ -2864,7 +2864,7 @@ public final class BiomePreviewExporter {
 
     private record TagSpec(String id, TagKey<Biome> tagKey) {
         private TagSpec(String id) {
-            this(id, TagKey.create(Registries.BIOME, Identifier.parse(id)));
+            this(id, TagKey.create(Registries.BIOME, ResourceLocation.parse(id)));
         }
     }
 

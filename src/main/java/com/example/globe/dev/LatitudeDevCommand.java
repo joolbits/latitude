@@ -41,12 +41,12 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
-import net.minecraft.world.entity.Relative;
+import net.minecraft.world.entity.RelativeMovement;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.state.BlockState;
@@ -70,7 +70,7 @@ public final class LatitudeDevCommand {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
                 Commands.literal("latdev")
-                        .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                        .requires(source -> source.hasPermission(Commands.LEVEL_GAMEMASTERS))
                         .executes(LatitudeDevCommand::help)
                         .then(Commands.literal("help").executes(LatitudeDevCommand::help))
                         .then(Commands.literal("flyspeed")
@@ -236,18 +236,17 @@ public final class LatitudeDevCommand {
                     Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
                     targetX,
                     targetZ);
-            int worldMaxY = world.getMinY() + world.getHeight() - 1;
-            int targetY = Mth.clamp(topY + 1, world.getMinY() + 1, worldMaxY);
+            int worldMaxY = world.getMinBuildHeight() + world.getHeight() - 1;
+            int targetY = Mth.clamp(topY + 1, world.getMinBuildHeight() + 1, worldMaxY);
 
             player.teleportTo(
                     world,
                     targetX + 0.5,
                     targetY,
                     targetZ + 0.5,
-                    EnumSet.noneOf(Relative.class),
+                    EnumSet.noneOf(RelativeMovement.class),
                     player.getYRot(),
-                    player.getXRot(),
-                    true);
+                    player.getXRot());
 
             double achievedDegrees = DevToolPolicy.signedLatitudeDegrees(
                     targetZ + 0.5,
@@ -463,7 +462,7 @@ public final class LatitudeDevCommand {
         context.put("artifact_role", identity.role());
         context.put("build_dirty", identity.dirty());
         context.put("build_time", identity.time());
-        context.put("dimension", world.dimension().identifier().toString());
+        context.put("dimension", world.dimension().location().toString());
         context.put("git_branch", identity.branch());
         context.put("git_commit", identity.commit());
         context.put("mod_version", identity.version());
@@ -621,7 +620,7 @@ public final class LatitudeDevCommand {
             return;
         }
         try {
-            net.minecraft.core.Registry<Biome> biomes = world.registryAccess().lookupOrThrow(Registries.BIOME);
+            net.minecraft.core.Registry<Biome> biomes = world.registryAccess().registryOrThrow(Registries.BIOME);
             LatitudeBiomes.rememberSourcePolicyBiomeRegistry(biomes);
             net.minecraft.world.level.chunk.ChunkGenerator generator = world.getChunkSource().getGenerator();
             net.minecraft.world.level.biome.BiomeSource biomeSource = generator.getBiomeSource();
@@ -760,17 +759,16 @@ public final class LatitudeDevCommand {
 
             world.getChunkSource().getChunk(Math.floorDiv(targetX, 16), Math.floorDiv(targetZ, 16), ChunkStatus.FULL, true);
             int topY = world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, targetX, targetZ);
-            int worldMaxY = world.getMinY() + world.getHeight() - 1;
-            int targetY = Mth.clamp(topY + 1, world.getMinY() + 1, worldMaxY);
+            int worldMaxY = world.getMinBuildHeight() + world.getHeight() - 1;
+            int targetY = Mth.clamp(topY + 1, world.getMinBuildHeight() + 1, worldMaxY);
 
             player.teleportTo(world,
                     targetX + 0.5,
                     targetY,
                     targetZ + 0.5,
-                    EnumSet.noneOf(Relative.class),
+                    EnumSet.noneOf(RelativeMovement.class),
                     player.getYRot(),
-                    player.getXRot(),
-                    true);
+                    player.getXRot());
 
             String biomeId = biomeId(world.getBiome(new BlockPos(targetX, targetY, targetZ)));
             source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
@@ -805,8 +803,8 @@ public final class LatitudeDevCommand {
 
             int centerX = player.getBlockX();
             int centerZ = player.getBlockZ();
-            int worldMaxY = world.getMinY() + world.getHeight() - 1;
-            int sampleY = Mth.clamp(player.getBlockY(), world.getMinY() + 1, worldMaxY);
+            int worldMaxY = world.getMinBuildHeight() + world.getHeight() - 1;
+            int sampleY = Mth.clamp(player.getBlockY(), world.getMinBuildHeight() + 1, worldMaxY);
             long seed = world.getSeed() ^ mix64(player.blockPosition().asLong());
             Random rng = new Random(seed);
 
@@ -1223,12 +1221,12 @@ public final class LatitudeDevCommand {
     }
 
     private static String biomeId(Holder<Biome> biome) {
-        return biome.unwrapKey().map(key -> key.identifier().toString()).orElse("?");
+        return biome.unwrapKey().map(key -> key.location().toString()).orElse("?");
     }
 
     private static SurfaceTruth resolveSurfaceTruth(ServerLevel world, int x, int z) {
         int top = world.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
-        if (top < world.getMinY()) {
+        if (top < world.getMinBuildHeight()) {
             return new SurfaceTruth(false, "n/a(surface)", "n/a(surface)", false, Integer.MIN_VALUE);
         }
         BlockPos surfacePos = new BlockPos(x, top, z);
@@ -1241,12 +1239,12 @@ public final class LatitudeDevCommand {
     }
 
     private static String blockId(ServerLevel world, BlockState state) {
-        Identifier id = world.registryAccess().lookupOrThrow(Registries.BLOCK).getKey(state.getBlock());
+        ResourceLocation id = world.registryAccess().registryOrThrow(Registries.BLOCK).getKey(state.getBlock());
         return id != null ? id.toString() : "minecraft:air";
     }
 
     private static String fluidId(ServerLevel world, FluidState state) {
-        Identifier id = world.registryAccess().lookupOrThrow(Registries.FLUID).getKey(state.getType());
+        ResourceLocation id = world.registryAccess().registryOrThrow(Registries.FLUID).getKey(state.getType());
         return id != null ? id.toString() : "minecraft:empty";
     }
 

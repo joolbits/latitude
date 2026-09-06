@@ -6,6 +6,7 @@ import com.example.globe.client.create.RecreatedWorldPresetCarrier;
 import com.example.globe.util.LatitudeBands;
 import java.io.IOException;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.StringWidget;
@@ -149,10 +150,10 @@ public abstract class WorldSelectionListEntryMixin {
             method = "*",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/gui/screens/worldselection/CreateWorldScreen;createFromExisting(Lnet/minecraft/client/Minecraft;Ljava/lang/Runnable;Lnet/minecraft/world/level/LevelSettings;Lnet/minecraft/client/gui/screens/worldselection/WorldCreationContext;Ljava/nio/file/Path;)Lnet/minecraft/client/gui/screens/worldselection/CreateWorldScreen;"))
+                    target = "Lnet/minecraft/client/gui/screens/worldselection/CreateWorldScreen;createFromExisting(Lnet/minecraft/client/Minecraft;Lnet/minecraft/client/gui/screens/Screen;Lnet/minecraft/world/level/LevelSettings;Lnet/minecraft/client/gui/screens/worldselection/WorldCreationContext;Ljava/nio/file/Path;)Lnet/minecraft/client/gui/screens/worldselection/CreateWorldScreen;"))
     private CreateWorldScreen globe$carryPersistedLatitudePreset(
             Minecraft client,
-            Runnable onClose,
+            Screen lastScreen,
             LevelSettings levelSettings,
             WorldCreationContext context,
             java.nio.file.Path tempDataPackDir) {
@@ -168,7 +169,7 @@ public abstract class WorldSelectionListEntryMixin {
         }
 
         CreateWorldScreen screen = CreateWorldScreen.createFromExisting(
-                client, onClose, levelSettings, context, tempDataPackDir);
+                client, lastScreen, levelSettings, context, tempDataPackDir);
         ((RecreatedWorldPresetCarrier) screen)
                 .globe$setRecreatedWorldPresetId(this.globe$recreatedWorldPresetId);
         return screen;

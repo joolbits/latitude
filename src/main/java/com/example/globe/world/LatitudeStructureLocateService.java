@@ -25,7 +25,7 @@ import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.ComponentUtils;
 import net.minecraft.network.chat.HoverEvent;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerBossEvent;
@@ -34,8 +34,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.BossEvent;
 import net.minecraft.tags.StructureTags;
 import net.minecraft.util.Mth;
-import net.minecraft.util.Util;
-import net.minecraft.world.entity.Relative;
+import net.minecraft.Util;
+import net.minecraft.world.entity.RelativeMovement;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
@@ -180,12 +180,11 @@ public final class LatitudeStructureLocateService {
                 pending.x() + 0.5,
                 landingY,
                 pending.z() + 0.5,
-                EnumSet.noneOf(Relative.class),
+                EnumSet.noneOf(RelativeMovement.class),
                 player.getYRot(),
-                player.getXRot(),
-                true);
+                player.getXRot());
         player.setDeltaMovement(0.0, 0.0, 0.0);
-        player.fallDistance = 0.0;
+        player.fallDistance = 0.0F;
         if (pending.mayBeBuried()) {
             source.sendSuccess(
                     () -> Component.literal(
@@ -270,8 +269,8 @@ public final class LatitudeStructureLocateService {
                     0, 0);
         }
         Registry<Structure> structureRegistry =
-                level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
-        Registry<Biome> biomeRegistry = level.registryAccess().lookupOrThrow(Registries.BIOME);
+                level.registryAccess().registryOrThrow(Registries.STRUCTURE);
+        Registry<Biome> biomeRegistry = level.registryAccess().registryOrThrow(Registries.BIOME);
         ChunkGeneratorStructureState structureState = level.getChunkSource().getGeneratorState();
         RandomState randomState = level.getChunkSource().randomState();
         BiomeSource rawSource = generator.getBiomeSource();
@@ -285,8 +284,8 @@ public final class LatitudeStructureLocateService {
         int structuresSwept = 0;
         int placementsSwept = 0;
 
-        for (Holder.Reference<Structure> reference : structureRegistry.listElements().toList()) {
-            Identifier structureId = reference.key().identifier();
+        for (Holder.Reference<Structure> reference : structureRegistry.holders().toList()) {
+            ResourceLocation structureId = reference.key().location();
             for (StructurePlacement placement
                     : structureState.getPlacementsForStructure(reference)) {
                 if (!(placement instanceof RandomSpreadStructurePlacement spread)) {
@@ -367,8 +366,8 @@ public final class LatitudeStructureLocateService {
             return false;
         }
 
-        Registry<Structure> structureRegistry = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
-        List<Holder<Structure>> matched = structureRegistry.listElements()
+        Registry<Structure> structureRegistry = level.registryAccess().registryOrThrow(Registries.STRUCTURE);
+        List<Holder<Structure>> matched = structureRegistry.holders()
                 .map(reference -> (Holder<Structure>) reference)
                 .filter(target)
                 .toList();
@@ -386,7 +385,7 @@ public final class LatitudeStructureLocateService {
                     // vanilla rather than give a partial, silently-incomplete answer.
                     return false;
                 }
-                Identifier structureId = structureRegistry.getKey(holder.value());
+                ResourceLocation structureId = structureRegistry.getKey(holder.value());
                 boolean village = structureId != null
                         && (holder.is(StructureTags.VILLAGE) || structureId.getPath().contains("village"));
                 candidateSources.add(new Candidate(holder, spread, structureId, village));
@@ -396,7 +395,7 @@ public final class LatitudeStructureLocateService {
             return false;
         }
 
-        Registry<Biome> biomeRegistry = level.registryAccess().lookupOrThrow(Registries.BIOME);
+        Registry<Biome> biomeRegistry = level.registryAccess().registryOrThrow(Registries.BIOME);
         BlockPos origin = BlockPos.containing(source.getPosition());
         int worldRadius = GlobeMod.borderRadiusForNoiseGenerator(generator);
         WorldBorder border = level.getWorldBorder();
@@ -512,7 +511,7 @@ public final class LatitudeStructureLocateService {
 
         // Fallback for a non-player source (command block, server console): there is nobody to
         // teleport and nobody to bind a token to, so keep vanilla's suggest-only behaviour.
-        ClickEvent clickEvent = new ClickEvent.SuggestCommand(
+        ClickEvent clickEvent = new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, 
                 "/tp " + location.getX() + " ~ " + location.getZ());
         ServerPlayer requester = source.getPlayer();
         // The disconnect hook fires while the search is still running, so a player who leaves
@@ -539,7 +538,7 @@ public final class LatitudeStructureLocateService {
                             location.getY(),
                             mayBeBuried,
                             Util.getMillis() + TELEPORT_TOKEN_TTL_MS));
-            clickEvent = new ClickEvent.RunCommand("/latitude_locate_teleport " + token);
+            clickEvent = new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/latitude_locate_teleport " + token);
         }
         ClickEvent finalClickEvent = clickEvent;
         Component coordinates = ComponentUtils.wrapInSquareBrackets(
@@ -548,7 +547,7 @@ public final class LatitudeStructureLocateService {
                 .withStyle(style -> style
                         .withColor(ChatFormatting.GREEN)
                         .withClickEvent(finalClickEvent)
-                        .withHoverEvent(new HoverEvent.ShowText(
+                        .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, 
                                 Component.translatable("chat.coordinates.tooltip"))));
         Component message = Component.translatable(
                 "commands.locate.structure.success", target.asPrintable(), coordinates, distance);
@@ -569,7 +568,7 @@ public final class LatitudeStructureLocateService {
      */
     private static boolean mayBeBuried(Holder<Structure> structure) {
         return structure.unwrapKey()
-                .map(key -> key.identifier().getPath().equals("desert_pyramid"))
+                .map(key -> key.location().getPath().equals("desert_pyramid"))
                 .orElse(false);
     }
 
@@ -749,9 +748,8 @@ public final class LatitudeStructureLocateService {
             long seed,
             Tally tally) {
         try {
+            // 1.21.1's Structure.generate takes neither the structure holder nor the dimension key.
             StructureStart start = candidate.structure().generate(
-                    candidate.holder(),
-                    level.dimension(),
                     level.registryAccess(),
                     generator,
                     generator.getBiomeSource(),
@@ -811,7 +809,7 @@ public final class LatitudeStructureLocateService {
                     Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
                     Math.floorDiv(center.getZ(), 4),
                     randomState.sampler());
-            Identifier centerBiomeId = biomeRegistry.getKey(centerBiome.value());
+            ResourceLocation centerBiomeId = biomeRegistry.getKey(centerBiome.value());
             if (centerBiomeId != null && StructureSitingPolicy.shouldRejectCustomBiomeSiting(
                     structureNamespace, structurePath, centerBiomeId.getNamespace())) {
                 return CandidateVerdict.REJECTED_CUSTOM_BIOME_SITING;
@@ -831,7 +829,7 @@ public final class LatitudeStructureLocateService {
                     Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
                     Math.floorDiv(sample.z(), 4),
                     randomState.sampler());
-            Identifier biomeId = biomeRegistry.getKey(finalBiome.value());
+            ResourceLocation biomeId = biomeRegistry.getKey(finalBiome.value());
             if (biomeId != null) {
                 sampledBiomes.add(biomeId.toString());
             }
@@ -886,7 +884,7 @@ public final class LatitudeStructureLocateService {
         }
         // Mirror of the generation-time badlands ruling: desert-declared structures and surface
         // outposts never generate on badlands, so locate must never report a site there either.
-        Identifier pickedId = biomeRegistry.getKey(pickedBiome.value());
+        ResourceLocation pickedId = biomeRegistry.getKey(pickedBiome.value());
         if (pickedId != null && structurePath != null
                 && VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
                         structurePath, pickedId.toString())) {
@@ -957,7 +955,7 @@ public final class LatitudeStructureLocateService {
         if (finalBiome == null) {
             return CandidateVerdict.PICK_FAILED;
         }
-        Identifier finalBiomeId = biomeRegistry.getKey(finalBiome.value());
+        ResourceLocation finalBiomeId = biomeRegistry.getKey(finalBiome.value());
         if (finalBiomeId != null
                 && LatitudeBiomes.villageVariantVsBiomeMismatch(structurePath, finalBiomeId.toString())) {
             return CandidateVerdict.REJECTED_VARIANT_MISMATCH;
@@ -998,7 +996,7 @@ public final class LatitudeStructureLocateService {
     private record Candidate(
             Holder<Structure> holder,
             RandomSpreadStructurePlacement placement,
-            Identifier structureId,
+            ResourceLocation structureId,
             boolean village) {
         Structure structure() {
             return holder.value();

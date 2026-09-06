@@ -12,7 +12,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -70,7 +70,7 @@ public final class BiomePreviewHeadlessRunner {
     private static final int PREVIEW_RADIUS_MASSIVE = 20000;
     private static final int PREVIEW_RADIUS_MAX = PREVIEW_RADIUS_MASSIVE;
     private static final ResourceKey<NoiseGeneratorSettings> GLOBE_REGULAR_SETTINGS_KEY =
-            ResourceKey.create(Registries.NOISE_SETTINGS, Identifier.fromNamespaceAndPath("globe", "overworld_regular"));
+            ResourceKey.create(Registries.NOISE_SETTINGS, ResourceLocation.fromNamespaceAndPath("globe", "overworld_regular"));
 
     private BiomePreviewHeadlessRunner() {
     }
@@ -325,7 +325,7 @@ public final class BiomePreviewHeadlessRunner {
                 return;
             }
 
-            int y = Mth.clamp(config.y, world.getMinY(), world.getMaxY() - 1);
+            int y = Mth.clamp(config.y, world.getMinBuildHeight(), (world.getMaxBuildHeight() - 1) - 1);
             int radius = config.radiusBlocks != null
                     ? Math.max(1, config.radiusBlocks)
                     : radiusFromSizeOrWorld(config.sizePreset, world);
@@ -357,7 +357,7 @@ public final class BiomePreviewHeadlessRunner {
             boolean settingsAccessorReady = ((NoiseChunkGeneratorAccessor) (Object) noiseGen).globe$getSettings() != null;
             boolean stableRegular = noiseGen.stable(GLOBE_REGULAR_SETTINGS_KEY);
             boolean shouldApplyLatitudeWorldgen = GlobeMod.shouldApplyLatitudeWorldgen(noiseGen);
-            Registry<Biome> biomes = world.registryAccess().lookupOrThrow(Registries.BIOME);
+            Registry<Biome> biomes = world.registryAccess().registryOrThrow(Registries.BIOME);
             LatitudeBiomes.rememberSourcePolicyBiomeRegistry(biomes);
             RandomState noiseConfig = RandomState.create(
                     noiseGen.generatorSettings().value(),
@@ -512,20 +512,20 @@ public final class BiomePreviewHeadlessRunner {
         lines.add("locate_horizontal_step=" + config.horizontalStep);
         lines.add("locate_vertical_step=" + config.verticalStep);
 
-        Identifier targetId = Identifier.tryParse(targetBiome);
+        ResourceLocation targetId = ResourceLocation.tryParse(targetBiome);
         if (targetId == null) {
             lines.add("locate_result_error=invalid_target_identifier");
             lines.add("locate_result_final_matches_target=false");
             return new LocateSearchProof(false, lines);
         }
-        Holder<Biome> targetHolder = biomes.get(targetId).orElse(null);
+        Holder<Biome> targetHolder = biomes.getHolder(targetId).orElse(null);
         if (targetHolder == null) {
             lines.add("locate_result_error=target_not_registered");
             lines.add("locate_result_final_matches_target=false");
             return new LocateSearchProof(false, lines);
         }
 
-        int startY = Mth.clamp(config.startY, world.getMinY(), world.getMaxY() - 1);
+        int startY = Mth.clamp(config.startY, world.getMinBuildHeight(), (world.getMaxBuildHeight() - 1) - 1);
         Pair<BlockPos, Holder<Biome>> result = world.findClosestBiome3d(
                 candidate -> candidate.is(targetHolder),
                 new BlockPos(config.startX, startY, config.startZ),
@@ -628,11 +628,11 @@ public final class BiomePreviewHeadlessRunner {
         if (biome == null) {
             return "null";
         }
-        Identifier id = biomeRegistry.getKey(biome.value());
+        ResourceLocation id = biomeRegistry.getKey(biome.value());
         if (id != null) {
             return id.toString();
         }
-        return biome.unwrapKey().map(key -> key.identifier().toString()).orElse("?");
+        return biome.unwrapKey().map(key -> key.location().toString()).orElse("?");
     }
 
     private static Path defaultOutDir(Path runDir) {

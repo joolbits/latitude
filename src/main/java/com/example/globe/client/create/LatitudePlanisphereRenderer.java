@@ -210,11 +210,11 @@ public final class LatitudePlanisphereRenderer {
     private static void drawScaledText(GuiGraphics ctx, net.minecraft.client.gui.Font tr,
                                        String text, int x, int y, float scale, int color) {
         var matrices = ctx.pose();
-        matrices.pushMatrix();
-        matrices.translate((float) x, (float) y);
-        matrices.scale(scale, scale);
+        matrices.pushPose();
+        matrices.translate((float) x, (float) y, 0.0F);
+        matrices.scale(scale, scale, 1.0F);
         ctx.drawString(tr, text, 0, 0, color, false);
-        matrices.popMatrix();
+        matrices.popPose();
     }
 
     // ── Dashed circle (decorative, for small worlds) ──

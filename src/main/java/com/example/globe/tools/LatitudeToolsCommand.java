@@ -25,12 +25,12 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
-import net.minecraft.world.entity.Relative;
+import net.minecraft.world.entity.RelativeMovement;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.border.WorldBorder;
@@ -108,7 +108,7 @@ public final class LatitudeToolsCommand {
                                         StringArgumentType.getString(context, "token")))));
         dispatcher.register(
                 Commands.literal("latitude")
-                        .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                        .requires(source -> source.hasPermission(Commands.LEVEL_GAMEMASTERS))
                         .executes(LatitudeToolsCommand::help)
                         .then(Commands.literal("help").executes(LatitudeToolsCommand::help))
                         .then(Commands.literal("flyspeed")
@@ -202,18 +202,17 @@ public final class LatitudeToolsCommand {
                     Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
                     targetX,
                     targetZ);
-            int worldMaxY = world.getMinY() + world.getHeight() - 1;
-            int targetY = Mth.clamp(topY + 1, world.getMinY() + 1, worldMaxY);
+            int worldMaxY = world.getMinBuildHeight() + world.getHeight() - 1;
+            int targetY = Mth.clamp(topY + 1, world.getMinBuildHeight() + 1, worldMaxY);
 
             player.teleportTo(
                     world,
                     targetX + 0.5,
                     targetY,
                     targetZ + 0.5,
-                    EnumSet.noneOf(Relative.class),
+                    EnumSet.noneOf(RelativeMovement.class),
                     player.getYRot(),
-                    player.getXRot(),
-                    true);
+                    player.getXRot());
 
             double achievedDegrees = LatitudeToolsMath.signedLatitudeDegrees(
                     targetZ + 0.5,
@@ -393,17 +392,16 @@ public final class LatitudeToolsCommand {
 
             world.getChunkSource().getChunk(Math.floorDiv(targetX, 16), Math.floorDiv(targetZ, 16), ChunkStatus.FULL, true);
             int topY = world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, targetX, targetZ);
-            int worldMaxY = world.getMinY() + world.getHeight() - 1;
-            int targetY = Mth.clamp(topY + 1, world.getMinY() + 1, worldMaxY);
+            int worldMaxY = world.getMinBuildHeight() + world.getHeight() - 1;
+            int targetY = Mth.clamp(topY + 1, world.getMinBuildHeight() + 1, worldMaxY);
 
             player.teleportTo(world,
                     targetX + 0.5,
                     targetY,
                     targetZ + 0.5,
-                    EnumSet.noneOf(Relative.class),
+                    EnumSet.noneOf(RelativeMovement.class),
                     player.getYRot(),
-                    player.getXRot(),
-                    true);
+                    player.getXRot());
 
             String biomeId = biomeId(world.getBiome(new BlockPos(targetX, targetY, targetZ)));
             source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
@@ -437,8 +435,8 @@ public final class LatitudeToolsCommand {
 
             int centerX = player.getBlockX();
             int centerZ = player.getBlockZ();
-            int worldMaxY = world.getMinY() + world.getHeight() - 1;
-            int sampleY = Mth.clamp(player.getBlockY(), world.getMinY() + 1, worldMaxY);
+            int worldMaxY = world.getMinBuildHeight() + world.getHeight() - 1;
+            int sampleY = Mth.clamp(player.getBlockY(), world.getMinBuildHeight() + 1, worldMaxY);
             long seed = world.getSeed() ^ mix64(player.blockPosition().asLong());
             Random rng = new Random(seed);
 
@@ -524,12 +522,12 @@ public final class LatitudeToolsCommand {
     }
 
     private static String biomeId(Holder<Biome> biome) {
-        return biome.unwrapKey().map(key -> key.identifier().toString()).orElse("?");
+        return biome.unwrapKey().map(key -> key.location().toString()).orElse("?");
     }
 
     private static SurfaceTruth resolveSurfaceTruth(ServerLevel world, int x, int z) {
         int top = world.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
-        if (top < world.getMinY()) {
+        if (top < world.getMinBuildHeight()) {
             return new SurfaceTruth(false, "n/a(surface)", "n/a(surface)", false, Integer.MIN_VALUE);
         }
         BlockPos surfacePos = new BlockPos(x, top, z);
@@ -542,12 +540,12 @@ public final class LatitudeToolsCommand {
     }
 
     private static String blockId(ServerLevel world, BlockState state) {
-        Identifier id = world.registryAccess().lookupOrThrow(Registries.BLOCK).getKey(state.getBlock());
+        ResourceLocation id = world.registryAccess().registryOrThrow(Registries.BLOCK).getKey(state.getBlock());
         return id != null ? id.toString() : "minecraft:air";
     }
 
     private static String fluidId(ServerLevel world, FluidState state) {
-        Identifier id = world.registryAccess().lookupOrThrow(Registries.FLUID).getKey(state.getType());
+        ResourceLocation id = world.registryAccess().registryOrThrow(Registries.FLUID).getKey(state.getType());
         return id != null ? id.toString() : "minecraft:empty";
     }
 

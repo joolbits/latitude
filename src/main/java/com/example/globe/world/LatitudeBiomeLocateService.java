@@ -73,7 +73,7 @@ public final class LatitudeBiomeLocateService {
         if (rawSource instanceof LatitudeBiomeSource latitudeSource) {
             rawSource = latitudeSource.original();
         }
-        Registry<Biome> registry = level.registryAccess().lookupOrThrow(Registries.BIOME);
+        Registry<Biome> registry = level.registryAccess().registryOrThrow(Registries.BIOME);
         int worldRadius = GlobeMod.borderRadiusForNoiseGenerator(generator);
         RandomState randomState = level.getChunkSource().randomState();
         LatitudeBiomeSource latitudeSource = LatitudeBiomeSource.forLocate(
@@ -318,8 +318,8 @@ public final class LatitudeBiomeLocateService {
                     Direction.SOUTH).iterator();
             this.surfaceY = Mth.clamp(
                     LatitudeBiomes.SURFACE_CLASSIFY_Y + 4,
-                    source.getLevel().getMinY() + 1,
-                    source.getLevel().getMaxY());
+                    source.getLevel().getMinBuildHeight() + 1,
+                    (source.getLevel().getMaxBuildHeight() - 1));
         }
 
         @Override
@@ -427,8 +427,8 @@ public final class LatitudeBiomeLocateService {
             this.targetIncludesMangrove = targetIncludesMangrove;
             this.surfaceY = Mth.clamp(
                     LatitudeBiomes.SURFACE_CLASSIFY_Y + 4,
-                    source.getLevel().getMinY() + 1,
-                    source.getLevel().getMaxY());
+                    source.getLevel().getMinBuildHeight() + 1,
+                    (source.getLevel().getMaxBuildHeight() - 1));
             this.previewStep = LatitudeLocateBudgetPolicy.surfaceHorizontalStep(
                     searchRadius, COMMAND_HORIZONTAL_STEP);
             this.fallbackStep = LatitudeLocateBudgetPolicy.surfaceExactFallbackHorizontalStep(
@@ -590,7 +590,7 @@ public final class LatitudeBiomeLocateService {
                 Set<Holder<Biome>> matching) {
             super(source, target, origin, latitudeSource, worldRadius, searchRadius, sampler);
             this.verticalSamples = Mth.outFromOrigin(origin.getY(),
-                    level.getMinY() + 1, level.getMaxY() + 1, COMMAND_VERTICAL_STEP).toArray();
+                    level.getMinBuildHeight() + 1, (level.getMaxBuildHeight() - 1) + 1, COMMAND_VERTICAL_STEP).toArray();
             this.horizontalStep = LatitudeLocateBudgetPolicy.threeDimensionalHorizontalStep(
                     searchRadius, COMMAND_HORIZONTAL_STEP, Math.max(1, verticalSamples.length));
             this.offsets = BlockPos.spiralAround(BlockPos.ZERO,

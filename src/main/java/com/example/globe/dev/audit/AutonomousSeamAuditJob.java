@@ -11,7 +11,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
-import net.minecraft.world.entity.Relative;
+import net.minecraft.world.entity.RelativeMovement;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.border.WorldBorder;
@@ -118,7 +118,7 @@ public final class AutonomousSeamAuditJob {
                 return;
             }
 
-            ServerLevel world = player.level();
+            ServerLevel world = player.serverLevel();
             int radiusBlocks = resolveRadius(world);
             if (radiusBlocks <= 0) {
                 GlobeMod.LOGGER.warn("[auditMode] invalid world radius {}; aborting", radiusBlocks);
@@ -225,8 +225,8 @@ public final class AutonomousSeamAuditJob {
         world.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, true);
 
         int topY = world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, job.targetX, job.targetZ);
-        int maxY = world.getMinY() + world.getHeight() - 1;
-        int tpY = Mth.clamp(topY + 1, world.getMinY() + 1, maxY);
+        int maxY = world.getMinBuildHeight() + world.getHeight() - 1;
+        int tpY = Mth.clamp(topY + 1, world.getMinBuildHeight() + 1, maxY);
         job.targetY = tpY;
 
         // Face the equator for a deterministic screenshot frame.
@@ -238,10 +238,9 @@ public final class AutonomousSeamAuditJob {
                 job.targetX + 0.5,
                 tpY,
                 job.targetZ + 0.5,
-                EnumSet.noneOf(Relative.class),
+                EnumSet.noneOf(RelativeMovement.class),
                 yaw,
-                pitch,
-                true);
+                pitch);
 
         // Clamp time to noon and clear all weather for deterministic framing.
         ((PrimaryLevelData) world.getServer().getWorldData()).setGameTime(6000L);
@@ -294,7 +293,7 @@ public final class AutonomousSeamAuditJob {
         ServerLevel world = job.world;
         int sampleY = job.targetY > 0
                 ? job.targetY
-                : Mth.clamp(96, world.getMinY() + 1, world.getMinY() + world.getHeight() - 1);
+                : Mth.clamp(96, world.getMinBuildHeight() + 1, world.getMinBuildHeight() + world.getHeight() - 1);
 
         long seed = world.getSeed() ^ mix64(((long) xMin << 32) ^ (xMax & 0xffffffffL) ^ (long) zMin ^ ((long) zMax << 16));
         Random rng = new Random(seed);
@@ -495,7 +494,7 @@ public final class AutonomousSeamAuditJob {
     }
 
     private static String biomeId(Holder<Biome> biome) {
-        return biome.unwrapKey().map(k -> k.identifier().toString()).orElse("?");
+        return biome.unwrapKey().map(k -> k.location().toString()).orElse("?");
     }
 
     private static String escape(String raw) {

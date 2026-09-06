@@ -3,7 +3,7 @@ package com.example.globe.mixin;
 import com.example.globe.GlobeRegions;
 import com.example.globe.world.LatitudeWorldgenScope;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.WorldGenRegion;
 import net.minecraft.world.level.StructureManager;
@@ -21,7 +21,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class NoiseChunkGeneratorCarveMixin {
     private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_KEY = ResourceKey.create(
             Registries.NOISE_SETTINGS,
-            Identifier.fromNamespaceAndPath("globe", "overworld")
+            ResourceLocation.fromNamespaceAndPath("globe", "overworld")
     );
 
     @Inject(

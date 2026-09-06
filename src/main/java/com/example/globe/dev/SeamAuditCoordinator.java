@@ -13,7 +13,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
-import net.minecraft.world.entity.Relative;
+import net.minecraft.world.entity.RelativeMovement;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -227,8 +227,8 @@ public final class SeamAuditCoordinator {
         }
 
         int topY = world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, job.targetX, job.targetZ);
-        int worldMaxY = world.getMinY() + world.getHeight() - 1;
-        int targetY = Mth.clamp(topY + 1, world.getMinY() + 1, worldMaxY);
+        int worldMaxY = world.getMinBuildHeight() + world.getHeight() - 1;
+        int targetY = Mth.clamp(topY + 1, world.getMinBuildHeight() + 1, worldMaxY);
         job.targetY = targetY;
 
         job.player.teleportTo(
@@ -236,10 +236,9 @@ public final class SeamAuditCoordinator {
                 job.targetX + 0.5,
                 targetY,
                 job.targetZ + 0.5,
-                EnumSet.noneOf(Relative.class),
+                EnumSet.noneOf(RelativeMovement.class),
                 job.player.getYRot(),
-                job.player.getXRot(),
-                true);
+                job.player.getXRot());
     }
 
     private static void writeMetadata(Job job) throws IOException {
@@ -291,8 +290,8 @@ public final class SeamAuditCoordinator {
         if (job.targetY > 0) {
             sampleY = job.targetY;
         } else {
-            int top = world.getMinY() + world.getHeight() - 1;
-            sampleY = Mth.clamp(96, world.getMinY() + 1, top);
+            int top = world.getMinBuildHeight() + world.getHeight() - 1;
+            sampleY = Mth.clamp(96, world.getMinBuildHeight() + 1, top);
         }
 
         long seed = world.getSeed() ^ mix64(((long) centerX << 32) ^ (centerZ & 0xffffffffL) ^ probeRadiusBlocks);
@@ -486,7 +485,7 @@ public final class SeamAuditCoordinator {
     }
 
     private static String biomeId(Holder<Biome> biome) {
-        return biome.unwrapKey().map(k -> k.identifier().toString()).orElse("?");
+        return biome.unwrapKey().map(k -> k.location().toString()).orElse("?");
     }
 
     private static String tryRunGit(String... args) {

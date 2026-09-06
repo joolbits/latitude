@@ -19,11 +19,11 @@ import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ChunkResult;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.Relative;
+import net.minecraft.world.entity.RelativeMovement;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.border.WorldBorder;
@@ -47,7 +47,7 @@ public final class AutoCreateWorldProbe {
     private AutoCreateWorldProbe() {
     }
 
-    private static final Identifier MANGROVE_SWAMP_ID = Identifier.fromNamespaceAndPath("minecraft", "mangrove_swamp");
+    private static final ResourceLocation MANGROVE_SWAMP_ID = ResourceLocation.fromNamespaceAndPath("minecraft", "mangrove_swamp");
     private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_POST_ENTRY_WAIT_TICKS = 60;
     private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_SPAWN_SCAN_RADIUS = 768;
     private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_SPAWN_SCAN_STEP = 32;
@@ -155,7 +155,7 @@ public final class AutoCreateWorldProbe {
                         return;
                     }
                     GlobeMod.LOGGER.info("[LAT][CWPATH] opening create-world probe");
-                    CreateWorldScreen.openFresh(client, () -> client.setScreen(new TitleScreen()));
+                    CreateWorldScreen.openFresh(client, new TitleScreen());
                     Screen afterOpen = client.screen;
                     GlobeMod.LOGGER.info("[LAT][CWPATH] current screen after open: {}",
                             afterOpen == null ? "null" : afterOpen.getClass().getName());
@@ -763,7 +763,7 @@ public final class AutoCreateWorldProbe {
                 return;
             }
 
-            ServerLevel level = serverPlayer.level();
+            ServerLevel level = serverPlayer.serverLevel();
             if (tryCompletePendingLiveTargetSearchHit(level, serverPlayer, state)) {
                 return;
             }
@@ -772,7 +772,7 @@ public final class AutoCreateWorldProbe {
                 GlobeMod.LOGGER.info("[LATDEV_LIVE_TARGET_SEARCH] started target={} targetBand={} centerX={} centerZ={} y={} radius={} step={} localStep={} maxSamples={} maxChunks={} plannedChunks={} chunksPerBatch={} level={}",
                         state.expectedBiome, bandProofLabel(state.requiredBand), state.centerX, state.centerZ, state.sampleY, state.radius, state.step,
                         state.localStep, state.maxSamples, state.maxChunks, state.plannedChunks,
-                        state.chunksPerBatch, level.dimension().identifier());
+                        state.chunksPerBatch, level.dimension().location());
             }
 
             LiveTargetSearchHit hit = null;
@@ -1152,7 +1152,7 @@ public final class AutoCreateWorldProbe {
                             expectedBiome != null ? expectedBiome : "<unspecified>");
                     return;
                 }
-                ServerLevel level = serverPlayer.level();
+                ServerLevel level = serverPlayer.serverLevel();
                 GlobeMod.LOGGER.info("[LAT][CWPATH] server requesting configured latdev proof target full chunk async chunk={},{} blockX={} blockZ={} forceLoadRequested={}",
                         chunkX, chunkZ, targetBlockX, targetBlockZ, forceLoad);
                 CompletableFuture<ChunkResult<ChunkAccess>> future = level.getChunkSource()
@@ -1249,9 +1249,9 @@ public final class AutoCreateWorldProbe {
         }
         BlockPos ground = level.getHeightmapPos(
                 Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
-                new BlockPos(blockX, level.getMinY(), blockZ));
-        int worldMaxY = level.getMinY() + level.getHeight() - 1;
-        int safeY = Math.max(level.getMinY() + 1, Math.min(ground.getY() + 1, worldMaxY));
+                new BlockPos(blockX, level.getMinBuildHeight(), blockZ));
+        int worldMaxY = level.getMinBuildHeight() + level.getHeight() - 1;
+        int safeY = Math.max(level.getMinBuildHeight() + 1, Math.min(ground.getY() + 1, worldMaxY));
         return new SurfaceTeleportTarget(safeY, loadedChunks);
     }
 
@@ -1264,10 +1264,9 @@ public final class AutoCreateWorldProbe {
                 x,
                 safeY,
                 z,
-                EnumSet.noneOf(Relative.class),
+                EnumSet.noneOf(RelativeMovement.class),
                 serverPlayer.getYRot(),
-                serverPlayer.getXRot(),
-                true);
+                serverPlayer.getXRot());
         serverPlayer.setDeltaMovement(0.0, 0.0, 0.0);
         serverPlayer.fallDistance = 0.0F;
     }
@@ -1469,11 +1468,11 @@ public final class AutoCreateWorldProbe {
         GlobeMod.LOGGER.info("[LAT][SPAWNPROBE] player x={} y={} z={}",
                 player.getX(), player.getY(), player.getZ());
 
-        LevelData.RespawnData respawnData = world.getRespawnData();
-        if (respawnData != null && respawnData.pos() != null) {
-            BlockPos spawnPos = respawnData.pos();
+        // 1.21.1 stores a bare shared spawn position on the level, not a RespawnData record.
+        BlockPos spawnPos = world.getSharedSpawnPos();
+        if (spawnPos != null) {
             GlobeMod.LOGGER.info("[LAT][SPAWNPROBE] spawn x={} y={} z={} dimension={}",
-                    spawnPos.getX(), spawnPos.getY(), spawnPos.getZ(), respawnData.dimension());
+                    spawnPos.getX(), spawnPos.getY(), spawnPos.getZ(), world.dimension().location());
         } else {
             GlobeMod.LOGGER.info("[LAT][SPAWNPROBE] spawn unavailable");
         }
@@ -1597,7 +1596,7 @@ public final class AutoCreateWorldProbe {
         if (biome == null) {
             return "unknown";
         }
-        return biome.unwrapKey().map(key -> key.identifier().toString()).orElse("unknown");
+        return biome.unwrapKey().map(key -> key.location().toString()).orElse("unknown");
     }
 
     private record MangroveHit(int x, int z, double distanceBlocks, String biomeId, double latDeg, LatitudeBands.Band band, String oceanContext) {

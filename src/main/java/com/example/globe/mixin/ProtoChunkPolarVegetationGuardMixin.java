@@ -6,11 +6,11 @@ import com.example.globe.world.LatitudeWorldgenScope;
 import com.example.globe.world.PolarFoliagePolicy;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.VegetationBlock;
+import net.minecraft.world.level.block.BushBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ProtoChunk;
 import org.spongepowered.asm.mixin.Mixin;
@@ -55,10 +55,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * <p><b>Fails closed, without depending on pack contents.</b> A tag-only test fails OPEN on any
  * modded block the pack never added to a vanilla tag, which is how BOP tundra shrubs and reeds
  * survived while the vanilla grass and ferns beside them were stripped — leaving the polar cap
- * looking MORE vegetated than a correctly-guarded biome. {@code VegetationBlock} is the vanilla
+ * looking MORE vegetated than a correctly-guarded biome. {@code BushBlock} is the vanilla
  * plant base; BOP's own {@code VegetationBlockBOP} extends it, as do its flower, mushroom, sapling
  * and double-plant blocks, so modded ground cover is caught by inheritance rather than by
- * enumeration. Fluids, snow, ice, terrain and logs are not {@code VegetationBlock}s, so the test
+ * enumeration. Fluids, snow, ice, terrain and logs are not {@code BushBlock}s, so the test
  * cannot erase the world it is standing on.
  */
 @Mixin(ProtoChunk.class)
@@ -66,11 +66,11 @@ public class ProtoChunkPolarVegetationGuardMixin {
 
     @Unique
     private static final TagKey<Block> POLAR_FOLIAGE =
-            TagKey.create(Registries.BLOCK, Identifier.fromNamespaceAndPath("globe", "polar_foliage"));
+            TagKey.create(Registries.BLOCK, ResourceLocation.fromNamespaceAndPath("globe", "polar_foliage"));
 
     @Unique
     private static final TagKey<Block> POLAR_WOODY =
-            TagKey.create(Registries.BLOCK, Identifier.fromNamespaceAndPath("globe", "polar_woody"));
+            TagKey.create(Registries.BLOCK, ResourceLocation.fromNamespaceAndPath("globe", "polar_woody"));
 
     @Unique
     private static final BlockState AIR_STATE = Blocks.AIR.defaultBlockState();
@@ -89,7 +89,7 @@ public class ProtoChunkPolarVegetationGuardMixin {
 
         boolean woody = state.is(POLAR_WOODY);
         boolean foliage = state.is(POLAR_FOLIAGE);
-        boolean vegetation = state.getBlock() instanceof VegetationBlock;
+        boolean vegetation = state.getBlock() instanceof BushBlock;
         if (!woody && !foliage && !vegetation) {
             return;
         }
@@ -116,12 +116,12 @@ public class ProtoChunkPolarVegetationGuardMixin {
         // report, 2026-08-31). So wherever this guard can have removed a block (beyond the woody
         // latitude, or above the elevation tree line), a FLOOR PLANT placed over air is refused.
         //
-        // Scoped to VegetationBlock deliberately, not the polar_foliage tag: VegetationBlock
+        // Scoped to BushBlock deliberately, not the polar_foliage tag: BushBlock
         // subclasses are floor-supported by vanilla contract, while the tag also carries
         // wall- and ceiling-attached blocks (glow lichen) for which air below is legitimate.
         if (vegetation && (beyondWoody || pos.getY() >= LatitudeBiomes.TREE_LINE_Y)) {
             ProtoChunk self = (ProtoChunk) (Object) this;
-            if (pos.getY() > self.getMinY() && self.getBlockState(pos.below()).isAir()) {
+            if (pos.getY() > self.getMinBuildHeight() && self.getBlockState(pos.below()).isAir()) {
                 cir.setReturnValue(AIR_STATE);
                 return;
             }

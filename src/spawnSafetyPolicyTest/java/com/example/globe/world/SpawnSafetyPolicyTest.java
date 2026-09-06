@@ -536,11 +536,11 @@ public final class SpawnSafetyPolicyTest {
                 Path.of("src/main/java/com/example/globe/GlobeMod.java")));
         assertTrue(
                 source.contains(
-                        "BlockPos spawn = world.getHeightmapPos( Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, new BlockPos(x, world.getMinY(), z)); BlockPos ground = spawn.below();"),
+                        "BlockPos spawn = world.getHeightmapPos( Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, new BlockPos(x, world.getMinBuildHeight(), z)); BlockPos ground = spawn.below();"),
                 "Minecraft's heightmap result is the first open spawn block, so ground is one block below it");
         assertFalse(
                 source.contains(
-                        "BlockPos ground = world.getHeightmapPos( Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, new BlockPos(x, world.getMinY(), z)); BlockPos spawn = ground.above();"),
+                        "BlockPos ground = world.getHeightmapPos( Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, new BlockPos(x, world.getMinBuildHeight(), z)); BlockPos spawn = ground.above();"),
                 "the first open heightmap block must never be tested as if it were sturdy ground");
     }
 

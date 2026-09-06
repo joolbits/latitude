@@ -14,7 +14,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.StructureTags;
 import net.minecraft.world.level.ChunkPos;
@@ -75,7 +75,7 @@ public abstract class ExtremePolarVillageStartGuardMixin {
         boolean latitudeOwned = LatitudeWorldgenScope.isActive()
                 && chunkGenerator instanceof NoiseBasedChunkGenerator noise
                 && GlobeMod.shouldApplyLatitudeWorldgen(noise);
-        Identifier generatedStructureId = null;
+        ResourceLocation generatedStructureId = null;
         boolean generatedVillage = false;
         int generatedWorldRadius = 0;
         Registry<Biome> generatedBiomeRegistry = null;
@@ -98,14 +98,14 @@ public abstract class ExtremePolarVillageStartGuardMixin {
             }
             try {
                 Registry<Structure> registry =
-                        registryAccess.lookupOrThrow(Registries.STRUCTURE);
-                Identifier structureId = registry.getKey(structure);
+                        registryAccess.registryOrThrow(Registries.STRUCTURE);
+                ResourceLocation structureId = registry.getKey(structure);
                 boolean village = structureHolder.is(StructureTags.VILLAGE)
                         || (structureId != null && structureId.getPath().contains("village"));
                 generatedStructureId = structureId;
                 generatedVillage = village;
                 generatedWorldRadius = GlobeMod.borderRadiusForNoiseGenerator(noise);
-                generatedBiomeRegistry = registryAccess.lookupOrThrow(Registries.BIOME);
+                generatedBiomeRegistry = registryAccess.registryOrThrow(Registries.BIOME);
                 if (structureId != null && village) {
                     int radius = generatedWorldRadius;
                     int blockX = chunkPos.getMiddleBlockX();
@@ -148,7 +148,7 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                             Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
                             Math.floorDiv(blockZ, 4),
                             randomState.sampler());
-                    Identifier finalBiomeId = biomeRegistry.getKey(finalBiome.value());
+                    ResourceLocation finalBiomeId = biomeRegistry.getKey(finalBiome.value());
                     if (finalBiomeId != null
                             && LatitudeBiomes.villageVariantVsBiomeMismatch(
                             structureId.getPath(), finalBiomeId.toString())) {
@@ -188,7 +188,7 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                             Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
                             Math.floorDiv(blockZ, 4),
                             randomState.sampler());
-                    Identifier finalBiomeId = biomeRegistry.getKey(finalBiome.value());
+                    ResourceLocation finalBiomeId = biomeRegistry.getKey(finalBiome.value());
                     if (finalBiomeId != null
                             && VillageBiomeAdmissionPolicy.shouldRefuseStructureInVillageFreeBiome(
                                     structureId.getPath(), finalBiomeId.toString())) {
@@ -244,7 +244,7 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                         Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
                         Math.floorDiv(center.getZ(), 4),
                         randomState.sampler());
-                Identifier centerBiomeId = generatedBiomeRegistry.getKey(centerBiome.value());
+                ResourceLocation centerBiomeId = generatedBiomeRegistry.getKey(centerBiome.value());
                 if (centerBiomeId != null && StructureSitingPolicy.shouldRejectCustomBiomeSiting(
                         generatedStructureId.getNamespace(),
                         generatedStructureId.getPath(),
@@ -269,7 +269,7 @@ public abstract class ExtremePolarVillageStartGuardMixin {
                         Math.floorDiv(LatitudeBiomes.SURFACE_CLASSIFY_Y, 4),
                         Math.floorDiv(sample.z(), 4),
                         randomState.sampler());
-                Identifier biomeId = generatedBiomeRegistry.getKey(finalBiome.value());
+                ResourceLocation biomeId = generatedBiomeRegistry.getKey(finalBiome.value());
                 if (biomeId != null) {
                     sampledBiomes.add(biomeId.toString());
                 }

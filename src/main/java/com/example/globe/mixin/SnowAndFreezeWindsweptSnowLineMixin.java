@@ -43,7 +43,7 @@ public abstract class SnowAndFreezeWindsweptSnowLineMixin {
             return vanilla;
         }
         Holder<Biome> holder = level.getBiome(pos);
-        String biomeId = holder.unwrapKey().map(key -> key.identifier().toString()).orElse(null);
+        String biomeId = holder.unwrapKey().map(key -> key.location().toString()).orElse(null);
         if (!WindsweptSnowLinePolicy.appliesTo(biomeId, pos.getY(), level.getSeaLevel(),
                 WindsweptSnowLinePolicy.absoluteLatitudeDegrees(
                         pos.getZ(),
@@ -52,7 +52,7 @@ public abstract class SnowAndFreezeWindsweptSnowLineMixin {
             return false;
         }
         // shouldSnow's structural conditions, minus its temperature gate.
-        if (!level.isInsideBuildHeight(pos.getY())
+        if (level.isOutsideBuildHeight(pos.getY())
                 || level.getBrightness(LightLayer.BLOCK, pos) >= 10) {
             return false;
         }

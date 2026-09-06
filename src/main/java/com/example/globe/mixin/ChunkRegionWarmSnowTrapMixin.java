@@ -66,13 +66,13 @@ public abstract class ChunkRegionWarmSnowTrapMixin {
         // windswept 159 snowy grass : 13 snow layers, subpolar 183 : 222).
         WorldGenRegion region = (WorldGenRegion) (Object) this;
         var biome = region.getBiome(pos);
-        if (biome.value().coldEnoughToSnow(pos, region.getSeaLevel())) {
+        if (biome.value().coldEnoughToSnow(pos)) {
             return state;
         }
         // Latitude's lowered windswept snow line — must match SnowAndFreezeWindsweptSnowLineMixin
         // and ProtoChunkSnowBlockGuardMixin or this layer strips what they place.
         if (com.example.globe.world.WindsweptSnowLinePolicy.appliesTo(
-                biome.unwrapKey().map(key -> key.identifier().toString()).orElse(null),
+                biome.unwrapKey().map(key -> key.location().toString()).orElse(null),
                 pos.getY(), region.getSeaLevel(),
                 com.example.globe.world.WindsweptSnowLinePolicy.absoluteLatitudeDegrees(
                         pos.getZ(),

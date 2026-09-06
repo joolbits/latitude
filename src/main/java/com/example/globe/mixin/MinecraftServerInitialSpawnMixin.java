@@ -3,7 +3,6 @@ package com.example.globe.mixin;
 import com.example.globe.GlobeMod;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.progress.LevelLoadListener;
 import net.minecraft.world.level.storage.ServerLevelData;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -17,9 +16,8 @@ public abstract class MinecraftServerInitialSpawnMixin {
                                                       ServerLevelData levelData,
                                                       boolean generateBonusChest,
                                                       boolean debugWorld,
-                                                      LevelLoadListener loadListener,
                                                       CallbackInfo ci) {
-        if (GlobeMod.trySetInitialLatitudeSpawn(world, levelData, generateBonusChest, debugWorld, loadListener)) {
+        if (GlobeMod.trySetInitialLatitudeSpawn(world, levelData, generateBonusChest, debugWorld)) {
             ci.cancel();
         }
     }

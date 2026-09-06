@@ -14,13 +14,13 @@ import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.levelgen.presets.WorldPreset;
 
 @Mixin(WorldCreationUiState.class)
 public abstract class WorldCreatorMixin implements VanillaOnlyWorldCreationState {
-    private static final Identifier GLOBE_WORLD_PRESET_ID = Identifier.fromNamespaceAndPath("globe", "globe");
+    private static final ResourceLocation GLOBE_WORLD_PRESET_ID = ResourceLocation.fromNamespaceAndPath("globe", "globe");
 
     @Shadow
     private WorldCreationContext settings;
@@ -59,10 +59,10 @@ public abstract class WorldCreatorMixin implements VanillaOnlyWorldCreationState
     private void globe$applyPresetPolicy() {
         Registry<WorldPreset> presets = this.settings
                 .worldgenLoadContext()
-                .lookupOrThrow(Registries.WORLD_PRESET);
+                .registryOrThrow(Registries.WORLD_PRESET);
 
         ResourceKey<WorldPreset> key = ResourceKey.create(Registries.WORLD_PRESET, GLOBE_WORLD_PRESET_ID);
-        presets.get(key).ifPresent(entry -> {
+        presets.getHolder(key).ifPresent(entry -> {
             WorldCreationUiState.WorldTypeEntry globeType = new WorldCreationUiState.WorldTypeEntry((Holder<WorldPreset>) entry);
 
             var normalWorldTypes = this.getNormalPresetList();

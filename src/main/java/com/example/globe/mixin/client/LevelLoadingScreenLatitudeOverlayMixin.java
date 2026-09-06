@@ -10,7 +10,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
-import net.minecraft.util.Util;
+import net.minecraft.Util;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -164,13 +164,13 @@ class LatitudeLoadingClientTickMixin {
         if (client.levelRenderer == null || this.player == null) {
             return false;
         }
+        // 1.21.1's LevelRenderer publishes no per-section visibility query and no visible-section
+        // list -- isSectionCompiledAndVisible and getVisibleSections are both later additions. The
+        // coarse pair it does publish carries the same "the world is drawn" signal the overlay needs;
+        // the per-position shortcut is simply unavailable on this target, so readiness waits for the
+        // whole queue instead of just the player's own section.
         boolean renderQueueEmpty = client.levelRenderer.hasRenderedAllSections();
-        int renderedSections = client.levelRenderer.getVisibleSections().size();
-        boolean playerSectionVisible = client.levelRenderer.isSectionCompiledAndVisible(this.player.blockPosition());
-        net.minecraft.core.BlockPos feetPos = net.minecraft.core.BlockPos.containing(
-                this.player.getX(), this.player.getY() - 1.0, this.player.getZ());
-        boolean feetSectionVisible = client.levelRenderer.isSectionCompiledAndVisible(feetPos);
-        return (playerSectionVisible || feetSectionVisible)
-                || (renderQueueEmpty && renderedSections > 0);
+        int renderedSections = client.levelRenderer.countRenderedSections();
+        return renderQueueEmpty && renderedSections > 0;
     }
 }

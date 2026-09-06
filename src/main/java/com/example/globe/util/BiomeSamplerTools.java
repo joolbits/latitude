@@ -22,7 +22,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.HolderGetter;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.biome.Biome;
@@ -51,7 +51,7 @@ public final class BiomeSamplerTools {
         BiomeSource baseSource = biomeSource instanceof LatitudeBiomeSource latitudeSource
                 ? latitudeSource.original()
                 : biomeSource;
-        Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
+        Registry<Biome> biomeRegistry = world.registryAccess().registryOrThrow(Registries.BIOME);
         HolderGetter<NormalNoise.NoiseParameters> noiseParameters =
                 world.registryAccess().lookupOrThrow(Registries.NOISE);
 
@@ -644,11 +644,11 @@ public final class BiomeSamplerTools {
     }
 
     private static String biomeId(Registry<Biome> biomeRegistry, Holder<Biome> biome) {
-        Identifier id = biomeRegistry.getKey(biome.value());
+        ResourceLocation id = biomeRegistry.getKey(biome.value());
         if (id != null) {
             return id.toString();
         }
-        return biome.unwrapKey().map(key -> key.identifier().toString()).orElse("minecraft:plains");
+        return biome.unwrapKey().map(key -> key.location().toString()).orElse("minecraft:plains");
     }
 
     private static String biomeDisplayName(String biomeId) {

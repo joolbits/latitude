@@ -51,7 +51,8 @@ public final class SeamAuditClientBridge {
                     GlobeMod.LOGGER.warn("[seamAudit] no framebuffer; skipping screenshot");
                     return;
                 }
-                Screenshot.takeScreenshot(framebuffer, image -> client.execute(() -> writeImage(image, pngPath)));
+                NativeImage captured = Screenshot.takeScreenshot(framebuffer);
+                client.execute(() -> writeImage(captured, pngPath));
             } catch (Exception e) {
                 GlobeMod.LOGGER.warn("[seamAudit] screenshot capture failed", e);
             }

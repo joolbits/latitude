@@ -9,7 +9,7 @@ import net.minecraft.core.MappedRegistry;
 import net.minecraft.core.RegistrationInfo;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.tags.TagKey;
@@ -620,7 +620,7 @@ final class BiomeProviderSelectionPolicyTest {
         net.minecraft.SharedConstants.tryDetectVersion();
         net.minecraft.server.Bootstrap.bootStrap();
         Registry<Biome> registry = buildTestBiomeRegistry(List.of()).registry();
-        List<Holder<Biome>> pool = registry.listElements().map(h -> (Holder<Biome>) h).toList();
+        List<Holder<Biome>> pool = registry.holders().map(h -> (Holder<Biome>) h).toList();
         java.lang.reflect.Method registryGate = LatitudeBiomes.class.getDeclaredMethod(
                 "gatePolarTaigaSurvival", Registry.class, Holder.class,
                 int.class, double.class, int.class, int.class);
@@ -1737,7 +1737,7 @@ final class BiomeProviderSelectionPolicyTest {
                 "minecraft:snowy_beach", "minecraft:stony_shore"));
         MappedRegistry<Biome> writable = new MappedRegistry<>(Registries.BIOME, Lifecycle.stable());
         for (String id : ids) {
-            ResourceKey<Biome> key = ResourceKey.create(Registries.BIOME, Identifier.parse(id));
+            ResourceKey<Biome> key = ResourceKey.create(Registries.BIOME, ResourceLocation.parse(id));
             writable.register(key, minimalBiome(), RegistrationInfo.BUILT_IN);
         }
         writable.bindAllTagsToEmpty();
@@ -1757,15 +1757,15 @@ final class BiomeProviderSelectionPolicyTest {
                 "byg:crag_gardens",
                 "terrestria:caldera",
                 "terrestria:canyon")) {
-            writable.get(Identifier.parse(id)).ifPresent(temperateMountainHolders::add);
+            writable.get(ResourceLocation.parse(id)).ifPresent(temperateMountainHolders::add);
         }
         writable.bindTag(
                 TagKey.create(
                         Registries.BIOME,
-                        Identifier.fromNamespaceAndPath("globe", "lat_temperate_mountain")),
+                        ResourceLocation.fromNamespaceAndPath("globe", "lat_temperate_mountain")),
                 temperateMountainHolders);
         Registry<Biome> registry = writable.freeze();
-        List<Holder<Biome>> holders = registry.listElements()
+        List<Holder<Biome>> holders = registry.holders()
                 .map(holder -> (Holder<Biome>) holder)
                 .toList();
         return new TestBiomeRegistry(registry, holders);
@@ -1783,7 +1783,7 @@ final class BiomeProviderSelectionPolicyTest {
     }
 
     private static Holder<Biome> holder(Registry<Biome> registry, String id) {
-        return registry.get(Identifier.parse(id))
+        return registry.get(ResourceLocation.parse(id))
                 .orElseThrow(() -> new AssertionError("missing test biome holder: " + id));
     }
 

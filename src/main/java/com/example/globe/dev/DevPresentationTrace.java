@@ -100,7 +100,7 @@ public final class DevPresentationTrace {
             int stageRank = stageRank(polarStage);
             float fogIntensity = PolarPresentationPolicy.fogIntensity(absoluteDegrees);
             long worldTick = client.level.getGameTime();
-            String dimension = client.level.dimension().identifier().toString();
+            String dimension = client.level.dimension().location().toString();
             DevToolPolicy.TraceClock.Update clockUpdate =
                     active.traceClock.update(dimension, worldTick);
             long policyTick = clockUpdate.policyTick();
