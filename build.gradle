@@ -238,9 +238,10 @@ configurations {
 }
 
 dependencies {
-    // Version-coupled pin: the 26.2 file (2Yom1N68 = mc26.2-0.9.1-fabric) does not exist for
-    // this target. Ny3XyYle = mc1.21.11-0.8.13-fabric, the newest stable Sodium for 1.21.11.
-    latitudeSodiumFogVerifier "maven.modrinth:AANobbMI:Ny3XyYle"
+    // Version-coupled pin: neither the 26.2 file (2Yom1N68 = mc26.2-0.9.1-fabric) nor the
+    // 1.21.11 file (Ny3XyYle) exists for this target. SMxNOGZ6 = mc1.21.1-0.8.13-fabric, the
+    // newest stable Sodium published for 1.21.1.
+    latitudeSodiumFogVerifier "maven.modrinth:AANobbMI:SMxNOGZ6"
 }
 
 processResources {
