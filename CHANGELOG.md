@@ -34,9 +34,10 @@ what was already generated.
   chose, and not inside a hazard.
 - **The loading screen is Latitude's.** Entering a Latitude world — new or existing — shows the
   Latitude loading pane instead of the bare vanilla screen.
-- **A still background for the create-world screen.** The **Still** toggle at the left of the
-  bottom button row on Latitude's create-world screen swaps the moving panorama for a flat dark
-  backdrop, and the choice is remembered between sessions.
+- **A still background for the create-world screen.** A **Still** tab hangs under the bottom-left
+  corner of Latitude's create-world panel, styled like the World and Settings tabs above it. Switch
+  it on to swap the moving panorama for a flat dark backdrop; the choice is remembered between
+  sessions.
 
 ### Improved
 
