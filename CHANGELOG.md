@@ -26,9 +26,10 @@ it the badlands terracotta repair described below.
 - **A new title-intro animation** plays once per screen-open in the compact create-world layout.
 - `Ctrl+Tab` now cycles the World/Settings tabs, and switching tabs no longer leaves a text field on
   the previous tab quietly holding your keystrokes.
-- **A still background for the create-world screen.** The **Still** toggle at the left of the
-  bottom button row on Latitude's create-world screen swaps the moving panorama for a flat dark
-  backdrop, and the choice is remembered between sessions.
+- **A still background for the create-world screen.** A **Still** tab hangs under the bottom-left
+  corner of Latitude's create-world panel, styled like the World and Settings tabs above it. Switch
+  it on to swap the moving panorama for a flat dark backdrop; the choice is remembered between
+  sessions.
 
 ### Improved
 
