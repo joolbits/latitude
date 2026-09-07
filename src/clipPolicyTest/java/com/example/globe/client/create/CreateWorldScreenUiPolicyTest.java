@@ -33,6 +33,7 @@ public final class CreateWorldScreenUiPolicyTest {
         selectedClimateDescriptionUsesReadableContrast();
         accessibilityFooterAvoidsTheCreateButtons();
         tabClicksUseRealWidgetOwnership();
+        stillIsABespokeTabUnderThePanel();
         System.out.println("PASS CreateWorldScreenUiPolicyTest assertions=" + assertions);
     }
 
@@ -67,6 +68,25 @@ public final class CreateWorldScreenUiPolicyTest {
         if (!threw) {
             throw new AssertionError("zero panel count must be rejected");
         }
+    }
+
+    private static void stillIsABespokeTabUnderThePanel() throws IOException {
+        String screen = Files.readString(Path.of(
+                "src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java"));
+        expectTrue(screen.contains("class StillTabWidget extends AbstractWidget"),
+                "Still must be a real widget of its own, not a vanilla Button");
+        expectTrue(!screen.contains("Button.builder(stillBackgroundLabel()"),
+                "Still must not be built as a vanilla button beside Create World and Cancel");
+        expectTrue(screen.contains("stillTabY = panelBottom;"),
+                "the Still tab must hang from the panel's bottom edge");
+        expectTrue(screen.contains("stillTabX = paneStripViewportLeft;"),
+                "the Still tab must align with the tab strip's left edge");
+        expectTrue(screen.contains("drawStillTab(context, mouseX, mouseY);"),
+                "the screen must draw the Still tab in the bespoke tab style");
+        expectTrue(screen.contains("int bg = active || hovered ? PANEL_BG : TAB_INACTIVE_BG;"),
+                "the Still tab must use the same fill rule as the World/Settings tabs");
+        expectTrue(screen.contains("context.fill(x + 1, y - 1, x + w - 1, y, PANEL_BG);"),
+                "an active Still tab must merge into the panel above it");
     }
 
     private static void bespokeBackgroundUsesFixedEightyPercentOpacity() {
