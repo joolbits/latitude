@@ -265,6 +265,9 @@ public class LatitudeCreateWorldScreen extends Screen {
     private Button cancelBtn;
     private Button stillBackgroundBtn;
     private boolean lastInputWasMouse;
+    /** True between this screen's own up-front background render and the end of the frame, so the
+     *  background pass that {@code super.render()} triggers does not run a second time. */
+    private boolean backgroundRenderedThisFrame;
 
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
         super(Component.literal("New World"));
@@ -1763,6 +1766,14 @@ public class LatitudeCreateWorldScreen extends Screen {
             // separate mouseMoved event. Mouse navigation is hover-only; keyboard focus is retained.
             clearStillButtonMouseFocus();
         }
+        // 1.21.1's Screen.render() paints the panorama, then blurs the whole framebuffer and lays the
+        // menu overlay over everything drawn so far, before it renders the widgets. Everything this
+        // screen draws itself (panels, gold labels, the version footer, the Still backdrop) would be
+        // caught by that pass and come out soft and dimmed while the widgets stay crisp. Render the
+        // background exactly once, up front, and turn the inner call from super.render() into a no-op
+        // so Latitude's own drawing lands on top of the finished background like it does on newer lines.
+        super.renderBackground(context, mouseX, mouseY, delta);
+        backgroundRenderedThisFrame = true;
         if (LatitudeConfig.createWorldStillBackground) {
             // Do not rewrite Minecraft's global panorama preference for one screen. Cover it with a
             // stable Latitude backdrop instead, then restore the scenic view instantly when toggled off.
@@ -1964,7 +1975,20 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (tabbedMode) {
             renderIntroTitle(context);
         }
-        super.render(context, mouseX, mouseY, delta);
+        try {
+            super.render(context, mouseX, mouseY, delta);
+        } finally {
+            backgroundRenderedThisFrame = false;
+        }
+    }
+
+    @Override
+    public void renderBackground(GuiGraphics context, int mouseX, int mouseY, float delta) {
+        // See render(): the background is painted once before Latitude's own drawing; the call that
+        // Screen.render() makes afterwards must not blur and overlay what was just drawn.
+        if (!backgroundRenderedThisFrame) {
+            super.renderBackground(context, mouseX, mouseY, delta);
+        }
     }
 
     /** Full-screen-centered title overlay for the tabbedMode intro -- independent of the (now
