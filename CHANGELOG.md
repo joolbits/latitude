@@ -7,9 +7,10 @@ to this line. **Beta:** shipped for testing before the 1.5.1 stable tag.
 
 ### New
 
-- **A still background for the create-world screen.** The **Still** toggle at the left of the
-  bottom button row on Latitude's create-world screen swaps the moving panorama for a flat dark
-  backdrop, and the choice is remembered between sessions.
+- **A still background for the create-world screen.** A **Still** tab hangs under the bottom-left
+  corner of Latitude's create-world panel, styled like the World and Settings tabs above it. Switch
+  it on to swap the moving panorama for a flat dark backdrop; the choice is remembered between
+  sessions.
 
 ### Improved
 
